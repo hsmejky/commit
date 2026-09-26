@@ -33,3 +33,13 @@ README, manifests.
   test, Q10).
 - Commits: Conventional Commits. The repo dogfoods its own rules via `.claude/commit.json`
   (`scanIgnore: tests/fixtures/**`).
+
+## Token economy
+
+- Never continue an agent with `SendMessage`: a resume carries its whole history. Follow-up
+  work (review findings, fixes, next step, agent that hit its `maxTurns`) goes to a new agent
+  with a brief of links, not content, plus the previous report (≤ 300 words) and `git log`.
+- CI status: one `gh pr checks <n> --watch` call. No polling loops over check-runs or
+  `actions/runs`, no REST calls via `curl` or `git credential fill`.
+- Codebase lookups and markdown reads that produce more than a few lines of output
+  go to the Explore agent with model haiku, not inline reads.
