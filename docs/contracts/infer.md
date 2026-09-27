@@ -1,0 +1,49 @@
+# infer
+
+Run by `commit-config` (Q7). Read-only, takes no lock.
+
+```json
+{
+  "version": 1,
+  "ok": true,
+  "outcome": "proposal",
+  "commitCount": 200,
+  "ccShare": 0.94,
+  "nonConventional": 12,
+  "wouldFail": 9,
+  "proposal": {
+    "types":            { "value": ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test", "deps"],
+                          "evidence": { "deps": 0.07 } },
+    "scope":            { "value": "optional", "evidence": { "withScope": 0.31 } },
+    "body":             { "value": "forbidden", "evidence": { "withBody": 0.04 } },
+    "subjectCase":      { "value": "lower", "evidence": { "lower": 0.97 } },
+    "maxSubjectLength": { "value": 72, "evidence": { "p95": 64, "flagged": false } }
+  },
+  "droppedTypes": [{ "type": "wip", "count": 3 }],
+  "configJson": {
+    "repo": { "text": "{\n  \"scope\": \"optional\",\n  …\n}\n" },
+    "user": { "errors": ["maxSubjectLength: 300 is above 200"] }
+  }
+}
+```
+
+- `outcome`: `proposal`; `too-few-commits` (under 20 non-merge commits; `proposal: null`,
+  the skill recommends the defaults); `not-conventional` (`ccShare` under 0.5;
+  `proposal: null`, the skill points to the opt-out, Q14).
+- `commitCount`: non-merge commits read (at most 200). `ccShare` is over all of them; every
+  `evidence` share is over the Conventional Commits ones only.
+- `types.value`: all 11 standard types always, plus each non-standard type at 5% or more.
+- `types.evidence`: the share of each non-standard type kept (5% or more).
+- `wouldFail`: how many of the **Conventional Commits** ones among the commits read fail
+  lint under the proposed config (same lint functions), so it measures the threshold loss
+  (Q7) only. `nonConventional`: the commits read that are not Conventional Commits (they
+  would all fail). `wouldFail` is `null` when there is no proposal.
+- `maxSubjectLength.evidence.flagged`: `true` when p95 is over 100 and the value was rounded
+  up to the next multiple of 10, or clamped to 200 (the key's maximum).
+- `droppedTypes`: non-standard types under 5%, with counts.
+- `configJson`: per layer (`repo`, `user`), the current raw layer with the proposal's keys
+  replaced and every other key (such as `scanIgnore`) kept, serialised as `{ "text" }`. The
+  text is validated by the config loader's own rules (Q6) before it is returned; a layer that
+  already fails validation gets `{ "errors" }` instead of text. The `commit-config` skill
+  writes the chosen layer's text verbatim and never composes JSON itself (Q7). `null` when
+  there is no proposal.
