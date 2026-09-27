@@ -1,0 +1,128 @@
+# 15 Release
+
+The release manifests, the README and the 0.1.0 release gate: manifests wire every plugin
+component under `commit@commit`, the README states requirements, allow rules, public
+surface and the one accepted-gaps list, and the release slice collects CI and every
+hand-test. The episode-analysis tools (Q24) and the story 205 dogfood gate belong to the
+1.0.0 gate and are not here. Sources: Prompt-only and manifest blocks "README" and
+"Manifests", public surface, Out of Scope, Q1, Q8, Q14, Q15, Q16, Q22, Q24, Q25.
+
+## REL-01: Manifests wire every component for a local-marketplace install
+
+**What to build:** the plugin and marketplace manifests complete for 0.1.0: the plugin
+exposes the worker agent, `/commit`, `/commit-config` and the hook registration, and a
+local marketplace installs it as `commit@commit`.
+
+**Blocked by:** WRK-01, WRK-05, FND-02, GRD-18, INF-08.
+
+**Status:** ready-for-agent
+
+**Sources:** Q8, Q15, public surface, Prompt-only and manifest blocks "Manifests" and
+"Hook registration", Further Notes "Other notes" (versioning).
+
+- [ ] FND-02's identity and version test is extended, not copied: identity `commit@commit`
+      and one version 0.1.0 across the plugin manifest, the marketplace entry and the
+      package
+- [ ] That test also finds the agent `commit-worker`, the skills `commit` and
+      `commit-config`, and the hook registration where the plugin loader looks for them,
+      and nothing packaged from the tools directory
+- [ ] A local-marketplace install listing the three components is checked by hand in WRK-06
+
+
+## REL-02: README install section: requirements and allow rules
+
+**What to build:** the README's install steps: Node 22+ and git 2.34+ as hard
+requirements, the Q16 allow rules as a required step with what fails without them,
+personal-skill removal, worktree isolation and `.commit-plan/` for watchers; CI keeps the
+documented allow rules equal to the command form the script is called with.
+
+**Blocked by:** REL-01, GRD-13, PRE-12, PRE-06.
+
+**Status:** ready-for-agent
+
+**Sources:** Q1, Q8, Q9, Q16, Q22, Q24, Prompt-only and manifest blocks "README", Story
+verification (install, README and opt-out), stories 197, 199, 200, 202, 203, 223.
+
+- [ ] Requirements: Node 22+ (the native installer ships none) and git 2.34+, no npm
+      dependencies and no install step (stories 202, 203); Git Bash only if the
+      worker-shell spike made it one
+- [ ] Allow rules as a required step: the anchored node rule for both shells and the
+      run-folder `Edit` rule; why a bare `node *commit.js*` rule is unsafe; that without
+      them the worker's calls stall on permission prompts (stories 199, 223)
+- [ ] A round-trip test: each documented node rule matches S2 `build`'s output for every
+      subcommand, and a lookalike script path does not match
+- [ ] Remove any personal commit skill (story 200); worktree isolation for parallel
+      implementers (story 197); `.commit-plan/` added to file-watcher and sync ignore lists
+- [ ] The privacy-guard test passes on the README (no local paths or user names)
+
+
+## REL-03: README public surface, opt-out and accepted gaps
+
+**What to build:** the README's remaining blocks: the one-line public worker spawn with
+`intent`, `interactive` and `reword` and the `callerRule` rule, the per-repo opt-out line,
+and the accepted gaps as one list taken from Out of Scope, including the managed-settings
+gap.
+
+**Blocked by:** REL-02, PRE-15.
+
+**Status:** ready-for-agent
+
+**Sources:** Q5, Q14, Q25, public surface, Out of Scope (accepted gaps), stories 8, 116,
+198, 201.
+
+- [ ] One line: spawn `commit:commit-worker` with `intent: …` (and `interactive`,
+      `reword`), and a caller follows the reply's `callerRule` (story 8)
+- [ ] The opt-out line: `"commit@commit": false` under `enabledPlugins` in the repo's
+      settings (story 198)
+- [ ] One accepted-gaps list, the same entries as Out of Scope, including the Q25 gaps
+      the story 201 wording omits (story 201)
+- [ ] `managed-settings.json` honoured; the policy sources the script does not read
+      (managed drop-in directory, MDM profile, registry, server-managed) named (story 116)
+- [ ] A static test: every accepted gap in Out of Scope has a README entry (by its
+      decision tag), so the lists cannot drift
+
+
+## REL-04: Hand-test: opt-out and README
+
+**What to build:** a manual check that the opt-out line disables the plugin in one repo
+and that a new user following only the README gets a run that asks no permission.
+
+**Blocked by:** REL-03.
+
+**Status:** needs-human
+
+**Sources:** Q14, Q16, Story verification (install, README and opt-out), stories 198, 199,
+223.
+
+- [ ] With the opt-out line in a repo, "commit this" does not spawn the worker and a direct
+      `git commit` is not denied there; another repo is unaffected
+- [ ] Following the README install steps on a fresh setup, a one-group run asks no
+      permission in Bash and in PowerShell
+- [ ] The README line on the worker spawn and `callerRule` and the gaps list read
+      correctly to someone new to the plugin
+- [ ] By hand (CI cannot produce these): with Node below 22, and with git missing from PATH,
+      `/commit` ends with the reply the contract gives for that case, never a stack trace
+
+
+## REL-05: Release 0.1.0
+
+**What to build:** the 0.1.0 release: CI green on the full matrix with every size test,
+every hand-test and manual check done and recorded, then the tag.
+
+**Blocked by:** REL-04, WRK-06, WRK-07, WRK-08, INT-29, INT-30, PRE-14, RUN-10, RUN-26,
+INF-09, GRD-21.
+
+**Status:** needs-human
+
+**Sources:** Q15, Q24, Story verification (budget and release), Further Notes, stories 202,
+228.
+
+- [ ] CI green on ubuntu, windows and macos with Node 22 and 24, and in the git-2.34
+      `ubuntu:22.04` container
+- [ ] Every story 228 size test green (reply, `text`, list caps, `plan` fields, `plan
+      --hunks`, worker prompt, skill and descriptions)
+- [ ] Each needs-human slice above has its result recorded; the handback hand-test (WRK-07)
+      ran before this release
+- [ ] Every issue recorded by the dogfood check (INT-30) closed or deferred by decision
+- [ ] Version 0.1.0 tagged; the episode-analysis tools and the story 205 dogfood gate
+      stay on the 1.0.0 roadmap
