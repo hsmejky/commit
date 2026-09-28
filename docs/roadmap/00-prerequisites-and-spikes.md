@@ -264,15 +264,16 @@ Gates: REL-05 (0.1.0 release).
 
 ## PRE-15: Settle story wording and recorded texts
 
-**What to build:** a decision pass (human) over wording the last spec review left open, so
+**What to build:** a decision pass (human) over wording left open in [known
+deficiencies](../spec/known-deficiencies.md) (KD-S16, KD-S17, KD-S47, KD-S53 to KD-S76), so
 that slices can assert exact texts. (1) The user stories whose wording disagrees with the
 settled decisions or contracts: stories 34, 40, 42, 44, 46, 51, 52, 53, 54, 57, 58, 61, 62,
 65, 67, 102, 103, 147, 150, 185, 196, 201 and 213, and story 228 against the Q24 budgets
 (200-character agent description, 1.5 kB skill); also the glossary's "never answered without
-a user" line, which disagrees with the same settled decision as story 102 (spec-review item
-79). (2) Texts not recorded in Q18 or Q21: the `signing-locked`
-text and the six refusal texts emitted by M3, M11, M15 and M16. Fix each story or record
-each text; a slice not gated here follows the contract.
+a user" line, which disagrees with the same settled decision as story 102 (KD-S74). (2)
+Texts not recorded in Q18 or Q21: the `signing-locked` text and the six refusal texts
+emitted by M3, M11, M15 and M16. Fix each story or record each text; a slice not gated here
+follows the contract.
 
 **Blocked by:** None (can start immediately)
 

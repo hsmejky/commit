@@ -150,10 +150,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 
 ## Bookkeeping
 
-- **KD-R52.** PRE-15, RUN-20 and the README cite spec deficiencies by bare review numbers;
-  the spec file maps them to KD-S IDs. Replace them with KD-S IDs.
-- **KD-R53.** The README dispositions list 67 as a pending sync and 30 as covered, though
-  the spec fixed 30; CFG-03 lacks a wrong-JSON-type case such as `body: 1` → `config` (not
+- **KD-R53.** CFG-03 lacks a wrong-JSON-type case such as `body: 1` → `config` (not
   `body: "required"`).
 - **KD-R54.** The README RUN-20 gate row names only one path to RUN-24 (also via RPL-09).
 - **KD-R55.** CHG-17's Gates line restates its PRE-15 blocker; CFG-01 criteria lack final

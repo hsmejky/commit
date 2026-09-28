@@ -276,16 +276,3 @@ settles them. Files: [entry and guard](stories-entry-and-guard.md),
 | KD-S74 | 102, glossary | `humanOnly` "never answered without a user"; a forged `ifNoUser` answer is an accepted gap | limit to an honest worker |
 | KD-S75 | 201 | tag omits Q25, source of the forged-answer gap | add Q25 |
 | KD-S76 | numbering | stories skip 216 without a note | record the gap (accepted) |
-
-## Earlier item numbers
-
-The roadmap ([README](../roadmap/README.md) dispositions, PRE-15, RUN-20) still cites
-these deficiencies by their review numbers. Map: 1→S53, 4→S16, 6→S44, 8→S54, 10→S17,
-11→S45, 12→S55, 13→S46, 14→S47, 15→S48, 18→S56, 19→S57, 20→S58, 21→S59, 22→S60, 23→S61,
-24→S15, 25→S62, 26→S49, 27→S63, 28→S64, 29→S65, 31→S50, 32→S51, 33→S52, 36→S66, 37→S67,
-38→S68, 39→S69, 40→S12, 41→S70, 45→S36, 46→S37, 48→S35, 49→S38, 50→S39, 52→S40, 54→S71,
-57→S13, 61→S11, 62→S14, 63→S18, 64→S19, 65→S23, 67→S20, 68→S21, 69→S22, 73→S24, 74→S25,
-76→S43, 77→S72, 78→S73, 79→S74, 80→S75, 81→S76, 82→S33, 83→S41, 84→S34, 85→S42,
-88→S4, 89→S5, 90→S10, 91→S26, 92→S27, 93→S28, 94→S29, 95→S6, 96→S7, 97→S9, 98→S8,
-99→S1, 100→S2, 101→S3, 102→S30, 103→S31, 104→S32. Numbers 7, 9, 30, 47 and 70 are fixed.
-Delete this section once the roadmap cites KD IDs.

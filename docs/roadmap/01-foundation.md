@@ -143,12 +143,12 @@ scanner.
 
 ## FND-09: Roadmap graph check
 
-**What to build:** a test under `tests/` that parses `docs/roadmap/*.md` (each `## <ID>:`
-slice heading and its blocking-edge line) and checks the graph: no duplicate or missing
-ID, no cycle, every in-group blocker has a lower number than the slice it blocks, and
-`README.md`'s slice counts match the files; it reports blocking edges that are
-already reachable through another blocker (transitively implied) without failing on them. A
-release mode reports every slice whose `Status` line is not `Status: done`.
+**What to build:** a test under `tests/` that parses the group files `docs/roadmap/NN-*.md`
+(each `## <ID>:` slice heading and its blocking-edge line) and checks the graph: no
+duplicate or missing ID, no cycle, every in-group blocker has a lower number than the slice
+it blocks, and `README.md`'s slice counts match the files; it reports blocking edges that
+are already reachable through another blocker (transitively implied) without failing on
+them. A release mode reports every slice whose `Status` line is not `Status: done`.
 
 **Blocked by:** FND-01.
 
@@ -156,7 +156,10 @@ release mode reports every slice whose `Status` line is not `Status: done`.
 
 **Sources:** `docs/roadmap/README.md` (the graph claims), to-tickets.
 
-- [ ] A duplicate `## <ID>:` heading anywhere under `docs/roadmap/` fails the test, naming the ID.
+- [ ] Only files whose name starts with a two-digit group number (`NN-*.md`) are parsed as
+      group files; `README.md` and `known-deficiencies.md` are not, so a slice ID they cite
+      is neither a duplicate nor a heading.
+- [ ] A duplicate `## <ID>:` heading anywhere in the group files fails the test, naming the ID.
 - [ ] A `**Blocked by:**` entry naming an ID with no matching `## <ID>:` heading fails the test.
 - [ ] A cycle in the blocking-edge graph fails the test, naming the cycle.
 - [ ] An in-group blocker whose number is not lower than the slice's own fails the test.

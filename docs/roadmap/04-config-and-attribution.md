@@ -10,15 +10,15 @@ commit slices that use the flag.
 
 ## CFG-01: Settle the `scanIgnore` open items
 
-**What to build:** a decision pass (human) over the `scanIgnore` items the last spec review
-left open. Record each decision in Q10 (an **Amended** bullet) and fix the contracts and the
-spec so they agree. The items: (1) the backstop scan reads `scanIgnore` from HEAD (Q10),
-while the stored-facts table and M16 recompile the stored patterns; (2) the Q10 row flags
-only the unit that changes `scanIgnore`, while C:plan-hunks and M8 flag every unit of the
-repo config file; (3) how M18 names the repo-config path for `snapshotBlob`, when M4 exports
-only `isRepoConfigPath`; (4) the unclear wording "stored as `scan.scanIgnoreChanged`"; (5) a
-repo config that is invalid at HEAD while the worktree copy is fixed: a `config` refusal
-makes the fix uncommittable.
+**What to build:** a decision pass (human) over the `scanIgnore` items left open in [known
+deficiencies](../spec/known-deficiencies.md) (KD-S26 to KD-S29). Record each decision in Q10
+(an **Amended** bullet) and fix the contracts and the spec so they agree. The items: (1) the
+backstop scan reads `scanIgnore` from HEAD (Q10), while the stored-facts table and M16
+recompile the stored patterns; (2) the Q10 row flags only the unit that changes
+`scanIgnore`, while C:plan-hunks and M8 flag every unit of the repo config file; (3) how M18
+names the repo-config path for `snapshotBlob`, when M4 exports only `isRepoConfigPath`; (4)
+the unclear wording "stored as `scan.scanIgnoreChanged`"; (5) a repo config that is invalid
+at HEAD while the worktree copy is fixed: a `config` refusal makes the fix uncommittable.
 
 **Blocked by:** None (can start immediately).
 

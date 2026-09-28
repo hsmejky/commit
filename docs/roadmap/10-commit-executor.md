@@ -13,16 +13,17 @@ builds thin whole-file versions of the M10 operations it needs; CHG-19 to CHG-23
 
 ## EXE-01: Settle the commit-time and interface open items
 
-**What to build:** a decision pass (human) over the commit-time items the last spec review
-left open. Record each decision in the Q it changes (an **Amended** bullet) and fix the
-contracts and the spec so they agree. The items: (1) `osUser` is missing from the M14
-`validatePlan` and M16 `commitAll` interfaces, although both scan with it; (2) what happens
-when cleanup fails or is skipped past `cleanupDeadline`; (3) the M16 `internal` path has no
-Seam 1 trigger: a test-only fault seam, or an accepted gap; (4) the failure JSON examples
-(lock, lint) lack a `reply`, and no failed `commit --all` example exists. (The M16 SHA
-source is already settled: after each `git commit`, M16 reads HEAD and checks that HEAD's
-first parent is the expected pre-commit HEAD — for an unborn branch, HEAD has no parent —
-and takes HEAD as the group's SHA when it is; see EXE-06.)
+**What to build:** a decision pass (human) over the commit-time items left open in [known
+deficiencies](../spec/known-deficiencies.md) (KD-S12, KD-S19, KD-S24). Record each decision
+in the Q it changes (an **Amended** bullet) and fix the contracts and the spec so they
+agree. The items: (1) `osUser` is missing from the M14 `validatePlan` and M16 `commitAll`
+interfaces, although both scan with it; (2) what happens when cleanup fails or is skipped
+past `cleanupDeadline`; (3) the M16 `internal` path has no Seam 1 trigger: a test-only fault
+seam, or an accepted gap; (4) the failure JSON examples (lock, lint) lack a `reply`, and no
+failed `commit --all` example exists. (The M16 SHA source is already settled: after each
+`git commit`, M16 reads HEAD and checks that HEAD's first parent is the expected pre-commit
+HEAD — for an unborn branch, HEAD has no parent — and takes HEAD as the group's SHA when it
+is; see EXE-06.)
 
 **Blocked by:** None (can start immediately)
 

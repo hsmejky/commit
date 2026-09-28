@@ -490,10 +490,10 @@ RUN-04 already asserts it is created exclusively at call start and removed at ca
 not a decision;
 (11) settled, not open: the error table's `lock` row (C:cli-and-exit-codes) already
 documents the late `ENOENT` → `taken-over` path alongside `EPERM`/`EBUSY` and the
-hard-link-probe detail (spec-review 24); a documentation-sync note, confirmed by RUN-04's
+hard-link-probe detail (KD-S15); a documentation-sync note, confirmed by RUN-04's
 own criterion;
 (12) scoped to the takeover path only: what happens "between the inventory and taking the
-lock" for the index-fingerprint and HEAD rechecks C:plan cites twice (spec-review 90),
+lock" for the index-fingerprint and HEAD rechecks C:plan cites twice (KD-S10),
 *during a takeover*. RUN-06 already builds and tests the non-takeover step-7 HEAD recheck,
 so only the takeover-path recheck remains open here; the resulting buildable criterion
 ("after a takeover, HEAD moved → `head-moved` carrying the takeover notice") is gated on
@@ -518,10 +518,11 @@ RUN-20b and lives in RUN-21.
 
 ## RUN-20b: settle the takeover open items
 
-**What to build:** a decision pass (human) over the takeover items the last spec review
-left open. Record each decision in Q22 (and Q9 where the respawn is concerned),
-C:run-folder, C:plan, C:reply-and-handback, M12 and M18, and fix the Seam 1 case list in
-the run-integrity list. The items:
+**What to build:** a decision pass (human) over the takeover items left open in [known
+deficiencies](../spec/known-deficiencies.md) (KD-S1 to KD-S5, KD-S7 to KD-S9). Record each
+decision in Q22 (and Q9 where the respawn is concerned), C:run-folder, C:plan,
+C:reply-and-handback, M12 and M18, and fix the Seam 1 case list in the run-integrity list.
+The items:
 (1) a kill between the lock rename and the link, which leaves an orphan renamed lock file
 with no lock in place;
 (2) the order of the deletions inside `finishTakeover`;
