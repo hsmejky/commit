@@ -10,6 +10,8 @@ const DEPENDENCY_FIELDS = [
   'devDependencies',
   'optionalDependencies',
   'peerDependencies',
+  'bundleDependencies',
+  'bundledDependencies',
 ];
 
 // The static check FND-01 asks for (story 203): a manifest lists no dependency fields.
@@ -43,4 +45,12 @@ test('the package manifest declares the Node 22 floor and version 0.1.0', () => 
   const manifest = readManifest();
   assert.equal(manifest.version, '0.1.0');
   assert.equal(manifest.engines && manifest.engines.node, '>=22');
+});
+
+// A bare `node --test` searches the whole repo, which would pick up files under
+// tools/ and tests/fixtures/**. The test command must scope node:test to this
+// directory's *.test.js files instead (FND-01 review finding).
+test('the test script targets tests/*.test.js, not a bare node --test', () => {
+  const manifest = readManifest();
+  assert.equal(manifest.scripts && manifest.scripts.test, 'node --test "tests/*.test.js"');
 });

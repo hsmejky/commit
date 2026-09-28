@@ -9,9 +9,11 @@ policy, What makes a good test, Seams, Modules and how ("Other checks", CI).
 
 ## FND-01: Repo skeleton with a first green test run
 
-**What to build:** the package manifest (no dependencies, Node 22 floor, `node --test` as
-the test command), the MIT licence and the Q15 layout, with one real test: the static check
-that the package lists no dependencies.
+**What to build:** the package manifest (no dependencies, Node 22 floor, `node --test`
+scoped to `tests/*.test.js` as the test command) and the MIT licence, with one real test:
+the static check that the package lists no dependencies. Git cannot track empty
+directories, so the Q15 layout directories are created by later slices as they add files
+to them, not here as placeholders.
 
 **Blocked by:** None (can start immediately).
 
