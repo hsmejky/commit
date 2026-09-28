@@ -157,12 +157,12 @@
   `plan.groups.json`, surfaced in the main session and held the worker until answered). The
   README therefore makes two allow rules a
   **required** install step, not a convenience:
-  `Bash(node "<home>/.claude/plugins/cache/commit/commit/*/scripts/commit.js" *)` (stub named
-  `commit.js`; same rule with `commit.cjs`, Q15) with the
+  `Bash(node "<home>/.claude/plugins/cache/commit/commit/*/scripts/commit.cjs" *)` with the
   user's own absolute home (plus the matching `PowerShell(…)` rule), and
   `Edit(**/.commit-plan/**)` for the run folder (Q9). With both, a run needed no approval
   at all (spike, Windows, Bash tool: the quoted path, the `*` version segment and the
-  `<marketplace>/<plugin>/<version>` cache layout all matched). Each script call is a single
+  `<marketplace>/<plugin>/<version>` cache layout all matched; stub named `commit.js`; same
+  rule with `commit.cjs`, Q15). Each script call is a single
   `node … commit.cjs …` command, so one rule per shell covers all of them (Q9). A bare
   `node *commit.cjs*` would match **any** file named `commit.cjs`: an agent that writes
   `./commit.cjs` and runs it would get arbitrary code run without a prompt. The anchored

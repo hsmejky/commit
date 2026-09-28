@@ -79,11 +79,11 @@
   library via `await import()`; a Node 22.0-22.11 `require` cannot load a `.mjs` (unflagged
   `require(esm)` starts at 22.12). Only non-test helpers and stubs in the test tree (a stub
   with named ESM imports) are named `.mjs` by the same extension rule. Every doc reference
-  to the entry points, the allow rules,
-  the hook `if` condition (Q13) and the script-call basename (C:guard, Q23) now names
-  `commit.cjs` / `guard.cjs`; the spike records that actually ran against a stub named
-  `commit.js` keep that name, annotated as testing the same rule that now applies to
-  `commit.cjs`, since renaming them would misstate what was tested. Why: on Node 22.0.0 a
+  to the entry points, the allow rules, the hook `if` condition (Q13) and the script-call
+  basename (C:guard, Q23) now names `commit.cjs` / `guard.cjs`; the spike and earlier-design
+  records that name a stub or basename `commit.js` keep that name, annotated as referring to
+  the same rule that now applies to `commit.cjs`, since renaming them would misstate what was
+  tested or proposed. Why: on Node 22.0.0 a
   `.js` file with `export` under a `package.json` without `"type"` throws `SyntaxError`; on
   Node 24 it loads but prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call;
   and the root `package.json` lies outside `plugin/`, so it is likely not shipped with the
