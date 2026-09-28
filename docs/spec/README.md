@@ -38,3 +38,4 @@ Citations: `Qn` is a decision, file `qNN-*.md` in [decisions](../decisions/READM
   - [Prior art](prior-art.md): Borrowed and credited test cases and bypass patterns from other open-source projects; no direct prior art for this plugin.
 - [Out of Scope](out-of-scope.md): Non-goals, accepted gaps (the guard is not a security boundary, scan limits, etc.), and features deferred past 0.1.0.
 - [Further Notes](further-notes.md): Open spikes and manual checks, the first slice's scope, and other notes on versioning, dogfooding and risks.
+- [Known deficiencies](known-deficiencies.md): Open defects in the spec, contracts and decisions (KD-S IDs), grouped by area, each with impact, suggested fix and the roadmap slice that settles it.

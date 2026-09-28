@@ -1,0 +1,291 @@
+# Known deficiencies
+
+Open defects in the design documents (spec, contracts, decisions) that are known but not yet
+fixed. Each item names the problem, where it lives, its impact, the suggested resolution
+and, where one exists, the roadmap slice that settles it. Citations follow the spec
+convention: `Qn` is a decision in [decisions](../decisions/README.md), `C:<section>` a file
+in [contracts](../contracts/README.md). Plan-level defects are in the
+[roadmap's known deficiencies](../roadmap/known-deficiencies.md). When an item is fixed,
+delete it here; IDs are never reused.
+
+## Concurrency and takeover (Q9, Q22)
+
+Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-runs.md).
+
+- **KD-S1. Unbuildable takeover test case.** The run-integrity case "a takeover whose
+  index repair resets the killed group's staging and leaves a mixed index → `modeChoice`"
+  cannot occur: the repair is `git reset -q`, which leaves the index equal to HEAD. Where:
+  [testing-modules.md](testing-modules.md) (M18 takeover cases), Q22 amendment,
+  [C:run-folder](../contracts/run-folder.md). Impact: a specified fixture fails as written.
+  Fix: replace it with `killedLeftover` → forced `modeChoice` carrying the takeover,
+  `killedLeftover` and `unstaged` notices, and a reset under `--take-over X --staged` →
+  `staged-empty` carrying the reset notice; amend Q22. Slice: RUN-20b (5).
+- **KD-S2. A failed index repair is undefined.** If the takeover's repair fails (a
+  foreign `index.lock`, a timeout), nothing says whether `finishTakeover` runs: if it
+  does, the evidence is deleted with the index unrepaired; if not, the old folder is left
+  unlocked (KD-S4's state). Where: [C:run-folder](../contracts/run-folder.md),
+  [C:plan](../contracts/plan.md) step 3, M12 and M18 ([modules-m10-m13.md](modules-m10-m13.md),
+  [modules-m14-m19.md](modules-m14-m19.md)). Impact: a killed group's staging can be lost
+  or left unguarded. Fix: on a repair failure keep the taken-over folder, the renamed lock
+  and the run's own lock so the next takeover follows the chain; reply with the notices
+  collected so far; add a fixture. Slice: RUN-20b (3).
+- **KD-S3. `--take-over` of a run that already ended.** Reachable through the `lock`
+  handback (the run ends while the user decides). The `call.lock` rule then maps the
+  `ENOENT` to `taken-over` ("taken over by another /commit"), which is false; Q22's
+  rename-`ENOENT` "retry the link" rule is in neither the contracts nor M12 `acquire`, and
+  Q9's rejection argues the case is unreachable. Where: Q9, Q22,
+  [C:run-folder](../contracts/run-folder.md), [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md),
+  M12. Impact: false message, two inconsistent `ENOENT` rules. Fix: define it as `ended`
+  ("that run has already ended"), or carry the retry rule into contracts and M12 with a
+  fixture; correct Q9's rationale. Slice: RUN-20b (4).
+- **KD-S4. Orphan renamed lock after a kill.** A kill between renaming the lock to
+  `lock.<planId>` and linking the new lock leaves no `lock`; the next `peek` takes the
+  no-takeover path, the repair never runs and a `--staged` run could commit the killed
+  group's partial staging. Where: [C:run-folder](../contracts/run-folder.md), Q22, M12
+  `acquire`/`peek`. Fix: `peek` treats an orphan `lock.<planId>` as a stale lock and
+  follows the chain, or the window is recorded as an accepted gap. Slice: RUN-20b (1).
+- **KD-S5. `finishTakeover` deletion order unspecified.** A kill midway can leave a renamed
+  lock pointing at a deleted folder, so a pending `killedLeftover` is forgotten. Where: M12
+  ([modules-m10-m13.md](modules-m10-m13.md)), [C:run-folder](../contracts/run-folder.md).
+  Fix: delete folders first, the renamed lock last; a renamed lock without its folder is
+  removed. Slice: RUN-20b (2).
+- **KD-S6. `modeChoice` answer vs the call's mode flag.** A respawn carries its answer plus
+  the producing call's mode flag, so a forced `modeChoice` from `plan --take-over X
+  --staged` answered `split` carries both; no rule says which wins, and the handback table
+  still gives the `modeChoice` source as "`plan` without a mode flag". Where:
+  [C:plan](../contracts/plan.md), [C:reply-and-handback](../contracts/reply-and-handback.md),
+  Q9, [testing-modules.md](testing-modules.md). Impact: a `split` choice may run as
+  `staged`. Fix: the answer replaces the flag; fix the table row; add a `split`-answer
+  fixture. Slice: RUN-20 (6).
+- **KD-S7. "A `--take-over` respawn cannot fall back to a `modeChoice`" overstated.** False
+  when the refused call was a bare first-spawn `plan`. Where: [C:plan](../contracts/plan.md),
+  [C:reply-and-handback](../contracts/reply-and-handback.md). Fix: qualify it with "when
+  the refused call had a mode flag". Slice: RUN-20b (7).
+- **KD-S8. `notices` omits unstored takeover notices.** The reply `notices` definition
+  covers "the notices `plan` stored", not the step-3 takeover notices of an early ending.
+  Where: [C:reply-and-handback](../contracts/reply-and-handback.md),
+  [C:run-folder](../contracts/run-folder.md). Fix: add them to both definitions. Slice:
+  RUN-20b (8).
+- **KD-S9. Q9 body rewritten in place.** Its amendment quotes a sentence no longer in the
+  body, unlike other decisions. Fix: restore the original sentence and let the amendment
+  supersede it. Slice: RUN-20b (9).
+- **KD-S10. "Between the inventory and taking the lock" wrong on the takeover path.** After
+  a step-3 takeover the lock is taken before the inventory. Where: `head-moved` and
+  `diff-changed` rows of [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md),
+  [C:plan](../contracts/plan.md) step 7. Fix: say "since the inventory". Slice: RUN-20 (12).
+
+## Error handling and cleanup
+
+- **KD-S11. A throw between `create` and `acquire` leaks the provisional folder.** The
+  try/finally covers only steps after `acquire`; an `internal` throw at steps 3-7 leaves
+  the folder to the 24-hour sweep, against "no outcome without a lock leaves a folder".
+  Where: [domain-code-cli-kind.md](domain-code-cli-kind.md), M18,
+  [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md) `internal` row,
+  [C:run-folder](../contracts/run-folder.md). Fix: discard the provisional run on such a
+  throw, in spec and contract.
+- **KD-S12. Failed or skipped cleanup after a failed run.** Story 45 misses a cleanup that
+  fails (Windows file lock) or is skipped past `cleanupDeadline`; C:run-folder defines
+  cleanup errors only after a successful commit. Where:
+  [stories-worker-and-grouping.md](stories-worker-and-grouping.md) (story 45), M15,
+  [C:run-folder](../contracts/run-folder.md). Fix: add the exception to story 45 and the
+  failure-path behaviour to C:run-folder. Slice: EXE-01 (2).
+- **KD-S13. "Cannot leave `git commit` as an orphan" is unqualified.** Out of Scope accepts
+  that a hard kill can orphan a commit, tool-call termination is an open verification
+  item, and Windows delivers no catchable SIGTERM. Where:
+  [architectural-decisions.md](architectural-decisions.md), [out-of-scope.md](out-of-scope.md).
+  Fix: add "when the harness delivers a catchable signal". Disposition: accepted for 0.1.0.
+- **KD-S14. Timeout text hard-codes "9 min".** A later group may start with 480 s left.
+  Where: M16, [C:commit-release](../contracts/commit-release.md), Q18. Fix: compute the
+  minutes or say "within the call's time budget". Disposition: accepted for 0.1.0.
+
+## Error tables and API contract
+
+- **KD-S15. `lock` error row incomplete.** Missing: a persisting link error whose hard-link
+  probe succeeds → `busy`, and a late `ENOENT` on `call.lock` or the folder →
+  `taken-over` (only C:run-folder and architectural-decisions prose have it). Where:
+  [domain-code-cli-kind.md](domain-code-cli-kind.md),
+  [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md). Impact: the tables are not
+  a complete cause list for tests. Fix: add both causes to both tables. Slice: RUN-20 (11),
+  which wrongly records this as settled (roadmap KD-R9).
+- **KD-S16. `signing-locked` exists only in the spec.** Used by story 170, M11, the
+  domain-code table and tests; no decision or contract defines it. Fix: record it in Q18
+  and the `signing` row of C:cli-and-exit-codes, or use plain `signing`. Slice: PRE-15.
+- **KD-S17. Six refusal texts only in decisions.** `head-moved` and signing-key-locked
+  (Q18), merge-commit reword (Q20) and three repo-state texts (Q21) appear in no module and
+  no contract table. Where: M3, M11, M15, M16,
+  [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md). Impact: tests cannot pin
+  exact texts. Fix: record them verbatim in the modules or the error table. Slice: PRE-15.
+- **KD-S18. No field for domain sub-codes.** The failure JSON has `kind` and `message`
+  only, so `held`, `busy`, `taken-over`, `index-changed` … differ only by text; the spec
+  table uses codes the contracts never define. Fix: add `error.code` and list every code
+  in the contract, or state that sub-codes live only in `message`.
+- **KD-S19. No failure example for `commit`.** [C:commit-release](../contracts/commit-release.md)
+  shows only success; `sha`, `hits`, `failed`, `remaining` on failure are prose only.
+  Fix: add a failure example. Slice: EXE-01 (4).
+- **KD-S20. `infer` missing from the spec error table.** C:infer refuses outside a repo or
+  in a bare repo; [domain-code-cli-kind.md](domain-code-cli-kind.md) has no `infer` rows,
+  and unborn HEAD (success with zero samples?) is implicit. Fix: add the rows, state the
+  unborn outcome in [C:infer](../contracts/infer.md) and Q7.
+- **KD-S21. Error table heading "owned by M18".** The table also holds M1 `usage` rows and
+  the entry point's `env` row. Fix: retitle.
+- **KD-S22. `git-failed` producer cell garbled.** It names `check` as a producer. Fix:
+  `git commit` non-zero (M16) plus the temporary-index `git add` (M10 via M18 in `plan`
+  and `plan --hunks`, via M16 in commit phase b); align both contract tables.
+- **KD-S23. Worker input cannot carry multi-line text.** `key: value` lines cannot hold a
+  multi-paragraph dictated reword or `edit`; `reword: true` is ambiguous. Where:
+  [C:worker-input](../contracts/worker-input.md). Fix: make `reword`/`edit` run to the end
+  of the prompt, or define a block form; add a two-paragraph fixture.
+
+## Module interfaces and `scanIgnore`
+
+- **KD-S24. `osUser` missing from `validatePlan` and `commitAll`.** M14 and M16 scan with
+  it but their signatures and the run state lack it. Where: [modules-m14-m19.md](modules-m14-m19.md).
+  Fix: pass it from M18. Slice: EXE-01 (1).
+- **KD-S25. No M12 operation removes `call.lock`.** M12 says it is removed at call end and
+  by the signal handler; no function owns it. Where: [modules-m10-m13.md](modules-m10-m13.md),
+  [C:run-folder](../contracts/run-folder.md). Fix: an idempotent, `ENOENT`-tolerant
+  `run.close()` called from M18's `finally` and the signal handler. Slice: RUN-20 (10).
+- **KD-S26. `snapshotBlob(path)` gets no config path.** M4 exports only
+  `isRepoConfigPath`; for a unit renamed away from `.claude/commit.json`, passing the new
+  path misses the `scanIgnore` change. Where: M18 step 5, M10, M4. Fix: M4 exports the
+  path, or `snapshotBlob` always reads the repo config path. Slice: CFG-01 (3).
+- **KD-S27. Q10's `scanIgnore` row contradicts its amendment.** The row flags only the unit
+  changing `scanIgnore`; the amendment flags every unit of the file.
+  [C:confirmation-triggers](../contracts/confirmation-triggers.md) is ambiguous too. Fix:
+  align both rows. Slice: CFG-01 (2).
+- **KD-S28. "M18 also stores as `scan.scanIgnoreChanged`".** It is a `plan` output field,
+  not state. Fix: "outputs as". Slice: CFG-01 (4).
+- **KD-S29. Backstop `scanIgnore`: HEAD or stored patterns.** Q9 reads it from HEAD, M16
+  recompiles the stored patterns; they differ after an earlier group commits a change.
+  Fix: pick one rule in Q9 and M16. Slice: CFG-01 (1).
+
+## Testing
+
+Privacy-guard test (Q15); settled by [FND-06](../roadmap/01-foundation.md):
+
+- **KD-S30. Self-test file set wider than the guard's.** The self-test scans all tracked
+  files, including fixtures that legitimately hold service-user paths, so it fails where
+  the guard passes. Where: [testing-modules.md](testing-modules.md), Q15. Fix: use the
+  guard's file set.
+- **KD-S31. The segment check cannot use `scanText`.** `scanText` always applies the
+  service-user list (`runner`, `root`) and the length rule, so it finds nothing by
+  construction. Fix: the test owns a one-line segment regex (stated, with its reason), or
+  `scanText` gains an exemption-off option.
+- **KD-S32. Tracked-only scan skips new files** until `git add`. Fix: say so, or also scan
+  non-excluded untracked files in the set.
+- **KD-S33. Main privacy test scans "docs" unscoped**, so untracked review reports fail a
+  local `npm test`. Fix: scan `git ls-files`, the self-test's set.
+- **KD-S34. "Any user name" overstates `local-path`**, which skips placeholder and
+  service-user names. Fix: reword.
+
+Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](testing-seams.md)):
+
+- **KD-S35. PATH git shims cannot work on Windows.** Shell-less spawn finds only
+  `.com`/`.exe`; no case is marked POSIX-only and no `git.exe` shim or argv log is
+  specified. Fix: specify a compiled Windows shim and the log format, or mark the cases
+  POSIX-only. Disposition: accepted for 0.1.0 (roadmap KD-R21).
+- **KD-S36. No oracle-skip class for PowerShell 5.1 `&&`/`||`.** Fix: an edition-specific
+  skip class; only the oracle differs per edition. Disposition: accepted for 0.1.0.
+- **KD-S37. Hook registration check ignores the `if` condition** (Q13); a mismatch
+  silently disables the heartbeat. Fix: assert `if` matches every S2 `build` output.
+  Disposition: accepted for 0.1.0.
+- **KD-S38. Run-folder exclusion from `git status` never asserted** (story 196). Fix:
+  assert no `.commit-plan` in `git status --porcelain -uall`, `.gitignore` unchanged, no
+  duplicate exclude line, also in a linked worktree. Disposition: accepted for 0.1.0.
+- **KD-S39. Heartbeat and stderr redaction untested** (story 21). Fix: canary text absent
+  from both outputs; a 300-character command cut to 200. Disposition: accepted for 0.1.0.
+- **KD-S40. git-2.34 container job prerequisites unstated**: Node install, `openssh-client`
+  for the M11 probe, skipped cases. Disposition: accepted for 0.1.0.
+- **KD-S41. Kill-timeout cases leave about 5 s of real time** (clock stepped to 535 s);
+  flaky on cold Windows runners. Fix: step to 530 s for hook-recording cases.
+- **KD-S42. No test rows for `scanIgnoreChanged` and the backstop `--text` pass**: another
+  key edited → false, invalid JSON → true, multi-hunk config, config renamed away,
+  attribute-hidden `--text`. Fix: add them to the M4 and M6-M9 rows. Disposition: accepted
+  for 0.1.0.
+
+## Performance
+
+- **KD-S43. 4 kB `text` budget ignores the multi-group confirm block** (20 files per
+  group, uncapped groups); the size test has no confirm fixture. Where: Q24,
+  [C:reply-and-handback](../contracts/reply-and-handback.md). Fix: exempt the confirm lists,
+  or add a group cap or larger budget with a multi-group fixture. Disposition: accepted
+  for 0.1.0.
+
+## Decision fidelity and provenance
+
+- **KD-S44. Open items labelled "introduced by this spec"** in [further-notes.md](further-notes.md)
+  (guard cold start, tool-call termination) are already in
+  [open verification items](../decisions/open-verification-items.md); the story-217 gate
+  and revision rule have no source. Fix: drop the labels, record or drop the rule.
+- **KD-S45. Worker prompt lacks "no git diff of its own"** (Q12): only `Read` is limited.
+  Where: [prompt-only-and-manifest-blocks.md](prompt-only-and-manifest-blocks.md). Fix:
+  read changes only through `hunks.txt` and run no other git command. Slice: WRK-02.
+- **KD-S46. Dogfood gate lacks Q24's diff-size formula** (`git diff HEAD --numstat` plus
+  `hunks.txt` tokens) and "the price-weighted ratio is a proxy only". Where:
+  [story-verification.md](story-verification.md). Disposition: accepted for 0.1.0.
+- **KD-S47. "Fixed model" (story 42) is untestable**: an Agent `model` parameter overrides
+  the frontmatter, and "never pass `model`" (Q24) is stated nowhere. Fix: add that rule to
+  the skill, README and respawn text; reword story 42. Slice: PRE-15.
+- **KD-S48. Heartbeat relocation drops Q23's constraints**: writer and reader both reach
+  it, and not `os.tmpdir()`. Where: [further-notes.md](further-notes.md),
+  [open verification items](../decisions/open-verification-items.md). Slices: GRD-15,
+  GRD-17.
+- **KD-S49. Code-level mechanics in Implementation Decisions** (`os.userInfo()`,
+  `spawnSync`, `process.kill(pid, 0)`, `%SystemRoot%\System32` …), against the spec's own
+  rule and Q15's wording. Fix: restate as behaviour. Disposition: accepted for 0.1.0.
+- **KD-S50. Bare-name privacy gap missing from Out of Scope**, which claims to be the one
+  gap list (Q15 accepts it). Disposition: accepted for 0.1.0.
+- **KD-S51. The review-report exclude line (Q15) is not mentioned** in
+  [further-notes.md](further-notes.md). Disposition: accepted for 0.1.0.
+- **KD-S52. Three superseded texts remain in decision bodies**: Q9's `env` path set lacks
+  Q16's typographic quotes; Q11's NUL-byte binary rule (limited by Q10); Q17's oversized
+  subagent file rule (narrowed to no-user runs). Fix: amend or mark superseded.
+
+## Story wording
+
+Each story below disagrees with the decision or contract it cites, so a test written from
+the story would assert the wrong behaviour. [PRE-15](../roadmap/00-prerequisites-and-spikes.md)
+settles them. Files: [entry and guard](stories-entry-and-guard.md),
+[worker and grouping](stories-worker-and-grouping.md),
+[config, messages and scan](stories-config-messages-scan.md),
+[failures and runs](stories-failures-and-runs.md).
+
+| ID | Story | What is wrong | Fix |
+| --- | --- | --- | --- |
+| KD-S53 | 65 | every unit "with ID, path, kind and range"; summary-only entries have no kind or range (C:plan-hunks) | except summary-only entries |
+| KD-S54 | 110 | misses a non-integer `maxSubjectLength` and an empty `types` (Q6); M4 test row too | add both |
+| KD-S55 | 34 | omits the cause "`node` missing from the hook's PATH"; Q23's notice text and "the run goes on" are in no module or contract | add the cause; record the text |
+| KD-S56 | 52 | omits that every respawn repeats `mode` (and `takeOver` only from `lock`); says "resumed run" | name both; "respawned run" |
+| KD-S57 | 51, 53 | no story says a handback `run` output holds a new reply handled the same way | state it |
+| KD-S58 | 57 | every notice repeated in `text`; lists cap at 10 plus "+N more" | add the cap |
+| KD-S59 | 46 | fallback trigger vague; contract: only no parseable script output, `planId` or `null`; `Write`/`Read` failures undecided | align; decide in C:worker-input |
+| KD-S60 | 62 | "run nothing"; contract adds "show the whole message" | append it |
+| KD-S61 | 40 | single planning call only for "a one-group run"; it applies to every first spawn | reword |
+| KD-S62 | 103 | treats `--no-user` as a caller option; it is the worker's flag under `interactive: false` | reword |
+| KD-S63 | 150 | misses `**` inside a segment, `\`, empty pattern, `..` segment; tag lacks Q6 | add them and Q6 |
+| KD-S64 | 185 | not-a-repo or bare "reported as an error"; it is a `state` refusal (exit 6) | reword |
+| KD-S65 | 67 | identical hunks only "in the same group"; also all in `notIncluded` (Q11, C:check); M14 too | "same placement" |
+| KD-S66 | 147 | all `GIT_*` ignored; Q9 keeps a keep-set for script calls and strips only redirecting variables for `git commit` | name the keep-set |
+| KD-S67 | 56 | tree state always last; the fallback reply, `release` past budget and `not-a-repo` omit it | name the exceptions or add "tree state unknown" |
+| KD-S68 | 58 | "until the reply"; a handback is a reply, callerRule says "final reply" | "final reply" |
+| KD-S69 | 54 | "with no extra logic"; `edit` goes under Other, `question: null` is never asked | "the callerRule alone tells me how" |
+| KD-S70 | 44 | final report always the script's reply; the fallback reply is worker-built | add the fallback |
+| KD-S71 | 61 | lists three separators; the contract refuses six, redirection included | list all six |
+| KD-S72 | 228 | omits the 200-character description and 1.5 kB `SKILL.md` budgets (Q24) | add both |
+| KD-S73 | 213 | cites story 218; the escaping and 2000-character cap is story 163 | cite 163 |
+| KD-S74 | 102, glossary | `humanOnly` "never answered without a user"; a forged `ifNoUser` answer is an accepted gap | limit to an honest worker |
+| KD-S75 | 201 | tag omits Q25, source of the forged-answer gap | add Q25 |
+| KD-S76 | numbering | stories skip 216 without a note | record the gap (accepted) |
+
+## Earlier item numbers
+
+The roadmap ([README](../roadmap/README.md) dispositions, PRE-15, RUN-20) still cites
+these deficiencies by their review numbers. Map: 1→S53, 4→S16, 6→S44, 8→S54, 10→S17,
+11→S45, 12→S55, 13→S46, 14→S47, 15→S48, 18→S56, 19→S57, 20→S58, 21→S59, 22→S60, 23→S61,
+24→S15, 25→S62, 26→S49, 27→S63, 28→S64, 29→S65, 31→S50, 32→S51, 33→S52, 36→S66, 37→S67,
+38→S68, 39→S69, 40→S12, 41→S70, 45→S36, 46→S37, 48→S35, 49→S38, 50→S39, 52→S40, 54→S71,
+57→S13, 61→S11, 62→S14, 63→S18, 64→S19, 65→S23, 67→S20, 68→S21, 69→S22, 73→S24, 74→S25,
+76→S43, 77→S72, 78→S73, 79→S74, 80→S75, 81→S76, 82→S33, 83→S41, 84→S34, 85→S42,
+88→S4, 89→S5, 90→S10, 91→S26, 92→S27, 93→S28, 94→S29, 95→S6, 96→S7, 97→S9, 98→S8,
+99→S1, 100→S2, 101→S3, 102→S30, 103→S31, 104→S32. Numbers 7, 9, 30, 47 and 70 are fixed.
+Delete this section once the roadmap cites KD IDs.
