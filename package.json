@@ -1,0 +1,13 @@
+{
+  "name": "commit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code plugin: deterministic commit script, guard hook, and worker agent.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
