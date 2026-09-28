@@ -75,12 +75,15 @@
   module type, independent of any `package.json`. The shared library is ES modules named
   `plugin/scripts/lib/*.mjs`; the entry points are CommonJS, `plugin/scripts/commit.cjs` and
   `plugin/scripts/guard.cjs`, and reach the library only through a dynamic `import()`
-  (Q1). The root `package.json` keeps no `"type"` field, so `tests/*.test.js` stay
-  CommonJS; test-tree files that use ES module syntax (a stub with named ESM imports) are
-  named `.mjs` by the same rule. Every doc reference to the entry points, the allow rules,
+  (Q1). The test command runs only `tests/*.test.js`, which stay CommonJS and load the
+  library via `await import()`; a Node 22.0-22.11 `require` cannot load a `.mjs` (unflagged
+  `require(esm)` starts at 22.12). Only non-test helpers and stubs in the test tree (a stub
+  with named ESM imports) are named `.mjs` by the same extension rule. Every doc reference
+  to the entry points, the allow rules,
   the hook `if` condition (Q13) and the script-call basename (C:guard, Q23) now names
-  `commit.cjs` / `guard.cjs`; the spike records that used a stub `commit.js` are renamed
-  too, since the extension does not change how those rules match. Why: on Node 22.0.0 a
+  `commit.cjs` / `guard.cjs`; the spike records that actually ran against a stub named
+  `commit.js` keep that name, annotated as testing the same rule that now applies to
+  `commit.cjs`, since renaming them would misstate what was tested. Why: on Node 22.0.0 a
   `.js` file with `export` under a `package.json` without `"type"` throws `SyntaxError`; on
   Node 24 it loads but prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call;
   and the root `package.json` lies outside `plugin/`, so it is likely not shipped with the

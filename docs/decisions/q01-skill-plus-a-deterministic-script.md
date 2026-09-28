@@ -37,7 +37,7 @@
   22.0.0 a `.js` file with `export` and no `"type"` in reach throws `SyntaxError`; on Node 24
   it loads but prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call; and the
   root `package.json` is likely not shipped with the plugin, so it cannot settle the type.
-  It keeps no `"type"` field, and the tests stay CommonJS `.js`.
+  The root `package.json` keeps no `"type"` field, and the tests stay CommonJS `.js`.
 - **Rejected.** A prompt-only skill with no tests beyond the manifest. A guard written in pure
   shell to survive a missing Node (needs sh and PowerShell twins, doubling the test surface).
 - **Consequences.** The scan is testable and repeatable; Claude reads a compact report instead

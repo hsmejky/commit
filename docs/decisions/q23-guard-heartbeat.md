@@ -39,9 +39,10 @@
     visible to the script; the heartbeat measures what actually happened.
   - Comparing raw `cwd` strings: `cd sub && …` and Windows path case and slashes make them
     differ although the guard ran.
-  - Matching the substring `commit.cjs plan` on the raw command (the design before the
+  - Matching the substring `commit.js plan` (stub named `commit.js`; same rule with
+    `commit.cjs`, Q15) on the raw command (the design before the
     ninth review): every script call is quoted for the anchored allow rule (Q16), so the
-    raw text holds `commit.cjs" plan` and never matched. Every run would have carried a
+    raw text holds `commit.js" plan` and never matched. Every run would have carried a
     false "Guard hook did not run", and Q25's worker-only deny would never have fired.
   - A 10-second window: `PreToolUse` runs **before** the permission prompt, so without the
     README's allow rule a user who takes more than 10 seconds to approve `plan` gets a false

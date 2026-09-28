@@ -24,7 +24,7 @@ points `.cjs`, library `.mjs`; Q1, Q15 as amended by this slice's review).
 **Sources:** Q1, Q15, story 203, Dependency policy, Modules and how "Other checks".
 
 - [ ] The test command runs `node:test` over the tests directory and passes on Node 22 and 24.
-- [ ] A static test fails when the package manifest lists any `dependencies`, `devDependencies`, `optionalDependencies` or `peerDependencies`, and passes on the skeleton (story 203).
+- [ ] A static test fails when the package manifest lists any `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`, `bundleDependencies` or `bundledDependencies`, and passes on the skeleton (story 203).
 - [ ] The package declares the Node 22 floor; version is 0.1.0.
 
 
@@ -185,7 +185,8 @@ callback and promise forms the code path uses) failing with a configured errno c
 calls' order to a file. After patching, the preload calls `module.syncBuiltinESMExports()`
 so named ESM imports of `fs` and `os` see the faults. The test switches each behaviour on
 through environment variables the preload reads; the shipped CLI gains no switch. The
-stub that uses named ESM imports is a `.mjs` file, like the library it stands in for
+stub that uses named ESM imports is a `.mjs` file, like the library it stands in for; the
+stub entry point that drives it in the test tree is `.cjs`, like the real entry points
 (Architectural decisions "Module type fixed by extension").
 
 **Blocked by:** FND-05.
@@ -193,7 +194,7 @@ stub that uses named ESM imports is a `.mjs` file, like the library it stands in
 **Status:** ready-for-agent
 
 **Sources:** Q9, Seams "Fault-injection preload at Seam 1", Architectural decisions "Injected
-environment".
+environment", "Module type fixed by extension".
 
 - [ ] Driving a stub entry point in the test tree: with the `os.userInfo()` fault set, `os.userInfo()` throws; unset, it returns normally.
 - [ ] Driving the stub: with a named fs boundary set to a target basename, `fs.linkSync` and `fs.renameSync` (and the callback and promise forms the code path uses) fail only for a target path matching that basename; a call for any other path succeeds.

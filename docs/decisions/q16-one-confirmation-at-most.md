@@ -152,11 +152,13 @@
   `plan --hunks`; the caller's `run` command after a handback is one more. The guard never
   returns `allow` (Q3). Without allow rules each of them asks
   for approval (spike: in a headless run all were denied; in an interactive one the
-  background worker's prompts, for `node …commit.cjs` and for the `Write` of
+  background worker's prompts, for `node …commit.js` (stub named `commit.js`; same rule with
+  `commit.cjs`, Q15) and for the `Write` of
   `plan.groups.json`, surfaced in the main session and held the worker until answered). The
   README therefore makes two allow rules a
   **required** install step, not a convenience:
-  `Bash(node "<home>/.claude/plugins/cache/commit/commit/*/scripts/commit.cjs" *)` with the
+  `Bash(node "<home>/.claude/plugins/cache/commit/commit/*/scripts/commit.js" *)` (stub named
+  `commit.js`; same rule with `commit.cjs`, Q15) with the
   user's own absolute home (plus the matching `PowerShell(…)` rule), and
   `Edit(**/.commit-plan/**)` for the run folder (Q9). With both, a run needed no approval
   at all (spike, Windows, Bash tool: the quoted path, the `*` version segment and the

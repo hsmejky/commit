@@ -287,7 +287,8 @@
   - `--subject` / `--body` arguments: they bring back the shell-escaping problem.
   - The worker plan on `check`'s stdin (quoted heredoc in Bash, `$OutputEncoding = …;`
     plus a here-string in PowerShell): the PowerShell form is a compound command that no
-    `node *commit.cjs*` allow rule matches, so it prompted on every run, and Windows
+    `node *commit.js*` allow rule (stub named `commit.js`; same rule with `commit.cjs`,
+    Q15) matches, so it prompted on every run, and Windows
     PowerShell 5.1 without the prefix turned non-ASCII into `?` undetectably. The earlier
     objection to a file (temp file, cleanup) no longer holds: the run folder and its
     housekeeping exist anyway.
@@ -312,7 +313,8 @@
     A secret no longer sits in it: a unit with a pattern hit gets no body in `hunks.txt`
     (Q10), and the file it came from is in the working tree anyway.
   - The worker plan on `check`'s stdin through a Bash heredoc, to avoid the `Write`: the
-    anchored `Bash(node "…/commit.cjs" *)` allow rule does not match a heredoc command, so it
+    anchored `Bash(node "…/commit.js" *)` allow rule (stub named `commit.js`; same rule with
+    `commit.cjs`, Q15) does not match a heredoc command, so it
     prompted (spike), and the PowerShell objection below still holds.
   - A paged hunk output (`plan --hunks --page n`): pagination bookkeeping in the LLM, and
     every string still escaped. A stdout cap in characters instead of lines: about 400 diff

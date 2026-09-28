@@ -39,7 +39,8 @@
   slice.
 - The README allow rules (Q16): the commit-worker spike confirmed the cache layout
   `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and the quoted, anchored
-  `Bash(node "…/*/scripts/commit.cjs" *)` rule with a `*` version segment, plus
+  `Bash(node "…/*/scripts/commit.js" *)` rule (stub named `commit.js`; same rule with
+  `commit.cjs`, Q15) with a `*` version segment, plus
   `Edit(**/.commit-plan/**)`, on Windows with the Bash tool. Still open: the `PowerShell(…)`
   rule, and macOS and Linux. Also the worker's shell (Q24): on a Windows setup without Git
   Bash, a worker with `tools: Bash, PowerShell, Read, Write` runs a whole run through the
@@ -117,8 +118,9 @@
     foreground (`background: true` exists, `false` is undocumented).
   - Permissions: a `Write` under `.git` is a "sensitive file" and always asks; no allow
     rule lifts it → run folder moved to `<toplevel>/.commit-plan/` (Q9). A heredoc is not
-    matched by the `node` allow rule. With the anchored `Bash(node "…/*/scripts/commit.cjs"
-    *)` rule and `Edit(**/.commit-plan/**)`, a run asked nothing (Q16), headless and
+    matched by the `node` allow rule. With the anchored `Bash(node "…/*/scripts/commit.js"
+    *)` rule (stub named `commit.js`; same rule with `commit.cjs`, Q15) and
+    `Edit(**/.commit-plan/**)`, a run asked nothing (Q16), headless and
     interactive. Without them, a background worker's prompts surface in the interactive
     main session and hold the worker until answered (manual test A).
   - Handback, by hand in an interactive session (manual tests B and C): the main thread

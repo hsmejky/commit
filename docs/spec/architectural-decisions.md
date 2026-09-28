@@ -74,8 +74,11 @@
   module (`plugin/scripts/lib/*.mjs`). The entry points reach the library only through the
   dynamic `import()` above; no library module is `require`d. The extension settles the
   type without any `package.json`: the root one is likely not shipped with the plugin and
-  keeps no `"type"` field, so `tests/*.test.js` are CommonJS, and a test-tree file that uses
-  ES module syntax is named `.mjs`. A typeless `.js` with `export` throws `SyntaxError` on
+  keeps no `"type"` field. The test command runs only `tests/*.test.js`, which stay
+  CommonJS and load the library via `await import()`; CommonJS cannot `require` a `.mjs` on
+  Node 22.0-22.11 (unflagged `require(esm)` starts at 22.12). Only non-test helpers and
+  stubs in the test tree that use ES module syntax are named `.mjs`. A typeless `.js` with
+  `export` throws `SyntaxError` on
   Node 22.0.0 and prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call on
   Node 24.
 
