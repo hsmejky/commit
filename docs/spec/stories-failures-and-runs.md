@@ -59,7 +59,7 @@
 ## Install, README and opt-out
 
 198. As a developer, I want a per-repo opt-out via `enabledPlugins`, so that repos with other conventions are untouched. [Q14]
-199. As a developer, I want the README to require the anchored node allow rule for both shells and the run-folder `Edit` rule, and to explain why a bare `node *commit.js*` rule is unsafe, so that a run asks no permission and no lookalike script is allowed. [Q16]
+199. As a developer, I want the README to require the anchored node allow rule for both shells and the run-folder `Edit` rule, and to explain why a bare `node *commit.cjs*` rule is unsafe, so that a run asks no permission and no lookalike script is allowed. [Q16]
 200. As a developer, I want the README to require removing a personal commit skill, so that it does not capture "commit this" before the worker. [Q8]
 201. As a developer, I want the README to state the gaps it cannot close, as one list ([Out of Scope](out-of-scope.md), accepted gaps), so that I know the limits. [Q3, Q5, Q9, Q10, Q11, Q16, Q17, Q18, Q19, Q20, Q22, Q23]
 223. As a developer installing the plugin, I want the README to present its allow rules as a required install step and say what goes wrong without them (the worker's calls stall on permission prompts), so that I set them up before my first run. [Q16, Q24]

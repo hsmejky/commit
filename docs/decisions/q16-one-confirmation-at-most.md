@@ -152,18 +152,18 @@
   `plan --hunks`; the caller's `run` command after a handback is one more. The guard never
   returns `allow` (Q3). Without allow rules each of them asks
   for approval (spike: in a headless run all were denied; in an interactive one the
-  background worker's prompts, for `node …commit.js` and for the `Write` of
+  background worker's prompts, for `node …commit.cjs` and for the `Write` of
   `plan.groups.json`, surfaced in the main session and held the worker until answered). The
   README therefore makes two allow rules a
   **required** install step, not a convenience:
-  `Bash(node "<home>/.claude/plugins/cache/commit/commit/*/scripts/commit.js" *)` with the
+  `Bash(node "<home>/.claude/plugins/cache/commit/commit/*/scripts/commit.cjs" *)` with the
   user's own absolute home (plus the matching `PowerShell(…)` rule), and
   `Edit(**/.commit-plan/**)` for the run folder (Q9). With both, a run needed no approval
   at all (spike, Windows, Bash tool: the quoted path, the `*` version segment and the
   `<marketplace>/<plugin>/<version>` cache layout all matched). Each script call is a single
-  `node … commit.js …` command, so one rule per shell covers all of them (Q9). A bare
-  `node *commit.js*` would match **any** file named `commit.js`: an agent that writes
-  `./commit.js` and runs it would get arbitrary code run without a prompt. The anchored
+  `node … commit.cjs …` command, so one rule per shell covers all of them (Q9). A bare
+  `node *commit.cjs*` would match **any** file named `commit.cjs`: an agent that writes
+  `./commit.cjs` and runs it would get arbitrary code run without a prompt. The anchored
   path is outside the project, so writing there prompts. The README gives only the
   anchored rule and says why. `Edit(**/.commit-plan/**)` lets an agent write any file in a
   `.commit-plan` folder without a prompt; running one still needs a `Bash` approval, which

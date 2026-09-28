@@ -9,7 +9,8 @@ Q4, Q13, Q23, Q25, C:guard, stories 10-39, Modules S1-S2 and G1-G3.
 
 ## GRD-01: Guard tracer: early exit end to end
 
-**What to build:** the thin guard entry point and G1 `runHook`: stdin read to its end, and a
+**What to build:** the thin guard entry point (`plugin/scripts/guard.cjs`, CommonJS) and G1
+`runHook` (in the ES module library, `plugin/scripts/lib/*.mjs`): stdin read to its end, and a
 command that does not contain `commit` (after removing quotes, `\`, backticks and
 typographic quotes, case-insensitive) ends with no output and exit 0.
 
@@ -17,7 +18,7 @@ typographic quotes, case-insensitive) ends with no output and exit 0.
 
 **Status:** ready-for-agent
 
-**Sources:** Q3, Q13, Q1, C:guard (Output, Parsing step 1), stories 17, 22, Architectural decisions "Code split", "Entry points survive an old Node".
+**Sources:** Q3, Q13, Q1, C:guard (Output, Parsing step 1), stories 17, 22, Architectural decisions "Code split", "Entry points survive an old Node", "Module type fixed by extension".
 
 - [ ] Seam 2: `ls -la` as Bash and as PowerShell → empty stdout, exit 0, no heartbeat file.
 - [ ] Seam 2: a large stdin payload delivered in several chunks is read whole (no synchronous read of descriptor 0).
@@ -216,11 +217,11 @@ the fixed list) and S2 `build` emits the one quoted form the allow rules match.
 
 **Sources:** Q16, Q23, Q25, C:guard (Script call), stories 37, 38.
 
-- [ ] Seam 3 fixtures of C:guard's script-call list: quoted and unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path, `cd sub && node …`, a quoted backslash path in Bash → recognised with subcommand and args; `echo "node commit.js plan"` → not a call.
+- [ ] Seam 3 fixtures of C:guard's script-call list: quoted and unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path, `cd sub && node …`, a quoted backslash path in Bash → recognised with subcommand and args; `echo "node commit.cjs plan"` → not a call.
 - [ ] S2 `build` (declared at Seam 3) emits an absolute forward-slash path in double quotes for POSIX and Windows paths (with spaces and drive letters), and its output is recognised back with the same subcommand and args in both shells.
 - [ ] A caller's `plan`, `check`, `commit` and `release` script calls produce no guard output outside the worker (story 38).
 - [ ] Seam 3: an `infer` script call is recognised as a script call, like the other four subcommands.
-- [ ] Seam 3: `node commit.js foo` (an unrecognised subcommand) is not recognised as a script call.
+- [ ] Seam 3: `node commit.cjs foo` (an unrecognised subcommand) is not recognised as a script call.
 
 
 ## GRD-14: Worker-only rule
@@ -251,7 +252,7 @@ redacted.
 
 **Sources:** Q23, Q5, C:guard (Heartbeat), stories 21, 36, 37.
 
-- [ ] Seam 2: a `plan` script call in each shell and quoting form writes the file under the temp Claude home (`CLAUDE_CONFIG_DIR` honoured), with `ts` from `now`, the raw `cwd`, and `command` as `commit.js plan <flags>` without the path or other segments, cut to 200 characters.
+- [ ] Seam 2: a `plan` script call in each shell and quoting form writes the file under the temp Claude home (`CLAUDE_CONFIG_DIR` honoured), with `ts` from `now`, the raw `cwd`, and `command` as `commit.cjs plan <flags>` without the path or other segments, cut to 200 characters.
 - [ ] A denied compound command that also calls `plan` still writes the heartbeat; `check`, `commit` or a crash write none.
 - [ ] The write goes through a temporary name with pid and random part, renamed into place; no temporary file remains.
 - [ ] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).

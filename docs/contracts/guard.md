@@ -6,20 +6,20 @@
 
 **Script call:** a segment (parsing step 2) whose first command token, optionally after the
 `&` call operator, has the basename `node` or `node.exe`, whose next token has the basename
-`commit.js`, and whose token after that is the subcommand (`plan`, `check`, `commit`,
+`commit.cjs`, and whose token after that is the subcommand (`plan`, `check`, `commit`,
 `release`, `infer`). Basename: the part of a token after the last `/` or `\`, in both shells
-(a Bash `commit.js` invocation may still carry a Windows-style path, e.g. through a quoted
-`"C:\...\commit.js"` argument, Q3). Tokens are compared after the shell's quote removal, so the quoted form
-every handback and worker uses (`node "C:/…/commit.js" plan`, Q16) matches like the unquoted
-one. Substring matches on the raw command (`commit.js plan`) are not used: the quoted form
+(a Bash `commit.cjs` invocation may still carry a Windows-style path, e.g. through a quoted
+`"C:\...\commit.cjs"` argument, Q3). Tokens are compared after the shell's quote removal, so the quoted form
+every handback and worker uses (`node "C:/…/commit.cjs" plan`, Q16) matches like the unquoted
+one. Substring matches on the raw command (`commit.cjs plan`) are not used: the quoted form
 never contains them. The quoted path is never escaped: the commit entry point refuses with
 exit 1 `env` an install path that contains `$`, a backtick, `"`, `\`, or U+201C–U+201E
 ([CLI](cli-and-exit-codes.md)), so no shell can expand or mangle it. The check runs on the
 path after Windows separators are converted to `/` (the form the quoted call uses), so a
 native Windows path is not refused; the `"` and `\` fixtures are POSIX only. Fixtures: quoted and
 unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path,
-`cd sub && node …`, `echo "node commit.js plan"` (not a script call), and a quoted backslash
-path in Bash (e.g. `node "C:\Program Files\...\commit.js" plan`, matching by basename on `\`).
+`cd sub && node …`, `echo "node commit.cjs plan"` (not a script call), and a quoted backslash
+path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by basename on `\`).
 
 **Output:** exit 0 always.
 
@@ -37,7 +37,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.js" plan`, matching by bas
   `<Claude home>/commit-guard/heartbeat.json` (the Claude home is `CLAUDE_CONFIG_DIR` when
   set, else `<os.homedir()>/.claude`; guard and `plan` resolve it the same way) =
   `{ "ts": <ms>, "cwd": "<raw cwd>", "command": "<redacted>" }` before deciding (Q23).
-  `command` is redacted: only the script-call form, `commit.js <subcommand> <flags>`
+  `command` is redacted: only the script-call form, `commit.cjs <subcommand> <flags>`
   without the script path and any other segment of the command, cut to 200 characters,
   so arguments a caller passed on the command line do not persist. The file is written
   to a temporary name in the same directory, carrying the pid and a random part so two

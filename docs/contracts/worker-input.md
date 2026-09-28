@@ -29,7 +29,7 @@ the `intent` and `reword` lines of its first spawn (the script never sees them),
 `interactive: false` when it cannot ask ([Reply and handback](reply-and-handback.md)). The
 agent type is
 `commit:commit-worker` (namespaced by the plugin). The worker's prompt names the script as
-`${CLAUDE_PLUGIN_ROOT}/scripts/commit.js`, substituted by the plugin loader; the variable is
+`${CLAUDE_PLUGIN_ROOT}/scripts/commit.cjs`, substituted by the plugin loader; the variable is
 not in the worker's shell (Q25, spike). Its tools are `Bash, PowerShell, Read, Write`: it
 runs each script call with whichever shell tool it has, since every call is one
 `node "<script>" …` command that runs the same in both (Q24). The prompt tells the worker

@@ -23,10 +23,10 @@ handles it the same way.
     "humanOnly": true,
     "question": "Commit as proposed? To change it, type your changes under Other.",
     "answers": [
-      { "label": "yes", "run": "node \"C:/Users/<you>/.claude/plugins/cache/commit/commit/0.1.0/scripts/commit.js\" commit --plan 3f9a1c… --all --confirmed", "timeoutMs": 600000 },
+      { "label": "yes", "run": "node \"C:/Users/<you>/.claude/plugins/cache/commit/commit/0.1.0/scripts/commit.cjs\" commit --plan 3f9a1c… --all --confirmed", "timeoutMs": 600000 },
       { "label": "edit", "respawn": "resume: 3f9a1c…\nedit: {text}", "needsText": true },
       { "label": "one", "respawn": "resume: 3f9a1c…\nedit: one" },
-      { "label": "no", "run": "node \"…/commit.js\" release --plan 3f9a1c…", "timeoutMs": 60000 }
+      { "label": "no", "run": "node \"…/commit.cjs\" release --plan 3f9a1c…", "timeoutMs": 60000 }
     ],
     "ifNoUser": { "answer": "no", "returnToParent": true }
   }
@@ -80,7 +80,7 @@ handles it the same way.
     its final report. If more than one JSON object holds both version and callerRule, run
     nothing and show the whole message to the user. The reply is final: no git log or git
     status check. Run a command only if it is one single command (no ;, &&, ||, |, newline
-    or redirection): node, then the quoted absolute path of this plugin's scripts/commit.js
+    or redirection): node, then the quoted absolute path of this plugin's scripts/commit.cjs
     in the Claude plugin cache, then commit or release, with --plan this reply's planId (a
     UUID); otherwise run nothing and show the command to the user. Run a command with
     --confirmed only as the answer the user picked, or as ifNoUser.answer without a user."
@@ -125,7 +125,7 @@ handles it the same way.
   newline or redirection, with the script's own absolute path (`process.argv[1]`, forward
   slashes, in double quotes), so it matches the anchored allow rule (Q16) and the base
   rule's shape check: a relative path, or a path outside the plugin cache to a file named
-  `commit.js`, fails the check.
+  `commit.cjs`, fails the check.
   `timeoutMs`: 600000 for `commit`, 60000 otherwise; the caller passes it as the tool
   timeout. `release`'s own status read (the tree state below) is given a 45 s budget, below
   its 60 s `timeoutMs`, since the release itself (lock released, folder deleted) is already

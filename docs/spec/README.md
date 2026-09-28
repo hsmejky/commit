@@ -20,7 +20,7 @@ Citations: `Qn` is a decision, file `qNN-*.md` in [decisions](../decisions/READM
 - Implementation Decisions
   - [Glossary](glossary.md): Defines terms used throughout the spec: run, episode, worker, intent, unit, mode, reply, handback, and more.
   - [Constraints](constraints.md): Hard limits: no npm dependencies, which external processes are spawned, and the guard's behavior on every shell call.
-  - [Architectural decisions](architectural-decisions.md): Cross-cutting design: module layering, typed results, injected environment, async processes, run ownership and locking.
+  - [Architectural decisions](architectural-decisions.md): Cross-cutting design: module layering, module types by extension, typed results, injected environment, async processes, run ownership and locking.
   - [Domain code → CLI kind (owned by M18)](domain-code-cli-kind.md): Table mapping each domain failure code to its CLI kind and exit code, plus post-`acquire` cleanup and takeover logic.
   - [Modules](modules.md): Dependency table for all modules (M1-M19, S1-S2, G1-G3) and the rules governing the module graph.
   - [Modules M1-M9](modules-m1-m9.md): M1 CLI, M2 process adapter, M3 repo probe, M4 config loader, M5 attribution, M6 message grammar, M7 glob matcher, M8 scanner, M9 path classifier.

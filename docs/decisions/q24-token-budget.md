@@ -219,7 +219,7 @@
     and on a machine with a personal commit skill it resolves to that skill (Q8).
   - Every answer respawning the worker: `yes` would pay an agent prefix to run one command.
   - The worker composing the answer commands: a script-built command cannot drift, and it
-    stays a single `node … commit.js …` call for the allow rule (Q16).
+    stays a single `node … commit.cjs …` call for the allow rule (Q16).
   - Skipping the diff for a known single slice (`"source": "caller"`): after the worker
     move it costs more main-thread calls (`plan`, `Write`, `check`, reply) than the
     worker saves, and it broke the single-author rule. A proposed header in `intent` with

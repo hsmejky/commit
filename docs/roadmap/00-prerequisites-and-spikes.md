@@ -77,7 +77,7 @@ the quoted script-call forms the heartbeat needs.
 
 Gates: GRD-18 (whether hook registration carries an `if` condition).
 
-- [ ] With `Bash(git *)`, `PowerShell(git *)`, `Bash(node *commit.js*)` and `PowerShell(node *commit.js*)` as conditions, the probe logs whether the hook fired for `cd x && git commit`, `& git commit`, `a; git commit`, `a | git commit`, a newline-separated command, `cd sub && node "<path>/commit.js" plan` and the quoted script-call form, in both shells.
+- [ ] With `Bash(git *)`, `PowerShell(git *)`, `Bash(node *commit.cjs*)` and `PowerShell(node *commit.cjs*)` as conditions, the probe logs whether the hook fired for `cd x && git commit`, `& git commit`, `a; git commit`, `a | git commit`, a newline-separated command, `cd sub && node "<path>/commit.cjs" plan` and the quoted script-call form, in both shells.
 - [ ] The verdict picks one of Q13's two variants and is recorded as a Q13 amendment and in the hook-registration block; G1's early exit stays either way.
 
 

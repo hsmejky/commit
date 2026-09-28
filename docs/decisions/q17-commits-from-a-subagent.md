@@ -67,7 +67,7 @@
     probabilistic and double the test paths.
   - A plan file handed from the subagent to the main thread (`/commit --plan <file>`): more
     surface for a rare path; re-planning is cheap.
-  - The guard rewriting `commit.js plan` via `updatedInput` to inject the caller kind from
+  - The guard rewriting `commit.cjs plan` via `updatedInput` to inject the caller kind from
     `agent_id`: deterministic, but makes the hook mutate commands for low stakes, since a
     pattern hit is blocked by the backstop in every context (Q10).
   - A plain-text question as fallback when `AskUserQuestion` is missing: the caller cannot

@@ -30,6 +30,14 @@
   from Node 22.20.0; the npm alternatives `@conventional-commits/parser` (unreleased since
   2021) and `proper-lockfile` (no release since 2021) are stale; `shell-quote` carries
   advisory GHSA-w7jw-789q-3m8p.
+- **Amended.** By the FND-01 review (2026-09-29): the module type is fixed by the file
+  extension, never by a `package.json`. The entry points are CommonJS, `commit.cjs` and
+  `guard.cjs`; the shared library is ES modules, `lib/*.mjs`; the entry points reach it only
+  through the dynamic `import()` above, after the version check (layout in Q15). On Node
+  22.0.0 a `.js` file with `export` and no `"type"` in reach throws `SyntaxError`; on Node 24
+  it loads but prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call; and the
+  root `package.json` is likely not shipped with the plugin, so it cannot settle the type.
+  It keeps no `"type"` field, and the tests stay CommonJS `.js`.
 - **Rejected.** A prompt-only skill with no tests beyond the manifest. A guard written in pure
   shell to survive a missing Node (needs sh and PowerShell twins, doubling the test surface).
 - **Consequences.** The scan is testable and repeatable; Claude reads a compact report instead

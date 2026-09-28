@@ -10,10 +10,12 @@
   .claude/commit.json                 repo config; scanIgnore: tests/fixtures/**
   .github/workflows/test.yml          ubuntu + windows + macos × Node 22/24, + git 2.34 container job
   plugin/.claude-plugin/plugin.json
-  plugin/scripts/commit.js            commit entry point: thin, subcommands for worker and skills
-  plugin/scripts/guard.js             guard entry point: thin, the PreToolUse hook
-  plugin/scripts/lib/                 shared module library; the guard loads only its modules
-                                      plus heartbeat and script call
+  plugin/scripts/commit.cjs           commit entry point (CommonJS): thin, subcommands for worker
+                                      and skills
+  plugin/scripts/guard.cjs            guard entry point (CommonJS): thin, the PreToolUse hook
+  plugin/scripts/lib/*.mjs            shared module library (ES modules), reached from the entry
+                                      points only by dynamic import(); the guard loads only its
+                                      modules plus heartbeat and script call
   plugin/hooks/hooks.json
   plugin/agents/commit-worker.md       the run (Q24, Q25)
   plugin/skills/commit/SKILL.md       /commit: spawn only
@@ -21,6 +23,7 @@
   docs/contracts/, decisions/, spec/  one file per topic, README.md index in each
   tools/                              episode analysis (Q24), not packaged
   tests/*.test.js, tests/fixtures/
+  package.json                        no dependencies, no "type" field; not in plugin/
   LICENSE (MIT), README.md
   ```
 
@@ -68,6 +71,20 @@
   literally, which the test itself flags on ubuntu and macos; it now writes the runner's
   name as a placeholder. A self-test runs the segment check over the repo's tracked files with
   the user name set to `runner` and to `root`, so such a literal fails locally too.
+- **Amended.** By the FND-01 review (2026-09-29): the file extension fixes each file's
+  module type, independent of any `package.json`. The shared library is ES modules named
+  `plugin/scripts/lib/*.mjs`; the entry points are CommonJS, `plugin/scripts/commit.cjs` and
+  `plugin/scripts/guard.cjs`, and reach the library only through a dynamic `import()`
+  (Q1). The root `package.json` keeps no `"type"` field, so `tests/*.test.js` stay
+  CommonJS; test-tree files that use ES module syntax (a stub with named ESM imports) are
+  named `.mjs` by the same rule. Every doc reference to the entry points, the allow rules,
+  the hook `if` condition (Q13) and the script-call basename (C:guard, Q23) now names
+  `commit.cjs` / `guard.cjs`; the spike records that used a stub `commit.js` are renamed
+  too, since the extension does not change how those rules match. Why: on Node 22.0.0 a
+  `.js` file with `export` under a `package.json` without `"type"` throws `SyntaxError`; on
+  Node 24 it loads but prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call;
+  and the root `package.json` lies outside `plugin/`, so it is likely not shipped with the
+  plugin and cannot settle the type.
 - **Rejected.**
   - Node 18 or 20 as the minimum: both are end-of-life, and Claude Code's npm install
     already requires Node 22.
@@ -78,5 +95,8 @@
     privacy guard, and each round's quotes of old bugs would need rewriting.
   - Moving the reports out of the working tree: the next round writes into `docs/` again.
     A `.gitignore` entry: it would publish a rule about files nobody else has.
+  - `.js` for the library and entry points, typed by a `package.json` `"type"` field: the
+    root one is likely not shipped with the plugin, and a typeless `.js` with `export`
+    fails on Node 22.0.0 and warns on stderr on Node 24 (FND-01 review).
 - **Consequences.** The plugin applies its own rules to itself. macOS in CI covers the
   case-insensitive filesystem against case-sensitive glob matching (Q10).

@@ -13,7 +13,9 @@ policy, What makes a good test, Seams, Modules and how ("Other checks", CI).
 scoped to `tests/*.test.js` as the test command) and the MIT licence, with one real test:
 the static check that the package lists no dependencies. Git cannot track empty
 directories, so the Q15 layout directories are created by later slices as they add files
-to them, not here as placeholders.
+to them, not here as placeholders. The manifest has no `"type"` field: tests stay
+CommonJS `.js`, and the plugin's files take their module type from the extension (entry
+points `.cjs`, library `.mjs`; Q1, Q15 as amended by this slice's review).
 
 **Blocked by:** None (can start immediately).
 
@@ -182,7 +184,9 @@ callback and promise forms the code path uses) failing with a configured errno c
 (default `EIO`) for a target path matching a given basename, and an optional log of those
 calls' order to a file. After patching, the preload calls `module.syncBuiltinESMExports()`
 so named ESM imports of `fs` and `os` see the faults. The test switches each behaviour on
-through environment variables the preload reads; the shipped CLI gains no switch.
+through environment variables the preload reads; the shipped CLI gains no switch. The
+stub that uses named ESM imports is a `.mjs` file, like the library it stands in for
+(Architectural decisions "Module type fixed by extension").
 
 **Blocked by:** FND-05.
 

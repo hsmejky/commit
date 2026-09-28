@@ -5,7 +5,7 @@
 - **Decision.**
   - `plan` itself runs through the Bash or PowerShell tool, so the guard's `PreToolUse` fires
     for it. When a segment of the tokenised command is a script call to `plan` (`node` or
-    `node.exe`, then a token whose basename is `commit.js`, then `plan`, after quote
+    `node.exe`, then a token whose basename is `commit.cjs`, then `plan`, after quote
     removal; [contracts](../contracts/guard.md)), the guard writes
     `commit-guard/heartbeat.json` under the Claude home (`CLAUDE_CONFIG_DIR` when set, else
     `~/.claude` from `os.homedir()`; Q5) = `{ ts, cwd, command }`. `command` is stored
@@ -23,7 +23,7 @@
     `env.guard: "active"`, otherwise `"not-seen"`. Matching: both paths are normalised
     (realpath, `\` → `/`, case-folded on Windows and macOS), and the hook's `cwd` must be
     inside `plan`'s git toplevel, or the toplevel inside the hook's `cwd`. This covers
-    `cd sub && node …/commit.js plan` and `cd repo && …` from a parent directory without a
+    `cd sub && node …/commit.cjs plan` and `cd repo && …` from a parent directory without a
     git call in the hook.
   - On `not-seen` the reply's `notices` tell the user "Guard hook did not run: `node`
     missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct
@@ -39,15 +39,15 @@
     visible to the script; the heartbeat measures what actually happened.
   - Comparing raw `cwd` strings: `cd sub && …` and Windows path case and slashes make them
     differ although the guard ran.
-  - Matching the substring `commit.js plan` on the raw command (the design before the
+  - Matching the substring `commit.cjs plan` on the raw command (the design before the
     ninth review): every script call is quoted for the anchored allow rule (Q16), so the
-    raw text holds `commit.js" plan` and never matched. Every run would have carried a
+    raw text holds `commit.cjs" plan` and never matched. Every run would have carried a
     false "Guard hook did not run", and Q25's worker-only deny would never have fired.
   - A 10-second window: `PreToolUse` runs **before** the permission prompt, so without the
     README's allow rule a user who takes more than 10 seconds to approve `plan` gets a false
     "guard did not run", on the first run in every new setup, which is when the user decides
     whether to trust the warning. The guard's state rarely changes within a session.
-- **Consequences.** Needs the `node *commit.js*` entries in the hook `if` condition (Q13).
+- **Consequences.** Needs the `node *commit.cjs*` entries in the hook `if` condition (Q13).
   Accepted gaps: a session without the guard that runs `plan` in the same repo within 15
   minutes of one with it sees the other's heartbeat and reports `active` (same machine, same
   repo, different hook settings: rare). A guard disabled mid-session is noticed only after

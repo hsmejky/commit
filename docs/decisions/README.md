@@ -9,7 +9,7 @@ classification tables live in [contracts](../contracts/README.md).
 
 ## Contents
 
-- [Q1 Skill plus a deterministic script](q01-skill-plus-a-deterministic-script.md): Two Node entry points (commit script and guard) share one module library and do deterministic work; no npm dependencies, Node 22+ required.
+- [Q1 Skill plus a deterministic script](q01-skill-plus-a-deterministic-script.md): Two CommonJS Node entry points (commit script and guard, `.cjs`) share one ES module library (`.mjs`) and do deterministic work; no npm dependencies, Node 22+ required.
 - [Q2 Model invocation on the worker agent](q02-model-invocation-on-the-worker-agent.md): The worker agent's auto-invocation description carries the trust clause, triggers and the `intent` field; revised by Q24's single-worker design.
 - [Q3 Guard hook against direct git commit](q03-guard-hook-against-direct-git-commit.md): A PreToolUse hook tokenizes shell commands and denies direct `git commit`, steering the agent to the worker; it steers, not a security boundary.
 - [Q4 Hook allowlist, no env switch](q04-hook-allowlist-no-env-switch.md): A strict allowlist permits only `--no-edit` and plain `--fixup=<commit>` forms of `git commit`; every other form, including bare `-m`, is denied.
@@ -23,7 +23,7 @@ classification tables live in [contracts](../contracts/README.md).
 - [Q12 Planner subagent and model](q12-planner-subagent-and-model.md): Superseded in part by Q24: the original `commit-planner` subagent design is replaced by one `commit-worker` agent that runs the whole run itself.
 - [Q13 Hook performance and trailers](q13-hook-performance-and-trailers.md): The guard's hook `if` condition is used only if it reliably matches compound commands; footers are parsed and appended by a hand-written grammar.
 - [Q14 Per-repo opt-out](q14-per-repo-opt-out.md): Per-repo opt-out uses Claude Code's built-in `enabledPlugins` setting to disable the whole plugin; no plugin-specific opt-out code.
-- [Q15 Repository layout](q15-repository-layout.md): Fixes the repository layout: thin entry points over a shared module library, docs split per topic, and a CI matrix with a minimum-git container job.
+- [Q15 Repository layout](q15-repository-layout.md): Fixes the repository layout: thin `.cjs` entry points over a shared `.mjs` module library, docs split per topic, and a CI matrix with a minimum-git container job.
 - [Q16 One confirmation at most](q16-one-confirmation-at-most.md): At most one confirmation per run, computed deterministically by `check` from fixed triggers (multiple groups, new files, `humanOnly` items).
 - [Q17 Commits from a subagent](q17-commits-from-a-subagent.md): Revised by Q24 and Q25: a caller without `AskUserQuestion` self-confirms plain questions (`interactive: false`) or follows the handback's `ifNoUser`.
 - [Q18 Failures, repo hooks and signing](q18-failures-repo-hooks-and-signing.md): `check` lints every group before the first commit; `commit` stops at the first failing group, verifies each staged diff, and never disables signing.

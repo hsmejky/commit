@@ -69,6 +69,15 @@
 - **Entry points survive an old Node.** Both entry points are written in syntax every Node
   since 12 parses, check `process.versions.node` first (commit entry point: the `env` JSON
   refusal; guard: silent exit), and only then load the library with a dynamic `import()`.
+- **Module type fixed by extension** (Q1, Q15 as amended). The entry points are CommonJS
+  (`plugin/scripts/commit.cjs`, `plugin/scripts/guard.cjs`); every library module is an ES
+  module (`plugin/scripts/lib/*.mjs`). The entry points reach the library only through the
+  dynamic `import()` above; no library module is `require`d. The extension settles the
+  type without any `package.json`: the root one is likely not shipped with the plugin and
+  keeps no `"type"` field, so `tests/*.test.js` are CommonJS, and a test-tree file that uses
+  ES module syntax is named `.mjs`. A typeless `.js` with `export` throws `SyntaxError` on
+  Node 22.0.0 and prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call on
+  Node 24.
 
 | Fact | Produced by (at `plan`) | Read by |
 | --- | --- | --- |

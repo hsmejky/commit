@@ -5,7 +5,7 @@
   message through the agent.
 - **Decision.**
   - Use a hook `if` condition (`Bash(git *)`, `PowerShell(git *)`, plus `Bash(node
-    *commit.js*)` and `PowerShell(node *commit.js*)` for the heartbeat, Q23; these only decide
+    *commit.cjs*)` and `PowerShell(node *commit.cjs*)` for the heartbeat, Q23; these only decide
     when the hook runs and grant nothing, unlike the anchored allow rules, Q16) if it reliably
     catches compound commands; otherwise match without `if` and exit early in the script when
     the command does not contain `commit`. Reliable detection beats saved milliseconds.

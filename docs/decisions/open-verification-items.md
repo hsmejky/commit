@@ -4,7 +4,7 @@
   (`cd x && git commit`, `& git commit`). The docs say compound commands are split on `&&`,
   `||`, `;`, `|`, `&` and newlines, but not how `if` combines the parts. Decides between Q13's
   two variants. Planned as a spike before the guard slice, together with the `node
-  *commit.js*` entries for the heartbeat (Q23).
+  *commit.cjs*` entries for the heartbeat (Q23).
 - The guard's cold-start time (Q13, story 22): measure the exec-form hook's cold start on
   all three OSes and set the target before the guard slice claims it.
 - The `openpgp` signing probe (Q18): **deferred past 0.1.0** with the pinentry
@@ -39,7 +39,7 @@
   slice.
 - The README allow rules (Q16): the commit-worker spike confirmed the cache layout
   `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and the quoted, anchored
-  `Bash(node "…/*/scripts/commit.js" *)` rule with a `*` version segment, plus
+  `Bash(node "…/*/scripts/commit.cjs" *)` rule with a `*` version segment, plus
   `Edit(**/.commit-plan/**)`, on Windows with the Bash tool. Still open: the `PowerShell(…)`
   rule, and macOS and Linux. Also the worker's shell (Q24): on a Windows setup without Git
   Bash, a worker with `tools: Bash, PowerShell, Read, Write` runs a whole run through the
@@ -117,7 +117,7 @@
     foreground (`background: true` exists, `false` is undocumented).
   - Permissions: a `Write` under `.git` is a "sensitive file" and always asks; no allow
     rule lifts it → run folder moved to `<toplevel>/.commit-plan/` (Q9). A heredoc is not
-    matched by the `node` allow rule. With the anchored `Bash(node "…/*/scripts/commit.js"
+    matched by the `node` allow rule. With the anchored `Bash(node "…/*/scripts/commit.cjs"
     *)` rule and `Edit(**/.commit-plan/**)`, a run asked nothing (Q16), headless and
     interactive. Without them, a background worker's prompts surface in the interactive
     main session and hold the worker until answered (manual test A).

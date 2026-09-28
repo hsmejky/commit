@@ -10,7 +10,8 @@ the envelope path and the base `callerRule`; RPL-04 adds the `failed` variant.
 
 ## RPL-01: Commit entry point and envelope tracer
 
-**What to build:** the commit entry point checks the Node version first (syntax any Node
+**What to build:** the commit entry point (`plugin/scripts/commit.cjs`, CommonJS; M1 and
+the modules below it are `plugin/scripts/lib/*.mjs`) checks the Node version first (syntax any Node
 since 12 parses), resolves the injected environment once, loads the library, and M1
 `main(argv, env)` prints exactly one JSON object with `version: 1` and the exit code; a call
 with no or an unknown subcommand is a `usage` refusal.
@@ -20,7 +21,7 @@ with no or an unknown subcommand is a `usage` refusal.
 **Status:** ready-for-agent
 
 **Sources:** M1, architectural decisions "Entry points survive an old Node" and "Injected
-environment", C:cli-and-exit-codes, Q1, Q9.
+environment", "Module type fixed by extension", C:cli-and-exit-codes, Q1, Q9.
 
 - [ ] Seam 1: no subcommand and an unknown subcommand → exit 1, one JSON object
       `{ version: 1, ok: false, error: { kind: "usage", … } }`, nothing else on stdout

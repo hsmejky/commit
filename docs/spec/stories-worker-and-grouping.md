@@ -26,7 +26,7 @@
 
 ## Caller trust
 
-61. As a developer, I want a caller to run a handback command only when it is a single command (no `;`, `&&`, `|` or other segment) calling this plugin's installed `commit.js` by its plugin-cache path with `commit` or `release` for the reply's `planId`, and to refuse and show anything else, so that a prompt injection in my diff cannot get an arbitrary command run. [Q25, C:reply-and-handback]
+61. As a developer, I want a caller to run a handback command only when it is a single command (no `;`, `&&`, `|` or other segment) calling this plugin's installed `commit.cjs` by its plugin-cache path with `commit` or `release` for the reply's `planId`, and to refuse and show anything else, so that a prompt injection in my diff cannot get an arbitrary command run. [Q25, C:reply-and-handback]
 62. As the Claude main session, I want to recognise the reply by its `version` and `callerRule` keys, not by its position in the worker's message, and to run nothing when more than one object carries both keys, so that a leading sentence holding JSON cannot pose as the reply. [Q25]
 218. As a developer, I want control characters in paths escaped in the reply, so that a crafted file name cannot forge reply text or terminal output. [C:reply-and-handback]
 

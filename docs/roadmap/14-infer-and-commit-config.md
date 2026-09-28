@@ -8,7 +8,7 @@ M18 `infer`, Q6, Q7, Q14, C:infer, prompt-only blocks (`/commit-config`), storie
 
 ## INF-01: `infer` with too few commits (tracer)
 
-**What to build:** `commit.js infer` end to end: M3 reads the last 200 non-merge messages,
+**What to build:** `commit.cjs infer` end to end: M3 reads the last 200 non-merge messages,
 M19 counts them, and under 20 the output is `outcome: too-few-commits` with `commitCount`,
 `ccShare`, `nonConventional`, `proposal: null`, `wouldFail: null`, `configJson: null`.
 Read-only, no lock, no run folder.

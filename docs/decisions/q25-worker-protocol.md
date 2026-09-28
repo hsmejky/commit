@@ -49,7 +49,7 @@
     return a plain `commit --all` that skips the question. This is advisory in interactive
     mode (Q16, Q17): nothing enforces that the user, not the model, picks `yes`.
   - **Self-describing handback.** Each handback carries `question`, `answers` (each a `run`,
-    one `node … commit.js …` command with `timeoutMs`, or a `respawn`, a complete worker
+    one `node … commit.cjs …` command with `timeoutMs`, or a `respawn`, a complete worker
     input), `ifNoUser` (the answer to take without a user, and whether to return `text` to
     the parent), and the reply's `callerRule` gains the handback rule, the whole protocol
     in about 650 characters ([contracts](../contracts/reply-and-handback.md)). The rule
@@ -140,7 +140,7 @@
     this shape is part of the hand-tests (open verification items).
   - **Script path.** An agent file gets no base directory, and on the model-invoked path no
     caller knows the path either. The agent body names the script as
-    `${CLAUDE_PLUGIN_ROOT}/scripts/commit.js`, which the plugin loader substitutes (docs and
+    `${CLAUDE_PLUGIN_ROOT}/scripts/commit.cjs`, which the plugin loader substitutes (docs and
     spike); `/commit`'s SKILL.md does the same. The variable is **not** in the worker's shell
     environment (spike), so no command relies on it. A handback's `run` carries the script's
     own absolute path (`process.argv[1]`), so the caller needs none.

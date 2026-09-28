@@ -23,8 +23,8 @@
   changed and why). The intent is `null` when the caller does not know it (`/commit` in a
   fresh session); the planner then infers it from the diff alone.
   - Script path: an agent file, unlike a skill, gets no base directory, so the caller passes
-    `script`, the absolute path of `commit.js` from the skill's base directory, with forward
-    slashes (`C:/Users/<you>/…/commit.js`), which Node, Git Bash and PowerShell all accept. If
+    `script`, the absolute path of `commit.cjs` from the skill's base directory, with forward
+    slashes (`C:/Users/<you>/…/commit.cjs`), which Node, Git Bash and PowerShell all accept. If
     `${CLAUDE_PLUGIN_ROOT}` turns out to expand in an agent file, it replaces `script`
     (open verification item).
   - The planner runs `plan --hunks --plan <planId>`, which prints the absolute `runDir` and

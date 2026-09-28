@@ -49,7 +49,7 @@ verification (install, README and opt-out), stories 197, 199, 200, 202, 203, 223
 - [ ] The minimum Claude Code version PRE-06 found (recorded in Q3/Q13) is stated in the
       requirements
 - [ ] Allow rules as a required step: the anchored node rule for both shells and the
-      run-folder `Edit` rule; why a bare `node *commit.js*` rule is unsafe; that without
+      run-folder `Edit` rule; why a bare `node *commit.cjs*` rule is unsafe; that without
       them the worker's calls stall on permission prompts (stories 199, 223)
 - [ ] A round-trip test: each documented node rule matches S2 `build`'s output for every
       subcommand, and a lookalike script path does not match
@@ -101,8 +101,8 @@ blocks "README", Q1, Q3, Q5, Q6, Q7, Q9, Q15, Q22, Q24, Q25.
 - [ ] A short opening states the problem (agent-run `git commit` groups badly, leaks
       secrets and local paths, drifts from the repo's style, fails unexplained) and the
       solution, consistent with Problem Statement and Solution
-- [ ] One component table: `/commit` skill, `commit:commit-worker` agent, `commit.js`,
-      the `lib/` module library, the guard hook (`guard.js`), `/commit-config`, the
+- [ ] One component table: `/commit` skill, `commit:commit-worker` agent, `commit.cjs`,
+      the `lib/` module library, the guard hook (`guard.cjs`), `/commit-config`, the
       `commit.json` user and repo layers and the `.commit-plan/` run folder; each row
       gives the role, what fails without the component and the deciding Q (for example:
       without the guard an agent bypasses the plugin with a direct `git commit`, Q3)

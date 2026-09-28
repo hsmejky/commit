@@ -1,15 +1,15 @@
 # CLI and exit codes
 
 ```
-commit.js plan    [--reword [--dictated] | --staged | --split] [--take-over <planId>] [--no-user]
-                                                  mints planId and unit IDs, takes the run lock
-commit.js plan    --hunks --plan <planId>         resets the lint counter; as a separate call (not
-                                                  the in-process run inside plan) marks the run resumed
-commit.js check   --plan <planId>                 validates; commits when confirm is null
-commit.js commit  --plan <planId> --all [--confirmed]
-                                                  commits the remaining groups in order
-commit.js release --plan <planId>
-commit.js infer
+commit.cjs plan    [--reword [--dictated] | --staged | --split] [--take-over <planId>] [--no-user]
+                                                   mints planId and unit IDs, takes the run lock
+commit.cjs plan    --hunks --plan <planId>         resets the lint counter; as a separate call (not
+                                                   the in-process run inside plan) marks the run resumed
+commit.cjs check   --plan <planId>                 validates; commits when confirm is null
+commit.cjs commit  --plan <planId> --all [--confirmed]
+                                                   commits the remaining groups in order
+commit.cjs release --plan <planId>
+commit.cjs infer
 ```
 
 `plan`, `plan --hunks` and `check` are run by the worker (Q24, Q25). A `commit --all` or

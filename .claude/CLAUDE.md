@@ -23,8 +23,10 @@ README, manifests.
 
 ## Layout (Q15)
 
-- `plugin/scripts/commit.js` and `plugin/scripts/guard.js` are thin entry points over the
-  shared module library `plugin/scripts/lib/`; neither holds domain logic. Do not duplicate
+- `plugin/scripts/commit.cjs` and `plugin/scripts/guard.cjs` are thin CommonJS entry points
+  over the shared ES module library `plugin/scripts/lib/*.mjs`, reached only by dynamic
+  `import()`; the extension fixes the module type, the root `package.json` has no `"type"`
+  (Q1, Q15). Neither entry point holds domain logic. Do not duplicate
   library logic elsewhere. The guard loads only its own modules plus heartbeat and script
   call (`docs/spec/architectural-decisions.md`).
 - `plugin/hooks/hooks.json`: registers the guard hook.
