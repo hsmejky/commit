@@ -60,9 +60,11 @@ and ranges (`types`: non-empty array of `^[a-z][a-z0-9-]*$`; `scope`: `forbidden
 | required`; `body`: `forbidden | optional`; `maxSubjectLength`: integer 20-200; `subjectCase`:
 `lower | any`; `scanIgnore`: array of path globs, repo only, Q6); per-key override; warnings
 (unknown key or value, wrong layer) versus errors;
-defaults; `sources` per key. Every `scanIgnore` pattern is compiled by M7 `compileGlob`,
-whose `config` errors (including a pattern with no literal character) M4 reports as layer
-errors. Returns compiled `scanIgnore` matchers (via M7) and exports
+defaults; `sources` per key. Every `scanIgnore` pattern is compiled by M7 `compileGlob`
+inside `validateLayer` itself (not only via `loadConfig`), whose `config` errors (including a
+pattern with no literal character) M4 reports as layer errors, so a caller that validates a
+layer's text directly (M19 `configFor`) also catches a bad glob. Returns compiled
+`scanIgnore` matchers (via M7) and exports
 `isRepoConfigPath(path)`, so M8 compiles nothing and knows no config file names. It also
 owns the `scanIgnore` change test, pure so that no other module parses the config: pure
 `scanIgnoreChanged(headPatterns, snapshotBlob) → boolean` compares the `scanIgnore` patterns

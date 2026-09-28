@@ -17,7 +17,7 @@ clause first; CI holds the frontmatter values and the 200-character budget.
 
 **Status:** ready-for-agent
 
-**Sources:** Q2, Q24, Q25, Prompt-only and manifest blocks "commit-worker agent", public
+**Sources:** Q2, Q12, Q24, Q25, Prompt-only and manifest blocks "commit-worker agent", public
 surface (agent name), stories 6, 42, 228.
 
 - [ ] A static test reads the agent frontmatter: `model: sonnet`, `omitClaudeMd: true`,
@@ -42,7 +42,7 @@ the reply returned verbatim; on `resume` it starts at `plan --hunks --plan <plan
 
 **Status:** ready-for-agent
 
-**Sources:** C:worker-input (steps, fields, tool timeout), C:worker-plan, Q9, Q11, Q24,
+**Sources:** C:worker-input (steps, fields, tool timeout), C:worker-plan, Q9, Q11, Q12, Q24,
 Q25, Prompt-only and manifest blocks, stories 41, 43, 44, 58, 226.
 
 - [ ] The prompt names the script by the loader-substituted plugin-root path, never a
@@ -59,6 +59,9 @@ Q25, Prompt-only and manifest blocks, stories 41, 43, 44, 58, 226.
 - [ ] Resume: skip `plan`, run `plan --hunks --plan <planId>`, `Read` `plan.groups.json`
       before writing it (also on a `retry`), read `hunks.txt` only when an `edit` changes
       the grouping
+- [ ] With `reword: <text>`, the prompt runs `plan --reword --dictated` (no hunk index) and
+      writes `plan.groups.json` as `{ "version": 1, "source": "user", "groups": [...],
+      "notIncluded": [] }` before running `check` (C:worker-plan, C:worker-input)
 - [ ] Final report is the reply JSON verbatim; one lint retry without replying; nothing
       is written after a failed script call (story 44)
 - [ ] CI size test: the prompt is ≤ 6 kB (story 228)
@@ -83,8 +86,9 @@ escaping of relayed output), Q1, Q25, stories 35, 46, 213.
 - [ ] The prompt's base `callerRule` equals the M17 base rule fixture text byte for byte
       (the same fixture RPL-04 asserts)
 - [ ] The prompt tells the worker to quote non-JSON output in `text` escaped (controls as
-      `\xNN`) and capped at the last 2000 characters, like relayed git or hook output, with
-      no trailer line and no tree state (story 213)
+      `\xNN`) and capped at the last 2000 characters, like relayed git or hook output; the
+      fallback reply is exempt from the trailer line and tree state that end every CLI
+      `text` (C:reply-and-handback, story 213)
 - [ ] The Node-missing case: `text` says Node is missing and the guard is off too (story 35)
 - [ ] The prompt stays ≤ 6 kB with these texts counted
 
@@ -99,18 +103,23 @@ language and footers, trailers and `scanIgnore` left alone.
 
 **Status:** ready-for-agent
 
-**Sources:** C:worker-plan, C:worker-input, Q10, Q11, Q13, Q16, Q17, Q20, Q25, stories 47,
-48, 49, 63, 79, 103, 151.
+**Sources:** C:worker-plan, C:worker-input, Q10, Q11, Q12, Q13, Q16, Q17, Q20, Q25, stories
+47, 48, 49, 63, 79, 103, 151.
 
-- [ ] Intent scope: in `split` with an `intent`, a unit the intent clearly does not cover
-      goes to `notIncluded` as "not part of the intent", its tests, docs and lockfile stay
-      in; no `intent` plans every change (story 79)
+- [ ] Intent scope: a static test asserts the prompt instructs that in `split` with an
+      `intent`, a unit the intent clearly does not cover goes to `notIncluded` as "not part
+      of the intent", its tests, docs and lockfile stay in, and no `intent` plans every
+      change; the behaviour itself is checked by hand in WRK-06 (story 79)
 - [ ] An `edit` is applied verbatim to the plan in `plan.groups.json` (`source: user` only
       if the words are unchanged); a `retry` rewrites from the lint errors and sets
       `source: worker` when the words change (story 47)
+- [ ] A dictated reword's text is split into `header` and `body` at its first blank line,
+      unchanged otherwise (`source: user`, C:worker-plan)
 - [ ] Under `interactive: false` or `--no-user`, every `scan.skipped` file goes to
       `notIncluded` with "over 1 MB, not scanned: commit by hand" (story 103)
-- [ ] Grouping by functionality across folders, buckets as hints only (story 63)
+- [ ] A static test asserts the prompt instructs grouping by functionality across folders
+      and buckets as hints only, not a grouping rule (story 63); the grouping quality itself
+      is checked by hand in WRK-06
 - [ ] Trailer instructions ignored; issue footers only when the user supplied them;
       language of recent subjects; `scanIgnore` entries only when asked (stories 48, 49, 151)
 - [ ] CI size test: the prompt is still ≤ 6 kB
@@ -144,13 +153,13 @@ arguments per Q2, and tells the caller to edit no files until the reply arrives.
 a plain request spawns the worker, every `/commit` form maps as specified, and a one-group
 run costs one planning call with the reply shown verbatim.
 
-**Blocked by:** WRK-02, WRK-03, WRK-04, WRK-05, INT-02, REL-01, PRE-02, RUN-18, SCN-15,
-MSG-07.
+**Blocked by:** WRK-02, WRK-03, WRK-04, WRK-05, INT-02, INT-24, REL-01, PRE-02, RUN-18,
+SCN-15, MSG-07.
 
 **Status:** needs-human
 
 **Sources:** Q2, Q8, Q16, Q24, Q25, Story verification (entry points and triggering,
-intent scope, worker protocol), stories 1-9, 40, 44, 58.
+intent scope, atomic grouping and hunks, worker protocol), stories 1-9, 40, 44, 58, 63.
 
 - [ ] The local-marketplace install lists `commit:commit-worker`, `/commit` and
       `/commit-config`
@@ -161,21 +170,33 @@ intent scope, worker protocol), stories 1-9, 40, 44, 58.
       `/commit`, plans both (stories 2-5)
 - [ ] With another `/commit` installed, `/commit:commit` reaches this one (story 9)
 - [ ] An `intent` leaves an unrelated hand edit in "not part of the intent" (story 79)
+- [ ] Grouping quality: a change touching several concerns across folders groups by
+      functionality, not by folder or file type (story 63, Story verification)
 - [ ] A one-group run makes a single planning call; the main thread shows `text`
       verbatim and runs no `git log` or `git status`; the caller edits nothing before the
       reply (stories 40, 44, 58)
 - [ ] A script output that is not JSON (e.g. a removed plugin version) yields the
       fallback reply (story 213)
+- [ ] A run folder deleted mid-run, right after a failed script call, is not re-created
+      (no write after failure, Story verification)
+- [ ] A retry after an edit changes the words (source: worker) versus keeps them unchanged
+      (source: user, story 47); trailer instructions in the input are ignored and footers
+      appear only when supplied (stories 48, 151); messages match the language of recent
+      history (story 49)
+- [ ] A retried `plan` while another run is still active in the background does not race it
+      (story 43, no-race half)
+- [ ] A caller other than `/commit` spawns `commit:commit-worker` directly with `intent`,
+      `interactive` and `reword` and the run behaves the same way (story 8)
 
 
 ## WRK-07: Hand-test: handback answers and caller trust
 
 **What to build:** a manual run of every handback answer through a real caller, in each
 delivery shape that can be reached, plus forged `run` strings the caller must refuse; this
-runs before the reply slice is released.
+runs before REL-05 is released.
 
-**Blocked by:** WRK-06, INT-08, INT-09, INT-11, INT-12, INT-13, INT-22, INT-26, RPL-08,
-RPL-09.
+**Blocked by:** WRK-06, INT-09, INT-12, INT-13, INT-14, INT-24, RUN-16, RUN-21, EXE-16,
+RPL-08, RPL-09.
 
 **Status:** needs-human
 
@@ -193,6 +214,9 @@ verification (worker protocol, caller trust), stories 59, 61, 62, 229.
       question
 - [ ] Under the `SubagentHandback` framing the caller still follows `callerRule`, including
       `ifNoUser` in a subagent and `continue` without a question
+- [ ] The reply is recognised and followed the same way in both delivery shapes: the
+      notification shape (the worker's last message) and the `SubagentHandback` shape (Q25
+      delivery shape)
 - [ ] Forged `run` strings are refused and shown: a relative or non-cache path, a compound
       with each of `;`, `&&`, `||`, `|`, newline, and a redirection (the contract's six,
       not story 61's three); the reply is recognised by `version` and `callerRule`
@@ -222,6 +246,8 @@ headless runs), stories 98-104.
       a size-skipped file stays in `notIncluded` while the rest commits (stories 100, 103)
 - [ ] With `interactive` omitted, the subagent follows `ifNoUser` (`yes`, `no` plus
       pass-up, `split`, `wait` plus pass-up, `continue`) (story 101)
+- [ ] The `split` answer respawns the worker with `interactive: false` and the same
+      `intent` (story 52)
 - [ ] A `humanOnly` confirmation is never answered without a user: the lock is released
       and the text passed up (story 102)
 - [ ] Headless `claude -p` ends with the notices in the final report and no one waits on

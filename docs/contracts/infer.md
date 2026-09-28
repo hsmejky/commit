@@ -1,6 +1,8 @@
 # infer
 
-Run by `commit-config` (Q7). Read-only, takes no lock.
+Run by `commit-config` (Q7). Read-only, takes no lock. Refuses (exit 6, `state`) outside a
+git repository or in a bare repository, the same text family as `plan`
+([CLI](cli-and-exit-codes.md)).
 
 ```json
 {
@@ -28,10 +30,11 @@ Run by `commit-config` (Q7). Read-only, takes no lock.
 ```
 
 - `outcome`: `proposal`; `too-few-commits` (under 20 non-merge commits; `proposal: null`,
-  the skill recommends the defaults); `not-conventional` (`ccShare` under 0.5;
-  `proposal: null`, the skill points to the opt-out, Q14).
-- `commitCount`: non-merge commits read (at most 200). `ccShare` is over all of them; every
-  `evidence` share is over the Conventional Commits ones only.
+  the skill recommends the defaults; `ccShare` is still reported over the commits read);
+  `not-conventional` (`ccShare` under 0.5; `proposal: null`, the skill points to the
+  opt-out, Q14).
+- `commitCount`: non-merge commits read (at most 200). `ccShare` is over all of them, `null`
+  when `commitCount` is 0; every `evidence` share is over the Conventional Commits ones only.
 - `types.value`: all 11 standard types always, plus each non-standard type at 5% or more.
 - `types.evidence`: the share of each non-standard type kept (5% or more).
 - `wouldFail`: how many of the **Conventional Commits** ones among the commits read fail
@@ -43,7 +46,7 @@ Run by `commit-config` (Q7). Read-only, takes no lock.
 - `droppedTypes`: non-standard types under 5%, with counts.
 - `configJson`: per layer (`repo`, `user`), the current raw layer with the proposal's keys
   replaced and every other key (such as `scanIgnore`) kept, serialised as `{ "text" }`. The
-  text is validated by the config loader's own rules (Q6) before it is returned; a layer that
+  text is validated by `validateLayer` (Q6) before it is returned; a layer that
   already fails validation gets `{ "errors" }` instead of text. The `commit-config` skill
   writes the chosen layer's text verbatim and never composes JSON itself (Q7). `null` when
   there is no proposal.

@@ -43,15 +43,18 @@ order (`lockfile`, `minified`, `sourcemap`, `generated` from the `linguist-gener
 - [ ] Seam 3: `bucketOf` rows for each bucket, with buckets documented as hints only.
 
 
-## CHG-03: Tracer: modified tracked files become whole-file units in the hunk index
+## CHG-03: Tracer: modified tracked files become whole-file units
 
 **What to build:** the thinnest end-to-end M10 + M13 path for the first end-to-end commit (INT-02): M10
 `inventory` of tracked modifications, a `snapshot` in `split` that runs the pinned diff
 (exactly Q11's options) as a `--raw -z` pass for paths plus a patch pass for bodies, one
 unit per modified file with a content hash over the raw bytes, `assignIds` (`h1…hN`), the
-unit table and `id → hash` map stored in the run state; M13 `renderHunks` emitting the
+unit table and `id → hash` map handed to the run state; M13 `renderHunks` emitting the
 C:plan-hunks shape with `body: "file"` blocks in `hunks.txt` and M9 `bucketOf` in `tracked`.
-It needs only the provisional run folder; RUN-06 takes the lock after it.
+CHG-03b takes the run lock and does the ordered `state.json` and `plan.json` writes these
+are stored through, so the criteria that read the stored unit table, `plan.json` or the
+`hunks` block of `plan`'s stdout are CHG-03b's: `hunks` is non-null only once `plan` has
+taken the lock, and a folder with no lock is discarded (C:plan, C:run-folder).
 
 **Blocked by:** CHG-02, GIT-02, INT-01, RUN-05.
 
@@ -59,10 +62,47 @@ It needs only the provisional run folder; RUN-06 takes the lock after it.
 
 **Sources:** Q9, Q11, C:plan, C:plan-hunks, further-notes "First slice", M10, M13.
 
+- [ ] No path is parsed out of patch text: paths come from the raw pass only.
+
+
+## CHG-03b: Take the run lock at step 7
+
+**What to build:** step 7's run-lock acquire (M12 `acquire`, no takeover: the lock written
+to a temporary file in `.commit-plan/` and hard-linked into place as `.commit-plan/lock`,
+beside the run folder, not in it) and the atomic ordered writes, in contract order:
+`state.json` first, then the lock, then `plan.json`. The `EEXIST` → `held` mapping and the
+step-7 re-reads around the acquire are RUN-06's. It also builds the `internal` cleanup
+these writes need: a throw before `acquire` deletes the provisional run folder; a throw
+after it releases the lock and deletes the folder. The release and delete are file-system
+calls and take no `timeoutMs`; RUN-12 puts the reply's tree-state read on
+`cleanupDeadline`, and RUN-27 generalises which endings release the run.
+
+**Blocked by:** CHG-03, FND-10.
+
+**Status:** ready-for-agent
+
+**Sources:** Q9, Q22, C:run-folder (`lock`, `state.json` and `plan.json` rows),
+C:cli-and-exit-codes (`internal` row), C:plan (step 7), M12.
+
+- [ ] Seam 1: after a `plan` call that reaches step 7, `.commit-plan/lock` exists (not
+      inside the `<planId>/` run folder) holding `{ planId, created }`.
 - [ ] Seam 1: two modified tracked files → `plan` stdout `hunks.hunks` lists `h1`, `h2` with path, status `M`, kind `text`, `offset`/`lines` pointing at their `### h<n> M text …` blocks in `hunks.txt`.
 - [ ] Seam 1: the stored unit table holds ID, hash, path, status and kind per unit; `plan.json` `tracked` carries `bucket`, `added`, `deleted`.
-- [ ] Seam 1 parser oracle: per-file added/deleted counts equal `git diff --numstat -z`.
-- [ ] No path is parsed out of patch text: paths come from the raw pass only.
+- [ ] Seam 1 parser oracle: per-file added/deleted counts in `plan.json` `tracked` equal `git diff --numstat -z`.
+- [ ] Seam 1: with the fault preload failing `fs.renameSync` with `EIO` for a target
+      basename matching `state.json` → exit 1 `internal`, no lock file and no run folder
+      left, and the call-order log records no lock link (a lock is never taken without
+      `state.json` in place).
+- [ ] Seam 1: with the fault preload failing `fs.linkSync` with `EIO` for a target basename
+      matching the lock file → exit 1 `internal` (not `held` or `busy`), no lock file and
+      no run folder left.
+- [ ] Seam 1: with the fault preload failing `fs.renameSync` with `EIO` for a target
+      basename matching `plan.json` → exit 1 `internal`, the lock released, no run folder
+      left.
+- [ ] Seam 1: with the fault preload's call-order log and no fault, the first `state.json`
+      rename precedes the lock link, and the lock link precedes the `plan.json` rename;
+      later `state.json` rewrites (step 8, the in-process `plan --hunks`) may follow in
+      any order.
 
 
 ## CHG-04: Index fingerprint and tree state
@@ -72,13 +112,13 @@ index lock) stored by `plan`, re-read at step 7 (changed with HEAD unchanged →
 `diff-changed`, domain `index-changed`), and `treeState()` → `{ clean: true } | { count,
 paths }` read after the subcommand's last git call.
 
-**Blocked by:** CHG-03.
+**Blocked by:** CHG-03b.
 
 **Status:** ready-for-agent
 
 **Sources:** Q11 (pass 3, 5 amendments), C:plan (step 7), M10, stories 56, 76.
 
-- [ ] Seam 1: an index change injected between inventory and the lock (a `post-index-change`-free method: a clean filter that runs `git add` of another file once) with HEAD unchanged → exit 6 `diff-changed`, lock released, folder deleted.
+- [ ] Seam 1: an index change triggered by the fixture itself between the inventory and the lock (for example a `clean` filter that, while the inventory diff runs it, stages another path outside the temporary index) with HEAD unchanged → exit 6 `diff-changed`, lock released, folder deleted.
 - [ ] Seam 1: `treeState` reports `{ clean: true }` on a clean tree and the count and paths otherwise (cap applied by RPL).
 - [ ] The fingerprint call works while an `index.lock` exists and never rewrites the index.
 
@@ -101,6 +141,7 @@ against it. The real index is never written.
 - [ ] Seam 1: an untracked file → an `A` unit whose body is its whole content as `+` lines; `plan.json` `untracked.candidates` lists it with `binary`; `hidden` holds count and 5 names.
 - [ ] Seam 1: a plain `mv` and a `git mv` each give one `R` unit with `oldPath`.
 - [ ] Seam 1: `git add newfile` under `--split`, also on an unborn HEAD → an `A` unit; a force-added gitignored (not hidden) file → a unit, stored with `ignored: true`.
+- [ ] Seam 1: on an unborn HEAD, `git add newfile && git mv newfile renamed` → one `A` unit for `renamed` (no old path survives the reset baseline to pair into an `R`, Q11).
 - [ ] Seam 1: the real index (`git ls-files --stage`) is byte-identical before and after `plan`.
 - [ ] Seam 1: a failing `git add -N` (a stored path made unreadable by a fixture shim) → exit 4 `git`, code `git-failed`, folder deleted.
 
@@ -113,7 +154,7 @@ as a stream through M2 `onStdout`, keeping only body-carrying hunks and added li
 a hash over path, `-`/`+` lines without context and an occurrence index; identity key
 stored; `hunks.txt` one block per hunk.
 
-**Blocked by:** CHG-03.
+**Blocked by:** CHG-03b.
 
 **Status:** ready-for-agent
 
@@ -149,7 +190,7 @@ and sparse-checkout / `skip-worktree` entries handled with no code of their own.
 new path in the hash), mode changes (with or without content edits) and git-reported binary
 files (path + blob IDs), each with exactly one hunk covering the file.
 
-**Blocked by:** CHG-06.
+**Blocked by:** CHG-06, CHG-05.
 
 **Status:** ready-for-agent
 
@@ -186,7 +227,7 @@ one whole-file unit (main and `--text` pass), and `dirtySubmodules` from
 and scanned in its cleaned form (`body: "none"` when the cleaned diff is binary);
 `linguist-generated` goes into `stats` for M9 `summaryOnly`.
 
-**Blocked by:** CHG-08, CHG-02, PRE-10.
+**Blocked by:** CHG-08, CHG-02, PRE-10, GIT-05.
 
 **Status:** ready-for-agent
 
@@ -195,6 +236,7 @@ and scanned in its cleaned form (`body: "none"` when the cleaned diff is binary)
 - [ ] Seam 1: a `sed`-based `filter.<x>.clean` in the fixture → one `filtered` unit whose body is the cleaned diff.
 - [ ] Seam 1: a path marked `linguist-generated` → `summaryOnly` reason `generated` (entry rendered by CHG-17).
 - [ ] The attribute call reads paths from stdin, never argv.
+- [ ] Seam 1: a decoy `GIT_ATTR_SOURCE` exported to the entry point → `check-attr` still reads the real `.gitattributes` (a `filter`-attributed path is still a `filtered` unit, GIT-05's environment hygiene holds for this call too).
 
 
 ## CHG-11: Attribute-hidden text files and size limits
@@ -215,13 +257,14 @@ attribute stays binary.
 - [ ] Seam 1: a text file marked `-diff` in `.gitattributes` → one `kind: "text"` unit, `body: "none"`, its added lines passed to the scan (secret found once CHG-16 is wired).
 - [ ] Seam 1: an attribute-hidden file over 1 MB → `scan.skipped` entry with the size reason.
 - [ ] Seam 1: a NUL-free file over a lowered `core.bigFileThreshold` with no attribute → stays binary, no `--text` pass run.
+- [ ] Seam 1: an attribute-hidden text file and a file→symlink change (CHG-09's `T` unit), both in the same inventory so they share the one `--text` pass → each still gets exactly one unit, no `internal` (Q11).
 
 
 ## CHG-12: Raw bytes and non-UTF-8 paths
 
 **What to build:** diff output stays a `Buffer` end to end; records split on NUL, lines on
 `\n` bytes; hashes over raw bytes; presentation decodes lossily. A path that is not valid
-UTF-8 is not a unit; it is stored for `notIncluded` with each bad byte as `\xNN`.
+UTF-8 is not a unit; it is stored for `notIncluded` with each bad byte as `\xNN` (story 219).
 
 **Blocked by:** CHG-06.
 
@@ -261,7 +304,7 @@ unstaged changes and `unstagedLeft` counts them (`null` in `split`/`reword`); `p
 recorded; `indexOnly` paths (differing from both HEAD and the worktree) stored with their
 blob ID; a hidden staged-new path under `--staged` is the `staged-hit` fact.
 
-**Blocked by:** CHG-05, CHG-13, RUN-13, RUN-15.
+**Blocked by:** CHG-05, CHG-13, RUN-13.
 
 **Status:** ready-for-agent
 
@@ -290,20 +333,18 @@ empty tree for a root commit, with the same pinned options; IDs are never staged
 ## CHG-16: Scan map wiring and withheld bodies
 
 **What to build:** M8 `scanUnits` over the snapshot units (added lines up to 1 MB per file from
-the stream, then skipped), the scan map (`scanned` per unit, `scanIgnoreUnits`) stored, per
-entry `scan` in the hunk index, `body: "none"` and no `hunks.txt` block for any unit with a
-hit; M10 `snapshotBlob(path)` for the repo config on the snapshot side, fed to M4
-`scanIgnoreChanged`, whose result is stored as `scan.scanIgnoreChanged`.
+the stream, then skipped), the scan map (`scanned` per unit) stored, per entry `scan` in the
+hunk index, `body: "none"` and no `hunks.txt` block for any unit with a hit. (`scanIgnoreUnits`,
+`snapshotBlob` and the `scanIgnoreChanged` wiring move to SCN-14.)
 
-**Blocked by:** CHG-11, CHG-06, SCN-13, CFG-07, CFG-01.
+**Blocked by:** CHG-05, CHG-06, SCN-05.
 
 **Status:** ready-for-agent
 
 **Sources:** Q10, C:plan (`scan`), C:plan-hunks (scan map, body), stories 65, 89, M8, M10, M13.
 
 - [ ] Seam 1: a hunk with a `github-token` → entry `scan: ["github-token"]`, `body: "none"`, the token absent from `hunks.txt` and stdout; the file's other hunks keep their blocks.
-- [ ] Seam 1: a new file with a hit loses its whole body; a tracked file with 1 MB + 1 byte of additions → `scan: "skipped"`.
-- [ ] Seam 1: a repo-config edit that changes `scanIgnore` → every unit of that file in `scanIgnoreUnits`; an edit of `maxSubjectLength` only → empty list.
+- [ ] Seam 1: a new file with a hit loses its whole body. (The 1 MB skip rule is SCN-13's; SCN-15 asserts `scan.skipped` at Seam 1.)
 
 
 ## CHG-17: Summary-only entries and the 3000-line body cap
@@ -315,13 +356,15 @@ the first file crossing 3000 changed lines and every later file keep per-hunk ID
 
 **Blocked by:** CHG-16, CHG-02, PRE-15.
 
+**Gates:** Story 65's wording (summary-only entries carry no kind or range) is settled first.
+
 **Status:** ready-for-agent
 
 **Sources:** Q19, C:summary-only-files, C:plan-hunks, story 65, M13.
 
 - [ ] Seam 1: a `package-lock.json` change → one `summaryOnly` entry with reason `lockfile`; its content still scanned.
-- [ ] Seam 1: fixtures at 3000 and 3001 cumulative changed lines → the crossing file and all later files `body: "cap"` with their own IDs and ranges; earlier files keep blocks.
-- [ ] Story 65's wording is settled first (see notes: summary-only entries carry no kind or range).
+- [ ] Seam 1: the 3000-line cap sums changed lines of the files that are not summary-only only; a lockfile of 2000 or more changed lines (summary-only, sorting before the code files in byte-wise path order) does not count toward the cap.
+- [ ] Seam 1: fixtures at 3000 and 3001 cumulative changed lines of non-summary-only files → the crossing file and all later files `body: "cap"` with their own IDs and ranges; earlier files keep blocks.
 
 
 ## CHG-18: Stdout budget and spill to `hunks.json`
@@ -355,6 +398,7 @@ the map unchanged. It builds the separate `plan --hunks --plan <id>` workflow.
 **Sources:** Q9, Q11, C:plan-hunks, stories 58, 64, 76, M10.
 
 - [ ] Seam 1: a file edited between `plan` and a separate `plan --hunks` → exit 6 `diff-changed`, map unchanged, nothing committed.
+- [ ] Seam 1: a manual commit between `plan` and a separate `plan --hunks` → exit 6 `head-moved`, run ended.
 - [ ] Seam 1: a stored untracked path deleted after `plan` → `diff-changed`; a new untracked file created after `plan` → ignored (same IDs).
 - [ ] Seam 1: a force-added gitignored file is still a unit on the re-snapshot (stored lists, not recomputed).
 
@@ -395,6 +439,7 @@ released.
 - [ ] Seam 1: a force-added gitignored file committed in group 2.
 - [ ] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing → `stage-failed`, index unstaged, run released.
 - [ ] Seam 1 (Windows): a rename group of a few thousand paths that would exceed the command-line limit on argv → committed.
+- [ ] Seam 1: a pointer change in a submodule with untracked files inside (CHG-09), and a staged 60-file new directory under `--staged` (CHG-14), each committed (Q11).
 
 
 ## CHG-22: Byte-exact commits across line-ending settings
@@ -417,15 +462,16 @@ bytes, and that git's converted form is used with `core.autocrlf` and `eol` attr
 **What to build:** M10 `commitGuarded({ args, input, timeoutMs, partial })`: resolves
 `index.lock` through M2 `gitPath`, brackets the spawn and a timeout's tree kill with two
 marker files; with `partial` removes a leftover lock only when its mtime lies between the
-markers; without it never removes the lock and reports `lockLeft`; `indexLockExists()` for
-the `index-lock` refusal.
+markers; without it never removes the lock and reports `lockLeft`; reuses `indexLockExists()`
+(built in EXE-08) for the `index-lock` refusal.
 
-**Blocked by:** CHG-20, GIT-07, GIT-06, EXE-17, EXE-20, FND-05.
+**Blocked by:** CHG-20, GIT-07, GIT-06, EXE-08, EXE-17, EXE-20, FND-05.
 
 **Status:** ready-for-agent
 
 **Sources:** Q18, C:commit-release, story 166, 215, M10, testing-modules Q11 case list.
 
 - [ ] Seam 1 (reword): a sleeping hook that records that `index.lock` exists, clock stepped to 535 s → after the kill the lock is removed; a lock another process created after the kill is kept.
+- [ ] Seam 1: a lock whose mtime lies at or after the first marker's mtime minus 2 seconds and strictly below the second marker's is removed as stale; one just before that lower bound is kept (Q18).
 - [ ] Seam 1 (split): a sleeping hook that creates `index.lock` → after the kill the lock is still there and the notices carry "index.lock was left in place — …".
-- [ ] No module other than M10 writes a marker or touches `index.lock`.
+- [ ] Static: a grep over the source tree finds no reference to a marker file or to `index.lock` outside M10's own source file.

@@ -20,7 +20,7 @@ only `isRepoConfigPath`; (4) the unclear wording "stored as `scan.scanIgnoreChan
 repo config that is invalid at HEAD while the worktree copy is fixed: a `config` refusal
 makes the fix uncommittable.
 
-**Blocked by:** None (can start immediately)
+**Blocked by:** None (can start immediately).
 
 **Status:** needs-human
 
@@ -29,7 +29,7 @@ stored-facts table.
 
 - [ ] Each of the five items has a recorded decision, and decisions, contracts and spec
       agree
-- [ ] CFG-07, SCN-14, CHG-16, EXE-13 and INT-16 cite the settled behaviour
+- [ ] CFG-07, SCN-14, EXE-13 and INT-16 cite the settled behaviour
 
 
 ## CFG-02: Unparseable repo config refuses `plan` (tracer)
@@ -67,7 +67,10 @@ case refuses `plan` with `config` before any run starts, naming layer and key.
       `["Feat"]`, `["1x"]`, `"feat"`; `scope` `3`; `subjectCase` `true` → each exit 1
       `config` naming the key.
 - [ ] Seam 1: `maxSubjectLength` `20` and `200` are accepted.
-- [ ] `validateLayer` is pure and exported for M19 (no file reads).
+- [ ] Seam 1: after each of those `config` refusals no `.commit-plan/` directory and no lock
+      exist (story 110).
+- [ ] A static test asserts `validateLayer` is exported, pure (no file reads in its
+      source).
 
 
 ## CFG-04: User layer in the Claude home
@@ -94,7 +97,7 @@ story 112.
 **What to build:** per-key override (repo over user over default, arrays replaced, never
 merged) and `plan`'s `config.values` and `config.sources` (`default`, `user`, `repo`).
 
-**Blocked by:** CFG-04, RUN-06.
+**Blocked by:** CFG-04, RUN-06, PLN-06.
 
 **Status:** ready-for-agent
 
@@ -127,14 +130,16 @@ the user layer) → warning, ignored. Warnings go to `plan.warnings` and stderr.
 - [ ] Seam 1: `scanIgnore` in the user layer → wrong-layer warning, effective `scanIgnore`
       unaffected.
 - [ ] Seam 1: no warning makes `plan` fail.
+- [ ] Seam 1: a warning case also writes the same warning text to stderr.
 
 
 ## CFG-07: `scanIgnore` read at HEAD and compiled
 
 **What to build:** M4 reads `scanIgnore` from the repo config at HEAD (none when unborn),
 every other repo key from the worktree; reports source `repo@HEAD`; compiles each pattern
-with M7 `compileGlob` and reports its `config` errors as repo-layer errors; returns compiled
-matchers and exports `isRepoConfigPath(path)`.
+with M7 `compileGlob` inside `validateLayer` itself (not only via `loadConfig`, so a caller
+that validates a layer's text directly also catches a bad glob) and reports its `config`
+errors as repo-layer errors; returns compiled matchers and exports `isRepoConfigPath(path)`.
 
 **Blocked by:** CFG-06, SCN-03, CFG-01.
 
@@ -148,8 +153,11 @@ stories 107, 148, 150.
 - [ ] Seam 1: on an unborn repo `scanIgnore` is `[]` while other worktree repo keys apply.
 - [ ] Seam 1: a HEAD pattern `**/*` and one with braces → exit 1 `config` naming the
       pattern.
-- [ ] `isRepoConfigPath` is true for the repo config path only; M8 and M18 use it and
-      name no config file themselves.
+- [ ] Seam 1: `scanIgnore` given as a string, and as an array with a non-string entry, each
+      → exit 1 `config` naming the key.
+- [ ] `validateLayer`, called directly (not through `loadConfig`) on a repo layer with
+      `scanIgnore: ["**"]`, returns a `config` error naming the pattern.
+- [ ] `isRepoConfigPath` is true for the repo config path only.
 
 
 ## CFG-08: Default attribution trailer (M5 tracer)
@@ -186,8 +194,11 @@ warning; else `includeCoAuthoredBy: false` → `null`.
 
 - [ ] Seam 1: `attribution.commit: ""` → `attribution: null`.
 - [ ] Seam 1: `attribution.commit` = a 🤖 line, a blank line and `Co-Authored-By: X <x@y>`
-      → trailer is the last line only, one warning in `plan.warnings`.
+      → trailer is the last line only, the dropped lines reported with a warning in
+      `plan.warnings` (Q5, M4: "dropped with a warning"; no source fixes the warning count).
 - [ ] Seam 1: `includeCoAuthoredBy: false` → `attribution: null` in the output; the source `user` is stored in the run state for M16 and M17.
+- [ ] A static test asserts M5's module imports M6's `parse` (footer grammar) and not
+      `lint`, which M5 never uses.
 
 
 ## CFG-10: Settings layer precedence and the project directory
@@ -208,6 +219,8 @@ warning; else `includeCoAuthoredBy: false` → `null`.
       user → the user trailer applies (two passes).
 - [ ] Seam 1: `CLAUDE_PROJECT_DIR` pointing at a subfolder is read instead of the
       toplevel; the behaviour matches the spike's finding, recorded in Q5.
+- [ ] Seam 1: with `CLAUDE_CONFIG_DIR` set, the user settings layer is read from
+      `$CLAUDE_CONFIG_DIR/settings.json`, not the OS-home default (story 112).
 
 
 ## CFG-11: Managed settings layer (CI only)
@@ -216,7 +229,7 @@ warning; else `includeCoAuthoredBy: false` → `null`.
 point derives from the platform (never from `env`) as the highest layer; its drop-in
 directory is not read.
 
-**Blocked by:** CFG-10.
+**Blocked by:** CFG-09, PRE-16.
 
 **Status:** ready-for-agent
 
@@ -225,7 +238,10 @@ directory is not read.
 - [ ] Seam 1 (CI only): managed `attribution.commit` beats every other layer, source
       `managed`; a drop-in file beside it has no effect.
 - [ ] The managed cases run in a separate, final `node --test` invocation that removes the
-      file it wrote; every attribution case is skipped (not faked) when the host already
-      has its own `managed-settings.json`, and outside CI.
+      file it wrote; those cases are skipped (not faked) outside CI.
+- [ ] Every attribution case, not only the managed ones, is skipped (not faked) when the
+      host already has its own `managed-settings.json`, whatever the CI status.
 - [ ] No env variable changes the managed directory (a test sets a candidate variable and
       sees no effect).
+- [ ] The managed-settings directory's fixed path and CI write permissions are the ones
+      PRE-16 recorded.

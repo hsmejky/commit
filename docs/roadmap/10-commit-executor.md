@@ -19,7 +19,10 @@ contracts and the spec so they agree. The items: (1) `osUser` is missing from th
 `validatePlan` and M16 `commitAll` interfaces, although both scan with it; (2) what happens
 when cleanup fails or is skipped past `cleanupDeadline`; (3) the M16 `internal` path has no
 Seam 1 trigger: a test-only fault seam, or an accepted gap; (4) the failure JSON examples
-(lock, lint) lack a `reply`, and no failed `commit --all` example exists.
+(lock, lint) lack a `reply`, and no failed `commit --all` example exists. (The M16 SHA
+source is already settled: after each `git commit`, M16 reads HEAD and checks that HEAD's
+first parent is the expected pre-commit HEAD — for an unborn branch, HEAD has no parent —
+and takes HEAD as the group's SHA when it is; see EXE-06.)
 
 **Blocked by:** None (can start immediately)
 
@@ -30,8 +33,8 @@ C:reply-and-handback.
 
 - [ ] Each of the four items has a recorded decision, and decisions, contracts and spec
       agree
-- [ ] PLN-06, EXE-13, INT-07, INT-15, INT-21 and INT-22 cite the settled behaviour; if item
-      (3) is an accepted gap, the README of the roadmap lists it
+- [ ] PLN-06, EXE-06, EXE-13, EXE-16, EXE-17, INT-07 and INT-15 cite the settled behaviour;
+      if item (3) is an accepted gap, the README of the roadmap lists it
 
 
 ## EXE-02: `commit --all` commits one group of whole-file units
@@ -104,7 +107,8 @@ and the release comes only after the last group.
 ## EXE-05: `no-groups` after the lock check
 
 **What to build:** the `no-groups` refusal (exit 1 `usage`) when `check` stored no groups or
-every group is committed, placed after `lock` and `unconfirmed` in phase (a).
+every group is committed, placed after `lock` in phase (a). EXE-22 later inserts
+`unconfirmed` before it, matching C:commit-release's phase (a) order.
 
 **Blocked by:** EXE-02.
 
@@ -112,8 +116,9 @@ every group is committed, placed after `lock` and `unconfirmed` in phase (a).
 
 **Sources:** C:commit-release phase (a), C:cli-and-exit-codes, M16.
 
-- [ ] Seam 1: a run with no stored groups → exit 1 `usage` (`no-groups`), the run kept per
-      M15 `runEnd`.
+- [ ] Seam 1: `commit --plan <id> --all` after `plan`, before `check` has stored any groups
+      → exit 1 `usage` (`no-groups`), the run kept per M15 `runEnd`, and `call.lock` absent
+      after the refusal.
 - [ ] Seam 1: every group committed → `no-groups`.
 - [ ] Seam 1: the lock holds another `planId` and no groups are stored → `lock`
       (`taken-over`), not `no-groups`.
@@ -121,7 +126,12 @@ every group is committed, placed after `lock` and `unconfirmed` in phase (a).
 
 ## EXE-06: `head-moved` refuses a moved HEAD
 
-**What to build:** M3 `head()` against the current expected HEAD before each group.
+**What to build:** M3 `head()` against the current expected HEAD before each group. After
+each `git commit`, M16 reads HEAD and checks that HEAD's first parent is the expected
+pre-commit HEAD (for an unborn branch, HEAD has no parent). If it is, HEAD is the group's
+SHA. If not, a hook or another process committed as well: the group is reported committed
+with the SHA HEAD holds, plus a notice ("another commit was made during group `<n>`; later
+groups refused"), and the next group is refused `head-moved`.
 
 **Blocked by:** EXE-04.
 
@@ -130,9 +140,12 @@ every group is committed, placed after `lock` and `unconfirmed` in phase (a).
 **Sources:** Q18, C:commit-release, C:cli-and-exit-codes, story 168.
 
 - [ ] Seam 1: a manual commit between `plan` and `commit` → exit 6 `head-moved`, no new
-      commit, the index byte-identical to before the call, `unstaged: null`.
-- [ ] Seam 1: a fixture `post-commit` hook that commits again during group 1 → group 1
-      committed, group 2 refused `head-moved`, `failed: 2`, `remaining: [2, ...]`.
+      commit, the index byte-identical to before the call, `unstaged: null`, the text "HEAD
+      moved since plan (commit made elsewhere?), run /commit again" (Q18).
+- [ ] Seam 1: a fixture `post-commit` hook that commits again during group 1 (of three
+      stored groups) → group 1 reported committed with the SHA HEAD holds and the "another
+      commit was made during group 1; later groups refused" notice, group 2 refused
+      `head-moved`, `failed: 2`, `remaining: [2, 3]`.
 
 
 ## EXE-07: `index-changed` refuses staging from outside the run
@@ -149,8 +162,6 @@ commits and unstages, so only an outside change trips it.
 
 - [ ] Seam 1: `git add` of another file between `plan` and `commit` → exit 6
       `diff-changed` (`index-changed`), nothing committed, that staging still in the index.
-- [ ] Seam 1: a `post-commit` hook of group 1 stages another file → group 1 kept, group 2
-      refused `index-changed`, `failed: 2`.
 - [ ] Seam 1: three groups with no outside change → all commit (the run's own staging never
       trips the check).
 
@@ -158,7 +169,8 @@ commits and unstages, so only an outside change trips it.
 ## EXE-08: `index-lock` before each group
 
 **What to build:** M10's `index.lock` check as the last refusal of phase (a), before each
-group touches the index.
+group touches the index. It builds M10 `indexLockExists()`, which CHG-23 reuses without
+building it again.
 
 **Blocked by:** EXE-04.
 
@@ -167,7 +179,8 @@ group touches the index.
 **Sources:** Q18, C:commit-release, story 166.
 
 - [ ] Seam 1: an `index.lock` created before the call → exit 6 `index-lock`, the lock file
-      untouched, the index unchanged.
+      untouched, the index unchanged, the text "another git process is running in this
+      repo" (Q18).
 - [ ] Seam 1: a `post-commit` hook of group 1 creates `index.lock` → group 1 kept, group 2
       refused `index-lock`, no reset ran (`unstaged` reflects only group 1's reset).
 
@@ -205,14 +218,15 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 
 **Sources:** Q18, C:commit-release (c), M16, stories 161, 163.
 
-- [ ] Seam 1: `core.safecrlf=true` and a planned file with mixed line endings → exit 4
-      `stage-failed`, `gitOutput` holds git's stderr verbatim, the index reset, `unstaged`
-      present.
-- [ ] Seam 1: a `.gitattributes` filter marked `required` with no driver → the same.
+- [ ] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger; CHG-21
+      criterion 3 covers the safecrlf and missing-filter triggers) → exit 4 `stage-failed`,
+      `gitOutput` holds git's output verbatim, M10 `unstage` runs so the index is reset, and
+      `unstaged` is present.
 - [ ] Seam 1: a verify mismatch (a file changed between (b) and `git add`) → exit 6
       `diff-changed`, index reset. No hook runs in that window, so the slice settles a
       fixture technique first; if none exists at Seam 1, the slice records the case as
       uncovered instead of adding a test switch to the shipped CLI.
+- [ ] Seam 1: after an exit 4 `stage-failed`, the lock and the run folder are gone.
 
 
 ## EXE-11: the `unstaged` report
@@ -233,6 +247,11 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 - [ ] Seam 1: a pre-staged ignored path that `git status` no longer shows → `ignored: true`.
 - [ ] Seam 1: a refusal before any group reached (c) → `unstaged: null` and the report
       says the index is untouched.
+- [ ] Seam 1: group 1 sets `indexReset`, then group 2 hits a refusal in (a) or a
+      `diff-changed` in (b) → the real index is left exactly as it is, and `unstaged` (from
+      group 1's reset) is still listed in the output that ends the run.
+- [ ] Seam 1: a budget stop (EXE-16) after a group that set `indexReset` → the `continue`
+      output carries no `unstaged`, since it is not the output that ends a `split` run.
 
 
 ## EXE-12: a failing `git commit` stops the run, no retry
@@ -251,7 +270,12 @@ set; the index unstaged; HEAD re-read within `cleanupDeadline` (unmoved → no `
       exit 4, `commits` holds group 1, `failed: 2`, `remaining: [2, 3]`, the counter shows
       exactly one run (so the hook was neither skipped nor retried), `gitOutput` holds the
       hook's output with control characters as sent.
-- [ ] Seam 1: the run is released after the failure (lock and folder gone).
+- [ ] Seam 1: the run is released after the failure (lock and folder gone), and the
+      `failed` reply's `text` names the committed group 1, the failed group 2 and the
+      remaining group 3 (story 160).
+- [ ] Seam 1: a `pre-commit` hook that itself makes a commit then exits 1 → exit 4, `sha`
+      set to the new HEAD, error text "committed as `<sha>`, but git did not exit cleanly"
+      (`commit-release.md`).
 
 
 ## EXE-13: the backstop scan refuses a secret in the recorded tree
@@ -274,13 +298,14 @@ unstaged.
 - [ ] Seam 1: a text file hidden by `-diff` in `.gitattributes` holding the secret → still
       exit 3.
 - [ ] Seam 1, unborn HEAD: the backstop diffs against the empty tree.
+- [ ] Seam 1: after an exit 3 `scan` refusal, the lock and the run folder are gone.
 
 
 ## EXE-14: notice when the committed tree differs from the scanned one
 
 **What to build:** after a commit, M3 `headTree()` against the recorded tree ID; on a
-difference a notice names the group ("committed tree differs from the scanned index"), and
-the commit is kept.
+difference (with no extra commit — this is EXE-06's case) a notice names the group
+("committed tree differs from the scanned index"), and the commit is kept.
 
 **Blocked by:** EXE-13.
 
@@ -310,7 +335,9 @@ rewrote them; run /commit again".
 - [ ] Seam 1: a `pre-commit` hook that rewrites a file of group 2 while group 1 commits →
       group 1 kept, group 2 exit 6 `diff-changed` with that text naming group 1.
 - [ ] Seam 1: two groups and no hook → `treeChangedDuringCommit` never set.
-- [ ] Seam 1: the last group → no `before`/`after` read.
+- [ ] Seam 1: the last group → the worktree-hash git calls are not spawned before or after
+      `git commit`, observed through the PATH git shim that logs its argv
+      (`docs/spec/testing-modules.md`).
 
 
 ## EXE-16: budget stop with `continue`
@@ -320,7 +347,7 @@ starts; a later one only while at least 480 s remain before `deadline`; else exi
 `failed: null`, a non-empty `remaining` and a `continue` handback whose `run` is the same
 `commit --plan <id> --all`. It builds the `continue` handback.
 
-**Blocked by:** EXE-04, FND-05.
+**Blocked by:** EXE-04, EXE-07, FND-05.
 
 **Status:** ready-for-agent
 
@@ -331,7 +358,12 @@ starts; a later one only while at least 480 s remain before `deadline`; else exi
       `remaining` [2, 3], a `continue` handback, the run kept.
 - [ ] Seam 1: the `continue` call commits groups 2 and 3 and releases.
 - [ ] Seam 1: at exactly 60 s elapsed (480 s left) group 2 starts.
+- [ ] Seam 1: a budget stop after group 1 followed by a manual `git add` of another file
+      before the `continue` call → group 1 kept, group 2 refused `index-changed` (EXE-07),
+      `failed: 2`.
 - [ ] Seam 1: the first group starts even at 539 s elapsed.
+- [ ] Seam 1: the `continue` handback carries `ifNoUser: { answer: "continue" }`
+      (`reply-and-handback.md`), so a `--no-user` caller runs it without asking.
 
 
 ## EXE-17: a hung `git commit` is killed at the deadline
@@ -343,7 +375,7 @@ release) take `cleanupDeadline - now()`; a cleanup call whose budget is at or be
 spawned and counts as timed out. A commit git made anyway is reported with `sha` and
 "committed as `<sha>`, but git did not exit in time".
 
-**Blocked by:** EXE-12, GIT-07, FND-05.
+**Blocked by:** EXE-12, GIT-07, FND-05, EXE-01.
 
 **Status:** ready-for-agent
 
@@ -354,7 +386,8 @@ spawned and counts as timed out. A commit git made anyway is reported with `sha`
 - [ ] Seam 1: a `post-commit` hook that sleeps → exit 5, `sha` set to the new HEAD, the
       "did not exit in time" text.
 - [ ] Seam 1: the clock stepped past 580 s before cleanup → the cleanup git calls are not
-      spawned (M2 call log) and the reply still comes.
+      spawned, observed through the PATH git shim that logs its argv
+      (`docs/spec/testing-modules.md`), and the reply still comes.
 
 
 ## EXE-18: `index.lock` after a timed-out plain commit is left with a notice
@@ -370,8 +403,10 @@ no git process is running, check it and remove it by hand".
 **Sources:** Q18, M10 `commitGuarded`, C:commit-release, story 215.
 
 - [ ] Seam 1: a sleeping `pre-commit` hook that creates `index.lock` before it sleeps,
-      killed at the deadline → the lock still exists, and the reply carries the notice.
-- [ ] Seam 1: no lock left → no notice.
+      killed at the deadline → exit 5 (EXE-17); the lock's survival and the notice text
+      follow CHG-23's `lockLeft` case.
+- [ ] Seam 1: no lock left after a killed commit → the reply carries no `index.lock`
+      notice.
 
 
 ## EXE-19: `staged` mode commits the index as it is
@@ -395,8 +430,9 @@ builds M10 `verifyIndex`.
 
 ## EXE-20: reword through `--amend --only`
 
-**What to build:** in `reword`, (b), (c) and the backstop are skipped and `index-changed` is
-not checked; `head-moved` still is. `git commit --amend --only --cleanup=verbatim -F -` with
+**What to build:** in `reword`: no match, no reset, no staging, no verify, no scan ((b), (c)
+and the backstop are skipped, `commit-release.md`) and `index-changed` is not checked;
+`head-moved` still is. `git commit --amend --only --cleanup=verbatim -F -` with
 trailers from M6's reword carry-over; a root commit is reworded like any other. The
 carry-over of foreign trailers belongs to MSG-08.
 
@@ -404,8 +440,11 @@ carry-over of foreign trailers belongs to MSG-08.
 
 **Status:** ready-for-agent
 
-**Sources:** Q20, C:commit-release (`reword`), M16, stories 175, 177, 179, 180.
+**Sources:** Q20, C:commit-release (`reword`), M16, stories 175, 177, 179, 180, 181.
 
+- [ ] Seam 1: reword skips (b), (c) and the backstop entirely — no match, no reset, no
+      staging, no verify, no scan (story 181); `index-changed` is not checked, but
+      `head-moved` still is.
 - [ ] Seam 1: a staged file during reword → the amended commit has the old tree, the file
       still staged.
 - [ ] Seam 1: extra staging between `plan` and `commit` → not refused; a manual commit in
@@ -413,6 +452,11 @@ carry-over of foreign trailers belongs to MSG-08.
 - [ ] Seam 1: the root commit reworded → new message, same tree, still a root commit.
 - [ ] Seam 1: a foreign trailer in the old message survives; an Anthropic
       `Co-Authored-By` is dropped (per MSG's carry-over).
+- [ ] Seam 1: reword gives no "another commit was made during group `n`" notice — the
+      first-parent check compares the amended HEAD's first parent against the expected
+      HEAD's own first parent, not against the expected HEAD itself.
+- [ ] Seam 1: reword of a root commit gives no such notice either — both the amended HEAD
+      and the expected HEAD have no first parent, so the check still matches.
 
 
 ## EXE-21: reword timeout removes only its own `index.lock`
@@ -428,17 +472,17 @@ a lock another process created is kept.
 **Sources:** Q18, Q20, M10 `commitGuarded`, story 215.
 
 - [ ] Seam 1: reword, clock stepped to 535 s elapsed at start, a sleeping `pre-commit`
-      hook that first records that `index.lock` exists → exit 5, the record is present, and
-      no `index.lock` remains (its mtime lies between the two markers).
-- [ ] Seam 1: a lock another process creates after the kill (mtime past the second
-      marker) → kept.
+      hook that first records that `index.lock` exists, then is killed at the deadline →
+      exit 5 (EXE-17), the record is present; the lock's removal and the foreign-lock case
+      follow CHG-23's two-marker rule.
 
 
 ## EXE-22: `unconfirmed` without `--confirmed`
 
 **What to build:** on the first group of the call, `awaitingConfirm` in the run state and no
-`--confirmed` → exit 1 `usage` (`unconfirmed`). The first group of a call with
-`--confirmed` clears `awaitingConfirm`, so a later `continue` needs no flag.
+`--confirmed` → exit 1 `usage` (`unconfirmed`), checked before EXE-05's `no-groups` in phase
+(a)'s final order. The first group of a call with `--confirmed` clears `awaitingConfirm`, so
+a later `continue` needs no flag.
 
 **Blocked by:** EXE-16, RUN-18.
 
@@ -474,7 +518,8 @@ a lock another process created is kept.
 ## EXE-24: Esc or session end stops the commit's processes
 
 **What to build:** a termination signal during `commit` kills the git and hook process tree
-and releases `call.lock`, so no commit lands after the user stopped the run.
+and releases `call.lock`, so no commit lands after the user stopped the run. GIT-08 builds
+the signal handler; this slice tests it at commit time.
 
 **Blocked by:** EXE-17, PRE-13, GIT-08.
 
@@ -483,6 +528,9 @@ and releases `call.lock`, so no commit lands after the user stopped the run.
 **Sources:** Q9, Q18, M2, story 217.
 
 - [ ] Seam 1 (POSIX): SIGTERM to the script while a `pre-commit` hook sleeps → no new
-      commit, the hook process gone, `call.lock` absent.
+      commit, checked again after the hook's sleep would have ended (no commit lands after
+      the kill), the hook process gone, `call.lock` absent.
 - [ ] Seam 1 (Windows): the behaviour the spike records for tool-call termination, asserted
       the same way.
+- [ ] Seam 1 (POSIX): a kill during phase (c) staging → the run state shows `indexReset`
+      set, so a takeover can repair it.

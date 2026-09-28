@@ -5,8 +5,8 @@ and M17 are tested only through Seam 1, so after the M1 tracer and the reply tra
 M17 slice is verified on the INT path that first emits the output it shapes; the reply
 variant a path introduces is built in that INT slice, and RPL holds the rules that cut
 across all replies. Sources: C:cli-and-exit-codes, C:reply-and-handback, Domain code → CLI
-kind, M1, M17, Q9, Q16, Q22, Q24, Q25. The walking skeleton INT-01 builds the minimal reply
-and the envelope path; RPL-04 adds the `failed` variant and the base `callerRule`.
+kind, M1, M17, Q9, Q16, Q22, Q24, Q25. The walking skeleton INT-01 builds the minimal reply,
+the envelope path and the base `callerRule`; RPL-04 adds the `failed` variant.
 
 ## RPL-01: Commit entry point and envelope tracer
 
@@ -26,8 +26,7 @@ environment", C:cli-and-exit-codes, Q1, Q9.
       `{ version: 1, ok: false, error: { kind: "usage", … } }`, nothing else on stdout
 - [ ] Debug output goes to stderr only; the entry point never reads stdin (a test with an
       open stdin pipe returns without waiting)
-- [ ] The Node check returns the `env` JSON refusal before any library import (the old-Node
-      case is covered by the entry-point env note; see the group notes)
+- [ ] The Node check returns the `env` JSON refusal before any library import
 
 
 ## RPL-02: Per-subcommand argv and flag combinations
@@ -47,16 +46,21 @@ form), Q9, Q17, story 206.
       `--staged`, with `--take-over`, or without `--split`/`--reword`; `--no-no-user`;
       unknown flags; a `--plan` value that is not a lowercase UUID v4 (uppercase, traversal,
       absolute path) → exit 1 `usage`
+- [ ] Seam 1: two mode flags together on `plan` (`--staged` with `--split`, or `--reword`
+      with `--staged`) → exit 1 `usage`; `check`, `commit` and `release` without `--plan` →
+      exit 1 `usage`; `commit --plan <id>` without `--all` → exit 1 `usage`; `--confirmed` on
+      `plan` or `check` → exit 1 `usage`
 - [ ] No refused call creates `.commit-plan` or runs git (asserted on the temp repo)
-- [ ] Every legal synopsis line parses (asserted by reaching the next step's refusal outside a
-      repo)
+- [ ] Every legal synopsis line parses, asserted by not being refused `usage`
 
 
 ## RPL-03: Error table and exit codes
 
 **What to build:** the single domain code → CLI kind table used by M18, M1's kind → exit
-code map 0-6 and the failure shape; the first reachable rows are `usage` (RPL-01) and
-`state` outside a repo (GIT-01).
+code map 0-6 and the failure shape; the first reachable row is `usage` (RPL-01); rows added
+later by GIT-01 and the rest of the roadmap (`state` outside a repo among them) are not
+reachable yet. INT-31 owns the completeness test over every row once the roadmap has built
+them.
 
 **Blocked by:** RPL-01.
 
@@ -65,9 +69,9 @@ code map 0-6 and the failure shape; the first reachable rows are `usage` (RPL-01
 **Sources:** Domain code → CLI kind, C:cli-and-exit-codes (exit table, failure shape),
 architectural decision "Typed results and one error table".
 
-- [ ] Every domain code row maps to its kind and exit code in one table; a test lists each
-      row with the Seam 1 case (in this group or INT) that reaches it, and fails on a row with
-      none
+- [ ] Every domain code row maps to its kind and exit code in one table; a test lists, for
+      each row already reachable through this slice's blockers (RPL-01's `usage` refusals),
+      the Seam 1 case that reaches it; rows not yet built are left to INT-31
 - [ ] Only M18 maps domain codes; modules below it return typed results with domain codes
 
 
@@ -76,8 +80,8 @@ architectural decision "Typed results and one error table".
 **What to build:** M17 `reply(facts, { scriptPath, argv })` builds the `failed` variant for
 a `plan` refused on an in-progress merge: `version`, `status`, `planId: null`, `text` with
 the reason and the tree state, empty `commits` and `notices`, the base `callerRule`
-verbatim, `handback: null`. INT-01 built the minimal reply; this slice adds the `failed`
-variant and the base `callerRule`.
+verbatim, `handback: null`. INT-01 built the minimal reply and the base `callerRule`; this
+slice adds the `failed` variant.
 
 **Blocked by:** RPL-03, GIT-03, CHG-04, INT-01.
 
@@ -89,6 +93,8 @@ variant and the base `callerRule`.
       above; the base rule text equals the fixture text from C:reply-and-handback
 - [ ] `text` ends with the tree state ("N files left: …" or "working tree clean")
 - [ ] The reply without `text` is ≤ 2 kB
+- [ ] Every pre-folder refusal, not only the merge case, carries a `failed` reply with the
+      base `callerRule` and no handback
 
 
 ## RPL-05: Reply text layout, list caps and size budgets
@@ -97,12 +103,12 @@ variant and the base `callerRule`.
 capped at 10 plus "+N more", the `Notices:` block, the trailer line (or "no trailer" with its
 attribution source) and the tree state; messages never cut; CI size fixtures at every cap.
 
-**Blocked by:** INT-02, INT-09, INT-15, INT-21, MSG-07.
+**Blocked by:** EXE-11, INT-02, INT-05, INT-09, INT-15, MSG-07, RUN-16.
 
 **Status:** ready-for-agent
 
 **Sources:** M17, C:reply-and-handback (`text`, size), Testing modules (size fixtures), Q24,
-stories 55, 56, 57, 228.
+stories 55, 56, 57, 60, 228.
 
 - [ ] Seam 1 cap fixtures: a `committed` reply with 11 commits, 11 not-included entries, 11
       `unstaged` paths, 11 files left and 11 notices → each list shows 10 plus "+1 more"
@@ -110,6 +116,14 @@ stories 55, 56, 57, 228.
 - [ ] Size tests: reply without `text` ≤ 2 kB; `text` ≤ 4 kB not counting quoted messages
 - [ ] Every notice appears in `text` under `Notices:` on every status (story 57); the trailer
       line names the appended trailer or "no trailer" with its source (story 55)
+- [ ] A `not-a-repo` refusal's reply carries no tree state at all (it has no tree to read); a
+      `release` reply past its 45 s budget omits the tree state too, distinct from "working
+      tree clean"
+- [ ] Seam 1: a live lock met by `plan --no-user` → `status: "failed"`, `text` with no
+      takeover question and no handback (RUN-07 covers the refusal's other fields)
+- [ ] An unparseable lock, or one with a malformed `planId`, met by `--no-user` →
+      `status: "failed"`, `text` naming the automatic takeover time (`touched` plus 15
+      minutes) (RUN-07 covers `planId` and `created`)
 
 
 ## RPL-06: Escaping paths and relayed git or hook output
@@ -119,7 +133,7 @@ stories 55, 56, 57, 228.
 2000 characters with the "[… N characters cut]" marker, the full output staying in
 `gitOutput`.
 
-**Blocked by:** INT-02, INT-21.
+**Blocked by:** EXE-12, INT-02.
 
 **Status:** ready-for-agent
 
@@ -138,7 +152,7 @@ stories 55, 56, 57, 228.
 single quotes, or only "commit by hand" for a path M17 cannot quote; a `lintFailed` text
 replaces every scan-hit span of a quoted message with `[<pattern-id>]`.
 
-**Blocked by:** INT-15, INT-08.
+**Blocked by:** INT-15, RUN-16.
 
 **Status:** ready-for-agent
 
@@ -159,7 +173,7 @@ absolute path (forward slashes, double quotes) with `--plan` of the same reply a
 `--confirmed`. It also adds the first S2-dependent refusal: an install path holding `$`, a
 backtick, `"`, `\` or U+201C-U+201E is refused `env` before any work.
 
-**Blocked by:** INT-09, INT-11, INT-22, GRD-13.
+**Blocked by:** EXE-16, GRD-13, INT-09, RUN-01, RUN-16.
 
 **Status:** ready-for-agent
 
@@ -167,8 +181,15 @@ backtick, `"`, `\` or U+201C-U+201E is refused `env` before any work.
 fixtures", Q16, Q25, Testing seams "ScriptCall round trip", stories 51, 53, 54, 61, 62, 204,
 208, 229.
 
-- [ ] Seam 1: every `run` of every handback kind passes the base rule's shape predicate (one
-      segment, an absolute path under the plugin cache in the fixture layout, a UUID `planId`)
+- [ ] Seam 1: every `run` this slice's blockers reach (`confirm`'s `yes` and `no`, `continue`,
+      `lintFailed`'s `no`) passes the base rule's shape predicate (one segment, an absolute
+      path under the plugin cache in the fixture layout, a UUID `planId`)
+- [ ] A `lintFailed` handback offers `retry` (`respawn` `resume`, `edit: fix these lint
+      errors: <errors>`, at most 500 characters), `edit` (`needsText`, `respawn` `resume`) and
+      `no` (`run release`) only, none when every error is a shape error; `ifNoUser` is
+      `answer: "no"`, `returnToParent: true`; the question text is exactly "Lint failed. Let a
+      new worker fix it, or stop? To dictate the message, type it under Other." (RUN-16 builds
+      the lint-failure counter this handback answers, including its `--no-user` release)
 - [ ] `--confirmed` appears only in a `confirm`'s `yes`; `continue` never carries it
 - [ ] A fixture worker message with two objects that both hold `version` and `callerRule`:
       the base rule text tells the caller to run nothing (story 62)
@@ -176,9 +197,8 @@ fixtures", Q16, Q25, Testing seams "ScriptCall round trip", stories 51, 53, 54, 
 - [ ] Seam 1: the scripts copied under a path with each forbidden character → exit 1 `env`
       (`"` and `\` POSIX only; the typographic quote on both); a native Windows path → no
       refusal (story 204)
-- [ ] The base rule text tells the caller to show the output of a handback `run` that holds
-      no reply and to run nothing more, leaving the lock to the takeover question (story
-      229)
+- [ ] The handback rule text tells the caller to show a `run`'s output that holds no reply
+      and to run nothing more (story 229)
 
 
 ## RPL-09: Respawn prompts carry the answer and the mode flag
@@ -187,7 +207,7 @@ fixtures", Q16, Q25, Testing seams "ScriptCall round trip", stories 51, 53, 54, 
 plus the `mode` flag of the `plan` call that built it (read from `argv`); `takeOver` only in a
 `lock` handback's `take over`; never `intent` or `reword`.
 
-**Blocked by:** INT-05, INT-13, INT-26, RUN-20.
+**Blocked by:** INT-05, INT-13, RUN-20, RUN-22.
 
 **Status:** ready-for-agent
 
@@ -200,21 +220,3 @@ plus the `mode` flag of the `plan` call that built it (read from `argv`); `takeO
       `staged`
 - [ ] No respawn holds `intent` or `reword`; `edit` respawns mark the user's text as `{text}`
 - [ ] The answer's own mode wins over the refused call's mode flag (as RUN-20 item 6 settles)
-
-
-## RPL-10: Lock replies without a question
-
-**What to build:** under `--no-user` a `lock` refusal is a plain reply with no takeover answer;
-a lock whose holder has no valid `planId` carries no handback, `status: "failed"`, and a text
-naming the automatic takeover time (`touched` plus 15 minutes).
-
-**Blocked by:** INT-05, INT-17.
-
-**Status:** ready-for-agent
-
-**Sources:** M17 (`--no-user` lock rule), C:cli-and-exit-codes (`lock`), C:reply-and-handback,
-Q22, stories 60, 191.
-
-- [ ] Seam 1: a live lock with `plan --split --no-user` → exit 6 `lock`, `handback: null`
-- [ ] An unparseable lock and one with a malformed `planId` → `planId` and `created` null,
-      message "the /commit lock is unreadable …", text naming the takeover time

@@ -92,8 +92,18 @@ created between groups are both caught:
   exists a notice says so ("index.lock was left in place — if no git process is running,
   check it and remove it by hand"). After a commit, when `HEAD^{tree}` differs from
   the recorded tree ID (a hook or another process changed the index between the backstop
-  and the commit), a notice names the group ("committed tree differs from the scanned
-  index"); the commit is kept.
+  and the commit, with no extra commit), a notice names the group ("committed tree differs
+  from the scanned index"); the commit is kept. Separately, after each `git commit`, the
+  script reads HEAD and checks its first parent against the SHA expected before that
+  commit (an unborn branch: HEAD has no parent) — except in `reword`, where `--amend
+  --only` gives the new commit the same parent as the one it replaced, so there the check
+  instead compares HEAD's first parent against the expected HEAD's own first parent (both
+  none, on a root commit). When it matches, HEAD is the group's SHA, stored as the next
+  group's expected HEAD. When it does not — a hook or another process committed as well —
+  the group is still reported committed, with the SHA HEAD now holds, and a notice names
+  the group ("another commit was made during group `n`; later groups refused"); the next
+  group's own (a) check then finds HEAD moved from the expected SHA and is refused
+  `head-moved`.
 - Hook rewrite detection (`split`, when a later group exists): the worktree diff's hash set
   (temporary index, as above) is computed right before (`before`) and right after
   (`after`) the `git commit` call. If `after` differs from `before` minus group n's own

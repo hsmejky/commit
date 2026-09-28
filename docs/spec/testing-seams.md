@@ -31,6 +31,23 @@
    540 s. Apart from that first call the schedule never counts `Date.now()` calls, so it does
    not break when the code reads the clock more or less often. The shipped CLI gains no
    switch.
+   **Fault-injection preload at Seam 1.** A second test-tree preload, loaded the same way as
+   the clock preload and never packaged, injects failures a fixture cannot otherwise cause.
+   The test configures it through environment variables the preload reads: it can (a) make
+   `os.userInfo()` throw, so a case can test `osUser` derivation with no OS user identity
+   available; (b) fail a named fs boundary — `fs.linkSync` or `fs.renameSync`, and the
+   callback and promise forms the code path uses — for a target path whose basename matches a
+   given name, so a fixture can inject a fault between two specific writes with no process
+   between them for a PATH shim to intercept; the injected error carries the errno code the
+   test names (default `EIO`) as its `code`, with `syscall` and `path` set as Node's own fs
+   errors carry them, because the code maps codes differently (`EEXIST` on the lock link →
+   `held`, a Windows `EPERM` that outlasts the retries → the hard-link probe and `busy`,
+   `EIO` → `internal`); and (c) optionally log the order
+   of those calls to a file in the test's temp directory, so a case can assert write order
+   without forcing a fault. After patching `fs`, `fs.promises` and `os`, the preload calls
+   `module.syncBuiltinESMExports()`, so a named ESM import (`import { linkSync } from
+   'node:fs'`) sees the fault as well as a property access on the module object does. The
+   shipped CLI still gains no switch; the preload lives only in the test tree.
    **Table-driven fixture generator.** M15 `computeConfirm` (C:confirmation-triggers) and M9
    `applyCaps` (the caps of C:untracked-files) are tested through Seam 1 from their contracts
    tables: a generator builds one temp repo and worker plan per table row (mode, groups, new
@@ -94,4 +111,6 @@ reject them).
 handback whose `run` is the same command, the committed group is recorded; running that
 command resumes at group 2. A boundary case steps the clock to exactly 60 s elapsed
 (480 s left): group 2 still starts. A further case steps the clock to 535 s elapsed at
-start and sets a hook that sleeps past the remaining 5 s of the budget: the tree is killed, `timeout` is reported, and a commit git made anyway is detected.
+start and sets a `pre-commit` hook that sleeps past the remaining 5 s of the budget: the tree
+is killed, `timeout` is reported, and no commit lands. A `post-commit` hook that sleeps the
+same way lets the commit land before the kill: `timeout` is reported with the new `sha`.

@@ -17,7 +17,7 @@
 | Failures, hooks, signing | Seam 1 (SSH signing, `signing-locked`, `head-moved`, the tree-ID notice); manual hand-test for the openpgp note |
 | Time budget | Seam 1 (stepping clock, including the 60 s and 61 s boundary cases and a 535 s step at start for every kill-timeout case) |
 | Reword, repo states, concurrent runs | Seam 1 |
-| Install, README and opt-out | Seam 1 env fixture (a PATH git shim reporting < 2.34, story 202), round-trip check (allow rules), manual hand-test (opt-out, README gaps, the README line on the worker spawn and `callerRule`, the commit entry point with Node missing or older than 22 and with git missing, which the CI runners cannot produce) |
+| Install, README and opt-out | Seam 1 env fixtures (a PATH git shim reporting < 2.34, and a PATH with no git at all, both exit 1 `env`, story 202), round-trip check (allow rules), manual hand-test (opt-out, README gaps, the README line on the worker spawn and `callerRule`, the commit entry point with a Node older than 22, the one case the CI runners cannot produce) |
 | Budget and release | 0.1.0: CI size test only (story 228's size budgets); story 205's dogfood gate, run with the episode-analysis tools (deferred, [Out of Scope](out-of-scope.md)) against 0.1.0, is the 1.0.0 gate, not a 0.1.0 check |
 | Run integrity | Seam 1 (run integrity and scanner case lists), manual hand-test (a script output that is not JSON) |
 

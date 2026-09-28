@@ -20,11 +20,12 @@ Read-only, no lock, no run folder.
 **Sources:** C:infer, M19, M18 `infer`, Q7, stories 128, 134.
 
 - [ ] Seam 1: a repo with 5 conventional commits → `ok: true`, `outcome:
-      "too-few-commits"`, `commitCount: 5`, `proposal: null`, `wouldFail: null`, exit 0.
-- [ ] Seam 1: an unborn repo → `too-few-commits`, `commitCount: 0`.
+      "too-few-commits"`, `commitCount: 5`, `ccShare` over the 5 read, `proposal: null`,
+      `wouldFail: null`, exit 0.
+- [ ] Seam 1: an unborn repo → `too-few-commits`, `commitCount: 0`, `ccShare: null`.
 - [ ] Seam 1: no `.commit-plan/` exists after the call.
-- [ ] Seam 1: `infer` outside a repo or in a bare repo → exit 6 `state` (recorded in
-      C:infer)
+- [ ] Seam 1: `infer` outside a repo or in a bare repo → exit 6 `state`, the same text
+      family as `plan` (C:infer).
 
 
 ## INF-02: Conventional Commits share and `not-conventional`
@@ -42,6 +43,8 @@ M6's header grammar; `ccShare` over all commits read (merges excluded, at most 2
 - [ ] Seam 1: `WIP: x` and `Update: x` do not count; merge commits are not read; 230
       commits → `commitCount: 200`.
 - [ ] Seam 1: 49% conventional → `not-conventional`, `proposal: null`; 50% → a proposal.
+- [ ] A static test asserts M19's module imports `parse` from M6 (no duplicate header
+      grammar).
 
 
 ## INF-03: Scope and body proposal
@@ -59,6 +62,11 @@ paragraph is not a body; shares over the Conventional Commits ones only, in `evi
 - [ ] Seam 1: boundary histories at 90% and 10% scope give `required` and `optional`;
       9% gives `forbidden`.
 - [ ] Seam 1: commits whose only extra paragraph is `Closes #n` do not count as bodies.
+- [ ] Seam 1: a history mixing conventional and non-conventional commits computes `scope`
+      and `body` shares over the Conventional Commits ones only, excluding the rest from the
+      denominator.
+- [ ] Seam 1: a history at exactly 10% with-body share gives `body: optional`; 9% gives
+      `forbidden`.
 
 
 ## INF-04: Case and subject length proposal
@@ -74,7 +82,10 @@ paragraph is not a body; shares over the Conventional Commits ones only, in `evi
 **Sources:** Q7, C:infer (`maxSubjectLength.evidence.flagged`), story 129.
 
 - [ ] Seam 1: `API change` headers count as lower; 89% lower → `any`.
+- [ ] Seam 1: exactly 90% lowercase headers → `subjectCase: lower`.
 - [ ] Seam 1: p95 64 → 72, 90 → 100, 113 → 120 flagged, 230 → 200 flagged.
+- [ ] A static test asserts M19 imports the case-check function MSG-03 exports separately
+      from `lint` (no duplicate implementation).
 
 
 ## INF-05: Types and dropped types
@@ -106,6 +117,7 @@ proposed config and reports `wouldFail`; `nonConventional` counts the rest.
 
 - [ ] Seam 1: a history with known over-length and dropped-type commits gives the exact
       `wouldFail`; non-conventional commits are not in it.
+- [ ] A static test asserts M19's module imports `lint` from M6.
 
 
 ## INF-07: `configJson` per layer
@@ -115,7 +127,7 @@ current layer (M4 `readLayers`) with the proposal's keys replaced and every othe
 checked by M4 `validateLayer`, as `{ text }`; a layer that already fails validation gets
 `{ errors }`.
 
-**Blocked by:** INF-06, CFG-03, CFG-04.
+**Blocked by:** INF-06, CFG-03, CFG-04, CFG-07.
 
 **Status:** ready-for-agent
 
@@ -126,6 +138,10 @@ checked by M4 `validateLayer`, as `{ text }`; a layer that already fails validat
 - [ ] Seam 1: no user layer → `user.text` holds the proposal's keys only.
 - [ ] Seam 1: a user layer with `maxSubjectLength: 300` → `user.errors` names it; `infer`
       still exits 0 (no `config` refusal).
+- [ ] Seam 1: a repo layer with `scanIgnore: ["**"]` → `repo.errors` naming the pattern (a
+      glob with no literal character), not `repo.text`.
+- [ ] A static test asserts M19 imports `validateLayer` from M4 (no duplicate
+      implementation).
 
 
 ## INF-08: `/commit-config` skill
@@ -134,7 +150,8 @@ checked by M4 `validateLayer`, as `{ text }`; a layer that already fails validat
 shows the proposal with its numbers (`wouldFail`, `nonConventional`, dropped types), asks
 repo or user, and after confirmation writes that layer's `configJson` text verbatim; shows
 `errors` and writes nothing for an invalid layer; recommends the defaults under 20 commits;
-points to the opt-out below 50%.
+points to the opt-out below 50%. Its description size test reuses the shared ≤
+200-character static-test helper WRK-01 builds, hence the WRK-01 blocker.
 
 **Blocked by:** INF-07, FND-02, WRK-01.
 
@@ -142,15 +159,16 @@ points to the opt-out below 50%.
 
 **Sources:** prompt-only blocks (`/commit-config`), Q7, Q14, Q24, stories 130-134.
 
+- [ ] A static test reads the skill frontmatter: `disable-model-invocation: true` (Q7)
 - [ ] CI size test: description ≤ 200 characters.
-- [ ] The skill text never composes JSON and names the script by the plugin-root path.
+- [ ] A static test: the skill text names the script by the plugin-root path.
 
 
 ## INF-09: `/commit-config` hand-test
 
 **What to build:** a manual run of the skill in a real session covering each outcome.
 
-**Blocked by:** INF-08.
+**Blocked by:** INF-08, REL-01.
 
 **Status:** needs-human
 

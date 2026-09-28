@@ -5,7 +5,8 @@ sweep and takeover, including M18's takeover index repair) and M15 Run policy (m
 order, lint counter, confirmation, run end, deadlines). Every behaviour here is observable
 only at Seam 1, so each slice adds its M12 or M15 call to the M18 step that uses it and
 tests it through the subcommand. The path without a takeover (RUN-01 to RUN-19) does not
-wait for the takeover open items; the takeover slices (RUN-21 to RUN-26) wait on RUN-20.
+wait for the takeover open items; the takeover slices (RUN-21 to RUN-26) wait on RUN-20 and
+RUN-20b.
 Main sources: M12, M15, M18 and the domain-code table, C:run-folder, C:commit-release,
 C:cli-and-exit-codes, Q9, Q16-Q18, Q22, stories 187-196, 206-210, 217-227. RUN-20 also
 settles who removes `call.lock` when a call exits. RUN-07 and RUN-13 build the policy; the
@@ -55,6 +56,10 @@ at a time), M12, story 209.
       X` exits 6 `lock` (`busy`), and the lock and the folder are kept.
 - [ ] Seam 1: the `call.lock` names a dead pid on this host. It is stale at once, and
       `release` succeeds.
+- [ ] Seam 1: the `call.lock` names a live pid on this host (it answers `process.kill(pid,
+      0)`) but its mtime is aged past 15 minutes → replaced, and `release` succeeds (a
+      live-but-old lock on this host is stale by mtime, same as an unreadable or
+      another-host one).
 - [ ] Seam 1: the `call.lock` names another host (or is unreadable). If it is fresh →
       `busy`. With its mtime aged past 15 minutes → replaced, and `release` succeeds.
 - [ ] Seam 1: when the lock does not match, `release` never creates a `call.lock`.
@@ -72,9 +77,11 @@ release has already completed.
 
 **Sources:** M15 `releaseDeadline`, M18 `release`, C:reply-and-handback, testing seams (Clock at Seam 1).
 
-- [ ] Seam 1 with the stepping clock at 46 s elapsed after the release: exit 0, the lock
-      and folder are gone, and the reply's `text` has no tree-state line.
-- [ ] Seam 1 below the budget: the tree-state line is present.
+- [ ] Seam 1 with the stepping clock at 46 s elapsed since the call's start (not since the
+      release completed): exit 0, the lock and folder are gone, and the reply's `text` has
+      no tree-state line.
+- [ ] Seam 1 below the budget (measured from the call's start): the tree-state line is
+      present.
 
 
 ## RUN-04: `--plan` calls check the lock (M12 `open`)
@@ -84,7 +91,12 @@ the lock holds the `planId`, refreshes `touched` (the lock mtime), checks the st
 `version`, and holds `call.lock` for the whole call. It refuses `taken-over` (the lock
 holds another `planId`), `ended` (no lock, or a state `version` mismatch) and `busy` (a
 live `call.lock`, or a `call.lock` or folder that vanishes with `ENOENT` → `taken-over`).
-State writes use a temporary name, then a rename.
+State writes use a temporary name, then a rename. With no group-commit behaviour built
+yet, a matched lock's call falls through to a stub that ends the call at once, exit 0,
+with no commits; EXE-02 replaces the stub with the real loop. `call.lock` is created
+exclusively when the call starts and removed when it ends (C:run-folder, `call.lock` row;
+architectural decisions), settling former RUN-20 items 10-11 as documentation, not open
+questions.
 
 **Blocked by:** RUN-02, RPL-02.
 
@@ -96,9 +108,12 @@ State writes use a temporary name, then a rename.
       "this run was taken over by another /commit" text.
 - [ ] Seam 1: there is no lock → `ended` ("this run has already ended"). A `state.json`
       whose `version` differs from this build's → `ended`.
-- [ ] Seam 1: the lock matches → the lock mtime advances, and `call.lock` is absent after
-      the call exits.
+- [ ] Seam 1: the lock matches → the lock mtime advances and the stub call exits 0 with no
+      commits, and `call.lock` is absent after the call ends (a kept run's `call.lock` does
+      not outlive its call).
 - [ ] Seam 1: `X/call.lock` holds a live pid → `busy`, and the run is kept.
+- [ ] Seam 1: a `call.lock` or folder that vanishes with `ENOENT` mid-call maps to
+      `taken-over`, not `internal` (C:cli-and-exit-codes `lock` row).
 
 
 ## RUN-05: `plan` creates the provisional run folder and checks the directory
@@ -116,30 +131,42 @@ that takes no lock.
 **Sources:** Q9, Q22, C:run-folder, architectural decisions (run-folder directory
 check), M12 `create`/`discard`, M18 `plan` step 3, stories 196, 207.
 
-- [ ] Seam 1: a symlinked `.commit-plan`, and a tracked `.commit-plan` → exit 6 `state`
-      with the "`.commit-plan` is tracked or not a plain directory; remove it by hand"
-      text, and nothing is written through the link.
+- [ ] Seam 1: a symlinked `.commit-plan`, a tracked `.commit-plan`, `.commit-plan` as a
+      plain file, and (Windows) `.commit-plan` as a junction → exit 6 `state` with the
+      "`.commit-plan` is tracked or not a plain directory; remove it by hand" text, and
+      nothing is written through the link or junction.
 - [ ] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan/` line, also
       after a second `plan`, and `git status` does not show the run folder.
+- [ ] Seam 1: `runDir` in `plan`'s output is absolute, `path.resolve`d from the toplevel,
+      and uses forward slashes even on Windows (C:run-folder).
 - [ ] Seam 1: `plan` on a clean tree → no `<planId>/` folder and no lock remain.
 
 
-## RUN-06: `plan` takes the run lock at step 7
+## RUN-06: step 7's re-reads, `held`, the reword lock and `release`
 
-**What to build:** M12 `acquire` without a takeover. The lock `{ planId, created }` is
-written to a temporary file in `.commit-plan/` and hard-linked into place. `EEXIST` →
-`held`. The state is written atomically with `version`, `plan.json` is written, and the run
-is kept for the later calls.
+**What to build:** CHG-03b builds step 7's M12 `acquire` (the lock hard-linked into place)
+and the atomic `state.json`/`plan.json` write; this slice adds the lost race (`EEXIST` →
+`held`: the race loser deletes its own provisional folder and exits 6 `lock`) and what runs
+around that acquire. After `acquire` succeeds, step 7 re-reads HEAD: a HEAD moved
+since the inventory releases the lock, deletes the folder and exits 6 `head-moved`
+(C:plan step 7, C:cli-and-exit-codes `head-moved` row). `plan --reword` on a clean tree (which skips the
+clean-tree refusal but not step 7) still takes the lock. `release --plan <planId>` removes
+the lock and the folder.
 
-**Blocked by:** RUN-04, RUN-05, CHG-03.
+**Blocked by:** RUN-04, RUN-05, CHG-03b.
 
 **Status:** ready-for-agent
 
-**Sources:** Q22, C:run-folder (`lock` row), M12 `acquire`, M18 `plan` step 7, story 187.
+**Sources:** Q22, C:run-folder (`lock` row), C:plan (step 7), C:cli-and-exit-codes,
+M12 `acquire`, M18 `plan` step 7, story 187.
 
-- [ ] Seam 1: `plan` with work to do → the lock holds the printed `planId` and a
-      `created` time. `<planId>/state.json` carries `version`. `plan.json` exists. No
-      temporary lock file is left.
+- [ ] Seam 1: a PATH git shim makes a manual commit the first time step 7's HEAD re-read
+      call runs → `acquire` succeeds, the re-read finds HEAD moved by that commit, the
+      lock is released, the folder is deleted, and `plan` exits 6 `head-moved`.
+- [ ] Seam 1: a PATH git shim creates the lock file (as another process's `acquire` would)
+      the first time inventory's last git call runs, before step 7 hard-links its own →
+      `EEXIST` → `held`, and the placed lock and folder are unchanged; the race loser (this
+      call) deletes its own provisional folder and exits 6 `lock`.
 - [ ] Seam 1: `plan --reword` on a clean tree → exit 0 and the lock is taken.
 - [ ] Seam 1: `release --plan <that planId>` then removes the lock and the folder.
 
@@ -162,8 +189,10 @@ handback itself is built by INT-05.
 - [ ] Seam 1: a fresh lock held by another `planId` → exit 6 `lock` with the "another
       /commit run is in progress (started HH:MM, last active N s ago)" text. No new
       folder and no temporary index are left.
-- [ ] Seam 1: the same case interactively → a `lock` handback. With `--no-user` → a plain
-      refusal without a takeover answer.
+- [ ] Seam 1: the refusal carries the same `planId`, `created` and `touched` fields
+      whether the call is interactive or `--no-user`; the `lock` handback's own shape is
+      INT-05's, and the `--no-user` reply's shape (no takeover question, no handback) is
+      RPL-05's (C:reply-and-handback).
 - [ ] Seam 1: a fresh lock with garbage content, and a fresh lock with a non-UUID
       `planId` → `lock` with `planId: null` and no handback.
 
@@ -203,10 +232,19 @@ hard-link probe decides: `busy` when the probe succeeds, `run-folder` when it fa
 
 **Sources:** Q22, C:run-folder (`lock` row, versioned state), M12, stories 193, 220.
 
-- [ ] Seam 1 (windows runner): a child process holds the lock open without share-delete.
-      `commit --plan <id> --all` → exit 6 `lock` (`busy`), never `internal`.
-- [ ] Seam 1 (windows runner): a held `state.json` that is released within the retry
-      window → the call succeeds.
+- [ ] Seam 1 (windows runner): a PowerShell/.NET helper opens the lock file with
+      `FileShare.None` and holds it until an observable event (a marker file the test
+      writes) tells it to close → `commit --plan <id> --all` meets `EPERM`/`EBUSY` while
+      held, exits 6 `lock` (`busy`), never `internal`.
+- [ ] Seam 1 (windows runner): the same helper holds `state.json` with `FileShare.None`
+      and releases it on its own observable event before the retry window elapses → the
+      call succeeds.
+- [ ] Seam 1 (windows runner): the helper keeps holding the lock past the retry window →
+      the hard-link probe decides: the probe still succeeds (another process genuinely has
+      the file) → `busy`; a stubbed probe failure → `run-folder`.
+- [ ] Seam 1 (windows runner): a stubbed `ENOTSUP`/`ENOSYS` on the lock link → `run-folder`
+      at once, without a probe (to RUN-10's manual check, or an accepted gap where it
+      cannot be forced).
 
 
 ## RUN-10: manual check: a filesystem without hard links
@@ -225,7 +263,7 @@ support hard links"). No fixture or CI runner claims this case.
       `plan` exits 6 `state` with the `run-folder` text, and no lock or folder is left.
 - [ ] The result is recorded with the release checks.
 - [ ] A file merely held open by another process is reported `busy` (RUN-09), not
-      `run-folder`
+      `run-folder`.
 
 
 ## RUN-11: linked worktrees get their own run
@@ -247,19 +285,40 @@ shares.
 
 ## RUN-12: `plan` has a 540-second deadline
 
-**What to build:** M15 `deadline` for `plan`. Every M2 call of the call takes `timeoutMs =
-deadline - now()` at its own start. Past the deadline, `plan` ends as `timeout` and
-discards its provisional run (it releases the run when it already holds the lock).
+**What to build:** M15 `deadline` and `cleanupDeadline` for `plan`. Every M2 call of the
+call takes `timeoutMs = deadline - now()` at its own start. Past the deadline, `plan` ends
+as `timeout` and discards its provisional run (it releases the run when it already holds
+the lock). After a timeout or an `internal` throw with the lock held, the cleanup and
+reporting git calls (the reply's M10 `treeState` read) take `cleanupDeadline - now()`
+(`plan`'s start plus 580 s), never the spent `deadline`; a cleanup call whose budget is at
+or below 0 is not spawned and counts as `timed-out`. The release and delete are CHG-03b's
+file-system calls and take no `timeoutMs`.
 
-**Blocked by:** RUN-05, FND-05.
+**Blocked by:** RUN-05, FND-05, CHG-03b.
 
 **Status:** ready-for-agent
 
-**Sources:** Q9, Q18, M15 `deadline`, C:commit-release (budget text), domain-code table (`timed-out`).
+**Sources:** Q9, Q18, M15 `deadline`/`cleanupDeadline`, C:plan (deadline text),
+C:cli-and-exit-codes (`timeout` and `internal` rows), C:commit-release (budget text),
+domain-code table (`timed-out`).
 
-- [ ] Seam 1 with the stepping clock at 541 s elapsed from the start → exit 5 `timeout`,
-      and no folder and no lock are left.
+- [ ] Seam 1: the stepping clock crosses 540 s before the provisional folder exists →
+      exit 5 `timeout`, and no folder and no lock are left (the provisional run is
+      discarded).
+- [ ] Seam 1: the stepping clock crosses 540 s only after step 7 has taken the lock →
+      exit 5 `timeout`, and the run is released (lock and folder both gone), not merely
+      discarded.
+- [ ] Seam 1: the stepping clock crosses 540 s after step 7 has taken the lock, then stays
+      below 580 s → the reply's tree-state read still runs (seen in the argv log of the
+      PATH git shim, `docs/spec/testing-modules.md`) and the reply carries it; the lock and
+      folder are gone.
+- [ ] Seam 1: the stepping clock stepped past 580 s before the cleanup → the tree-state
+      read is not spawned (absent from the git shim's argv log), the lock and folder are
+      still gone, and the reply still comes.
 - [ ] Seam 1 with the stepping clock at 530 s → `plan` completes normally.
+- [ ] Seam 1: a separate `plan --hunks` call takes its own 540 s deadline from its own
+      start (M15 `deadline`, `modules-m14-m19.md`), distinct from an in-process
+      `plan --hunks` which still runs under `plan`'s own deadline.
 
 
 ## RUN-13: mode resolution without a takeover
@@ -283,6 +342,8 @@ is built by INT-13.
 - [ ] Seam 1: a fully staged index beside a large new directory → `modeChoice`. A fully
       staged index beside hidden files only → `split`.
 - [ ] Seam 1: `plan --staged` with an empty index → exit 1 `usage` (`staged-empty`).
+- [ ] Seam 1: `--split` or `--staged` on a mixed index skips `modeChoice` (the flag wins,
+      as stated above) and plans directly in that mode.
 
 
 ## RUN-14: pre-folder refusals come in order
@@ -309,17 +370,22 @@ is built by INT-13.
 **What to build:** M15 `planRefusal` after the scan: `staged-hit`, then clean-tree
 detection, then `signing`. A tree with only hidden files, only collapsed directories, only
 `stagedExcluded` paths or only dirty submodules counts as clean. The `nothing` reply names
-their counts and paths. `reword` skips the clean check.
+their counts and paths. `reword` skips the clean check. This covers every "counts as
+clean" case, hidden-only included.
 
-**Blocked by:** RUN-05, SCN-15, GIT-10, CHG-13.
+**Blocked by:** RUN-05, SCN-15, GIT-10, CHG-13, GIT-12, CHG-14.
 
 **Status:** ready-for-agent
 
-**Sources:** Q9, Q10, Q18, M15 `planRefusal`, C:plan, story 170.
+**Sources:** Q9, Q10, Q18, M15 `planRefusal`, C:plan, stories 156, 170.
 
 - [ ] Seam 1: a clean tree on a locked SSH key → status `nothing`, not `signing`.
 - [ ] Seam 1: `plan --staged` with a staged secret on a locked key → `staged-hit`.
 - [ ] Seam 1: only a hidden file changed → `nothing`, and `text` names its count and path.
+- [ ] Seam 1: only collapsed directories changed (every change falls into
+      `untracked.collapsed`) → `nothing`, named in the reply.
+- [ ] Seam 1: a dirty submodule with no pointer change (`dirtySubmodules` only, no unit) →
+      `nothing`, named in the reply.
 - [ ] Seam 1: a modified file on a locked key → exit 6 `signing`, and no folder or lock
       is left.
 
@@ -341,25 +407,29 @@ With `--no-user`, the ending failure releases the lock and deletes the folder.
 - [ ] Seam 1: two bad `check` calls in a row → exit 2 and then `lintFailed`. Running
       `plan --hunks` between them → exit 2 both times.
 - [ ] Seam 1: a `source: user` plan with a lint error → `lintFailed` on the first failure.
-- [ ] Seam 1: a worker plan that is not valid JSON, twice → a `lintFailed` offering
-      `retry` and `no` only.
-- [ ] Seam 1: `--no-user` and a second failure → the lock and the folder are gone.
+- [ ] Seam 1: a worker plan that is not valid JSON, twice → a `lintFailed` ending (the
+      handback's `retry`/`no`-only shape, with no `edit` answer, is RPL's).
+- [ ] Seam 1: `--no-user` and a second failure → the lock and the folder are gone, and the
+      next `plan` starts fresh.
 
 
 ## RUN-17: `check` computes the confirmation from its table
 
 **What to build:** M15 `computeConfirm` per C:confirmation-triggers, tested through the
 table-driven fixture generator (one repo and worker plan per table row: mode, groups, new
-files, scan items, `resumed`, `interactive`). A hit is never a trigger.
+files, scan items, `interactive`). A hit is never a trigger. The `humanOnly` row needs
+SCN-14's scan wiring. The `resumed` row needs the separate `plan --hunks` call that INT-12
+builds, so INT-12 asserts that row instead of here.
 
-**Blocked by:** RUN-16, CHG-13, PLN-04.
+**Blocked by:** RUN-16, CHG-13, PLN-04, SCN-14.
 
 **Status:** ready-for-agent
 
 **Sources:** Q16, C:confirmation-triggers, M15 `computeConfirm`, testing seams (generator), stories 88, 90, 95.
 
-- [ ] Seam 1: every row of C:confirmation-triggers yields the `confirm` reasons and the
-      `humanOnly` flag it lists, asserted in `check`'s output.
+- [ ] Seam 1: every row of C:confirmation-triggers except `resumed` (INT-12 covers it)
+      yields the `confirm` reasons and the `humanOnly` flag it lists, asserted in `check`'s
+      output.
 
 
 ## RUN-18: `check` routes on the confirmation
@@ -376,7 +446,7 @@ builds the first `confirm` and `handedBack` handbacks; INT-09 adds the confirm b
 
 **Status:** ready-for-agent
 
-**Sources:** Q16, Q17, M15 `afterCheck`/`runEnd`, C:check, architectural decisions (confirmation bound to its answer), stories 86, 208.
+**Sources:** Q16, Q17, M15 `afterCheck`/`runEnd`, C:check, architectural decisions (confirmation bound to its answer), stories 86, 97, 208.
 
 - [ ] Seam 1: a new file in a group (interactive) → a `confirm` handback. HEAD is
       unchanged, the run is kept, and `awaitingConfirm` is stored.
@@ -385,6 +455,11 @@ builds the first `confirm` and `handedBack` handbacks; INT-09 adds the confirm b
 - [ ] Seam 1: the INT-02 First-slice run (one group of modified tracked files, interactive)
       → `check` finds no confirmation needed (`confirm: null`) and commits in the same
       process, with no question (story 86); the INT-02 tests still pass.
+- [ ] Seam 1: `confirm` set, `interactive: false`, not `humanOnly` → `check` commits in the
+      same process as with `confirm: null` (C:check, `interactive: false` row), no question asked.
+- [ ] Seam 1: a worker plan with every unit in `notIncluded` (zero groups) → `check` exits
+      0 with `status: "nothing"`, the `text` lists each `notIncluded` reason, the lock and
+      the folder are gone, and there is no `confirm` handback (story 97).
 
 
 ## RUN-19: `check` is refused after a committed group
@@ -402,9 +477,48 @@ at the budget with `continue`), `check` refuses with `already-committed` (exit 1
       `usage` (`already-committed`), and the committed group stays.
 
 
-## RUN-20: settle the takeover and run-lock open items
+## RUN-20: settle the run-lock open items (basics)
 
-**What to build:** a decision pass (human) over the takeover and run-lock items the last spec review
+**What to build:** a decision pass (human) over the run-lock items that do not depend on
+takeover mechanics (RUN-20b covers those). Record each decision in Q22 (and Q9 where the
+respawn is concerned), C:run-folder, C:plan, C:reply-and-handback, M12 and M18. The items:
+(6) a `modeChoice` answer that conflicts with the refused call's mode flag: the answer
+replaces the flag, with the handback table row fixed and a `split`-answer fixture added;
+(10) settled, not open: no M12 operation needs to separately "own" `call.lock` removal —
+RUN-04 already asserts it is created exclusively at call start and removed at call end
+(C:run-folder `call.lock` row, architectural decisions); this is a documentation-sync note,
+not a decision;
+(11) settled, not open: the error table's `lock` row (C:cli-and-exit-codes) already
+documents the late `ENOENT` → `taken-over` path alongside `EPERM`/`EBUSY` and the
+hard-link-probe detail (spec-review 24); a documentation-sync note, confirmed by RUN-04's
+own criterion;
+(12) scoped to the takeover path only: what happens "between the inventory and taking the
+lock" for the index-fingerprint and HEAD rechecks C:plan cites twice (spec-review 90),
+*during a takeover*. RUN-06 already builds and tests the non-takeover step-7 HEAD recheck,
+so only the takeover-path recheck remains open here; the resulting buildable criterion
+("after a takeover, HEAD moved → `head-moved` carrying the takeover notice") is gated on
+RUN-20b and lives in RUN-21.
+
+**Blocked by:** None (can start immediately)
+
+**Status:** needs-human
+
+**Sources:** Q9, Q17, Q22, C:run-folder, C:plan, C:reply-and-handback, C:cli-and-exit-codes, M12, M18.
+
+- [ ] Item 6 has a recorded decision (an **Amended** bullet in the Q it changes), and
+      decisions, contracts and spec agree.
+- [ ] Items 10 and 11 are recorded as documentation-sync notes (no **Amended** bullet
+      needed): RUN-04 already asserts the behaviour they describe.
+- [ ] Item 12's takeover-path scope is recorded, and RUN-06's non-takeover recheck is
+      cited so the two are not retested twice.
+- [ ] GIT-08, INT-13, RPL-09 and RUN-21 (the direct dependents of this slice) are updated
+      to cite the settled behaviour; RUN-20b, not this slice, updates the takeover-only
+      dependents.
+
+
+## RUN-20b: settle the takeover open items
+
+**What to build:** a decision pass (human) over the takeover items the last spec review
 left open. Record each decision in Q22 (and Q9 where the respawn is concerned),
 C:run-folder, C:plan, C:reply-and-handback, M12 and M18, and fix the Seam 1 case list in
 the run-integrity list. The items:
@@ -420,27 +534,28 @@ rationale in Q9 corrected;
 (5) the run-integrity case "a takeover whose repair resets the staging and leaves a mixed
 index → `modeChoice`", which cannot be built (a reset leaves the index equal to HEAD):
 replace it with a forced `modeChoice` under `killedLeftover`, and a reset under
-`--take-over X --staged` → `staged-empty` carrying the reset notice;
-(6) a `modeChoice` answer that conflicts with the refused call's mode flag: the answer
-replaces the flag, with the handback table row fixed and a `split`-answer fixture added;
-(7) the unqualified "a `--take-over` respawn cannot fall back to a `modeChoice`";
+`--take-over X --staged` → `staged-empty` carrying the reset notice; note in the record
+that the original case is unbuildable and why;
+(7) the unqualified "a `--take-over` respawn cannot fall back to a `modeChoice`" — partly
+fixed already (`plan.md` excepts `killedLeftover`, but not a bare first-spawn `plan`): the
+remaining gap is recorded and closed;
 (8) the reply `notices` definitions, which must also cover takeover notices that were
 never stored;
-(9) Q9's body, rewritten in place, needs its original sentence restored;
-(10) no M12 operation owns the removal of `call.lock` when a call exits.
+(9) Q9's body, rewritten in place, needs its original sentence restored.
 
 **Blocked by:** None (can start immediately)
 
 **Status:** needs-human
 
-**Sources:** Q9, Q17, Q18, Q22, C:run-folder, C:plan, C:reply-and-handback, M12, M18 (takeover paragraph), testing modules (run integrity).
+**Sources:** Q9, Q18, Q22, C:run-folder, C:plan, C:reply-and-handback, M12, M18 (takeover
+paragraph), testing modules (run integrity).
 
-- [ ] Each of the ten items has a recorded decision (an **Amended** bullet in the Q it
-      changes), and decisions, contracts and spec agree.
+- [ ] Each of the eight items (1-5, 7-9) has a recorded decision (an **Amended** bullet in
+      the Q it changes), and decisions, contracts and spec agree.
 - [ ] The run-integrity case list holds only buildable cases, including the fixtures that
-      items (3), (4) and (6) add.
-- [ ] RUN-21 to RUN-25, INT-06, INT-13, INT-26, GIT-08 and RPL-09 are updated to cite the
-      settled behaviour.
+      items (3), (4) and (5) add.
+- [ ] RUN-21, RUN-22, RUN-23, RUN-24 and RUN-25 are updated to cite the settled behaviour;
+      GIT-08 does not wait on this slice (it needs only RUN-20's basics).
 
 
 ## RUN-21: automatic takeover of a stale lock
@@ -450,10 +565,10 @@ mtime against the injected clock; an unparseable lock or a `planId` not in the m
 is judged by mtime alone). M12 `acquire({ takeOver })` then renames the lock to
 `lock.<own planId>`, verifies its bytes and mtime, links its own lock and reads no killed
 run (`killedRun: null`). `finishTakeover` deletes the old folder and the renamed file in
-the order RUN-20 settled. A notice names the stale `planId` and goes into every output
+the order RUN-20b settled. A notice names the stale `planId` and goes into every output
 `plan` ends with.
 
-**Blocked by:** RUN-07, RUN-08, RUN-20.
+**Blocked by:** RUN-07, RUN-08, RUN-12, RUN-13, RUN-18, RUN-20, RUN-20b.
 
 **Status:** ready-for-agent
 
@@ -466,6 +581,13 @@ the order RUN-20 settled. A notice names the stale `planId` and goes into every 
       takeover notice, and no lock is left.
 - [ ] Seam 1: a stale unparseable lock → taken over automatically.
 - [ ] Seam 1: the taken-over run's next `commit --plan <old> --all` → `taken-over`.
+- [ ] `call.lock`'s disposition when a call exits follows RUN-04's settled behaviour
+      (former RUN-20 item 10).
+- [ ] Seam 1 (RUN-20 item 12, takeover path): after a takeover, HEAD moved since the old
+      run's inventory → `head-moved` carrying the takeover notice.
+- [ ] Seam 1: the takeover notice survives a later refusal of the same `plan`
+      (`staged-empty`, `timeout`), and, on a modified tree needing confirmation, reaches
+      the `committed` reply and the text of a `confirm` handback.
 
 
 ## RUN-22: `--take-over <planId>` replaces only the asked-about run
@@ -475,7 +597,7 @@ whatever its age. It verifies that the moved lock holds that `planId`. On a mism
 puts the lock back and refuses with `lock`, naming the holder now in place and giving a
 fresh handback. It creates the old run's `call.lock` (a live call → `busy`, a dead pid on
 this host → proceeds). An unparseable lock is never taken over this way. A lock or folder
-that is already gone behaves as RUN-20 settled.
+that is already gone behaves as RUN-20b settled.
 
 **Blocked by:** RUN-21.
 
@@ -492,7 +614,7 @@ that is already gone behaves as RUN-20 settled.
 - [ ] Seam 1: a fresh unparseable lock and `--take-over` with any `planId` → `lock`, and
       the lock is untouched. A traversal `planId` in the flag → `usage`, and nothing
       outside `.commit-plan/` is touched.
-- [ ] Seam 1: the settled absent-lock case (RUN-20 item 4) has its fixture.
+- [ ] Seam 1: the settled absent-lock case (RUN-20b item 4) has its fixture.
 
 
 ## RUN-23: takeover of a killed run repairs the index
@@ -504,7 +626,7 @@ nothing staged → no reset and no reset notice; every staged path within the ki
 paths → `git reset -q` with the reset notice. `finishTakeover` runs only after the repair.
 The takeover, reset and `unstaged` notices reach every output `plan` ends with.
 
-**Blocked by:** RUN-21, RUN-20, CHG-20, EXE-11, EXE-02.
+**Blocked by:** RUN-21, RUN-20b, CHG-20, EXE-11, EXE-02.
 
 **Status:** ready-for-agent
 
@@ -518,6 +640,9 @@ The takeover, reset and `unstaged` notices reach every output `plan` ends with.
       no reset and no reset notice, and the `unstaged` notice is still given.
 - [ ] Seam 1: the old run's folder still exists when the repair runs (asserted through a
       repair-time marker or equivalent observable), and it is gone after the takeover.
+- [ ] Seam 1: the `unstaged` reset notice survives a later refusal of the same `plan`
+      (`staged-empty`, `timeout`), and, on a modified tree needing confirmation, reaches
+      the `committed` reply and the text of a `confirm` handback.
 
 
 ## RUN-24: leftover staging after a kill is never committed unasked
@@ -528,7 +653,7 @@ the killed group's paths still staged; its answers respawn without `takeOver`. `
 without `--reword` → `killed-leftover` (exit 6 `state`, run released, index untouched).
 `--reword` → goes on with a notice.
 
-**Blocked by:** RUN-23, RUN-13, RPL-09.
+**Blocked by:** RUN-23, RUN-20b, RUN-13, RPL-09.
 
 **Status:** ready-for-agent
 
@@ -542,7 +667,7 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
       `state` (`killed-leftover`) naming those paths. The index is unchanged, and the lock
       and the folder are gone.
 - [ ] Seam 1: the same under `--reword` → the run goes on with a notice naming the paths.
-- [ ] Seam 1: the replacement cases that RUN-20 item 5 settled.
+- [ ] Seam 1: the replacement cases that RUN-20b item 5 settled.
 
 
 ## RUN-25: a killed takeover is recovered through the renamed lock chain
@@ -551,9 +676,9 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
 the renamed lock file. The next takeover reads the facts through the renamed lock files,
 following them back to the first folder with a `state.json`, and deletes every folder on
 that chain after the repair. It also covers the orphan renamed lock, the repair-failure
-handling and the deletion order, as RUN-20 settled them.
+handling and the deletion order, as RUN-20b settled them.
 
-**Blocked by:** RUN-23, RUN-20.
+**Blocked by:** RUN-23, RUN-20b.
 
 **Status:** ready-for-agent
 
@@ -562,8 +687,8 @@ handling and the deletion order, as RUN-20 settled them.
 - [ ] Seam 1: a takeover killed during its repair, then taken over → the repair uses the
       first run's facts, and every folder on the chain plus the renamed files are gone.
 - [ ] Seam 1: the repair-failure fixture (a foreign `index.lock` blocking the reset)
-      behaves as RUN-20 item 3 settled.
-- [ ] Seam 1: an orphan `lock.<planId>` with no lock in place behaves as RUN-20 item 1
+      behaves as RUN-20b item 3 settled.
+- [ ] Seam 1: an orphan `lock.<planId>` with no lock in place behaves as RUN-20b item 1
       settled (including what `sweep` does with it).
 
 
@@ -590,13 +715,14 @@ run is `taken-over` at its next step.
 **What to build:** M15 `runEnd` as the single source of which outcomes keep the run and
 which release it. The check covers the refusal codes, a lint failure, the `check` results,
 the `commit` outcomes and `release`, per C:cli-and-exit-codes and C:run-folder. An
-`internal` ending releases as well.
+`internal` ending releases as well: `runEnd` replaces the `plan`-only `internal` cleanup
+CHG-03b built, so every subcommand's `internal` ending goes through it.
 
 **Blocked by:** RUN-16, RUN-18, EXE-10, EXE-12, EXE-16.
 
 **Status:** ready-for-agent
 
-**Sources:** M15 `runEnd`, C:cli-and-exit-codes (error table), C:run-folder (deleted with the lock), Q18, Q22, story 194.
+**Sources:** M15 `runEnd`, C:cli-and-exit-codes (error table), C:run-folder (deleted with the lock), Q18, Q22, stories 45, 194.
 
 - [ ] Seam 1: one assertion of lock and folder presence after each ending outcome the
       error table lists and that an earlier slice can reach (the table row names the

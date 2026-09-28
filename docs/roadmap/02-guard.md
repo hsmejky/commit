@@ -23,7 +23,9 @@ typographic quotes, case-insensitive) ends with no output and exit 0.
 - [ ] Seam 2: a large stdin payload delivered in several chunks is read whole (no synchronous read of descriptor 0).
 - [ ] Seam 3: `runHook` with injected `claudeHome` and `now` gives the same result as Seam 2 for the same input.
 - [ ] A static check asserts the guard entry point's import graph reaches only G1-G3, S1 and S2, and that the entry point checks the Node version before its dynamic import of the library.
-- [ ] No code path emits an `allow` decision.
+- [ ] A static check scans the guard entry point's own source text (the part that runs before the dynamic `import()`) for syntax newer than Node 12 parses (optional chaining `?.`, nullish coalescing `??`, top-level `await`, an `import()` outside that guarded line) and fails if any appears.
+- [ ] A static check greps the guard's reachable source (G1-G3, S1, S2, entry point) for the string `allow` used as a `permissionDecision` value, and fails if any code path can emit it; only `deny` and no-output are possible outputs.
+- [ ] A static check greps the same reachable source for `node:child_process` / `child_process` and fails if it appears — no guard module may spawn a process (Architectural decisions, Code split).
 
 
 ## GRD-02: Fail open on unreadable input or a crash
@@ -57,6 +59,7 @@ so `git commit -m x` in Bash is denied with the routing text.
 - [ ] Seam 3: `cd x && git commit -m x`, `a; git commit -m x`, `a | git commit -m x`, `a & git commit -m x` and a newline-separated form are denied; `git co''mmit -m x` is denied (not an early exit); `git commit -m "a\"b"` is one message argument.
 - [ ] Seam 3: G2 `segments` golden fixtures for Bash (seeded from PRE-03); in CI each is cross-checked against bash's own words (`printf '%s\0'`), with the deliberate classes oracle-skipped.
 - [ ] No deny text anywhere in the catalogue names `/commit`.
+- [ ] Seam 3: `echo git commit` (text that only mentions `git commit`) is denied — the documented false positive (Out of Scope).
 
 
 ## GRD-04: Q4 allowlist and the generic deny
@@ -72,7 +75,9 @@ it.
 **Sources:** Q4, Q21, C:guard (Parsing step 5, Deny messages), stories 23, 24, 25, 26, 29, 33.
 
 - [ ] No output for `git commit --no-edit`, `--amend --no-edit`, `--no-edit -q`, `--no-edit --quiet`, `--fixup=<sha>`, `--fixup=<sha> -q`, and reordered flag forms of these.
-- [ ] Denied, naming the flag: `-m`, `-F`, `--message`, `--file`, bare `git commit`, `-am x` (expanded to `-a -m`), `-mfoo`, `-t`, `-a`, `--allow-empty`, `--allow-empty-message`, a pathspec, `--`.
+- [ ] `Direct git commit is blocked. <route>` (the bare/`-m` row, already asserted for plain `-m` in GRD-03): bare `git commit`, `-F`, `--message`, `--file`, `-mfoo` (expanded to `-m foo`, no other flag present).
+- [ ] Denied, naming the flag, the generic row `git commit <flag> is not allowed here. <route>`: `-t`, `-a`, `--allow-empty`, `--allow-empty-message`, a pathspec, `--`.
+- [ ] Precedence per C:guard (D2): `-am x` (expanded to `-a -m`) → the generic row naming `-a`, not the bare/`-m` text, since the generic "any other flag or argument" row outranks the bare/`-m`/`-F`/`--message`/`--file` row, which applies only when nothing else matches.
 - [ ] A deny case run with `COMMIT_GUARD=off` and similar variables set is still denied (no env switch).
 
 
@@ -92,6 +97,9 @@ text.
 - [ ] `-n`, `--no-verify`, `--no-gpg-sign` → `<flag> is not allowed. Fix the hook or signing setup instead.`
 - [ ] `--fixup=amend:<sha>`, `--fixup=reword:<sha>` → the fixup-kind text; `-C`, `--reuse-message`, `-c <commit>`, `--reedit-message` → the generic row.
 - [ ] Every message containing `<route>` ends with the personal-skill line; the others do not.
+- [ ] Precedence per C:guard (D2), the full row order (`-c`/`--config-env` before `commit`; literal-subcommand; unknown global option; `--amend`; `--squash`; `-n`/`--no-verify`/`--no-gpg-sign`; `--fixup=amend:`/`--fixup=reword:`; the generic row; the bare/`-m`/`-F`/`--message`/`--file` row last, ties broken by argv order): `--amend -m x` → the amend text, not the bare/`-m` text.
+- [ ] `-n -m x` → the `-n` text, not the bare/`-m` text.
+- [ ] `--squash -m x` → the squash text, not the bare/`-m` text.
 
 
 ## GRD-06: PowerShell tokenizer
@@ -99,7 +107,7 @@ text.
 **What to build:** G2 for PowerShell (backtick escapes, `''` and `""`, here-strings closing
 at column 0, the `&` call operator), so the same denies hold for PowerShell commands.
 
-**Blocked by:** GRD-05.
+**Blocked by:** GRD-03.
 
 **Status:** ready-for-agent
 
@@ -124,35 +132,25 @@ or here-string turns the rest of its line into one quoted token while scanning c
 - [ ] `git \`⏎`commit -m x` (Bash) and its backtick form (PowerShell) → denied.
 - [ ] `git commit -m "unterminated` in both shells and an unterminated here-string holding a commit → denied.
 - [ ] The documented gap: `git com\`⏎`mit` → no output.
+- [ ] The documented gap's PowerShell form: `` git com`⏎`mit `` (backtick-newline split) → no output.
 
 
-## GRD-08: Redirections, parentheses and heredocs
+## GRD-08: Redirections, parentheses, heredocs and typographic quotes
 
 **What to build:** redirections are dropped with their target, `(` and `)` are tokens
-(a `$(…)` stays in its word), and Bash heredoc bodies are dropped.
+(a `$(…)` stays in its word), Bash heredoc bodies are dropped, and typographic quotes
+(U+201C-U+201E read as double quotes and U+2018-U+201B as single quotes in both shells) are
+removed for the early-exit check.
 
-**Blocked by:** GRD-07.
+**Blocked by:** GRD-06.
 
 **Status:** ready-for-agent
 
-**Sources:** Q3, C:guard (Parsing step 2, heredoc row), stories 13, 15.
+**Sources:** Q3 (pass 5, pass 8), C:guard (Parsing step 2, heredoc row, typographic quotes row), stories 13, 15, 22.
 
 - [ ] `git commit -m x 2>&1` and `git commit -m x > log.txt` → denied, one segment, the target not read as an argument; the `&` in `2>&1` does not split.
 - [ ] `(git commit -m x)` in both shells → denied; `(git commit --no-edit)` → no output.
 - [ ] `cat <<'EOF' > f`, body line `git commit -m x`, `EOF` → no output; `<<-` with tab-indented delimiter, two heredocs on one line, an unterminated body; `<<<` treated as a plain redirection.
-
-
-## GRD-09: Typographic quotes
-
-**What to build:** U+201C-U+201E read as double quotes and U+2018-U+201B as single quotes in
-both shells, and removed for the early-exit check.
-
-**Blocked by:** GRD-08.
-
-**Status:** ready-for-agent
-
-**Sources:** Q3 (pass 5, pass 8), C:guard (typographic quotes row, step 1), stories 15, 22.
-
 - [ ] `git “commit” -m x` (Bash) and PowerShell `git co‘’mmit -m x` → denied.
 - [ ] Typographic-quote fixtures are in the Bash oracle-skip class and cross-checked for PowerShell.
 
@@ -163,7 +161,7 @@ both shells, and removed for the early-exit check.
 including a quoted Windows path in Bash, and treats the dashed `git-commit` binary as
 `git commit`.
 
-**Blocked by:** GRD-09.
+**Blocked by:** GRD-06.
 
 **Status:** ready-for-agent
 
@@ -184,8 +182,8 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 
 **Sources:** Q3, Q4, C:guard (Parsing step 4, Deny messages), stories 14, 15, 31.
 
-- [ ] `git -C $dir commit -m x`, `git --no-pager -P commit -m x`, `git --git-dir=x commit -m x` → denied as a commit (generic row); `git -C x status` → no output.
-- [ ] `git -c k=v commit --no-edit` and `git --config-env=k=E commit --no-edit` → the `-c` row; `git -c k=v log` → no output.
+- [ ] `git -C $dir commit -m x`, `git --no-pager -P commit -m x`, `git --git-dir=x commit -m x` → `Direct git commit is blocked. <route>` (the bare/`-m` row: a skipped global option is not itself a matched row, per C:guard's precedence, D2); `git -C x status commit` (a pathspec named `commit`) → no output.
+- [ ] `git -c k=v commit --no-edit` and `git --config-env=k=E commit --no-edit` → the `-c` row; `git -c k=v log --grep commit` → no output.
 - [ ] `git --unknown commit` → the "Could not parse git options" row.
 
 
@@ -200,9 +198,10 @@ with `@` in PowerShell, is denied; `commit` matches case-insensitively.
 
 **Sources:** Q3, C:guard (Parsing step 4, Deny messages), story 15.
 
-- [ ] Denied with `Write the git subcommand literally. <route>`: `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, `git c*t -m x` in a command mentioning `commit`.
+- [ ] Denied with `Write the git subcommand literally. <route>`: `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, each in a command mentioning `commit`.
 - [ ] `git COMMIT -m x` → denied as a commit.
 - [ ] The documented gap: `git $(echo com)mit` → no output.
+- [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
 
 
 ## GRD-13: S2 script calls: recognise and build
@@ -220,6 +219,8 @@ the fixed list) and S2 `build` emits the one quoted form the allow rules match.
 - [ ] Seam 3 fixtures of C:guard's script-call list: quoted and unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path, `cd sub && node …`, a quoted backslash path in Bash → recognised with subcommand and args; `echo "node commit.js plan"` → not a call.
 - [ ] S2 `build` (declared at Seam 3) emits an absolute forward-slash path in double quotes for POSIX and Windows paths (with spaces and drive letters), and its output is recognised back with the same subcommand and args in both shells.
 - [ ] A caller's `plan`, `check`, `commit` and `release` script calls produce no guard output outside the worker (story 38).
+- [ ] Seam 3: an `infer` script call is recognised as a script call, like the other four subcommands.
+- [ ] Seam 3: `node commit.js foo` (an unrecognised subcommand) is not recognised as a script call.
 
 
 ## GRD-14: Worker-only rule
@@ -235,6 +236,7 @@ denied with the handback text; everything else the worker runs follows the norma
 
 - [ ] Seam 2 with `agent_type: commit:commit-worker`: a `commit` and a `release` script call → `The handback is for your caller: return the reply verbatim and stop.`; `plan` and `check` → no output.
 - [ ] The same `commit` call with another or no `agent_type` → no output.
+- [ ] Seam 2 with `agent_type: commit:commit-worker`: `git commit -m x` (not a script call) gets the ordinary `Direct git commit is blocked` deny, not the handback text.
 
 
 ## GRD-15: S1 heartbeat write
@@ -252,6 +254,8 @@ redacted.
 - [ ] Seam 2: a `plan` script call in each shell and quoting form writes the file under the temp Claude home (`CLAUDE_CONFIG_DIR` honoured), with `ts` from `now`, the raw `cwd`, and `command` as `commit.js plan <flags>` without the path or other segments, cut to 200 characters.
 - [ ] A denied compound command that also calls `plan` still writes the heartbeat; `check`, `commit` or a crash write none.
 - [ ] The write goes through a temporary name with pid and random part, renamed into place; no temporary file remains.
+- [ ] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).
+- [ ] Seam 2 with `COMMIT_GUARD_DEBUG=1`: a `plan` script call whose Claude home path is an existing file, not a directory, throws on the write, caught by GRD-02's fail-open (no stdout, exit 0, one debug stderr line); without the variable, no stderr.
 
 
 ## GRD-16: Debug log for decisions
@@ -282,7 +286,7 @@ for a fresh, matching heartbeat and `not-seen` with the guard notice otherwise.
 
 - [ ] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the "Guard hook did not run" notice, and the run goes on.
 - [ ] Path matching is realpathed with `\` → `/`, case-folded on Windows and macOS (a case-differing `cwd` matches there).
-- [ ] Round trip: a `plan` call through the Seam 2 guard, then `plan` at Seam 1 with the same Claude home → `active`.
+- [ ] Seam 1: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, `guardState` reads the heartbeat from the same `<OS home>/.claude` fallback the guard used (GRD-15), confirming guard and `plan` resolve the Claude home the same way (C:guard).
 
 
 ## GRD-18: Hook registration
@@ -305,7 +309,7 @@ for a fresh, matching heartbeat and `not-seen` with the guard notice otherwise.
 **What to build:** a CI performance check holding the guard's cold start to the target set
 in PRE-07, so story 22 is claimed.
 
-**Blocked by:** PRE-07, GRD-18.
+**Blocked by:** PRE-07.
 
 **Status:** ready-for-agent
 
@@ -328,6 +332,7 @@ accepted gap in Out of Scope.
 
 - [ ] Every case (wrappers such as `bash -c`, reordered flags, env prefixes, `xargs git commit`) is a Seam 3 fixture with its expected output; each no-output case names its accepted gap.
 - [ ] Fixture headers credit the source project and licence; no code is copied.
+- [ ] A static check reads each prior-art fixture header's declared licence and fails unless it is MIT, ISC, BSD, Apache-2.0 (NOTICE kept) or CC-BY-4.0 (Dependency policy).
 
 
 ## GRD-21: Guard hand-test
@@ -335,7 +340,7 @@ accepted gap in Out of Scope.
 **What to build:** a manual check of what no seam can reach: the installed guard in a real
 session, the human-only channel, and the silent exits.
 
-**Blocked by:** GRD-18, PRE-02.
+**Blocked by:** GRD-18, PRE-02, WRK-01, REL-01.
 
 **Status:** needs-human
 

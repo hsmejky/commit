@@ -32,7 +32,7 @@
 
 23. As a developer, I want `git commit --no-edit`, optionally with `--amend` and `-q` or `--quiet`, allowed, so that a merge can be finished. [Q4, Q21]
 24. As a developer, I want plain `git commit --fixup=<commit>`, optionally with `-q` or `--quiet`, allowed, so that requested fixups work. [Q4]
-25. As a developer, I want every other form denied naming the offending flag, after expanding short flag clusters and `--opt=value`, so that the agent knows what to change. [Q4]
+25. As a developer, I want every other form denied, most naming the offending flag (a bare commit and `-m`/`-F`/`--message`/`--file` share one generic message instead), after expanding short flag clusters and `--opt=value`, so that the agent knows what to change. [Q4]
 26. As a developer, I want `-m`, `-F`, `--message` and `--file` denied, so that no unlinted message lands. [Q4, C:guard]
 27. As a developer, I want a bare `git commit`, `--amend` without `--no-edit`, and `--squash` in any form denied, so that no editor hangs and no unlinted message lands. [Q4]
 28. As a developer, I want `-c <commit>`, `-C`, `--reuse-message`, `--reedit-message` and `--fixup=amend:` or `reword:` denied, so that no message bypasses lint. [Q4]

@@ -143,7 +143,7 @@ chain) and the renamed lock file; an automatic takeover adds a notice naming the
 `release` a no-op on mismatch, and on a match it takes the `call.lock` (`busy`) before
 deleting; 24-hour sweep of `<planId>/` folders (minted form only, never
 following a link) the lock does not name, and of leftover takeover and lock temp files.
-Every write of `state.json` goes to a temporary name, then a rename; on Windows a rename
+Every write of `state.json` and `plan.json` goes to a temporary name, then a rename; on Windows a rename
 that fails as file-in-use is retried briefly before it counts as a failure (C:run-folder). A cleanup error after
 a successful commit (for example a Windows file lock on a temp file) never changes the
 outcome: it becomes a notice and the sweep removes the leftovers later. Typed state

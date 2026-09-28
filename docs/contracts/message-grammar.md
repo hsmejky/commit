@@ -11,8 +11,10 @@ Structure: header line, blank line, optional body, optional footer paragraph. Al
 the `u` flag.
 
 - Header regex: `^([a-z][a-z0-9-]*)(\(([^()\s]+)\))?(!)?: (\S.*)$` → type, scope, breaking
-  flag, description.
-- `type` must be in `types`; `scope` must obey `scope`.
+  flag, description. A header that does not match this regex fails lint with the reason
+  `header is not 'type(scope)!: description'`, and no type check runs (so `Feat: x` fails
+  here, on the uppercase first character, never on its type).
+- `type` must be in `types` (reason `type '<type>' not in types`); `scope` must obey `scope`.
 - `maxSubjectLength` counts the **code points** of the whole header line.
 - `subjectCase: lower`: fails only when the first character of the description is an
   uppercase letter (`\p{Lu}`), unless the first word is all uppercase with at least two

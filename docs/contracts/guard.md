@@ -136,6 +136,16 @@ call with subcommand `commit` or `release`, deny with `The handback is for your 
 return the reply verbatim and stop.` (Q25). Everything else the worker runs is left to the
 normal rules.
 
+**Precedence:** when a `commit` segment's expanded arguments match more than one row below,
+the most specific wins, in this order: `-c` / `--config-env` before `commit`; the
+literal-subcommand row; unknown global option; `--amend` without `--no-edit`; `--squash` in
+any form; `-n` / `--no-verify` / `--no-gpg-sign`; `--fixup=amend:` / `--fixup=reword:`; the
+generic "any other flag or argument" row (also covers `-C` / `-c` after `commit`); the
+bare/`-m`/`-F`/`--message`/`--file` row, only when no other row matches. A tie within one row
+goes to the first matching token in argv order. So `-am x` denies on `-a` (the generic row:
+`git commit -a is not allowed here. <route>`), `--amend -m x` denies on `--amend`, `-n -m x`
+on `-n`, and `--squash -m x` on `--squash`.
+
 | Case | Message |
 | --- | --- |
 | bare commit, `-m`, `-F`, `--message`, `--file` | `Direct git commit is blocked. <route>` |

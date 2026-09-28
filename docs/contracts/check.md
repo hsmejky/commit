@@ -49,7 +49,7 @@ Lint failure (exit 2):
 
 ```json
 { "version": 1, "ok": false, "error": { "kind": "lint", "message": "2 errors" },
-  "errors": [{ "group": 1, "reason": "type 'Feat' not in types" },
+  "errors": [{ "group": 1, "reason": "type 'wip' not in types" },
              { "group": null, "reason": "h7 (src/c.js) not placed; put it in a group or in notIncluded" }] }
 ```
 

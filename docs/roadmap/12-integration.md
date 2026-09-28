@@ -6,9 +6,11 @@ prints a reply): every component tested only at Seam 1 hangs its tracer on it. I
 first end-to-end commit (the "First slice" of Further Notes) and closes `plan` → `check` → `commit` for one group, as
 thin as the spec draws it: no confirmation, no trailer, no scan wiring and no guard notice
 yet; RUN-18 (confirmation routing), MSG-07 (trailers), CHG-16 and SCN-15 (the scan in
-`plan`) and INT-27 (guard notice) each widen it. Component slices own behaviour; INT slices own the wiring: every later INT slice widens the
-path by one capability, binds to the component slices that build it, and builds the reply
-variant or handback kind its path first emits (RPL holds the cross-cutting reply rules).
+`plan`) and INT-27 (guard notice) each widen it. Component slices build their own behaviour
+and test it at Seam 1 themselves; INT holds only the wiring for paths nothing else builds —
+the end-to-end subcommand flow that later slices widen by one capability, bound to the
+component slices that build each capability, and the reply variant or handback kind that
+path first emits (RPL holds the cross-cutting reply rules).
 Guard + worker + script round trips and the 0.1.0 dogfood and hand-test checks close the
 group. Sources: M18 step tables, C:plan, C:check, C:commit-release, C:cli-and-exit-codes,
 C:reply-and-handback, Domain code → CLI kind, Testing seams (Seam 1), Story verification.
@@ -16,11 +18,13 @@ C:reply-and-handback, Domain code → CLI kind, Testing seams (Seam 1), Story ve
 ## INT-01: Walking skeleton: `plan` on a clean repo prints a reply
 
 **What to build:** the thinnest end-to-end path through the script. M1 routes `plan` to an
-M18 `plan` workflow; a thin M2 `run` (toplevel and status only), a thin M3 probe and a thin
-tree-state read find a clean tree, so the workflow ends with `nothing`; M17 builds the
-minimal reply (`version`, `status`, and `text` ending "working tree clean"), and M1 prints
-the envelope. Every component that is tested only at Seam 1 hangs its tracer on this path;
-INT-02 (the first end-to-end commit) then closes `plan` → `check` → `commit`.
+M18 `plan` workflow, which holds one function per row of its step table so later slices add
+a step without touching M1; a thin M2 `run` (toplevel and status only), a thin M3 probe and
+a thin tree-state read find a clean tree, so the workflow ends with `nothing`; M17 builds the
+minimal reply (`version`, `status`, the base `callerRule`, and `text` ending "working tree
+clean"), and M1 prints the envelope. Every component that is tested only at Seam 1 hangs its
+tracer on this path; INT-02 (the first end-to-end commit) then closes `plan` → `check` →
+`commit`.
 
 **Blocked by:** RPL-01, FND-04.
 
@@ -29,13 +33,12 @@ INT-02 (the first end-to-end commit) then closes `plan` → `check` → `commit`
 **Sources:** Further Notes "First slice", M1, M17, M18 `plan` step table, C:plan,
 C:reply-and-handback, C:cli-and-exit-codes, Testing seams (Seam 1).
 
-- [ ] Seam 1: `plan --split` on a clean temp repo exits 0 with one JSON object,
-      `reply.status: "nothing"`, a `text` ending "working tree clean", and no lock or run
+- [ ] Seam 1: bare `plan` on a clean temp repo exits 0 with one JSON object,
+      `reply.status: "nothing"`, `callerRule` equal to the base rule text byte for byte
+      (C:reply-and-handback), a `text` ending "working tree clean", and no lock or run
       folder left
 - [ ] The test runs the script as a subprocess through the FND-04 harness, with no worker
       and no hook
-- [ ] M18 `plan` holds one function per row of its step table, so later slices add a step
-      without touching M1
 
 
 ## INT-02: First end-to-end commit: plan, check and commit one group of modified tracked files
@@ -51,7 +54,7 @@ committed as planned, without a trailer (MSG-07 adds it); `plan` runs no scan wi
 (CHG-16, SCN-15) and the reply carries no guard notice (INT-27).
 
 **Blocked by:** PRE-01, PRE-08, PRE-09, INT-01, GIT-02, CFG-02, CHG-04, CHG-05, PLN-01,
-RUN-06, EXE-02, RPL-03, RPL-04.
+RUN-06, EXE-02, RPL-03.
 
 **Status:** ready-for-agent
 
@@ -71,50 +74,6 @@ C:run-folder, C:reply-and-handback, stories 40, 70, 194.
       `commit --all` output, and a `reply` with `status: "committed"`, the `sha subject` line,
       the base `callerRule` and "working tree clean"
 - [ ] After the commit the lock and the run folder are gone (story 194)
-
-
-## INT-03: Hidden-only changes and zero groups end as `nothing`
-
-**What to build:** `plan` on a tree whose only changes are hidden or collapsed counts it as
-clean and replies `nothing`, naming the hidden changes; `check` on a worker plan whose units
-all sit in `notIncluded` ends the run as "nothing committed" with the reasons. The plain
-clean-tree case is the walking skeleton (INT-01).
-
-**Blocked by:** INT-02, CHG-01, CHG-13, RUN-18.
-
-**Status:** ready-for-agent
-
-**Sources:** M18 `plan` step 6, M15 `planRefusal`, C:check, Domain code → CLI kind (clean
-row), stories 97, 156.
-
-- [ ] Hidden-only changes count as clean and are still named in the `nothing` reply (story
-      156)
-- [ ] `check` with every unit in `notIncluded` exits 0, `status: "nothing"`, the text lists
-      each reason, and the lock and folder are released (story 97)
-
-
-## INT-04: Pre-folder refusals from `plan` steps 1-2
-
-**What to build:** every refusal M18 raises before a run folder exists maps through the error
-table to its CLI kind and exit code, with a `failed` reply, no lock and no `.commit-plan`
-directory created.
-
-**Blocked by:** INT-02, GIT-03, GIT-04, CFG-03, RUN-14.
-
-**Status:** ready-for-agent
-
-**Sources:** M18 `plan` steps 1-2, C:cli-and-exit-codes (`state`, `config`, `env` rows),
-Q21, stories 110, 184, 185, 186, 202, 211.
-
-- [ ] Seam 1: outside a repo and in a bare repo → exit 6 `state`, no `.commit-plan`
-- [ ] Each in-progress state, a pending `merge --squash` (its own text) and unmerged entries
-      from a conflicted `stash pop` → exit 6 `state` (stories 184, 211)
-- [ ] `i18n.commitEncoding` `utf8` and `UTF-8` accepted, another encoding → exit 6 `state`
-      (story 186)
-- [ ] An unparseable or mistyped repo layer → exit 1 `config` before any folder (story 110)
-- [ ] A PATH git shim reporting a version below 2.34 → exit 1 `env` (story 202); a PATH
-      without git → exit 1 `env` (see the notes on the entry-point env cases)
-- [ ] Every refusal carries a `failed` reply with the base `callerRule` and no handback
 
 
 ## INT-05: A live lock at `plan` becomes a `lock` handback
@@ -138,28 +97,10 @@ stories 187, 188.
       `returnToParent: true`
 - [ ] The refused run's provisional folder is deleted; the holder's lock and folder are
       untouched
-
-
-## INT-06: One call per run: `busy`, `ended`, `taken-over`, `already-committed`, `no-groups`
-
-**What to build:** every `--plan` call holds the run's `call.lock` for its whole duration, and
-the per-run refusals a later call can meet map to their kinds without ending the run where the
-table says they do not.
-
-**Blocked by:** INT-02, RUN-02, RUN-04, RUN-19, RUN-20.
-
-**Status:** ready-for-agent
-
-**Sources:** M18 "Every call with `--plan`", C:run-folder, C:cli-and-exit-codes (`lock`,
-`usage` rows), stories 192, 209, 224.
-
-- [ ] Seam 1: a second call on a `planId` whose `call.lock` is held by a live process →
-      exit 6 `lock` `busy`, the run kept
-- [ ] A call after the run ended → `ended`; a state with another `version` → `ended` (story
-      224); a run whose lock names another `planId` → `taken-over` (story 192)
-- [ ] `check` after a group of the run committed → exit 1 `usage` `already-committed`;
-      `commit --all` with every group committed → `no-groups`
-- [ ] `call.lock` is gone after every call, success or refusal
+- [ ] The `lock` handback's `callerRule` equals the base rule plus the handback rule, byte
+      for byte, matching the C:reply-and-handback fixture text; a reply from this run's other
+      endings that carries no handback (INT-01's `nothing`, INT-02's `committed`) holds only
+      the base rule
 
 
 ## INT-07: A first lint failure goes back to the worker
@@ -182,28 +123,6 @@ array and no `reply`, keeps the run, and a corrected worker plan passes on the n
 - [ ] A corrected plan then commits through the same run
 
 
-## INT-08: `lintFailed` handback and the `--no-user` lint ending
-
-**What to build:** the lint failure that ends the worker's retries (the second since the last
-`plan --hunks`, or the first of `source: user` text) becomes a `lintFailed` handback in an
-interactive run; with `--no-user` it releases the lock and deletes the folder.
-
-**Blocked by:** INT-07, RUN-16.
-
-**Status:** ready-for-agent
-
-**Sources:** C:reply-and-handback (`lintFailed` row), C:check, Q18, Q20, stories 127, 214.
-
-- [ ] Seam 1: two failing `check` calls → the second carries a `lintFailed` handback with
-      `retry` (respawn `resume` plus `edit: fix these lint errors: …`, at most 500
-      characters), `edit` (needsText) and `no` (`run release`)
-- [ ] A first failure of `source: user` text carries the handback at once
-- [ ] When every error is a shape error (invalid JSON, wrong shape) there is no `edit` answer
-      (story 214)
-- [ ] Under `--no-user` the second failure releases lock and folder; the next `plan` starts
-      fresh
-
-
 ## INT-09: Several groups need confirmation; `yes` commits with `--confirmed`
 
 **What to build:** a `split` run with more than one group gets a `confirm` handback from
@@ -211,7 +130,7 @@ interactive run; with `--no-user` it releases the lock and deletes the folder.
 --confirmed`) commits every group in order; `commit --all` without `--confirmed` while a
 confirmation is pending is refused.
 
-**Blocked by:** INT-02, RUN-18, EXE-04.
+**Blocked by:** EXE-04, EXE-22, INT-02, RUN-18.
 
 **Status:** ready-for-agent
 
@@ -222,12 +141,18 @@ confirmation is pending is refused.
 - [ ] Seam 1: two groups → `check` exits 0 with a `confirm` handback: `yes` (`run` with
       `--confirmed`, `timeoutMs` 600000), `edit`, `one`, `no`; `ifNoUser` `yes` without
       `humanOnly`
+- [ ] The question text is exactly "Commit as proposed? To change it, type your changes under
+      Other."; `edit` is the `needsText` (`Other`) answer, its `respawn` `resume` plus the
+      user's words as `{text}`; `one` is offered only in `split` with more than one group and
+      its `respawn` holds `resume: <id>` then `edit: one`
 - [ ] The confirm block shows each group's header, body and files (cap 20 per group) (story
       91)
 - [ ] Running the `yes` command verbatim commits both groups in order and replies
       `committed`
 - [ ] `commit --plan <id> --all` without `--confirmed` → exit 1 `usage` `unconfirmed`, run
       kept (story 208)
+- [ ] Running the `no` answer's `release` command verbatim → exit 0, `status: "nothing"`,
+      the lock and folder gone, the real index unchanged (story 92)
 
 
 ## INT-10: A new file in `split` triggers confirmation
@@ -247,38 +172,18 @@ stories 88, 152, 153.
 - [ ] Gitignored and hidden files are not units and are not in `notIncluded`
 
 
-## INT-11: `no` releases the run; `release` edge cases
-
-**What to build:** a `no` answer's `release --plan` deletes lock and folder with the index
-untouched; `release` on a mismatched `planId` is a no-op; a `release` meeting a live
-`call.lock` is `busy`; the tree-state read runs under the 45 s release budget.
-
-**Blocked by:** INT-09, RUN-01, RUN-03, FND-05.
-
-**Status:** ready-for-agent
-
-**Sources:** M18 `release`, C:reply-and-handback (`run`), C:commit-release, stories 92, 45.
-
-- [ ] Seam 1: `release` after a `confirm` → exit 0, `status: "nothing"`, lock and folder gone,
-      the real index unchanged
-- [ ] `release` with another run's `planId` → no-op, that run untouched
-- [ ] `release` while a `call.lock` is live → `busy`, run kept
-- [ ] With the clock stepped past 45 s before the tree-state read, the reply omits the tree
-      state and the release is still complete
-
-
 ## INT-12: Resumed runs always confirm; `one` re-plans as one group
 
 **What to build:** a separate `plan --hunks --plan` call re-renders the hunk index, resets the
 lint counter and marks the run `resumed`, so the next `check` confirms even a single tracked
 group; the `one` answer's respawn is offered only in `split` with several groups.
 
-**Blocked by:** INT-09, INT-08, CHG-19.
+**Blocked by:** CHG-19, INT-09, RUN-16, PLN-05.
 
 **Status:** ready-for-agent
 
 **Sources:** M18 `plan --hunks`, Q16, C:worker-input (`resume`, `edit`), stories 47, 93, 94,
-95, 222.
+95, 181, 222.
 
 - [ ] Seam 1: `plan --hunks --plan` as a separate call keeps the unit IDs and every stored
       notice, and resets the lint counter
@@ -287,6 +192,10 @@ group; the `one` answer's respawn is offered only in `split` with several groups
 - [ ] The `one` answer is absent from a single-group and from a `staged` confirmation (story
       94); a one-group plan written after `one` commits all included files (story 222)
 - [ ] An edit to a known path between `plan` and `plan --hunks` → `diff-changed`, run ended
+- [ ] Seam 1: `resumed` alone triggers `confirm` (no `humanOnly`) in `split` and in `staged`,
+      even with one group and no other trigger, per C:confirmation-triggers' `resumed` row
+- [ ] Seam 1: `resumed` triggers `confirm` in a `reword` run (story 181); under `--no-user`
+      the row gives no `confirm`
 
 
 ## INT-13: Mixed index asks `modeChoice`; an all-staged index plans `split`
@@ -313,7 +222,7 @@ with counts only and releases its lock; an index holding every change plans `spl
 content with the written message and reports the rest; an empty index and a staged set with a
 hit or a hidden staged-new path are refused.
 
-**Blocked by:** INT-13, CHG-14, SCN-15, EXE-19.
+**Blocked by:** INT-13, CHG-14, SCN-15, EXE-19, PLN-05.
 
 **Status:** ready-for-agent
 
@@ -380,7 +289,8 @@ released, and commit the rest when a size-skipped file is left out.
 
 - [ ] Seam 1: two groups under `--no-user` → both committed, no handback (story 100)
 - [ ] A `humanOnly` trigger under `--no-user` → `handedBack` with `question: null`, text
-      "nothing committed — run /commit to plan again", lock and folder released (story 102)
+      "nothing committed — run /commit to plan again", lock and folder released, `ifNoUser`
+      `returnToParent: true` (story 102)
 - [ ] A size-skipped file in `notIncluded` with its reason → the rest commits, the notice is in
       the text (story 103)
 
@@ -439,74 +349,12 @@ object.
       under `.git/lfs/objects`; skipped otherwise, never faked
 
 
-## INT-21: Failures end the run cleanly
-
-**What to build:** M18's `try`/`finally` after `acquire`: a failing group stops the loop,
-earlier commits stay, the current group is unstaged only if it reached staging, and the lock
-and folder are released; each failure maps through the error table.
-
-**Blocked by:** INT-09, EXE-06, EXE-07, EXE-08, EXE-10, EXE-11, EXE-12, EXE-13, EXE-01.
-
-**Status:** ready-for-agent
-
-**Sources:** Q18, M18 error table paragraph, C:commit-release, C:cli-and-exit-codes, stories
-58, 76, 160-168.
-
-- [ ] Seam 1: a pre-commit hook rejecting group 2 → exit 4 `git`, group 1 kept, `failed`
-      reply listing the committed, failed and remaining groups, lock and folder gone (story
-      160)
-- [ ] A HEAD moved between `plan` and `commit` → exit 6 `head-moved`; staging by hand between
-      groups → exit 6 `diff-changed` (`index-changed`) with earlier groups kept
-- [ ] An edit to a planned file after `plan` → `diff-changed` before the index is touched
-      (stories 58, 76)
-- [ ] An existing `index.lock` → exit 6 `index-lock` with the index not reset (story 166)
-- [ ] A commit git made despite a failure is reported with its `sha` (story 165)
-
-
-## INT-22: Time budget: `continue`, boundaries and kills
-
-**What to build:** the per-call 540 s budget: later groups start only while 480 s remain, an
-out-of-budget call ends with a `continue` handback, and a hook past the budget is killed and
-reported as `timeout`.
-
-**Blocked by:** INT-21, FND-05, RUN-12, GIT-07, EXE-16, EXE-17, EXE-01.
-
-**Status:** ready-for-agent
-
-**Sources:** Testing seams "End-to-end time budget", Q9, Q18, stories 43, 53, 172, 173, 174,
-215.
-
-- [ ] Seam 1: three groups, clock stepped to 61 s after group 1 → `continue` handback whose
-      `run` is the same `commit --all` without `--confirmed`; running it commits groups 2-3
-- [ ] Stepped to exactly 60 s → group 2 still starts
-- [ ] Stepped to 535 s at start with a hook sleeping past 5 s → tree killed, exit 5 `timeout`,
-      a commit git made anyway detected
-- [ ] `plan` past its 540 s deadline → exit 5 `timeout`, folder discarded
-
-
-## INT-23: A killed call leaves no commit behind
-
-**What to build:** the commit entry point's `SIGINT`/`SIGTERM`/`SIGHUP` handler kills the
-active git child tree and removes `call.lock`, so a stopped call lands no commit.
-
-**Blocked by:** INT-21, PRE-13, GIT-08, EXE-24.
-
-**Status:** ready-for-agent
-
-**Sources:** Q9, Q18, M2, Domain code → CLI kind (killed-process paragraph), story 217.
-
-- [ ] Seam 1 (POSIX): `SIGTERM` to a `commit` call during a slow pre-commit hook → no commit
-      lands afterwards and `call.lock` is gone
-- [ ] The run state shows `indexReset` set when the kill came during staging, so a takeover can
-      repair it (handed to RUN-25)
-
-
 ## INT-24: Reword workflow
 
 **What to build:** `plan --reword` (and `--dictated`, which skips the hunk index) → `check` →
 the amend, with repo-state refusals specific to reword.
 
-**Blocked by:** INT-08, EXE-20, MSG-08, GIT-09.
+**Blocked by:** EXE-20, GIT-09, MSG-08, RUN-16.
 
 **Status:** ready-for-agent
 
@@ -519,44 +367,6 @@ the amend, with repo-state refusals specific to reword.
 - [ ] Pushed, unborn and merge-commit HEAD → exit 6 (`pushed`, `state`); a root commit rewords
       (stories 176, 177)
 - [ ] A first reword never confirms (story 181)
-
-
-## INT-25: Post-scan refusal order and signing notices
-
-**What to build:** `plan` step 6: the clean-tree and `staged-hit` checks come before the
-signing probe; a locked SSH key refuses with `signing`; an openpgp setup carries its prompt
-note to the reply.
-
-**Blocked by:** INT-14, RUN-15, GIT-12.
-
-**Status:** ready-for-agent
-
-**Sources:** Q18, M18 `plan` step 6, C:plan, stories 169, 170, 171.
-
-- [ ] Seam 1: a passphrase key not in the agent → exit 6 `signing`, folder discarded (story
-      170)
-- [ ] A clean tree with the same signing setup → `nothing`, not `signing`
-- [ ] openpgp enabled → the prompt note in the reply's notices (story 171)
-
-
-## INT-26: Takeovers carry their notices into every ending
-
-**What to build:** the takeover behaviour itself (automatic takeover of a stale lock, `plan
---take-over <planId>`, index repair) belongs to RUN-21 to RUN-25; this slice wires the
-takeover notices into every ending of `plan` and of the run, so the notice with the stale
-run's `planId` and any `unstaged` report reach whatever reply the run ends with.
-
-**Blocked by:** INT-05, INT-03, RUN-21, RUN-22.
-
-**Status:** ready-for-agent
-
-**Sources:** Q22, M18 `plan` step 3, C:run-folder, stories 189, 190, 210.
-
-- [ ] The takeover notice survives a later refusal of the same `plan` (`staged-empty`,
-      `timeout`)
-- [ ] Seam 1: after an automatic takeover on a modified tree, the takeover notice (with the
-      stale `planId`) and any `unstaged` report reach the `committed` reply and the text of
-      a `confirm` handback
 
 
 ## INT-27: Guard heartbeat round trip
@@ -572,11 +382,13 @@ the reply carries the "guard did not run" notice.
 **Sources:** Q23, Testing seams "ScriptCall round trip", stories 34, 36, 37.
 
 - [ ] Seam 2 then Seam 1: the guard process fed the exact `plan` command in Bash and in
-      PowerShell form writes the heartbeat; the following `plan` has no guard notice
-- [ ] A heartbeat older than 15 minutes, or from another repo → `env.guard: "not-seen"` and the
-      notice in the reply text (stories 34, 36)
+      PowerShell form writes the heartbeat; the following `plan` has no guard notice (the
+      `env.guard` state and its `not-seen` cases are GRD-17's `guardState`/`samePathTree`
+      tests, not repeated here)
 - [ ] Seam 1: the INT-02 First-slice run with no heartbeat in the Claude home → the
-      `committed` reply's `notices` hold the guard "not seen" notice
+      `committed` reply's `notices` hold the exact text "Guard hook did not run: `node`
+      missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct
+      `git commit` is not blocked." (Q23, `q23-guard-heartbeat.md`)
 
 
 ## INT-28: ScriptCall round trip and the worker-only rule
@@ -586,7 +398,7 @@ PowerShell and is recognised with the same subcommand and arguments; as
 `commit:commit-worker` a `commit` or `release` call is denied, from the main session it
 passes.
 
-**Blocked by:** INT-09, INT-11, INT-22, RPL-08, GRD-13, GRD-14.
+**Blocked by:** GRD-13, GRD-14, INT-05, INT-09, INT-13, INT-17, RPL-08.
 
 **Status:** ready-for-agent
 
@@ -633,3 +445,30 @@ Q15.
 - [ ] A set of real commits of this repo made only through the plugin, with the repo's
       `.claude/commit.json` rules applied
 - [ ] Every failure, unexpected question or deny recorded as an issue before REL-05
+- [ ] Grouping quality (story 63) is assessed over the dogfood commits and recorded as an
+      issue when a group is wrong-sized or misses an atomic boundary (Story verification:
+      grouping quality is a hand-test-plus-dogfood row)
+
+
+## INT-31: Domain-code → CLI-kind row coverage
+
+**What to build:** the completeness test moved out of RPL-03: a test walks every (row,
+producer) pair of Domain code → CLI kind — `index-changed`, `head-moved`, `git-failed` and
+`config` each have several producers — and checks that at least one Seam 1 case asserts each
+pair's kind and exit code. Rows named as accepted gaps in `docs/roadmap/README.md` are listed
+explicitly in the test, never skipped silently.
+
+**Blocked by:** CFG-07, CHG-05, CHG-19, CHG-20, EXE-01, EXE-05, EXE-06, EXE-07, EXE-08,
+EXE-10, EXE-11, EXE-12, EXE-13, EXE-16, EXE-17, EXE-22, GIT-09, GIT-12, INT-01, INT-07,
+INT-09, INT-14, INT-15, INT-24, RPL-01, RPL-02, RUN-02, RUN-04, RUN-05, RUN-06, RUN-07,
+RUN-12, RUN-13, RUN-14, RUN-15, RUN-19, RUN-24.
+
+**Status:** ready-for-agent
+
+**Sources:** Domain code → CLI kind, C:cli-and-exit-codes, M1, M17.
+
+- [ ] A test walks every (row, producer) pair of `docs/spec/domain-code-cli-kind.md` and maps
+      it to the Seam 1 case that reaches it, failing on any pair with none
+- [ ] The unexpected-throw row (`internal`) is covered by the fault seam EXE-01 decides, or
+      is named in the test's accepted-gap list with the README's accepted-gap text
+- [ ] Adding a row to the table without a case makes the test fail

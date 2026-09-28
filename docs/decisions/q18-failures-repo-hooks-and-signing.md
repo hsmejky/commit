@@ -208,6 +208,18 @@
     markers and be deleted. The report instead says `index.lock` was left and should be
     checked and removed by hand if no git process is running. The earlier rationale ("the
     running `git commit` holds the lock until the kill") held only for partial commits.
+- **Amended.** By spec pass 9 (2026-09-27): after each `git commit`, the script reads HEAD
+  and checks its first parent against the SHA expected before that commit (an unborn branch:
+  HEAD has no parent). A match: HEAD is the group's SHA, stored as the next group's expected
+  HEAD. A mismatch (a hook or another process committed as well): the group is still
+  reported committed, with the SHA HEAD now holds, plus a notice naming the group ("another
+  commit was made during group `<n>`; later groups refused"); the expected HEAD is not
+  advanced past the mismatch, so the next group's own (a) check finds HEAD moved from the
+  expected SHA and is refused `head-moved`. Except in `reword`: `--amend --only` gives the
+  new commit the same parent as the one it replaced, not the old HEAD, so there the check
+  instead compares HEAD's first parent against the expected HEAD's own first parent (both
+  none, on a root commit); otherwise every reword would report a false "another commit"
+  notice.
 - **Rejected.**
   - Rolling back committed groups (destroys work the user may want); retrying on a repo hook
     failure (the hook's rules are not the plugin's to guess); `-c commit.gpgsign=false`.

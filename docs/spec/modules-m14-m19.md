@@ -95,13 +95,23 @@ created between groups are both caught:
   commit did not finish in 9 min — a pre-commit hook or a signing prompt may be waiting",
   Q18, plus, when M10 returns `lockLeft`, the notice that `index.lock` was left in place and
   should be checked and removed by hand if no git process is running); after
-  a commit,
-  when M3 `headTree()` differs from the
+  a commit, M3 `head()` reads the new HEAD and checks its first parent against the SHA
+  expected before this commit (an unborn branch: HEAD has no parent) — except in `reword`,
+  where `--amend --only` gives the new commit the same parent as the one it replaced, so
+  there M3 compares HEAD's first parent against the expected HEAD's own first parent (both
+  none, on a root commit); when it matches, HEAD is the group's SHA; when it does not (a
+  hook or another process committed as well), the
+  group is still reported committed, with the SHA HEAD holds, a notice names the group
+  ("another commit was made during group <n>; later groups refused"), and the next group's
+  (a) check then finds HEAD moved from the expected SHA and refuses `head-moved`;
+  separately, when M3 `headTree()` differs from the
   recorded tree ID (a hook or another process changed the index between the backstop and the
-  commit), a notice names the group ("committed tree differs from the scanned index"); after any failure or timeout re-read HEAD (within
+  commit, with no extra commit), a notice names the group ("committed tree differs from the scanned index"); after any failure or timeout re-read HEAD (within
   `cleanupDeadline`), so a commit git made anyway is reported with its `sha`; hook-rewrite detection
-  (`treeChangedDuringCommit`, stored in the run state); mark committed and advance the
-  expected HEAD.
+  (`treeChangedDuringCommit`, stored in the run state); on a match, mark the group committed
+  and advance the expected HEAD to the SHA just determined; on a mismatch, mark it committed
+  with the SHA HEAD holds but leave the expected HEAD as it was, so the next group's own
+  check finds it stale and refuses `head-moved`.
 - On failure, M10 `unstage` runs only when the failing group itself reached (c); a refusal in
   (a) or a failure in (b) leaves the real index as it is, even when an earlier group or call
   set `indexReset`. `indexReset` only decides the report: `unstaged` is `null` unless it is
@@ -232,7 +242,8 @@ Commits share (a commit counts as Conventional Commits only when its header matc
 case, p95 length with the rounding and clamp of C:infer, types
 (all 11 standard types always, plus non-standard ones by the 5% rule, dropped list) and
 `wouldFail` via M6 lint; outcomes `too-few-commits` and
-`not-conventional`, which still carry `nonConventional` and `commitCount`, with
+`not-conventional`, which still carry `ccShare` (over all commits read, `null` only when
+`commitCount` is 0), `nonConventional` and `commitCount`, with
 `wouldFail: null` and no proposal. `configFor(proposal, layers) → { repo, user }`: per layer the current raw
 layer with the proposal's keys replaced and other keys kept, checked by M4 `validateLayer`,
 each `{ text } | { errors }`. Sources: Q6, Q7, C:infer.

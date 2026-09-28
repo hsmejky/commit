@@ -25,7 +25,7 @@ status `A` or untracked, never from the worker. It builds the thin `check` workf
 - [ ] Seam 1: a plan with one group naming both modified files → `check` output `groups[0]` with both paths, `new: false`, `hunks: null`, `newFiles: []`.
 - [ ] Seam 1: no `plan.groups.json` → exit 2, `error.kind: "lint"`, one error with `group: null`.
 - [ ] Seam 1: `plan.groups.json` not valid JSON, and valid JSON missing `groups` → exit 2 shape error, `group: null`.
-- [ ] Seam 1: after a failed `check`, no stored group remains (a following `commit --all` finds none).
+- [ ] Seam 1: after a failed `check`, no stored group remains in `state.json`.
 
 
 ## PLN-02: Completeness and path resolution in `split`
@@ -43,7 +43,7 @@ rename is named by its new path only; `split` accepts zero groups.
 - [ ] Seam 1: a unit in no group and not in `notIncluded` → exit 2, "h7 (src/c.js) not placed; put it in a group or in notIncluded" (`group: null`).
 - [ ] Seam 1: a path in two groups → error naming it; a path that is not a change → error.
 - [ ] Seam 1: a rename named by its old path → "use the new path src/b.js for the rename of src/a.js".
-- [ ] Seam 1: all units in `notIncluded`, zero groups → `ok: true`, `groups: []` (the release and `nothing` reply are INT/RUN).
+- [ ] Seam 1: all units in `notIncluded`, zero groups → `ok: true`, `groups: []` (the release and `nothing` reply are RUN-18's).
 
 
 ## PLN-03: Hunk-level plans and identical hunks
@@ -115,10 +115,14 @@ M8 `scanText`; errors carry the group number, and a scan error carries the `scan
 
 **Sources:** Q5, Q10, Q13, C:check, C:message-grammar, stories 178, M6, M8, M14.
 
-- [ ] Seam 1: header `Feat: x` → "type 'Feat' not in types" with `group: 1`.
+- [ ] Seam 1: header `Feat: x` → shape error "header is not 'type(scope)!: description'" with `group: 1`, no type check run.
+- [ ] Seam 1: header `wip: x` → "type 'wip' not in types" with `group: 1`.
 - [ ] Seam 1: a body holding a home-directory path → "message contains `local-path`", with spans stored for the reply; the matched text never appears in stdout.
 - [ ] Seam 1: a body footer with a disallowed token → lint error; allowed tokens pass.
-- [ ] `osUser` reaches the message scan (see notes: `validatePlan`'s signature lacks it).
+- [ ] A static test asserts M14's module imports `lint` from M6.
+- [ ] A static test asserts `validatePlan`'s exported signature accepts `osUser` and passes
+      it through to `scanText`, since the current signature omits it (a gap this slice
+      closes).
 
 
 ## PLN-07: Attribution flag and stored group facts
@@ -128,7 +132,7 @@ M8 `scanText`; errors carry the group number, and a scan error carries the `scan
 `false` for dictated `source: "user"` text otherwise) and the normalised message, returned
 for `check` to store with `committed: false`.
 
-**Blocked by:** PLN-05, PLN-06, CFG-08.
+**Blocked by:** PLN-05, PLN-06, CFG-08, MSG-06.
 
 **Status:** ready-for-agent
 

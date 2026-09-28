@@ -24,9 +24,10 @@ their order.
 
 - [ ] Seam 1: `plan` in a directory that is not a repository → exit 6, `error.kind: "state"`, no `.commit-plan` created.
 - [ ] Seam 1: `plan` in a bare repository → exit 6 `state`.
-- [ ] Seam 1: a PATH git shim reporting a version below 2.34 → `env` (story 202); a PATH without git → `env` naming the missing git.
-- [ ] M2 returns `stdout` as a `Buffer` and never decodes it; every spawn sets `windowsHide`.
-- [ ] No other module spawns a process (the architecture rule "M2 is the only spawner" holds for the code written so far).
+- [ ] Seam 1: a PATH git shim reporting a version below 2.34 → `env` (story 202).
+- [ ] Seam 1: a PATH containing no git binary at all → exit 1 `env` (produced in CI through PATH manipulation, not only by hand).
+- [ ] M2 returns `stdout` as a `Buffer` and never decodes it; every spawn sets `windowsHide`, both asserted from the fixture's recorded call.
+- [ ] A static test greps every source file outside M2 for `child_process`, `spawn`, `execFile` or `exec` and fails when one is found (the architecture rule "M2 is the only spawner" holds for the code written so far).
 
 
 ## GIT-02: M3 HEAD state: branch, detached, unborn, expected HEAD
@@ -92,16 +93,16 @@ removed except the keep-set, `GIT_LITERAL_PATHSPECS=1`, `core.quotePath=false`,
 alternate index; history reads additionally pin `log.showSignature=false` and
 `i18n.logOutputEncoding=UTF-8`; stdin for message input and path lists.
 
-**Blocked by:** GIT-02, CHG-03.
+**Blocked by:** GIT-02, CHG-03b.
 
 **Status:** ready-for-agent
 
 **Sources:** Q9, Q18, M2, stories 74, 147, testing-modules row M2/M3.
 
-- [ ] Seam 1: decoy `GIT_DIR`, `GIT_INDEX_FILE` and `GIT_ATTR_SOURCE` exported to the entry point → `plan` inventories, diffs and scans the real repo (units and hits as without the decoys).
+- [ ] Seam 1: decoy `GIT_DIR` and `GIT_INDEX_FILE` exported to the entry point → `plan` inventories and diffs the real repo (units as without the decoys). The `GIT_ATTR_SOURCE` decoy is checked in CHG-10, once `check-attr` is wired.
 - [ ] Seam 1: `GIT_CONFIG_SYSTEM` pointing at a file that sets a key is honoured (the keep-set survives; the signing-probe case is in GIT-10).
 - [ ] Seam 1: a path containing `[id]` and `*` is inventoried literally (literal pathspecs).
-- [ ] `GIT_OPTIONAL_LOCKS=0` is set on read-only calls and never on staging calls (observable by an argument/env-recording git shim fixture or by code review in the slice's test).
+- [ ] `GIT_OPTIONAL_LOCKS=0` is set on read-only calls and never on staging calls (observable by an argument/env-recording PATH git shim fixture).
 
 
 ## GIT-06: M2 `git commit` environment for user hooks
@@ -153,9 +154,8 @@ without unstaging or releasing.
 
 **Sources:** Q9, Q18, architectural-decisions "Asynchronous process adapter", story 217.
 
-- [ ] Seam 1 (POSIX): `SIGTERM` sent to a `commit` call during a slow pre-commit hook → no commit lands afterwards (reflog unchanged after the hook's sleep would have ended) and `call.lock` is gone.
+- [ ] Seam 1 (POSIX): `SIGTERM` sent to a `commit` call during a slow pre-commit hook → `killActive()` kills the hook's process tree (the hook's own sleep never reaches its marker file) and `call.lock` is gone; whether a commit lands from that call is EXE-24's assertion, not this slice's.
 - [ ] The lock and run folder are left for the takeover (not released).
-- [ ] If PRE finds no catchable signal on some OS, this slice records the revision of story 217 instead of the handler for that OS.
 
 
 ## GIT-09: M3 history reads and reword facts
@@ -166,16 +166,15 @@ remote-tracking refs, skipped when unborn), with `plan --reword` refusing unborn
 HEAD (`state`) and a pushed HEAD (`pushed`); also the last 200 non-merge messages for
 `infer`. It adds the reword rows of M15 `planRefusal`.
 
-**Blocked by:** GIT-02, CHG-03.
+**Blocked by:** GIT-02, CHG-03b.
 
 **Status:** ready-for-agent
 
 **Sources:** Q18, Q20, Q21, C:plan (step 2), C:plan-hunks (`recentSubjects`, `oldMessage`), stories 176, 177, M3.
 
 - [ ] Seam 1: `plan` → `recentSubjects` holds the last 10 subjects, newest first, with `log.showSignature=true` set in the repo config not leaking signature lines.
-- [ ] Seam 1: `plan --reword` on an unborn HEAD and on a merge commit → exit 6 `state`; on a HEAD contained in a remote-tracking ref → `pushed`; on a root commit → accepted (root-commit fact stored for CHG-15).
-- [ ] Seam 1: `plan --reword` on a clean tree → exit 0 and the lock taken; `oldMessage` stored in the run state byte-exact (UTF-8).
-- [ ] The 200-message history read is exposed for INF (`infer`), verified there.
+- [ ] Seam 1: `plan --reword` on an unborn HEAD and on a merge commit → exit 6 `state` (the merge-commit text is "HEAD is a merge commit; reword it by hand", confirmed in Q20); on a HEAD contained in a remote-tracking ref → `pushed`; on a root commit → accepted (root-commit fact stored for CHG-15).
+- [ ] Seam 1: `plan --reword` on a clean tree → `oldMessage` stored in the run state byte-exact (UTF-8) (the lock-taken criterion is RUN-06's).
 
 
 ## GIT-10: Signing probe tracer: enabled flag and non-SSH formats
@@ -194,7 +193,7 @@ place in the order.
 **Sources:** Q18, C:plan (`signing`, notices), stories 169, 171, M11, testing-modules row M11.
 
 - [ ] Seam 1: `commit.gpgsign` unset or `false` → `plan.json` `signing: { enabled: false }`.
-- [ ] Seam 1: openpgp enabled → `ready: "prompt"` and the note in the stored notices; the run goes ahead.
+- [ ] Seam 1: openpgp enabled → `ready: "prompt"` and the note in the stored notices and in the `plan` reply's notices (story 171); the run goes ahead.
 - [ ] Seam 1: `gpg.format=x509`, and separately a custom `gpg.program` → `ready: "unknown"`, run goes ahead.
 - [ ] Seam 1: `gpg.format=ssh` with a custom `gpg.ssh.program` → `"prompt"` with the note.
 - [ ] Seam 1: `commit.gpgsign=true` set only through an exported `GIT_CONFIG_SYSTEM` file is seen by the probe.
@@ -206,21 +205,23 @@ place in the order.
 **What to build:** the key-source table of C:plan (unset key, literal key, `.pub` path, other
 path with `<path>.pub` or the public part of an `openssh-key-v1` file; `~/` against the
 injected OS home, `~user/` → unknown, relative against the toplevel) and the header rows:
-OpenSSH cipher `none` or PEM without `ENCRYPTED` → `true`; a cipher or PEM `ENCRYPTED` →
-`false` → `plan` refuses `signing` ("signing key locked — unlock it …"); unknown header →
-`"unknown"`; no private file → `false`.
+OpenSSH cipher `none` or PEM without `ENCRYPTED` → `true`; a cipher or PEM `ENCRYPTED`, and no
+private key file, both give `false`; an unreadable header gives `"unknown"` outright. With no
+`ssh-add -L` check wired yet, every `false` here is untrusted, so this slice reports it as
+`ready: "unknown"` (the table's last row) rather than refusing. `plan` does not refuse
+`signing` from a locked key at this slice — GIT-12 turns a confirmed-unloaded key into that
+refusal ("signing key locked — unlock it …") once `ssh-add -L` is wired.
 
-**Blocked by:** GIT-10, PRE-15.
+**Blocked by:** GIT-10.
 
 **Status:** ready-for-agent
 
 **Sources:** Q18, C:plan (SSH readiness tables), stories 170, M11, testing-modules row M11.
 
 - [ ] Seam 1: an unencrypted OpenSSH key and an unencrypted PEM key → `ready: true` (no agent involved).
-- [ ] Seam 1: a passphrase-protected key file not in any agent → exit 6 `signing` (domain code `signing-locked`).
+- [ ] Seam 1: a passphrase-protected key file, with no `ssh-add` check yet available → `ready: "unknown"` (last table row: an untrusted `false` becomes `"unknown"`; the `signing` refusal is GIT-12's, once `ssh-add -L` is wired).
 - [ ] Seam 1: `user.signingKey` set to a `.pub` path reads the private file beside it; a `~/` path expands against the temp OS home; a `.pub` without its private file → `"unknown"` when no agent check ran (last table row).
 - [ ] Seam 1: `user.signingKey` unset with `gpg.ssh.defaultKeyCommand` set, and unset without it → `"unknown"`.
-- [ ] Seam 1: a locked key on a clean tree → "nothing to commit", not `signing` (probe after clean-tree detection).
 
 
 ## GIT-12: SSH readiness through the agent (`ssh-add -L`)
@@ -230,7 +231,7 @@ Git for Windows' `usr/bin` from `git --exec-path` first; a `PATH` `ssh-add` else
 used), `-L` compared by key type and base64 blob, exit 1/2 as an empty list, any other exit or
 a timeout as "not run", and the last table row turning an untrusted `false` into `"unknown"`.
 
-**Blocked by:** GIT-11.
+**Blocked by:** GIT-11, PRE-15.
 
 **Status:** ready-for-agent
 
@@ -240,3 +241,5 @@ a timeout as "not run", and the last table row turning an untrusted `false` into
 - [ ] Seam 1: no `ssh-add` next to git's `ssh-keygen` (git shim directory without one) → a passphrase key or a literal key → `"unknown"`, an unencrypted key file → `true`.
 - [ ] Seam 1: an `ssh-add` stub that sleeps past the fixed timeout → `"unknown"`, `plan` not stalled.
 - [ ] Seam 1: an `ssh-add` stub exiting 2 (no agent) with a passphrase key → exit 6 `signing` (empty list is trusted).
+- [ ] Seam 1: a passphrase-protected key file not in any agent → exit 6 `signing` (domain code `signing-locked`).
+- [ ] Seam 1: a locked key on a clean tree → "nothing to commit", not `signing` (probe after clean-tree detection).

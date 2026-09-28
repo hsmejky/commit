@@ -23,13 +23,14 @@ spec Seam 3.
 
 - [ ] Seam 3 table: `feat: add x` parses to type `feat`, no scope, no breaking flag,
       description `add x`, and lints clean under the 11 default types.
-- [ ] Seam 3 table: a type outside `types` (`wip: x`) and an uppercase type (`Feat: x`)
-      each give one reason naming the type (the reason text C:check shows, e.g.
-      "type 'Feat' not in types").
-- [ ] A header that does not match the regex (no `: ` separator, empty description) gives
-      a header-shape reason, not a throw.
-- [ ] `parse` and `lint` are pure and exported for M14, M19 and M5; `lint` takes the config
-      values as an argument and reads nothing else.
+- [ ] Seam 3 table: a type outside `types` (`wip: x`) gives one reason naming the type, the
+      exact text C:check shows: `type 'wip' not in types`.
+- [ ] A header that does not match the regex — no `: ` separator, empty description, or an
+      uppercase first character (`Feat: x`, which the strict, lowercase-first-character
+      regex rejects) — gives the reason `header is not 'type(scope)!: description'`, not a
+      throw, and no type check runs.
+- [ ] A static test asserts `parse` and `lint` are exported, pure (no I/O in their source);
+      `lint` takes the config values as an argument and reads nothing else.
 
 
 ## MSG-02: Scope rule and breaking flag
@@ -72,8 +73,7 @@ function), stories 106, 123.
       matrix`, `feat: 2fa`, a description starting with a backtick, a quote or a symbol
       all pass; `feat: A thing` fails (a one-letter uppercase word is not an acronym).
 - [ ] Seam 3 table under `any`: `feat: Add x` passes.
-- [ ] The lowercase check is exported on its own and is the one M19 calls (no second
-      implementation).
+- [ ] A static test asserts the case-check function is exported separately from `lint`.
 
 
 ## MSG-04: Paragraphs, footer grammar and the body rule
@@ -142,8 +142,8 @@ spec testing-modules (M6 lint through `check`).
       `check` like their UTF-8 form.
 - [ ] Seam 1: a message with an invalid UTF-8 byte fails `check` with exit 2 and the error
       `message not UTF-8`, and nothing is committed.
-- [ ] Seam 1, once `check` commits (needs EXE: one group committed): the committed message
-      has LF line ends and exactly one trailing LF.
+- [ ] Seam 1: a message whose lines end in a lone CR (no LF) passes `check` normalised to
+      LF, like its CRLF form.
 
 
 ## MSG-07: Trailers appended to committed messages
@@ -153,7 +153,7 @@ the message's footer paragraph when it ends in one, otherwise as a new last para
 the order new footers, (carried trailers,) attribution. The committed message is exactly
 the lint-approved message plus these trailers.
 
-**Blocked by:** MSG-04, CFG-08, EXE-03, INT-02.
+**Blocked by:** MSG-04, CFG-08, CFG-09, EXE-03, INT-02, PLN-06.
 
 **Status:** ready-for-agent
 
@@ -169,8 +169,10 @@ the lint-approved message plus these trailers.
       committed message equals the lint-approved message byte for byte.
 - [ ] Seam 1: a trailer instruction inside the worker plan's message text cannot add a
       trailer (it fails lint per MSG-05); the only trailer is the resolved one (story 119).
+- [ ] Seam 1, once `check` commits: the committed message has LF line ends and exactly one
+      trailing LF.
 - [ ] Seam 1: the INT-02 First-slice run (`plan` → `check`) now commits the planned header
-      plus the default trailer, and the `committed` reply's `text` holds the trailer line.
+      plus the default trailer.
 
 
 ## MSG-08: Reword carry-over of foreign trailers

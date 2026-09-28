@@ -59,14 +59,19 @@ handles it the same way.
   terminal/rendering damage. Then a
   `Notices:` block with every entry of `notices`, then
   the trailer line and the tree state (below). So a notice reaches the user on every
-  status, also through a subagent that relays only `text`. Every list in `text` holds at
+  status, also through a subagent that relays only `text`. Exempt from the trailer line and
+  tree state: the worker's own fallback reply, built when a script call's output cannot be
+  parsed ([worker input](worker-input.md)) — the worker made no git call, so it has neither
+  to report. Every list in `text` holds at
   most 10 entries, then "+N more": commit lines, not included, `unstaged`, lint errors,
   notices and the "N files left" paths; the confirmation block keeps its own cap of 20
   files per group. Messages are never cut: the user has to read a rejected or proposed
   message whole.
 - `notices`: scan-hit notices, `indexOnly` notices, the notices `plan` stored, and
-  `commit`'s own (a hook-rewritten tree, "committed tree differs from the scanned index";
-  a cleanup error after a successful commit, [run folder](run-folder.md)), including those a
+  `commit`'s own (a hook-rewritten tree, "committed tree differs from the scanned index"; a
+  hook or another process committing during a group, "another commit was made during group
+  `n`; later groups refused" ([commit, release](commit-release.md)); a cleanup error after a
+  successful commit, [run folder](run-folder.md)), including those a
   `confirm: null` `check` merges in ([check](check.md)). Kept as an array for tests; callers
   do not read it.
 - `callerRule`: in **every** reply, fixed text built from two parts, each the same in every

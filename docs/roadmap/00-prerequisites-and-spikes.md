@@ -112,10 +112,10 @@ runs on all three OSes, and the minimum Claude Code version that supports it.
 
 **Sources:** Q3, Q13, Open verification items (exec-form hooks), Prompt-only and manifest blocks "Hook registration".
 
-Gates: GRD-18 (hook registration), the README's Claude Code version requirement (needs REL: README requirements).
+Gates: GRD-18 (hook registration), REL-02 (the README's Claude Code version requirement).
 
 - [ ] A probe plugin installed under a path containing a space runs its exec-form hook on Windows, macOS and Linux, and the hook receives the `PreToolUse` JSON on stdin.
-- [ ] The minimum Claude Code version is found (docs, changelog, or probing) and recorded in Q3/Q13; if exec form is not supported in a plugin, the user is asked before any fallback is chosen.
+- [ ] The minimum Claude Code version is found (docs, changelog, or probing) and recorded in Q3/Q13; if exec form is not supported in a plugin, the user is asked before any fallback is chosen; a shell-form fallback would reopen Q3's path-quoting decision, GRD-18's hook registration and REL-02's requirements section, and is recorded as such if it happens.
 
 
 ## PRE-07: Measure the guard's cold start and set the target
@@ -123,7 +123,7 @@ Gates: GRD-18 (hook registration), the README's Claude Code version requirement 
 **What to build:** measured cold-start time of the exec-form guard on all three OSes, and a
 target the user sets from it, so story 22 can be claimed.
 
-**Blocked by:** GRD-01.
+**Blocked by:** GRD-16, GRD-12, GRD-14, PRE-06.
 
 **Status:** needs-human
 
@@ -143,13 +143,13 @@ stdout budget and the hunk-bodies paging.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** needs-human
 
 **Sources:** Q9, Q19, C:plan-hunks, Open verification items (tool output limits).
 
-Gates: needs CHG: hunk index spill and paging (M13); needs INT: first slice (reply within the stdout budget); needs RPL: reply size budgets.
+Gates: CHG-18 (stdout budget and spill to `hunks.json`), INT-02 (first end-to-end commit, reply within the stdout budget), RPL-05 (reply size budgets).
 
-- [ ] Recorded for the current Claude Code version: the Bash and PowerShell tool output cut-off (default and with `BASH_MAX_OUTPUT_LENGTH`), which end is cut, the `Read` line cap and default page size.
+- [ ] Recorded for the current Claude Code version: the Bash and PowerShell tool output cut-off (default, and, by driving a nested headless Claude Code session with `BASH_MAX_OUTPUT_LENGTH` set in its environment, the cut-off with it changed), which end is cut, the `Read` line cap and default page size.
 - [ ] Q9 and Q19 (and C:plan-hunks if the numbers change) are amended with the version and the confirmed or new budget.
 
 
@@ -164,7 +164,7 @@ behaves as Q11 step 1 assumes.
 
 **Sources:** Q11, Open verification items (temporary index), Further Notes "Git and tool checks".
 
-Gates: needs CHG: temporary index (M10); needs INT: first slice.
+Gates: CHG-05 (temporary index), INT-02 (first end-to-end commit).
 
 - [ ] `git diff -M` against an index copy with `git add -N` entries shows each intent-to-add path as `A` with its content.
 - [ ] A deleted path plus an intent-to-add path pair as `R`, both for a plain `mv` and a `git mv` after the reset.
@@ -183,7 +183,7 @@ the current release.
 
 **Sources:** Q11, Open verification items (filtered files), Further Notes "Git and tool checks".
 
-Gates: needs CHG: staging a filtered or LFS file; needs INT: filtered/LFS widening.
+Gates: CHG-10 (filtered files and `linguist-generated`), CHG-21 (whole-file staging edge cases), INT-20 (filtered/LFS widening).
 
 - [ ] With `git-lfs` installed, `git diff` shows an LFS-tracked change as a pointer diff.
 - [ ] `git add` of the whole file stores the object under the LFS objects directory, and the staged diff then matches the planned hash.
@@ -202,7 +202,7 @@ tools.
 
 **Sources:** Q5, Open verification items (project directory), Further Notes.
 
-Gates: needs CFG: attribution resolver (M5) project-layer lookup.
+Gates: CFG-10 (settings layer precedence and the project directory).
 
 - [ ] With Claude launched in a repo subfolder and different project settings at the launch directory and the toplevel, the settings the harness applies are identified.
 - [ ] Whether `CLAUDE_PROJECT_DIR` is set in the main thread's Bash and PowerShell tool environments is recorded (a subagent's is already known not to be).
@@ -220,7 +220,7 @@ OS and shell, and that the worker runs on a Windows setup without Git Bash.
 
 **Sources:** Q16, Q24, Q1, story 41, Open verification items (README allow rules).
 
-Gates: needs WRK: the slice in which the worker runs the script; needs REL: README allow rules and requirements.
+Gates: WRK-02 (the worker prompt that runs `plan` to `check`), REL-02 (README install section: requirements and allow rules).
 
 - [ ] The anchored `PowerShell(…)` node rule (quoted path, `*` version segment) and the run-folder `Edit` rule let a stub run through the PowerShell tool on Windows with no prompt.
 - [ ] The Bash node rule does the same on macOS and Linux.
@@ -239,7 +239,7 @@ timeout, per OS, and whether a detached child survives.
 
 **Sources:** Q9, Q18, story 217, Open verification items (tool-call termination), Architectural decisions (asynchronous process adapter).
 
-Gates: needs EXE: the slice that claims story 217 (signal handler and tree kill on Esc or session end).
+Gates: GIT-08, EXE-24 (story 217, signal handler and tree kill on Esc or session end).
 
 - [ ] On Linux, macOS and Windows, a probe script records which signal it receives (process-group `SIGTERM`, `SIGKILL`, tree kill) on Esc and on a tool timeout, in both shells.
 - [ ] Whether a `detached` child (a sleeping stand-in for git and a hook) survives is recorded.
@@ -251,13 +251,13 @@ Gates: needs EXE: the slice that claims story 217 (signal handler and tree kill 
 **What to build:** a manual check that a repo with openpgp signing enabled gets the
 signing "prompt" note, since the openpgp probe is deferred past 0.1.0.
 
-**Blocked by:** INT-25.
+**Blocked by:** GIT-10.
 
 **Status:** needs-human
 
 **Sources:** Q18, Open verification items (openpgp probe), Story verification ("Failures, hooks, signing").
 
-Gates: needs REL: 0.1.0 release.
+Gates: REL-05 (0.1.0 release).
 
 - [ ] In a repo with `commit.gpgsign=true` and openpgp format, a run's reply carries the signing prompt note, and the commit then goes through the user's normal signing flow.
 
@@ -267,8 +267,10 @@ Gates: needs REL: 0.1.0 release.
 **What to build:** a decision pass (human) over wording the last spec review left open, so
 that slices can assert exact texts. (1) The user stories whose wording disagrees with the
 settled decisions or contracts: stories 34, 40, 42, 44, 46, 51, 52, 53, 54, 57, 58, 61, 62,
-65, 67, 102, 103, 150, 201 and 213, and story 228 against the Q24 budgets (200-character
-agent description, 1.5 kB skill). (2) Texts not recorded in Q18 or Q21: the `signing-locked`
+65, 67, 102, 103, 147, 150, 185, 196, 201 and 213, and story 228 against the Q24 budgets
+(200-character agent description, 1.5 kB skill); also the glossary's "never answered without
+a user" line, which disagrees with the same settled decision as story 102 (spec-review item
+79). (2) Texts not recorded in Q18 or Q21: the `signing-locked`
 text and the six refusal texts emitted by M3, M11, M15 and M16. Fix each story or record
 each text; a slice not gated here follows the contract.
 
@@ -278,8 +280,31 @@ each text; a slice not gated here follows the contract.
 
 **Sources:** Q18, Q21, Q24, M3, M11, M15, M16, the four story files, story verification.
 
+Gates: GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03, GIT-12 (slices that assert the settled
+story texts and recorded refusal texts).
+
 - [ ] Every listed story agrees with the decision or contract it cites, or the story is
       amended
 - [ ] The `signing-locked` text and the six refusal texts are recorded verbatim in Q18 or
       Q21
-- [ ] GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03 and GIT-11 cite the settled texts
+- [ ] GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03 and GIT-12 cite the settled texts
+
+
+## PRE-16: Spike: managed-settings directory path and CI write permissions
+
+**What to build:** the managed-settings directory's fixed path on macOS, Windows and Linux,
+and the CI permissions needed to write a file there for the managed-layer fixture.
+
+**Blocked by:** None (can start immediately).
+
+**Status:** needs-human
+
+**Sources:** Q5, M5, glossary (managed directory), story 116.
+
+Gates: CFG-11 (managed settings layer).
+
+- [ ] The managed-settings directory's fixed path is found for macOS, Windows and Linux.
+- [ ] The CI permissions (or workaround) needed to write `managed-settings.json` there on
+      hosted runners are found; if none exist, the CFG-11 fixture design is revised with the
+      user.
+- [ ] Both are recorded as a Q5 amendment and in the glossary's "managed directory" entry.

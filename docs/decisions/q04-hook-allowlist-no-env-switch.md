@@ -2,9 +2,15 @@
 
 - **Context.** Some legitimate commits are outside the plugin's scope: finishing a merge, a
   fixup the user asked for. A non-interactive agent hangs on any form that opens an editor.
-- **Decision.** A strict allowlist; every other form of `git commit` is denied, and the deny
-  message names the offending flag. Short flags are expanded before matching (`-am` →
-  `-a -m`, `-mfoo` → `-m foo`) and `--opt=value` is split.
+- **Decision.** A strict allowlist; every other form of `git commit` is denied. The deny
+  message names the offending flag for a form with its own row in C:guard (`--amend`,
+  `--squash`, `-n` / `--no-verify` / `--no-gpg-sign`, `--fixup=amend:` / `--fixup=reword:`,
+  `-c` / `--config-env` before `commit`, and any flag caught by the generic row); the bare
+  form and `-m`, `-F`, `--message`, `--file` share one generic "Direct git commit is
+  blocked" message instead, and an unknown global option or a subcommand-injection attempt
+  gets its own message that names no flag (C:guard has the precedence when a command matches
+  more than one row). Short flags are expanded before matching (`-am` → `-a -m`, `-mfoo` →
+  `-m foo`) and `--opt=value` is split.
 
   | Form | Extra flags allowed |
   | --- | --- |
@@ -31,6 +37,10 @@
 - **Amended.** By spec pass 8 (2026-09-27): names `--reedit-message`, the long form of
   `-c <commit>`, in the denied list (spec story 28 already did); no behaviour change, since
   every form outside the allowlist is denied.
+- **Amended.** By spec pass 9 (2026-09-27): the deny message names the offending flag only
+  for a form with its own row in C:guard; the bare form and `-m`, `-F`, `--message`,
+  `--file` share one generic "Direct git commit is blocked" message instead, and an unknown
+  global option or a subcommand-injection attempt gets its own message that names no flag.
 - **Rejected.**
   - A global env switch (`COMMIT_GUARD=off`): the agent can set it itself.
   - "`--no-edit` with any other flags": lets `--no-verify` and `--no-gpg-sign` through,
