@@ -47,7 +47,10 @@
   `if` condition (`Bash(git *)`, `PowerShell(git *)`, plus the script-call forms for the
   heartbeat) is added only if the spike confirms it covers compound commands; G1's early
   exit stays as the backstop either way. Sources: Q3, Q13, Q23.
-- **README.** One line saying the plugin spawns the public worker `commit:commit-worker` with
+- **README.** An overview for a first-time reader, placed first: the problem and the
+  solution in a few sentences (Problem Statement, Solution), one table of the packaged
+  components (role, what fails without it, the deciding Q) and the flow of one `/commit`
+  run. One line saying the plugin spawns the public worker `commit:commit-worker` with
   `intent`, `interactive` and `reword`, and that a caller follows the reply's `callerRule`;
   the allow rules of Q16 (anchored node rule for both shells, run-folder `Edit` rule; no
   bare rule), the personal-skill removal, the opt-out line, worktree isolation, Node as a

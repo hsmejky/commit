@@ -37,8 +37,8 @@ starting a slice it names.
 | 12-integration.md | INT | 21 | 2 | M18 workflows no component slice builds: walking skeleton (INT-01), first end-to-end commit (INT-02), widenings, handback kinds, round trips, domain-code row coverage (INT-31) |
 | 13-worker-and-skills.md | WRK | 8 | 3 | commit-worker agent, `/commit` skill, worker protocol, hand-tests |
 | 14-infer-and-commit-config.md | INF | 9 | 1 | M19 inference, `infer`, `/commit-config` skill |
-| 15-release.md | REL | 5 | 2 | manifests, README, 0.1.0 release checks |
-| **Total** | | **226** | **28** | |
+| 15-release.md | REL | 6 | 2 | manifests, README (with the first-time-reader overview, REL-03b), 0.1.0 release checks |
+| **Total** | | **227** | **28** | |
 
 Not a group: [known-deficiencies.md](known-deficiencies.md) lists open defects of the plan
 (KD-R IDs) with the slices they affect and a suggested fix order.

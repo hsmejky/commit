@@ -2,8 +2,8 @@
 
 The release manifests, the README and the 0.1.0 release gate: manifests wire every plugin
 component under `commit@commit`, the README states requirements, allow rules, public
-surface and the one accepted-gaps list, and the release slice collects CI and every
-hand-test. The episode-analysis tools (Q24) and the story 205 dogfood gate belong to the
+surface, the one accepted-gaps list and an overview for a first-time reader, and the
+release slice collects CI and every hand-test. The episode-analysis tools (Q24) and the story 205 dogfood gate belong to the
 1.0.0 gate and are not here. Sources: Prompt-only and manifest blocks "README" and
 "Manifests", public surface, Out of Scope, Q1, Q8, Q14, Q15, Q16, Q22, Q24, Q25.
 
@@ -84,12 +84,45 @@ gap.
       text (not every gap carries a decision tag), so the lists cannot drift
 
 
+## REL-03b: README overview: purpose, components and flow
+
+**What to build:** the README's opening, placed before the install section, for a reader
+who sees the plugin for the first time: what problem it solves, one table of the packaged
+components with the role of each, what fails without it and the decision behind it, and
+the flow of one `/commit` run.
+
+**Blocked by:** REL-03.
+
+**Status:** ready-for-agent
+
+**Sources:** Problem Statement, Solution, Glossary, Modules, Prompt-only and manifest
+blocks "README", Q1, Q3, Q5, Q6, Q7, Q9, Q15, Q22, Q24, Q25.
+
+- [ ] A short opening states the problem (agent-run `git commit` groups badly, leaks
+      secrets and local paths, drifts from the repo's style, fails unexplained) and the
+      solution, consistent with Problem Statement and Solution
+- [ ] One component table: `/commit` skill, `commit:commit-worker` agent, `commit.js`,
+      the `lib/` module library, the guard hook (`guard.js`), `/commit-config`, the
+      `commit.json` user and repo layers and the `.commit-plan/` run folder; each row
+      gives the role, what fails without the component and the deciding Q (for example:
+      without the guard an agent bypasses the plugin with a direct `git commit`, Q3)
+- [ ] The flow of one run: `/commit` spawns the worker, the worker calls `plan`, groups
+      the units and writes messages, `check` lints and either commits or returns a
+      confirmation handback, the caller asks the user and runs the answer's command, and
+      the guard denies any other `git commit` throughout
+- [ ] The overview links to Solution and to the decisions index for detail and does not
+      restate contract shapes (reply fields, grammars), so it cannot drift from them
+- [ ] A static test: every component REL-01's manifest test finds (the agent, both skills,
+      the hook registration) is named in the overview table
+- [ ] The privacy-guard test passes on the README (no local paths or user names)
+
+
 ## REL-04: Hand-test: opt-out and README
 
 **What to build:** a manual check that the opt-out line disables the plugin in one repo
 and that a new user following only the README gets a run that asks no permission.
 
-**Blocked by:** REL-03, WRK-06.
+**Blocked by:** REL-03, REL-03b, WRK-06.
 
 **Status:** needs-human
 
@@ -103,6 +136,8 @@ and that a new user following only the README gets a run that asks no permission
       permission in Bash and in PowerShell
 - [ ] The README line on the worker spawn and `callerRule` and the gaps list read
       correctly to someone new to the plugin
+- [ ] Someone new to the plugin can say, from the README overview alone, what the plugin
+      is for, what each component does and why it is needed
 - [ ] By hand (CI cannot produce this): with Node below 22, `/commit` ends with the reply
       the contract gives for that case, never a stack trace; a PATH without git is
       CI-testable (see GIT-01) and not repeated here
