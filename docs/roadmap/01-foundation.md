@@ -19,13 +19,13 @@ points `.cjs`, library `.mjs`; Q1, Q15 as amended by this slice's review).
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q1, Q15, story 203, Dependency policy, Modules and how "Other checks".
 
-- [ ] The test command runs `node:test` over the tests directory and passes on Node 22 and 24.
-- [ ] A static test fails when the package manifest lists any `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`, `bundleDependencies` or `bundledDependencies`, and passes on the skeleton (story 203).
-- [ ] The package declares the Node 22 floor; version is 0.1.0.
+- [x] The test command runs `node:test` over the tests directory and passes on Node 22 and 24 (verified manually on Node 22.0.0 and 24.15.0; CI coverage in FND-03).
+- [x] A static test fails when the package manifest lists any `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`, `bundleDependencies` or `bundledDependencies`, and passes on the skeleton (story 203).
+- [x] The package declares the Node 22 floor; version is 0.1.0.
 
 
 ## FND-02: Plugin and marketplace manifest skeleton
