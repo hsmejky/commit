@@ -109,7 +109,7 @@ in `staged`, always `[]` in `reword`; no `split`-only extras.
 M8 `scanText`; errors carry the group number, and a scan error carries the `scanText` spans
 (never the matched value) for M17's redaction.
 
-**Blocked by:** PLN-01, MSG-05, SCN-05, EXE-01.
+**Blocked by:** PLN-01, MSG-05, SCN-05, EXE-01, FND-10, SCN-11.
 
 **Status:** ready-for-agent
 
@@ -120,9 +120,11 @@ M8 `scanText`; errors carry the group number, and a scan error carries the `scan
 - [ ] Seam 1: a body holding a home-directory path → "message contains `local-path`", with spans stored for the reply; the matched text never appears in stdout.
 - [ ] Seam 1: a body footer with a disallowed token → lint error; allowed tokens pass.
 - [ ] A static test asserts M14's module imports `lint` from M6.
-- [ ] A static test asserts `validatePlan`'s exported signature accepts `osUser` and passes
-      it through to `scanText`, since the current signature omits it (a gap this slice
-      closes).
+- [ ] A static test asserts `validatePlan(planBytes, runState, { osUser })` passes `osUser`
+      through to `scanText` (EXE-01 item 1).
+- [ ] Seam 1, FND-10 preload making `os.userInfo()` throw and `USER=jdoe1`: a body holding
+      `/srv/jdoe1/x` → "message contains `local-path`"; `state.json` holds no `jdoe1`
+      (`osUser` is passed by M18, never stored, EXE-01 item 1).
 
 
 ## PLN-07: Attribution flag and stored group facts

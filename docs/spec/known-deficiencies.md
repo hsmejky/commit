@@ -83,12 +83,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md) `internal` row,
   [C:run-folder](../contracts/run-folder.md). Fix: discard the provisional run on such a
   throw, in spec and contract.
-- **KD-S12. Failed or skipped cleanup after a failed run.** Story 45 misses a cleanup that
-  fails (Windows file lock) or is skipped past `cleanupDeadline`; C:run-folder defines
-  cleanup errors only after a successful commit. Where:
-  [stories-worker-and-grouping.md](stories-worker-and-grouping.md) (story 45), M15,
-  [C:run-folder](../contracts/run-folder.md). Fix: add the exception to story 45 and the
-  failure-path behaviour to C:run-folder. Slice: EXE-01 (2).
 - **KD-S13. "Cannot leave `git commit` as an orphan" is unqualified.** Out of Scope accepts
   that a hard kill can orphan a commit, tool-call termination is an open verification
   item, and Windows delivers no catchable SIGTERM. Where:
@@ -119,9 +113,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   only, so `held`, `busy`, `taken-over`, `index-changed` … differ only by text; the spec
   table uses codes the contracts never define. Fix: add `error.code` and list every code
   in the contract, or state that sub-codes live only in `message`.
-- **KD-S19. No failure example for `commit`.** [C:commit-release](../contracts/commit-release.md)
-  shows only success; `sha`, `hits`, `failed`, `remaining` on failure are prose only.
-  Fix: add a failure example. Slice: EXE-01 (4).
 - **KD-S20. `infer` missing from the spec error table.** C:infer refuses outside a repo or
   in a bare repo; [domain-code-cli-kind.md](domain-code-cli-kind.md) has no `infer` rows,
   and unborn HEAD (success with zero samples?) is implicit. Fix: add the rows, state the
@@ -138,9 +129,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
 
 ## Module interfaces
 
-- **KD-S24. `osUser` missing from `validatePlan` and `commitAll`.** M14 and M16 scan with
-  it but their signatures and the run state lack it. Where: [modules-m14-m19.md](modules-m14-m19.md).
-  Fix: pass it from M18. Slice: EXE-01 (1).
 - **KD-S25. No M12 operation removes `call.lock`.** M12 says it is removed at call end and
   by the signal handler; no function owns it. Where: [modules-m10-m13.md](modules-m10-m13.md),
   [C:run-folder](../contracts/run-folder.md). Fix: an idempotent, `ENOENT`-tolerant

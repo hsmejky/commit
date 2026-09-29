@@ -57,14 +57,15 @@ absolute in the same form, because `Read` and `Write` need absolute paths.
   concurrent `plan`s both build; the one that loses the exclusive create of `lock` gets
   `lock` and deletes its folder.
 - Deleted with the lock: by `commit` or `check` after the last group or on
-  failure, by `check` on zero groups or on a lint failure that ends the worker's part with
+  failure (unless the failed group's unstage did not happen, below), by `check` on zero groups or on a lint failure that ends the worker's part with
   `--no-user`, by `check` on a `humanOnly` confirmation with `--no-user`, by `release`, and by
   a takeover, automatic or `--take-over` (the old run's folder, after the index-repair
   check below, [Q22](../decisions/q22-concurrent-runs.md)).
 - Only the script creates the folder. A worker whose script call failed writes nothing
   ([worker input](worker-input.md)), so its `Write` never re-creates a deleted folder.
 - A takeover (automatic or `--take-over`), at [`plan`](plan.md) step 3, of a run whose state has
-  `indexReset` set and a group not `committed` (a call killed mid-staging runs no cleanup):
+  `indexReset` set and a group not `committed` (a call killed mid-staging runs no cleanup; a
+failed call whose unstage did not happen keeps its run, below):
   after `acquire` has moved the lock and before the new run's own inventory / mode-decision
   step (step 4) runs, it compares the index with HEAD. The takeover runs in three steps:
   `acquire` moves the lock (rename, verify, link its own lock) and reads the facts the check
@@ -109,6 +110,16 @@ absolute in the same form, because `Read` and `Write` need absolute paths.
     that chain after the check.
 - A cleanup error after a successful commit (for example a Windows file lock on a temporary
   file) never changes the outcome: it becomes a notice, and the sweep removes the leftovers.
+- After a failed run, too, a cleanup call (the unstage, the HEAD re-read, the tree-state
+  read, the release) that fails or is skipped past `cleanupDeadline` never changes the
+  outcome: the exit code and kind come from the original cause, and the cleanup error
+  becomes a notice ([Q18](../decisions/q18-failures-repo-hooks-and-signing.md) as amended by
+  EXE-01). When the unstage of a group that reached phase (c) did not happen, the lock and
+  the run folder are kept: the state already holds `indexReset` and the group not
+  `committed`, so the next `/commit` takes the run over ([Q22](../decisions/q22-concurrent-runs.md))
+  and the takeover repair above resets the group's staging. The output has `unstaged: null`
+  and the notice "group `<n>` staging may remain, the next /commit repairs it"; only the
+  call's own `call.lock` is removed.
 - `plan` deletes `<planId>/` folders older than 24 hours that the lock does not name, and
   leftover takeover and lock temporary files. The sweep considers only entries named in the
   minted form and never follows a link.

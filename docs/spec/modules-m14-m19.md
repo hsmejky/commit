@@ -6,10 +6,11 @@ its new path only); IDs exist, are used once and are not mixed with `files`; com
 `split`; identical hunks together (identity key); no hit, collapsed-directory or
 `dirtySubmodules` path in a group; exactly one group in `staged` and `reword`; lint (M6) and
 scan (M8) each message; add the `notIncluded` extras and notices; derive new files, file lists and the
-attribution flag per group. `validatePlan(planBytes, runState)` (typed: `{ groups,
+attribution flag per group. `validatePlan(planBytes, runState, { osUser })` (typed: `{ groups,
 notIncluded, notices }` or `lint` with errors; a message's scan error carries the M8
-`scanText` spans for M17's redaction). Sources: Q9, Q11, Q16, Q20, C:worker-plan,
-C:check.
+`scanText` spans for M17's redaction). `osUser` is the entry point's injected value, passed
+by M18 on every call and never stored in the run state (Q10 as amended by EXE-01). Sources:
+Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
 
 **M15 Run policy.** Every pure decision of a run; one entry per contracts table:
 - `resolveMode(flags, indexState, killedLeftover)`: `killedLeftover` is true when a takeover
@@ -42,7 +43,8 @@ C:check.
   "releaseNothing"`.
 - `runEnd(event, runState) → "keep" | "release"`, for the events `refusal(code)`,
   `lintFailure`, `checkResult`, `commitOutcome`, `release`; the single source of which
-  outcomes release the lock and delete the folder (C:cli-and-exit-codes, C:run-folder).
+  outcomes release the lock and delete the folder (C:cli-and-exit-codes, C:run-folder). A
+  failed outcome whose unstage failed or was skipped (`cleanupDeadline` below) → `keep`.
 - `deadline(callStarted)` = the call's start plus 540 s, computed once when the call starts
   (C:commit-release). `nextStep({ now, deadline, groupIndex }) → { go: true, deadline } |
   { go: false }`: the first group always starts; a later group only while at least 480 s
@@ -55,7 +57,13 @@ C:check.
   the release) take `cleanupDeadline - now()`, never the spent `deadline`, so a timed-out
   call still reports and releases inside the worker's 600 s tool timeout. A cleanup call
   whose `timeoutMs` (`cleanupDeadline - now()`) is at or below 0 is not spawned and counts as
-  `timed-out`.
+  `timed-out`. A cleanup call that fails or is skipped never changes the outcome: the exit
+  code and kind stay the original cause's, and the cleanup error becomes a notice. When the
+  skipped or failed call is the unstage of a group that reached phase (c), `runEnd` returns
+  `keep`: the lock and the run folder stay (the state holds `indexReset` and the unfinished
+  group), so the next run's takeover repair resets the index (C:run-folder); `unstaged` is
+  `null` and a notice says "group <n> staging may remain, the next /commit repairs it" (Q18
+  as amended by EXE-01).
 - `releaseDeadline(callStarted)` = the call's start plus 45 s: `release`'s M10 `treeState`
   read for the reply takes this deadline, kept below the 60 s `release` tool timeout (M17);
   when the budget runs out, the reply omits `treeState` (the release itself is already
@@ -115,9 +123,12 @@ created between groups are both caught:
 - On failure, M10 `unstage` runs only when the failing group itself reached (c); a refusal in
   (a) or a failure in (b) leaves the real index as it is, even when an earlier group or call
   set `indexReset`. `indexReset` only decides the report: `unstaged` is `null` unless it is
-  set, else M10 `unstagedAfterReset`.
+  set, else M10 `unstagedAfterReset`. When that unstage fails or is skipped past
+  `cleanupDeadline`, `unstaged` is `null`, the outcome keeps its original cause, and the run
+  is kept for the next run's takeover repair (M15 `cleanupDeadline`, C:run-folder).
 
-`commitAll(run, { now }) → Outcome`, where `Outcome` holds exactly the output fields of
+`commitAll(run, { now, osUser }) → Outcome`, with `osUser` passed by M18 for the backstop's
+M8 `scanUnits` and never stored in the run state (Q10 as amended by EXE-01), where `Outcome` holds exactly the output fields of
 C:commit-release. `hits` is present on a backstop-scan refusal (exit 3), `sha` after exit 4 or 5, and before an
 `internal` reply (exit 1), when HEAD moved anyway; a budget stop is `ok` with `failed: null` and a non-empty `remaining`. M18
 adds M10 `treeState`, builds the reply (M17) and releases per M15 `runEnd`.
@@ -222,14 +233,16 @@ the reply with M17.
   survive; a refusal's reply carries M10 `treeState`.
 - **Every call with `--plan`** holds the run's `call.lock` for its whole duration (M12
   `open`), so two calls on one run never overlap (`busy`).
-- **`check`.** M12 `open`; M15 `checkGate`; clear stored groups and `awaitingConfirm`; M14; on lint errors M15
+- **`check`.** M12 `open`; M15 `checkGate`; clear stored groups and `awaitingConfirm`; M14 `validatePlan(planBytes,
+  runState, { osUser })`; on lint errors M15
   `onLintFailure` and `runEnd` (an interactive `lintFailed` keeps the run for its `resume`;
   with `--no-user` the failure that ends the retries releases the lock and deletes the
   folder, so nothing waits for an answer and the next `/commit` starts fresh); M15 `computeConfirm` and `afterCheck`; store groups
   (and `awaitingConfirm` for a `confirm`); M16 or a handback; M10 `treeState` for the reply.
   When `confirm` is null, the output is `commit --all`'s with `groups`, `notIncluded` and
   `notices` merged in, the merged notices landing in `reply.notices` (C:check).
-- **`commit`.** M16; M10 `treeState` for the reply; M15 `runEnd`. **`release`.** M12
+- **`commit`.** M16 `commitAll(run, { now, osUser })` (`check` calls it the same way); M10
+  `treeState` for the reply; M15 `runEnd`. **`release`.** M12
   `releaseById` (no-op on mismatch, before any `call.lock`; on a match it takes the
   `call.lock`, so a call still running on the run → `busy` and the run is kept); M10
   `treeState` for the reply (within the 45 s budget below the 60 s tool timeout, M15

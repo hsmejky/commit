@@ -45,7 +45,7 @@ validates it, then:
 }
 ```
 
-Lint failure (exit 2):
+Lint failure (exit 2), the first failure, which carries no `reply` (below):
 
 ```json
 { "version": 1, "ok": false, "error": { "kind": "lint", "message": "2 errors" },

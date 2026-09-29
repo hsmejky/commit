@@ -123,7 +123,12 @@ created between groups are both caught:
 - On failure: `split` runs `git reset -q` only when the failing group itself reached (c)
   (`stage-failed`, a `diff-changed` from the verify, exits 3–5, `internal`); a refusal in
   (a) or a `diff-changed` in (b) leaves the real index as it is, even when an earlier group
-  or call set `indexReset`. `staged` and `reword` leave the index as it is.
+  or call set `indexReset`. `staged` and `reword` leave the index as it is. A cleanup call
+  that fails or is skipped past `cleanupDeadline` keeps the original cause's exit code and
+  kind and adds a notice; when that `git reset -q` did not happen, `unstaged` is `null`, the
+  notice says "group `<n>` staging may remain, the next /commit repairs it", and the lock
+  and run folder are kept for the next run's takeover repair ([run folder](run-folder.md),
+  Q18 as amended by EXE-01).
 - Output:
 
 ```json
@@ -136,6 +141,18 @@ created between groups are both caught:
                { "path": "build/config.js", "ignored": true, "blob": null },
                { "path": "src/x.js", "ignored": false, "blob": "9c1e4f2…" }],
   "reply": { "status": "committed", "…": "…" } }
+```
+
+A failed call (group 2 of 3 fails at `git commit`, exit 4):
+
+```json
+{ "version": 1, "ok": false,
+  "error": { "kind": "git", "message": "git commit failed for group 2" },
+  "commits": [{ "n": 1, "sha": "1a2b3c4", "header": "feat: add stage subcommand" }],
+  "failed": 2, "remaining": [2, 3],
+  "gitOutput": "pre-commit: eslint found 2 problems\n…",
+  "unstaged": [],
+  "reply": { "status": "failed", "…": "…" } }
 ```
 
 - `commits`: the groups this call committed. `failed`: `null`, or the group number whose

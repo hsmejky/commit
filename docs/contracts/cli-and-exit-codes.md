@@ -49,7 +49,8 @@ Failure shape, shared by all subcommands:
 
 ```json
 { "version": 1, "ok": false, "error": { "kind": "lock", "message": "another /commit run is in progress (started 13:58, last active 40 s ago)",
-  "planId": "77c0e2…", "created": "2026-09-26T13:58:02Z", "touched": "2026-09-26T14:02:11Z" } }
+  "planId": "77c0e2…", "created": "2026-09-26T13:58:02Z", "touched": "2026-09-26T14:02:11Z" },
+  "reply": { "status": "handback", "handback": { "kind": "lock", "…": "…" }, "…": "…" } }
 ```
 
 A lint failure uses the same shape and adds the `errors` array (see [check](check.md)). A
@@ -83,7 +84,7 @@ worker handles itself (a first lint failure) carries none.
 | `git` | `plan`, `plan --hunks`, `commit`, `check` (through `commit --all`) | `git-failed`: `git commit` exited non-zero, output in `gitOutput` (`commit`, `check`); or `stage-failed`: `git apply --cached` or `git add` failed after the reset in phase (c), output with `unstaged` ([commit](commit-release.md)); or `git-failed`: a `git add` building the temporary index exited non-zero, even when some paths were added — for `plan`'s own temporary index ([plan](plan.md)), and the same way for `commit`'s phase-(b) `git add -N` rebuild of it |
 | `timeout` | `plan`, `plan --hunks`, `commit` (also through `check`) | `plan` or a separate `plan --hunks` passed its 540-second deadline; a git call of `commit` ran out of the call's 540-second budget ([commit](commit-release.md)) |
 | `usage` | any subcommand | bad argv or flag combination; a `planId` that is not a lowercase UUID v4; `staged-empty` (`plan --staged` with an empty index); `already-committed` (`check` after a group of this run was committed); `no-groups` (`commit` with no stored groups, or every group committed); `unconfirmed` (`commit` without `--confirmed` while a confirmation is pending) |
-| `internal` | any subcommand | an unexpected throw; after `acquire` it unstages the current group if that group reached phase (c) (output with `unstaged`), then releases the lock and deletes the run folder, all timed against `cleanupDeadline`, never the spent `deadline`; in `commit` it first re-reads HEAD, and a HEAD moved from the expected SHA sets `sha` to the new HEAD, so a commit already made is reported ([commit](commit-release.md)) |
+| `internal` | any subcommand | an unexpected throw; after `acquire` it unstages the current group if that group reached phase (c) (output with `unstaged`), then releases the lock and deletes the run folder, all timed against `cleanupDeadline`, never the spent `deadline`; an unstage that fails or is skipped keeps the lock and the folder instead, with `unstaged: null` and a notice ([run folder](run-folder.md)); in `commit` it first re-reads HEAD, and a HEAD moved from the expected SHA sets `sha` to the new HEAD, so a commit already made is reported ([commit](commit-release.md)) |
 
 `diff-changed`, `head-moved`, `index-lock`, `internal` (after `acquire`) and exits 3–5 end
 the run: they release the lock and delete the run folder, so the next `/commit` starts

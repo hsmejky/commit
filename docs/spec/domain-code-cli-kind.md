@@ -33,7 +33,10 @@ reached staging (phase (c)), the `finally` unstages it and the output carries `u
 `internal` then releases the lock and deletes the folder like any other ending refusal, so
 the next `/commit` starts fresh (C:cli-and-exit-codes error table). The `finally` and the
 reporting calls after a failure or timeout (unstage, HEAD re-read, `treeState`, release) run
-against M15 `cleanupDeadline`, never the spent `deadline`. Before an `internal`
+against M15 `cleanupDeadline`, never the spent `deadline`. A cleanup call that fails or is
+skipped keeps the original cause's kind and adds a notice; when the unstage did not happen,
+the lock and folder stay for the next run's takeover repair, with `unstaged: null` (M15
+`cleanupDeadline`, C:run-folder). Before an `internal`
 reply ends the run, M16 re-reads HEAD, so a commit it already made is reported with its
 `sha`.
 

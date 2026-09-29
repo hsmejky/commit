@@ -19,7 +19,7 @@ fixed, delete it here; IDs are never reused.
   in INT; test or drop the race.
 - **KD-R3. EXE-24 re-asserts GIT-08's teardown.** Fix: limit EXE-24 to "no commit after the
   kill" and the `indexReset` case.
-- **KD-R4. INF-07 waits needlessly** behind CFG-07 (and so EXE-01, needs-human)
+- **KD-R4. INF-07 waits needlessly** behind CFG-07
   though it needs only the `scanIgnore` glob compile. Optional fix: a CFG-03b "`validateLayer`
   compiles `scanIgnore`" blocked by CFG-03 and SCN-03, blocking CFG-07 and INF-07.
 
@@ -30,9 +30,6 @@ fixed, delete it here; IDs are never reused.
 - **KD-R6.** CHG-11's scan criteria (secret found, `scan.skipped` over 1 MB) need CHG-16 and
   SCN-13, which it does not reach. Move them to SCN-16 or add the blockers.
 - **KD-R7.** SCN-12's symlink-target case needs SCN-13. Add the edge or drop the case.
-- **KD-R8.** EXE-01 asks PLN-06, EXE-06, EXE-13, EXE-16, EXE-17, INT-07, INT-15 to cite its
-  decisions, but EXE-06 and EXE-16 are not blocked by it and INT-31 is blocked but not
-  listed. Align the list with the edges.
 - **KD-R9. RUN-20 over-gates GIT-08 and misfiles items** (09, 06). GIT-08 waits on item 6,
   which it does not use; item 12 is takeover-only but sits in the basics pass; item 11 is
   marked settled though the error tables lack late `ENOENT` → `taken-over` (KD-S15, KD-S10).
@@ -43,8 +40,7 @@ fixed, delete it here; IDs are never reused.
 ## Acceptance criteria
 
 - **KD-R11. Criteria no test can observe.** GIT-01's `windowsHide` and "never decodes
-  stdout"; PLN-06's static signature test (needs a Seam 1 `local-path` case, SCN-11 as
-  blocker, and M14's signature, KD-S24); four WRK-04 worker-behaviour bullets. Fix: a
+  stdout"; four WRK-04 worker-behaviour bullets. Fix: a
   static spawn-options test plus a non-UTF-8 byte case; prompt-phrase checks for WRK-04,
   behaviour left to WRK-06.
 - **KD-R14.** CHG-19's "map unchanged" after `diff-changed` has no observable; say "run
@@ -105,7 +101,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R34. Cleanup budget contradiction** (CHG-03b, RUN-12, EXE-17). The slices say release
   and delete take no `timeoutMs`; M15, the `internal` row and C:plan time them against
   `cleanupDeadline`, and EXE-17 agrees with those. Fix: only git calls take the budget;
-  amend M15 and both contracts, align EXE-17 (related KD-S12).
+  amend M15 and both contracts, align EXE-17.
 - **KD-R35.** RUN-12's "the reply still comes" past `cleanupDeadline` has no reply shape
   for a skipped tree-state read (KD-S67). Add the omission rule to C:reply-and-handback.
 - **KD-R36.** Same as KD-R9's item 11: add late `ENOENT` to both error tables (KD-S15).
@@ -122,8 +118,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
   in place (as KD-S9): restore it.
 - **KD-R42.** The tree check has no reference tree in `reword` (EXE-20). Skip it there or
   compare with the expected HEAD's tree.
-- **KD-R43.** EXE-06 and EXE-01 state the first-parent rule without its `reword` exception.
-  Add it.
+- **KD-R43.** EXE-06 states the first-parent rule without its `reword` exception. Add it.
 - **KD-R44.** The mismatch notice says "later groups refused" in single-group modes. Drop
   the clause there (contract, Q18, criteria).
 - **KD-R45.** A hook-made commit is reported with the hook's SHA (EXE-06); no disposition is
@@ -153,8 +148,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   219.
 - **KD-R57.** The README claims the blocking edges were checked against each slice's
   criteria (KD-R5 to KD-R7 disprove it).
-- **KD-R58.** EXE-01 item 3 and the README's `internal` gap do not name FND-10's `EIO`
-  fault as the candidate seam.
 - **KD-R59.** Sources lines omit stories their criteria cite: CFG-10 (112), INT-18 (91),
   INT-24 (176, 177), INT-29 (19), INT-30 (63), WRK-02 (228), WRK-06 (43, 47-49, 79, 151,
   213).
@@ -166,10 +159,10 @@ Plan text that depends on a design fix; fix the design and the slice together.
 1. KD-R1 (on both critical paths).
 2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35 and KD-R33.
 3. KD-R28, KD-R36, KD-R37, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
-4. The CHG-03b area: KD-R24, KD-R40, KD-R60, KD-R58.
+4. The CHG-03b area: KD-R24, KD-R40, KD-R60.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R9, KD-R48 and KD-R36 with the Q25 amendment; KD-R49, KD-R50, KD-R45.
-7. Edges: KD-R54, KD-R9, KD-R7, KD-R30, KD-R8, KD-R10.
+7. Edges: KD-R54, KD-R9, KD-R7, KD-R30, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26, KD-R27.
 9. The rest of the text and bookkeeping items.

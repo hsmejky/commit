@@ -164,6 +164,13 @@
     carries patterns counts as a change, so its units are flagged and including them makes
     the confirmation `humanOnly`. Before, the `config` refusal made the fix itself
     uncommittable through the plugin.
+- **Amended.** By the EXE-01 decision pass (2026-09-29), settling KD-S24: the plan
+  validator and the commit executor scan with `osUser` (the message scan in `check`, the
+  backstop in `commit`), so both take it as an explicit parameter from the workflow layer,
+  `validatePlan(planBytes, runState, { osUser })` and `commitAll(run, { now, osUser })`,
+  derived once per call by the entry point as in pass 2. It is never stored in
+  `state.json`: the OS user name is a local identity the run folder has no need to keep
+  (privacy, Q15), and each call derives it afresh.
 - **Rejected.**
   - Using gitleaks when installed (breaks zero-deps and behaves differently per machine).
   - A CLI override flag: an agent would add it to itself on refusal. The same holds for any

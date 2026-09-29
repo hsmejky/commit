@@ -42,7 +42,8 @@
    test names (default `EIO`) as its `code`, with `syscall` and `path` set as Node's own fs
    errors carry them, because the code maps codes differently (`EEXIST` on the lock link →
    `held`, a Windows `EPERM` that outlasts the retries → the hard-link probe and `busy`,
-   `EIO` → `internal`); and (c) optionally log the order
+   `EIO` → `internal`; a `state.json` rename failing with `EIO` after `git commit` is the
+   Seam 1 trigger of M16's `internal` path, reported with `sha`, EXE-01); and (c) optionally log the order
    of those calls to a file in the test's temp directory, so a case can assert write order
    without forcing a fault. After patching `fs`, `fs.promises` and `os`, the preload calls
    `module.syncBuiltinESMExports()`, so a named ESM import (`import { linkSync } from

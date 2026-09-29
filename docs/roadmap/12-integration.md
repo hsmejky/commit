@@ -115,7 +115,8 @@ array and no `reply`, keeps the run, and a corrected worker plan passes on the n
 **Sources:** M18 `check`, C:check, C:cli-and-exit-codes (`lint`), Q18, stories 122, 127.
 
 - [ ] Seam 1: a header with an unknown type → exit 2 `lint`, `errors` names the group, no
-      `reply`, lock and folder kept
+      `reply` (C:check's lint example, "first failure, no reply", EXE-01 item 4), lock and
+      folder kept
 - [ ] An unplaced unit → an error naming its ID and path; the old path of a rename → the
       "use the new path" error
 - [ ] Lint runs over every group before the first commit: a plan whose second group fails
@@ -254,7 +255,8 @@ hit fails lint in `check`.
 - [ ] The worker plan with that unit in `notIncluded` commits the rest; the reply notice names
       `path:line pattern-id left out`
 - [ ] A hit alone is not a confirmation trigger (story 96)
-- [ ] A commit message containing a token → exit 2 `lint` naming the pattern ID
+- [ ] A commit message containing a token → exit 2 `lint` naming the pattern ID (M14 scans
+      with the `osUser` M18 passes, EXE-01 item 1)
 
 
 ## INT-16: Size-skipped files and `scanIgnore` changes need a human
@@ -462,7 +464,7 @@ explicitly in the test, never skipped silently.
 **Blocked by:** CFG-07, CHG-05, CHG-19, CHG-20, EXE-01, EXE-05, EXE-06, EXE-07, EXE-08,
 EXE-10, EXE-11, EXE-12, EXE-13, EXE-16, EXE-17, EXE-22, GIT-09, GIT-12, INT-01, INT-07,
 INT-09, INT-14, INT-15, INT-24, RPL-01, RPL-02, RUN-02, RUN-04, RUN-05, RUN-06, RUN-07,
-RUN-12, RUN-13, RUN-14, RUN-15, RUN-19, RUN-24.
+RUN-12, RUN-13, RUN-14, RUN-15, RUN-19, RUN-24, EXE-19, FND-10.
 
 **Status:** ready-for-agent
 
@@ -470,6 +472,10 @@ RUN-12, RUN-13, RUN-14, RUN-15, RUN-19, RUN-24.
 
 - [ ] A test walks every (row, producer) pair of `docs/spec/domain-code-cli-kind.md` and maps
       it to the Seam 1 case that reaches it, failing on any pair with none
-- [ ] The unexpected-throw row (`internal`) is covered by the fault seam EXE-01 decides, or
-      is named in the test's accepted-gap list with the README's accepted-gap text
+- [ ] The unexpected-throw row (`internal`) maps to this Seam 1 case (EXE-01 item 3), not to
+      the accepted-gap list: the FND-10 preload failing `fs.renameSync` on `state.json` with
+      `EIO`, on a `staged` run whose `commit --all` writes no `state.json` before `git
+      commit` (the stored group written by the fixture, no `awaitingConfirm`) → exit 1
+      `internal`, `sha` set to the new HEAD, "committed as `<sha>`, but the script failed"
+      (EXE-17), the run released
 - [ ] Adding a row to the table without a case makes the test fail

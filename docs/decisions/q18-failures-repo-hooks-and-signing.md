@@ -220,6 +220,23 @@
   instead compares HEAD's first parent against the expected HEAD's own first parent (both
   none, on a root commit); otherwise every reword would report a false "another commit"
   notice.
+- **Amended.** By the EXE-01 decision pass (2026-09-29), settling KD-S12 and the `internal`
+  test gap:
+  - A cleanup call after a failed run (the `finally` unstage, the HEAD re-read, the
+    tree-state read, the release) that fails (a Windows file lock) or is skipped past
+    `cleanupDeadline` never changes the outcome: the exit code and kind come from the
+    original cause, and the cleanup error becomes a notice. When the unstage of a group that
+    reached phase (c) did not happen, the run is not released: the lock and the run folder
+    stay, with `indexReset` and the unfinished group in the state, so the next run's
+    takeover repair resets the index (Q22's pass-6 mechanism). The output then has
+    `unstaged: null` and the notice "group `<n>` staging may remain, the next /commit
+    repairs it". This supersedes, for this case, "a failed run leaves a clean, explainable
+    state" (Consequences); the contracts' release on every failure that ends the run gets
+    the same exception.
+  - The `internal` path after `git commit` (the HEAD re-read that reports a commit made
+    before the throw) is tested at Seam 1 through the test-tree fault-injection preload, not
+    a shipped switch: a `state.json` rename failing with `EIO` after `git commit` → exit 1
+    `internal` with `sha` set. It is no longer an accepted gap.
 - **Rejected.**
   - Rolling back committed groups (destroys work the user may want); retrying on a repo hook
     failure (the hook's rules are not the plugin's to guess); `-c commit.gpgsign=false`.
@@ -242,8 +259,9 @@
   - An unconditional `git reset -q` on every `split` failure: after a refusal in (a) or
     (b) it reset an index the run never touched, and after `index-lock` it ran into the
     same `index.lock` and failed unmapped.
-- **Consequences.** A failed run leaves a clean, explainable state. A GUI pinentry prompts for
-  the passphrase during the commit, within the 540-second timeout; SSH signing through an
+- **Consequences.** A failed run leaves a clean, explainable state (amended by the EXE-01
+  decision pass, above: a failed or skipped unstage keeps the run for the next takeover).
+  A GUI pinentry prompts for the passphrase during the commit, within the 540-second timeout; SSH signing through an
   agent works without interaction, and a locked SSH key is caught before any grouping. A
   locked openpgp key behind a TTY pinentry is not caught at `plan`: the plan notes that
   signing is enabled, and the commit fails or times out at `git commit` (an accepted gap

@@ -136,8 +136,6 @@ cost) is the 1.0.0 dogfood gate and out of scope here.
 
 ## Accepted gaps
 
-- The M16 `internal` failure path has no Seam 1 trigger unless EXE-01 adds a test-only fault
-  seam; until then INT-31's domain-code row-coverage check lists the `internal` row as a gap.
 - Only a Node below 22 cannot be produced on the CI runners; it is checked by hand in
   REL-04. A missing git is produced in CI (a PATH with no git) and tested in GIT-01.
 - A temporary lock left by cleanup on Windows (file in use) is reported, not tested on every

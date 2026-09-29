@@ -22,20 +22,32 @@ past `cleanupDeadline`; (3) the M16 `internal` path has no Seam 1 trigger: a tes
 seam, or an accepted gap; (4) the failure JSON examples (lock, lint) lack a `reply`, and no
 failed `commit --all` example exists. (The M16 SHA source is already settled: after each
 `git commit`, M16 reads HEAD and checks that HEAD's first parent is the expected pre-commit
-HEAD — for an unborn branch, HEAD has no parent — and takes HEAD as the group's SHA when it
-is; see EXE-06.)
+HEAD — for an unborn branch, HEAD has no parent; in `reword`, against the expected HEAD's
+own first parent — and takes HEAD as the group's SHA when it is; see EXE-06.)
+
+Settled (2026-09-29): (1) `validatePlan(planBytes, runState, { osUser })` and
+`commitAll(run, { now, osUser })`, `osUser` passed by M18 and never stored in `state.json`
+(Q10 as amended); (2) a cleanup call that fails or is skipped keeps the original cause's exit
+code and kind and adds a notice; when the unstage did not happen, the lock and run folder
+stay for the next run's takeover repair, with `unstaged: null` and the notice "group `<n>`
+staging may remain, the next /commit repairs it" (Q18 as amended, story 45, C:run-folder,
+M15, M16); (3) the `internal` path's Seam 1 trigger is the FND-10 fault preload: a
+`state.json` rename failing with `EIO` after `git commit` → `internal` with `sha` (testing
+seams, EXE-17, INT-31); (4) the lock example carries `reply`, the lint example is marked
+"first failure, no reply", and C:commit-release has a failed `commit --all` example.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-human
+**Status:** done
 
-**Sources:** Q9, Q18, M14, M16, M18, C:commit-release, C:check, C:cli-and-exit-codes,
+**Sources:** Q9, Q10, Q18, M14, M16, M18, C:commit-release, C:check, C:cli-and-exit-codes,
 C:reply-and-handback.
 
-- [ ] Each of the four items has a recorded decision, and decisions, contracts and spec
+- [x] Each of the four items has a recorded decision, and decisions, contracts and spec
       agree
-- [ ] PLN-06, EXE-06, EXE-13, EXE-16, EXE-17, INT-07 and INT-15 cite the settled behaviour;
-      if item (3) is an accepted gap, the README of the roadmap lists it
+- [x] PLN-06, EXE-13, EXE-17, INT-07, INT-15 and INT-31 (the slices it blocks) cite the
+      settled behaviour; item (3) is not an accepted gap, so the README of the roadmap no
+      longer lists it
 
 
 ## EXE-02: `commit --all` commits one group of whole-file units
@@ -282,7 +294,8 @@ set; the index unstaged; HEAD re-read within `cleanupDeadline` (unmoved → no `
 ## EXE-13: the backstop scan refuses a secret in the recorded tree
 
 **What to build:** before each commit (not `reword`): M10 `writeTree` records the tree,
-M8 `scanUnits` with matchers recompiled by M7 from the patterns stored at `plan` (not
+M8 `scanUnits` (with the `osUser` M18 passes to `commitAll(run, { now, osUser })`, EXE-01
+item 1) with matchers recompiled by M7 from the patterns stored at `plan` (not
 HEAD, CFG-01 item 1) runs over
 `treeDiffUnits(expected HEAD, recorded tree)`; a hit → exit 3 `scan` with `hits`, the group
 unstaged.
@@ -302,6 +315,9 @@ unstaged.
 - [ ] Seam 1: a text file hidden by `-diff` in `.gitattributes` holding the secret → still
       exit 3.
 - [ ] Seam 1, unborn HEAD: the backstop diffs against the empty tree.
+- [ ] A static test asserts `commitAll`'s exported signature takes `{ now, osUser }` and
+      passes `osUser` to `scanUnits`; no run-folder file holds the OS user name (EXE-01
+      item 1).
 - [ ] Seam 1: after an exit 3 `scan` refusal, the lock and the run folder are gone.
 
 
@@ -376,8 +392,12 @@ starts; a later one only while at least 480 s remain before `deadline`; else exi
 tree and the call ends exit 5 with "git commit did not finish in 9 min — a pre-commit hook or
 a signing prompt may be waiting". Cleanup and reporting (unstage, HEAD re-read, tree state,
 release) take `cleanupDeadline - now()`; a cleanup call whose budget is at or below 0 is not
-spawned and counts as timed out. A commit git made anyway is reported with `sha` and
-"committed as `<sha>`, but git did not exit in time".
+spawned and counts as timed out; a skipped or failed cleanup call keeps the exit code and
+kind of the original cause and adds a notice, and a skipped unstage keeps the lock and run
+folder for the next run's takeover repair (EXE-01 item 2). A commit git made anyway is
+reported with `sha` and "committed as `<sha>`, but git did not exit in time"; an `internal`
+throw after `git commit` is reported the same way, with "…, but the script failed" (EXE-01
+item 3; its Seam 1 case, which needs `staged` mode and the FND-10 preload, is INT-31's).
 
 **Blocked by:** EXE-12, GIT-07, FND-05, EXE-01.
 
@@ -391,7 +411,10 @@ spawned and counts as timed out. A commit git made anyway is reported with `sha`
       "did not exit in time" text.
 - [ ] Seam 1: the clock stepped past 580 s before cleanup → the cleanup git calls are not
       spawned, observed through the PATH git shim that logs its argv
-      (`docs/spec/testing-modules.md`), and the reply still comes.
+      (`docs/spec/testing-modules.md`), and the reply still comes: exit 5 `timeout`,
+      `unstaged: null`, the notice "group 1 staging may remain, the next /commit repairs
+      it", the lock and run folder kept with `indexReset` set, `call.lock` gone; the next
+      `plan --take-over <planId>` resets the staging (EXE-01 item 2).
 
 
 ## EXE-18: `index.lock` after a timed-out plain commit is left with a notice
