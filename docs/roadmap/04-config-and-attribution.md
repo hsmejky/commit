@@ -50,15 +50,15 @@ lock exists. With no layer present, `plan` goes on with the defaults.
 
 **Blocked by:** FND-04, INT-01, RPL-03, GIT-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M4, M18 `plan` steps 1-2, Q6, C:cli-and-exit-codes, domain-code-cli-kind
 (`config`), story 110.
 
-- [ ] Seam 1: a repo layer holding `{ "types": [` → one JSON object, `error.kind:
+- [x] Seam 1: a repo layer holding `{ "types": [` → one JSON object, `error.kind:
       "config"`, exit 1, the message naming the repo layer.
-- [ ] Seam 1: after that refusal no `.commit-plan/` directory and no lock exist.
-- [ ] Seam 1: a repo with no config file gets no `config` refusal.
+- [x] Seam 1: after that refusal no `.commit-plan/` directory and no lock exist.
+- [x] Seam 1: a repo with no config file gets no `config` refusal.
 
 
 ## CFG-03: Type and range errors stop `plan`
