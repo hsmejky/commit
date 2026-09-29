@@ -14,7 +14,7 @@ and hard-link manual checks in RUN-26 and RUN-10.
 **What to build:** the repo's own `.claude/commit.json` with `scanIgnore` holding the
 fixtures glob, committed on its own before any commit that adds a fixture, so every later
 commit is scanned under HEAD rules that already ignore fixtures. (A follow-up added
-`body: "optional"`, since repo commits carry `Co-Authored-By`/`Claude-Session` trailers.)
+`body: "optional"`, since repo commits carry explanatory prose bodies.)
 
 **Blocked by:** None (can start immediately).
 

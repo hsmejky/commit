@@ -45,5 +45,5 @@ README, manifests.
 - No local paths or usernames in docs, README, manifests or test sources (privacy-guard
   test, Q15).
 - Commits: Conventional Commits. The repo dogfoods its own rules via `.claude/commit.json`
-  (`scanIgnore: tests/fixtures/**`, `body: "optional"` since repo commits carry attribution
-  trailers).
+  (`scanIgnore: tests/fixtures/**`, `body: "optional"` since repo commits carry explanatory
+  prose bodies).
