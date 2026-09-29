@@ -31,8 +31,9 @@ export function isExemptScriptCall(command, shell) {
 
 /**
  * The blanket rule (C:guard step 2): the kind of construct that keeps a non-exempt command
- * from being tokenized, or null. Checked on the text with that shell's escaped newlines
- * removed regardless of quotes, anywhere in the text, inside quotes or not.
+ * from being tokenized, or null. Checked anywhere in the text, inside quotes or not: for
+ * Bash on the text with every NUL and carriage return removed, then every escaped newline;
+ * for PowerShell on the text with its escaped newlines removed.
  *
  * @param {string} command
  * @param {'bash'|'powershell'} shell
@@ -41,7 +42,7 @@ export function isExemptScriptCall(command, shell) {
 export function blanketTrigger(command, shell) {
   if (isExemptScriptCall(command, shell)) return null;
   const bash = shell === 'bash';
-  const text = command.replace(bash ? /\\\r?\n/g : /`\r?\n/g, '');
+  const text = bash ? command.replace(/[\0\r]/g, '').replace(/\\\n/g, '') : command.replace(/`\r?\n/g, '');
   if (text.includes('$(') || text.includes('${')) return 'substitution';
   if (bash ? text.includes('`') : text.includes('@(')) return 'substitution';
   if (text.includes('#')) return 'comment';
@@ -58,9 +59,10 @@ export function blanketTrigger(command, shell) {
 /**
  * G2 `segments`: the command's segments of tokens, or the blanket trigger kind.
  *
- * A token is a word (a string, after quote removal), `{ op }` for `(` and `)`,
+ * A token is a word (a string, after quote removal), `{ op }` for `(` and `)`, or
  * `{ redir, target }` for a redirection with its target word (null for a descriptor
- * duplication such as `2>&1`), or `{ heredoc, delim }`.
+ * duplication such as `2>&1`). A Bash command holding a carriage return has two readings
+ * (see `bashReadings`); its segments are the first reading's followed by the second's.
  *
  * @param {string} command
  * @param {'bash'|'powershell'} shell
@@ -73,9 +75,9 @@ export function segments(command, shell) {
 }
 
 /**
- * Each segment's span in the command text, `[start, end)`, from its first token to its
- * last; null for a blanket command. For the oracle cross-check, which lets the shell read
- * each span on its own.
+ * Test seam: each segment's span in the command text, `[start, end)`, from its first token
+ * to its last; null for a blanket command. For the oracle cross-check, which lets the shell
+ * read each span on its own.
  *
  * @param {string} command
  * @param {'bash'|'powershell'} shell
@@ -88,14 +90,109 @@ export function segmentSpans(command, shell) {
 
 function tokenize(command, shell) {
   if (shell !== 'bash') throw new Error('the PowerShell tokenizer is not built yet (GRD-06)');
-  return tokenizeBash(command);
+  const out = { segments: [], spans: [] };
+  for (const reading of bashReadings(command)) {
+    const { text, origin } = join(reading);
+    const result = tokenizeBash(text);
+    out.segments.push(...result.segments);
+    for (const [start, end] of result.spans) out.spans.push([origin[start], origin[end - 1] + 1]);
+  }
+  return out;
+}
+
+// The Bash readings of a command, each `{ text, origin }` with `origin[k]` the index in the
+// command of `text[k]`. Bash drops every NUL of its input. The Windows (Cygwin) bash drops
+// every carriage return too, while other builds keep it as a word character: a command
+// holding one is read both ways, so a construct either bash runs is seen (fail closed).
+function bashReadings(command) {
+  const kept = [];
+  for (let i = 0; i < command.length; i += 1) if (command[i] !== '\0') kept.push(i);
+  const at = (origin) => ({ text: origin.map((i) => command[i]).join(''), origin });
+  if (!kept.some((i) => command[i] === '\r')) return [at(kept)];
+  return [at(kept.filter((i) => command[i] !== '\r')), at(kept)];
+}
+
+// Removes each escaped newline (`\` then a newline) outside single quotes and `$'…'`, as
+// bash's input reader does before its lexer, so one can split a word, an operator, a
+// descriptor or a `$'` opener; and drops a trailing unquoted `\`. Quote spans are found as
+// the tokenizer finds them (`quoteEnd`).
+function join({ text: s, origin }) {
+  let text = '';
+  const map = [];
+  const keep = (from, to) => {
+    for (let k = from; k < to; k += 1) {
+      text += s[k];
+      map.push(origin[k]);
+    }
+  };
+  let dollars = 0; // the run of unquoted literal `$` right before `i`
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '\\') {
+      if (i + 1 < s.length && s[i + 1] !== '\n') {
+        keep(i, i + 2);
+        dollars = 0;
+      }
+      i += 2;
+    } else if (c === '"' || c === "'") {
+      const kind = quoteKind(c, dollars);
+      const { end } = quoteEnd(s, i + 1, kind);
+      if (kind === 'double') {
+        keep(i, i + 1);
+        let k = i + 1;
+        while (k < end) {
+          const step = s[k] === '\\' && k + 1 < end ? 2 : 1;
+          if (!(step === 2 && s[k + 1] === '\n')) keep(k, k + step);
+          k += step;
+        }
+      } else {
+        keep(i, end);
+      }
+      dollars = 0;
+      i = end;
+    } else {
+      keep(i, i + 1);
+      dollars = c === '$' ? dollars + 1 : 0;
+      i += 1;
+    }
+  }
+  return { text, origin: map };
+}
+
+// The quote a `'` or `"` opens after a run of `dollars` unquoted `$`: a `$` opens `$'…'`
+// (ANSI-C) only when it is not the second `$` of a `$$` pair; `$"…"` reads as `"…"`.
+function quoteKind(c, dollars) {
+  if (c === '"') return 'double';
+  return dollars % 2 === 1 ? 'ansi' : 'single';
+}
+
+// The end of the quote span whose content starts at `from`: after the closing quote, found
+// lexically (in double quotes and `$'…'` a `\` pairs with any next character, whatever it
+// decodes to). An unterminated quote is the rest of its line (C:guard step 2): the span ends
+// before the first newline, which in double quotes a `\` still escapes.
+function quoteEnd(s, from, kind) {
+  const close = kind === 'double' ? '"' : "'";
+  for (let i = from; i < s.length; i += 1) {
+    if (s[i] === close) return { end: i + 1, closed: true };
+    if (s[i] === '\\' && kind !== 'single') i += 1;
+  }
+  for (let i = from; i < s.length; i += 1) {
+    if (s[i] === '\n') return { end: i, closed: false };
+    if (s[i] === '\\' && (kind === 'double' || (kind === 'ansi' && s[i + 1] !== '\n'))) i += 1;
+  }
+  return { end: s.length, closed: false };
 }
 
 // Characters that end an unquoted Bash word.
 const WORD_END = new Set([' ', '\t', '\n', ';', '&', '|', '(', ')', '<', '>']);
 // An unquoted `(` right after one of these opens an extglob pattern (C:guard step 2).
 const EXTGLOB = new Set(['@', '!', '+', '*', '?']);
+// A `{name}` or `{name[subscript]}` word right before `<` or `>` names a descriptor variable
+// (bash 4.1+), a redirection prefix like descriptor digits.
+const VARIABLE_FD = /^\{[A-Za-z_][A-Za-z0-9_]*(?:\[[^]*\])?\}$/;
 
+// Tokenizes one joined reading (no escaped newline outside single quotes and `$'…'`).
 function tokenizeBash(s) {
   const out = { segments: [], spans: [] };
   let seg = [];
@@ -145,9 +242,14 @@ function tokenizeBash(s) {
         i = redirection(s, i, m[0], push);
       } else {
         const w = readWord(s, i);
-        if (w.started) push(w.value, i, w.end);
-        if (w.extglob) push({ op: '(' }, w.end - 1, w.end);
-        i = w.end;
+        const raw = s.slice(i, w.end);
+        if (VARIABLE_FD.test(raw) && (s[w.end] === '<' || s[w.end] === '>')) {
+          i = redirection(s, i, raw, push);
+        } else {
+          push(w.value, i, w.end);
+          if (w.extglob) push({ op: '(' }, w.end - 1, w.end);
+          i = w.end;
+        }
       }
     }
   }
@@ -155,10 +257,11 @@ function tokenizeBash(s) {
   return out;
 }
 
-const REDIRECTION_OPS = ['&>>', '&>', '<<<', '<<-', '<<', '<&', '<>', '<', '>>', '>&', '>|', '>'];
+// `<<` and `<<-` (heredocs) never reach the tokenizer: the blanket rule catches them first.
+const REDIRECTION_OPS = ['&>>', '&>', '<<<', '<&', '<>', '<', '>>', '>&', '>|', '>'];
 
-// Reads a redirection at `from` (after its descriptor digits `fd`) and its target word;
-// pushes one token; returns the index after it.
+// Reads a redirection at `from` (after its descriptor prefix `fd`: digits or `{name}`) and
+// its target word; pushes one token; returns the index after it.
 function redirection(s, from, fd, push) {
   let i = from + fd.length;
   const op = REDIRECTION_OPS.find((candidate) => s.startsWith(candidate, i));
@@ -170,15 +273,11 @@ function redirection(s, from, fd, push) {
   let extglob = false;
   if (j < s.length && !WORD_END.has(s[j])) {
     const w = readWord(s, j);
-    if (w.started) {
-      target = w.value;
-      to = w.end;
-      extglob = w.extglob;
-    }
+    target = w.value;
+    to = w.end;
+    extglob = w.extglob;
   }
-  if (op === '<<' || op === '<<-') {
-    push({ heredoc: op, delim: target === null ? '' : target }, from, to);
-  } else if (op.endsWith('&') && target !== null && /^(?:\d+|-)$/.test(target)) {
+  if (op.endsWith('&') && target !== null && /^(?:\d+|-)$/.test(target)) {
     push({ redir: `${fd}${op}${target}`, target: null }, from, to);
   } else {
     push({ redir: `${fd}${op}`, target }, from, to);
@@ -187,117 +286,77 @@ function redirection(s, from, fd, push) {
   return to;
 }
 
-// Reads one Bash word from `i` up to an unquoted word-ending character, with quote removal.
-// `started` is false when nothing but escaped newlines was read. `extglob` marks a word
-// ended by an extglob `(`, which is kept in the word and is also a `(` token.
+// Reads one Bash word from `i` (not a word-ending character) up to an unquoted word-ending
+// character, with quote removal. `extglob` marks a word ended by an extglob `(`, which is
+// kept in the word and is also a `(` token.
 function readWord(s, i) {
   let value = '';
-  let started = false;
   let prev = null; // the previous character, when it was an unquoted literal
+  let dollars = 0; // the run of unquoted literal `$` right before `i`
   while (i < s.length) {
     const c = s[i];
     if (WORD_END.has(c)) {
       if (c === '(' && prev !== null && EXTGLOB.has(prev)) {
-        return { value: `${value}(`, end: i + 1, started: true, extglob: true };
+        return { value: `${value}(`, end: i + 1, extglob: true };
       }
       break;
     }
     let q = null;
     if (c === '\\') {
-      if (s[i + 1] === '\n') {
-        i += 2;
-        continue;
-      }
       q = i + 1 < s.length ? { value: s[i + 1], end: i + 2 } : { value: '\\', end: i + 1 };
-    } else if (c === "'") {
-      q = readSingle(s, i + 1);
-    } else if (c === '"') {
-      q = readQuoted(readDouble, s, i + 1);
-    } else if (c === '$' && s[i + 1] === "'") {
-      q = readQuoted(readAnsiC, s, i + 2);
-    } else if (c === '$' && s[i + 1] === '"') {
-      // `$"…"` (locale translation) is read as `"…"` with the `$` removed.
-      q = readQuoted(readDouble, s, i + 2);
+    } else if (c === "'" || c === '"') {
+      q = readQuote(s, i + 1, quoteKind(c, dollars));
+    } else if (c === '$' && (s[i + 1] === "'" || s[i + 1] === '"') && dollars % 2 === 0) {
+      // The `$` opens `$'…'` or `$"…"` (read as `"…"`, the `$` removed).
+      q = readQuote(s, i + 2, quoteKind(s[i + 1], 1));
     }
-    started = true;
     if (q === null) {
       value += c;
       prev = c;
+      dollars = c === '$' ? dollars + 1 : 0;
       i += 1;
     } else {
       value += q.value;
       prev = null;
+      dollars = 0;
       i = q.end;
     }
   }
-  return { value, end: i, started, extglob: false };
+  return { value, end: i, extglob: false };
 }
 
-// An unterminated quote is the rest of its line (C:guard step 2): read to the end of the
-// command first, and only when no closing quote comes, again up to the line's end.
-function readQuoted(reader, s, from) {
-  const whole = reader(s, from, false);
-  return whole.closed ? whole : reader(s, from, true);
+// A quote span's value and end: the span is found first (`quoteEnd`), then its content is
+// decoded on its own.
+function readQuote(s, from, kind) {
+  const { end, closed } = quoteEnd(s, from, kind);
+  const content = s.slice(from, closed ? end - 1 : end);
+  if (kind === 'single') return { value: content, end };
+  return { value: kind === 'double' ? decodeDouble(content) : decodeAnsiC(content), end };
 }
 
-function readSingle(s, from) {
-  const close = s.indexOf("'", from);
-  if (close >= 0) return { value: s.slice(from, close), end: close + 1 };
-  const newline = s.indexOf('\n', from);
-  const end = newline < 0 ? s.length : newline;
-  return { value: s.slice(from, end), end };
+// Double quotes: `\` escapes only `"`, `\`, `$` and a backtick; any other `\` stays. (An
+// escaped newline was removed before tokenizing.)
+function decodeDouble(t) {
+  return t.replace(/\\([\s\S])/g, (pair, n) => (n === '"' || n === '\\' || n === '$' || n === '`' ? n : pair));
 }
 
-// Double quotes: `\` escapes only `"`, `\`, `$` and a backtick; `\` plus newline is removed;
-// any other `\` stays.
-function readDouble(s, from, toLineEnd) {
+// ANSI-C quotes: escapes are decoded as Bash does, and a decoded NUL ends the value there.
+function decodeAnsiC(t) {
   let value = '';
-  let i = from;
-  while (i < s.length) {
-    const c = s[i];
-    if (c === '"') return { value, end: i + 1, closed: true };
-    if (toLineEnd && c === '\n') return { value, end: i, closed: false };
-    if (c === '\\' && i + 1 < s.length) {
-      const n = s[i + 1];
-      if (n === '\n') {
-        i += 2;
-        continue;
-      }
-      if (n === '"' || n === '\\' || n === '$' || n === '`') {
-        value += n;
-        i += 2;
-        continue;
-      }
-    }
-    value += c;
-    i += 1;
-  }
-  return { value, end: i, closed: false };
-}
-
-// ANSI-C quotes: the span ends at the first `'` not escaped by `\`; escapes are decoded as
-// Bash does, and a decoded NUL ends the span's value there (the rest of the span is read
-// but dropped).
-function readAnsiC(s, from, toLineEnd) {
-  let value = '';
-  let cut = false;
-  let i = from;
-  while (i < s.length) {
-    const c = s[i];
-    if (c === "'") return { value, end: i + 1, closed: true };
-    if (toLineEnd && c === '\n') return { value, end: i, closed: false };
-    let text = c;
-    if (c === '\\' && i + 1 < s.length && !(toLineEnd && s[i + 1] === '\n')) {
-      const d = ansiEscape(s, i + 1);
+  let i = 0;
+  while (i < t.length) {
+    let text = t[i];
+    if (text === '\\' && i + 1 < t.length) {
+      const d = ansiEscape(t, i + 1);
       text = d.text;
       i = d.end;
     } else {
       i += 1;
     }
-    if (text === '\0') cut = true;
-    if (!cut) value += text;
+    if (text === '\0') break;
+    value += text;
   }
-  return { value, end: i, closed: false };
+  return value;
 }
 
 const SIMPLE_ESCAPES = {
@@ -305,8 +364,9 @@ const SIMPLE_ESCAPES = {
   '\\': '\\', "'": "'", '"': '"', '?': '?',
 };
 
-// Decodes the escape whose letter is at `p` (after the `\`); an unknown or incomplete escape
-// keeps its `\`.
+// Decodes the escape whose letter is at `p` (after the `\`) in a span's content; an unknown
+// or incomplete escape keeps its `\`. `\nnn` and `\xHH` at 0x80 and above decode to U+0080-
+// U+00FF, where bash emits the raw byte: this only matters to the oracle, not to security.
 function ansiEscape(s, p) {
   const c = s[p];
   if (Object.hasOwn(SIMPLE_ESCAPES, c)) return { text: SIMPLE_ESCAPES[c], end: p + 1 };
@@ -324,8 +384,8 @@ function ansiEscape(s, p) {
     if (hex && c === 'x') return { text: String.fromCharCode(code), end: p + 1 + hex.length };
     if (hex && code <= 0x10ffff) return { text: String.fromCodePoint(code), end: p + 1 + hex.length };
   }
-  // `\c` right before the closing `'` has no character to take: the `'` ends the span.
-  if (c === 'c' && p + 1 < s.length && s[p + 1] !== "'") {
+  // `\c` at the span's end has no character to take and stays `\c`.
+  if (c === 'c' && p + 1 < s.length) {
     const x = s[p + 1];
     const skip = x === '\\' && s[p + 2] === '\\' ? 2 : 1;
     const code = x === '?' ? 0x7f : x.toUpperCase().charCodeAt(0) & 0x1f;

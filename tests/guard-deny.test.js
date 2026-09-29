@@ -99,3 +99,20 @@ for (const s of seedCases.filter((x) => x.segments.length === 0)) {
     assert.equal(fs.existsSync(path.join(c.claudeHome, 'commit-guard')), false);
   });
 }
+
+// Every tokenized `bypass` seed case (GRD-03 review): a command bash runs as `git commit`
+// through a quoting, escaped-newline, carriage-return, NUL or `{name}` redirection edge is
+// denied with the bare-commit message.
+for (const s of seedCases.filter((x) => x.topic === 'bypass' && x.segments.length > 0)) {
+  test(`Seam 3: bypass seed ${s.id} → deny`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.equal(s.decision, 'deny');
+    assert.deepEqual({ ...hook(c, s.command) }, { stdout: denyJson(MESSAGES.bare), stderr: '' });
+  });
+}
+
+test('Seam 3: the step 1 mention text drops NULs and carriage returns', () => {
+  assert.equal(mentionsCommit('git com\rmit'), true);
+  assert.equal(mentionsCommit('git com\u0000mit'), true);
+  assert.equal(mentionsCommit('git com\\\r\nmit'), true);
+});

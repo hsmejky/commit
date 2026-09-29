@@ -1102,6 +1102,12 @@
    "segments": [
     [
      "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "git",
      "\r"
     ],
     [
@@ -1110,7 +1116,7 @@
      "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "carriage-return"
    }
@@ -1411,6 +1417,16 @@
    "topic": "separators",
    "command": "cd x\r\ngit commit -m x",
    "segments": [
+    [
+     "cd",
+     "x"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
     [
      "cd",
      "x\r"
@@ -4382,6 +4398,298 @@
    "oracle": {
     "ps51": "blanket",
     "ps7": "blanket"
+   }
+  },
+  {
+   "id": "b-bypass-ansi-c-lexical",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "echo $'\\c\\' '; git commit -m x; echo ' '",
+   "segments": [
+    [
+     "echo",
+     "\u001c' "
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "echo",
+     " "
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-bypass-pid-pair",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "echo $$'\\' ; git commit -m x ; echo ' '",
+   "segments": [
+    [
+     "echo",
+     "$$\\"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "echo",
+     " "
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-bypass-cont-crlf-word",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git com\\\r\nmit -m x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "git",
+     "com\r"
+    ],
+    [
+     "mit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "carriage-return"
+   }
+  },
+  {
+   "id": "b-bypass-cont-fd",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git 2\\\n>/dev/null commit -m x",
+   "segments": [
+    [
+     "git",
+     {
+      "redir": "2>",
+      "target": "/dev/null"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "redirection"
+   }
+  },
+  {
+   "id": "b-bypass-cont-ansi-c",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "echo $\\\n'\\' '; git commit -m x; echo ' '",
+   "segments": [
+    [
+     "echo",
+     "' "
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "echo",
+     " "
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-bypass-varfd",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git {x}>/dev/null commit -m x",
+   "segments": [
+    [
+     "git",
+     {
+      "redir": "{x}>",
+      "target": "/dev/null"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "redirection"
+   }
+  },
+  {
+   "id": "b-bypass-varfd-array",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git {a[0]}>/dev/null commit -m x",
+   "segments": [
+    [
+     "git",
+     {
+      "redir": "{a[0]}>",
+      "target": "/dev/null"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "redirection"
+   }
+  },
+  {
+   "id": "b-bypass-cr-in-word",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git com\rmit -m x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "git",
+     "com\rmit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "carriage-return"
+   }
+  },
+  {
+   "id": "b-bypass-cr-subst",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "$\r(echo git) commit -m x",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-bypass-escaped-cr",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "echo \\\r\ngit commit -m x",
+   "segments": [
+    [
+     "echo",
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "echo",
+     "\r"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "carriage-return"
+   }
+  },
+  {
+   "id": "b-bypass-nul",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git com\u0000mit -m x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-bypass-trailing-backslash",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": "git commit\\",
+   "segments": [
+    [
+     "git",
+     "commit"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "unterminated"
+   }
+  },
+  {
+   "id": "b-varfd-not-name",
+   "shell": "bash",
+   "topic": "redirection",
+   "command": "git {1x}>/dev/null commit -m x",
+   "segments": [
+    [
+     "git",
+     "{1x}",
+     {
+      "redir": ">",
+      "target": "/dev/null"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "redirection"
    }
   }
  ]

@@ -17,7 +17,6 @@ const CONTRACT = path.join(ROOT, 'docs', 'contracts', 'guard.md');
 const ORACLE_KEYS = { bash: ['bash'], powershell: ['ps51', 'ps7'] };
 const ID_PREFIX = { bash: 'b', powershell: 'p' };
 const OPS = new Set(['(', ')', '{', '}', 'cut']);
-const HEREDOC_OPS = new Set(['<<', '<<-']);
 const GIT_BASENAME = /^git(-commit)?(\.exe)?$/i;
 
 function readSeed() {
@@ -28,7 +27,8 @@ function readSeed() {
 // (PRE-03 round 8, with the script-call exemption), used to check the seed is internally consistent with the rule.
 function mentionText(command) {
   let s = command;
-  s = s.replace(/[\\`]\r?\n/g, '');
+  s = s.replace(/[\0\r]/g, '');
+  s = s.replace(/[\\`]\n/g, '');
   s = s.replace(/\$(?=['"`\u2018-\u201E])/g, '');
   s = s.replace(/['"\\`\u2018-\u201E]/g, '');
   return s;
@@ -50,8 +50,9 @@ const EXEMPT = {
 };
 function trigger(shell, command) {
   if (EXEMPT[shell].test(command)) return false;
-  const esc = shell === 'bash' ? /\\\r?\n/g : /`\r?\n/g;
-  const s = command.replace(esc, '');
+  const s = shell === 'bash'
+    ? command.replace(/[\0\r]/g, '').replace(/\\\n/g, '')
+    : command.replace(/`\r?\n/g, '');
   if (/\$\(|\$\{/.test(s)) return true;
   if (/#/.test(s)) return true;
   if (shell === 'bash') {
@@ -90,11 +91,6 @@ function tokenProblem(token) {
     return typeof token.redir === 'string' && (typeof token.target === 'string' || token.target === null)
       ? null
       : 'redir must be a string and target a string or null';
-  }
-  if (keys === 'delim,heredoc') {
-    return HEREDOC_OPS.has(token.heredoc) && typeof token.delim === 'string'
-      ? null
-      : 'heredoc must be << or <<- with a string delim';
   }
   return `unknown token keys ${keys}`;
 }
@@ -136,7 +132,7 @@ test('every case has the known fields with valid values', () => {
   }
 });
 
-test('segments are arrays of string, op, redirection or heredoc tokens', () => {
+test('segments are arrays of string, op or redirection tokens', () => {
   for (const c of readSeed().cases) {
     assert.ok(Array.isArray(c.segments), `${c.id}: segments is not an array`);
     c.segments.forEach((segment, i) => {

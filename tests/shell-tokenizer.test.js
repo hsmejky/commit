@@ -160,6 +160,17 @@ const bashTable = [
     { redir: '&>>', target: 'h' }]]],
   ['cmd >', [['cmd', { redir: '>', target: null }]]],
   ['a2>b', [['a2', { redir: '>', target: 'b' }]]],
+  // GRD-03 review: `$$` is a pair, a `\` in `$'…'` pairs lexically, escaped newlines are
+  // joined before tokenizing (not inside '…' or $'…'), `{name}` prefixes a redirection.
+  ["echo $$\"a\" $$$'\\x41' $$'\\'", [['echo', '$$a', '$$A', '$$\\']]],
+  ["echo $'a\\c\\\\b' $'x\\c'", [['echo', 'a\u001cb', 'x\\c']]],
+  ['echo \\\\\ngit commit', [['echo', '\\'], ['git', 'commit']]],
+  ["echo 'a\\\nb' $'c\\\nd' \"e\\\nf\" g\\\nh", [['echo', 'a\\\nb', 'c\\\nd', 'ef', 'gh']]],
+  ['cmd 3\\\n>&\\\n1 {fd}>&- {a[i j]}<in {1x}>o x\\', [['cmd',
+    { redir: '3>&1', target: null }, { redir: '{fd}>&-', target: null }, '{a[i', 'j]}',
+    { redir: '<', target: 'in' }, '{1x}', { redir: '>', target: 'o' }, 'x']]],
+  ['git com\u0000mit', [['git', 'commit']]],
+  ['a\rb', [['ab'], ['a\rb']]],
 ];
 for (const [command, expected] of bashTable) {
   test(`Seam 3: Bash segments(${JSON.stringify(command)})`, () => {
@@ -171,6 +182,18 @@ test('Seam 3: segmentSpans gives each segment its source text span', () => {
   const command = 'cd x && git commit -m "a b" 2>&1 ;  echo y';
   const spans = segmentSpans(command, 'bash').map(([start, end]) => command.slice(start, end));
   assert.deepEqual(spans, ['cd x', 'git commit -m "a b" 2>&1', 'echo y']);
+});
+
+test('Seam 3: segmentSpans map joined and carriage-return readings back to the command', () => {
+  const command = 'git com\\\nmit\r\n;echo \u0000a';
+  const spans = segmentSpans(command, 'bash').map(([start, end]) => command.slice(start, end));
+  assert.deepEqual(spans, ['git com\\\nmit', 'echo \u0000a', 'git com\\\nmit\r', 'echo \u0000a']);
+});
+
+test('Seam 3: the blanket rule sees through NULs and carriage returns', () => {
+  assert.equal(blanketTrigger('$\r(x) commit', 'bash'), 'substitution');
+  assert.equal(blanketTrigger('$\u0000{x} commit', 'bash'), 'substitution');
+  assert.equal(blanketTrigger('<\r\\\n< commit', 'bash'), 'heredoc');
 });
 
 test('Seam 3: segmentSpans of a blanket command is null', () => {

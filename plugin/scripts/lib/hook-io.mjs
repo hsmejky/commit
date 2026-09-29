@@ -92,12 +92,14 @@ export function denyOutput(message) {
 }
 
 // The mention text, for the early-exit check only (C:guard Parsing step 1), in this order:
-// every escaped newline of either shell (`\` or a backtick, optionally a carriage return,
-// then a newline) removed regardless of quotes; every `$` directly before a quote character
+// every NUL and carriage return removed (bash drops every NUL of its input, the Windows bash
+// every carriage return); every escaped newline of either shell (`\` or a backtick, then a
+// newline) removed regardless of quotes; every `$` directly before a quote character
 // removed; every `'`, `"`, `\`, backtick and typographic quote U+2018-U+201B, U+201C-U+201E
 // removed. Parsing still sees the command as written, so a split `co''mmit`, `co$'m'mit` or
 // `com\` plus newline plus `mit` reaches the tokenizer.
-const ESCAPED_NEWLINE = /[\\`]\r?\n/g;
+const NUL_OR_CR = /[\0\r]/g;
+const ESCAPED_NEWLINE = /[\\`]\n/g;
 const DOLLAR_BEFORE_QUOTE = /\$(?=['"\u2018-\u201E])/g;
 const QUOTE_LIKE = /['"\\`\u2018-\u201E]/g;
 
@@ -109,7 +111,7 @@ const QUOTE_LIKE = /['"\\`\u2018-\u201E]/g;
  * @returns {boolean}
  */
 export function mentionsCommit(command) {
-  const text = command.replace(ESCAPED_NEWLINE, '').replace(DOLLAR_BEFORE_QUOTE, '').replace(QUOTE_LIKE, '');
+  const text = command.replace(NUL_OR_CR, '').replace(ESCAPED_NEWLINE, '').replace(DOLLAR_BEFORE_QUOTE, '').replace(QUOTE_LIKE, '');
   return /commit/i.test(text);
 }
 
