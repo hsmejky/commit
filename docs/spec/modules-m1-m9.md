@@ -104,9 +104,8 @@ Sources: Q5, Q7, Q13, Q20, C:message-grammar.
 case-sensitive whole-path match on every OS; linear time. A pattern with no literal
 character (only `*`, `?`, `**` and `/`, such as `**`, `**/*`, `**/?*` or `*/**`) is a
 `config` error, so one amended line cannot switch the scan off; a broad literal pattern
-(`src/**`) stays legal, an accepted gap (Out of Scope). `compileGlob(pattern)` (typed,
-code `config`),
- `matches(matcher, path)`. Sources: Q10, C:scanignore-globs.
+(`src/**`) stays legal, an accepted gap (Out of Scope).
+`compileGlob(pattern) → { ok: true, matcher } | { ok: false, code: "config", … }` (`matcher` is opaque; only `matches` reads it), `matches(matcher, path) → boolean`. Sources: Q10, C:scanignore-globs.
 
 **M8 Scanner.** The pattern table of C:scan-patterns as data (ID, regex with whole-regex
 flags only, false-positive rule, source) with its false-positive rules; added lines only;
