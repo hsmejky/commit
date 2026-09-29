@@ -7,3 +7,4 @@ WORKDIR /home/jdoe-fixture/app
 "cwd": "/home/jdoe-fixture"
 C:/Users/Node-Fixture/x
 /Users/nodejs/x
+`/Users/jdoe`

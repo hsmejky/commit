@@ -113,10 +113,11 @@ test('private-key: a header hit reports the header line, not the body line', () 
 });
 
 test('private-key: the body rule reads added lines of the same unit only', () => {
+  // Both units share a path: the isolation is per unit object, not merely per distinct path.
   const header = '-----BEGIN ' + 'PRIVATE KEY-----';
   const units = [
-    textUnit('a.pem', [{ line: 1, text: header }]),
-    textUnit('b.txt', [{ line: 1, text: 'A'.repeat(64) }]),
+    textUnit('key.pem', [{ line: 1, text: header }]),
+    textUnit('key.pem', [{ line: 1, text: 'A'.repeat(64) }]),
   ];
   assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, []);
 });
@@ -302,6 +303,14 @@ test('scanUnits: a line both a fixed shape and the OS-user segment match is one 
   const units = [textUnit('Dockerfile', [{ line: 4, text: 'WORKDIR /ho' + 'me/jdoe1/app' }])];
   const { hits } = scanUnits(units, { scanIgnore: [], osUser: 'jdoe1' });
   assert.deepEqual(hits, [{ patternId: 'local-path', path: 'Dockerfile', line: 4 }]);
+});
+
+test('scanText: a path matched by both a fixed shape and the OS-user segment gives two overlapping spans', () => {
+  const text = 'WORKDIR /ho' + 'me/jdoe1/app';
+  assert.deepEqual(localPathHits(text, 'jdoe1'), [
+    { patternId: 'local-path', start: 8, end: 19 },
+    { patternId: 'local-path', start: 13, end: 19 },
+  ]);
 });
 
 // `generic-secret` entropy rule (SCN-09): Shannon entropy in bits per character, a hit from

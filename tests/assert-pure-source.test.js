@@ -153,3 +153,37 @@ test('division followed by a comment naming a banned word on the same line passe
     assertPureSourceText('const c = a / b; // no process here\n', 'fixture.mjs');
   });
 });
+
+test('a banned word spelled inside a string literal (not real code) passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText("const msg = 'the process module is banned';\n", 'fixture.mjs');
+  });
+});
+
+test('a banned word spelled inside a regex literal (not real code) passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText('const r = /process\\.env/;\n', 'fixture.mjs');
+  });
+});
+
+test('a banned word spelled inside template-literal text (not real code) passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText('const msg = `no process here`;\n', 'fixture.mjs');
+  });
+});
+
+test('a banned word inside a template literal\'s ${…} substitution still fails', () => {
+  assert.throws(() => {
+    assertPureSourceText('const msg = `value: ${process.env.X}`;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('an import specifier string still reads correctly once literals are blanked', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "import { helper } from './not-allowed.mjs';\nexport const x = 1;\n",
+      'fixture.mjs',
+      { allowImports: [] },
+    );
+  }, /not-allowed\.mjs/);
+});

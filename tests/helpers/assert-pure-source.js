@@ -4,9 +4,11 @@
 // docs/spec/modules*.md marks each module pure or effectful). A pure module may still
 // import specific pure exports named in `allowImports` (e.g. M8 imports M7, M14 imports M6
 // and M8, M19 imports M6 and M4's pure `validateLayer` even though M4 itself is effectful);
-// every other import, `require`, or ambient-state access fails. Comments are stripped
-// before matching, so a comment that merely mentions a banned word (e.g. documenting why
-// `process` is not used) does not fail the check.
+// every other import, `require`, or ambient-state access fails. Comments are stripped, and
+// string, regex and template-literal-text content is blanked, before matching, so a comment
+// or a literal value that merely mentions a banned word (e.g. documenting why `process` is
+// not used, or a regex that matches the word `process` in scanned text) does not fail the
+// check; a template literal's `${…}` substitutions are real code and are still checked.
 
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
@@ -120,6 +122,130 @@ function stripComments(source) {
   return out;
 }
 
+// Blanks the contents of `'…'`/`"…"` strings, regex literals, and the literal-text portions
+// of a template literal (keeping `${…}` substitutions, which are real code), so a banned
+// word that appears only inside a literal — not as real code — does not trip the
+// ambient-state check below (e.g. a regex or string that spells `process` as a literal
+// value). Runs on `stripComments`'s already comment-stripped output, and reuses its
+// regex-vs-division heuristic for `/`; `STATIC_IMPORT` still runs against the unblanked
+// output, since an import specifier's own string content must stay readable.
+function blankLiterals(source) {
+  let out = '';
+  let i = 0;
+  const n = source.length;
+  let lastChar = '';
+  let lastWord = '';
+  let currentWord = '';
+
+  // '\n' stays '\n' (keeps line structure; harmless either way), anything else blanks to ' '.
+  const blank = (ch) => (ch === '\n' ? '\n' : ' ');
+
+  while (i < n) {
+    const c = source[i];
+
+    if (!/[\w$]/.test(c) && currentWord) {
+      lastWord = currentWord;
+      currentWord = '';
+    }
+
+    if (c === '"' || c === "'") {
+      const quote = c;
+      out += c;
+      i += 1;
+      while (i < n && source[i] !== quote) {
+        if (source[i] === '\\' && i + 1 < n) {
+          out += blank(source[i]) + blank(source[i + 1]);
+          i += 2;
+          continue;
+        }
+        out += blank(source[i]);
+        i += 1;
+      }
+      if (i < n) {
+        out += source[i];
+        i += 1;
+      }
+      lastChar = quote;
+      continue;
+    }
+
+    if (c === '`') {
+      out += c;
+      i += 1;
+      while (i < n && source[i] !== '`') {
+        if (source[i] === '\\' && i + 1 < n) {
+          out += blank(source[i]) + blank(source[i + 1]);
+          i += 2;
+          continue;
+        }
+        if (source[i] === '$' && source[i + 1] === '{') {
+          out += '${';
+          i += 2;
+          let depth = 1;
+          while (i < n && depth > 0) {
+            if (source[i] === '{') depth += 1;
+            else if (source[i] === '}') depth -= 1;
+            if (depth === 0) {
+              out += '}';
+              i += 1;
+              break;
+            }
+            out += source[i];
+            i += 1;
+          }
+          continue;
+        }
+        out += blank(source[i]);
+        i += 1;
+      }
+      if (i < n) {
+        out += source[i];
+        i += 1;
+      }
+      lastChar = '`';
+      continue;
+    }
+
+    const afterRegexKeyword = /[a-zA-Z_$]/.test(lastChar) && REGEX_PRECEDING_KEYWORDS.has(lastWord);
+    if (c === '/' && (!/[\w$)\]]/.test(lastChar) || afterRegexKeyword)) {
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < n && source[j] !== '\n') {
+        if (source[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (source[j] === '[') {
+          inClass = true;
+        } else if (source[j] === ']') {
+          inClass = false;
+        } else if (source[j] === '/' && !inClass) {
+          closed = true;
+          break;
+        }
+        j += 1;
+      }
+      if (closed) {
+        out += '/';
+        for (let k = i + 1; k < j; k += 1) out += blank(source[k]);
+        out += '/';
+        i = j + 1;
+        lastChar = '/';
+        continue;
+      }
+      // No closing `/` before end of line: not a regex literal, treat `/` as division.
+    }
+
+    out += c;
+    if (!/\s/.test(c)) lastChar = c;
+    if (/[\w$]/.test(c)) currentWord += c;
+    i += 1;
+  }
+
+  return out;
+}
+
 // Matches a static import's specifier, with or without a `from` clause (side-effect-only
 // imports), and an `export ... from` re-export, which reaches into another module just
 // like an import does. Does not match dynamic `import(...)`, which is banned
@@ -150,9 +276,10 @@ const AMBIENT_STATE = [
  */
 function assertPureSourceText(source, label, { allowImports = [] } = {}) {
   const stripped = stripComments(source);
+  const blanked = blankLiterals(stripped);
 
   for (const [pattern, what] of AMBIENT_STATE) {
-    assert.doesNotMatch(stripped, pattern, `${label} must not use ${what}`);
+    assert.doesNotMatch(blanked, pattern, `${label} must not use ${what}`);
   }
 
   STATIC_IMPORT.lastIndex = 0;

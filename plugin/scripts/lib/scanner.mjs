@@ -18,6 +18,11 @@
 /**
  * @typedef {object} RuleContext What a false-positive rule sees besides its match.
  * @property {string | null} osUser the current OS user name, `null` when unknown
+ * @property {string | null} osUserSegment `osUser`, lower-cased, when it is usable for
+ *   `local-path`'s OS-user segment check (4 or more characters, not a placeholder or
+ *   service user, per `isPlaceholderUser` — the illegal-character rule runs against
+ *   `osUser` itself here, not only a matched segment); `null` otherwise. Computed once per
+ *   scan (`scanText`/`scanUnits`), not once per matched segment (SCN-11)
  * @property {readonly string[]} lines the scanned lines around the match, in order: the
  *   added lines of the match's unit, or the lines of the message
  * @property {number} index the position of the match's line in `lines`, so a rule that
@@ -95,8 +100,7 @@ function* followingLines(split, lines, index) {
 // `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value or one holding a
 // placeholder word, compared case-insensitively.
 const MIN_SECRET_ENTROPY = 3.5;
-// `proce[s]s` spells `process` so the purity check, which bans the bare word, passes.
-const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|proce[s]s\.env|os\.environ/i;
+const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|process\.env|os\.environ/i;
 
 /**
  * A `generic-secret` value without its quotes, if it has them.
@@ -195,28 +199,42 @@ export const PATTERNS = Object.freeze([
   Object.freeze({
     id: 'local-path',
     regex:
-      /\b[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+(?<drive>[^\\/\s"'<>]+)|\/(?:Users|home)\/(?<home>[^/\s"'<>]+)/u,
+      /\b[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+(?<drive>[^\\/\s"'`<>]+)|\/(?:Users|home)\/(?<home>[^/\s"'`<>]+)/u,
     notHit: (match) => isPlaceholderUser(match.groups.drive ?? match.groups.home),
     source: 'this plugin (Q10)',
   }),
   Object.freeze({
     id: 'local-path',
     regex: /[\\/](?<segment>[^\\/]+)(?=[\\/])/,
-    notHit: (match, { osUser }) => !isOsUserSegment(match.groups.segment, osUser),
+    notHit: (match, { osUserSegment }) => !isOsUserSegment(match.groups.segment, osUserSegment),
     source: 'this plugin (Q10)',
   }),
 ]);
 
 /**
- * Whether a whole path segment is the current OS user's name, for `local-path`: only a name
- * of 4 or more characters that is not a placeholder or service user; `osUser: null` never.
+ * The lower-cased OS user name usable for `local-path`'s OS-user segment check, or `null`
+ * when there is no OS user, it is under 4 characters, or it is itself a placeholder or
+ * service user (the illegal-character rule then applies to `osUser` itself, not only a
+ * matched segment). Computed once per scan (`scanText`/`scanUnits`), not once per matched
+ * segment (SCN-11).
+ *
+ * @param {string | null} osUser
+ * @returns {string | null}
+ */
+function osUserSegmentName(osUser) {
+  if (osUser === null || [...osUser].length < 4 || isPlaceholderUser(osUser)) return null;
+  return osUser.toLowerCase();
+}
+
+/**
+ * Whether a whole path segment is the current OS user's name, for `local-path`.
  *
  * @param {string} segment
- * @param {string | null} osUser
+ * @param {string | null} osUserSegment the precomputed usable OS user name, see
+ *   `osUserSegmentName`
  */
-function isOsUserSegment(segment, osUser) {
-  if (osUser === null || [...osUser].length < 4 || isPlaceholderUser(osUser)) return false;
-  return segment.toLowerCase() === osUser.toLowerCase();
+function isOsUserSegment(segment, osUserSegment) {
+  return osUserSegment !== null && segment.toLowerCase() === osUserSegment;
 }
 
 /**
@@ -251,11 +269,13 @@ export function createScanner(patterns) {
    * @param {readonly string[]} lines
    * @param {number} index
    * @param {string | null} osUser
+   * @param {string | null} osUserSegment the precomputed `osUserSegmentName(osUser)`, passed
+   *   in rather than recomputed per line or per matched segment (SCN-11)
    * @returns {{ patternId: string, start: number, end: number }[]}
    */
-  function scanLine(lines, index, osUser) {
+  function scanLine(lines, index, osUser, osUserSegment) {
     const line = lines[index];
-    const context = { osUser, lines, index };
+    const context = { osUser, osUserSegment, lines, index };
     const hits = [];
     for (const { row, regex } of compiled) {
       regex.lastIndex = 0;
@@ -285,10 +305,11 @@ export function createScanner(patterns) {
    */
   function scanText(text, { osUser = null } = {}) {
     const lines = text.split('\n');
+    const osUserSegment = osUserSegmentName(osUser);
     const hits = [];
     let offset = 0;
     for (let index = 0; index < lines.length; index += 1) {
-      for (const hit of scanLine(lines, index, osUser)) {
+      for (const hit of scanLine(lines, index, osUser, osUserSegment)) {
         hits.push({ patternId: hit.patternId, start: offset + hit.start, end: offset + hit.end });
       }
       offset += lines[index].length + 1;
@@ -308,12 +329,13 @@ export function createScanner(patterns) {
    * @returns {{ hits: UnitHit[], skipped: { path: string, reason: string }[] }}
    */
   function scanUnits(units, { osUser = null } = {}) {
+    const osUserSegment = osUserSegmentName(osUser);
     const hits = [];
     for (const unit of units) {
       const lines = unit.addedLines.map(({ text }) => text);
       unit.addedLines.forEach(({ line }, index) => {
         const seen = new Set();
-        for (const { patternId } of scanLine(lines, index, osUser)) {
+        for (const { patternId } of scanLine(lines, index, osUser, osUserSegment)) {
           if (!seen.has(patternId)) {
             seen.add(patternId);
             hits.push({ patternId, path: unit.path, line });
