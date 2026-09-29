@@ -286,11 +286,28 @@ test(
     + 'tree-kill test above covers the win32 taskkill path' },
   async (t) => {
     const c = createCase(t, { repo: false });
-    // Short but not razor-thin: the stub only has to spawn its grandchild and hang, no disk
-    // writes, so it starts well inside timeoutMs even on a loaded CI box.
+    const pidFile = path.join(c.root, 'grandchild.pid');
+    // The escaping grandchild outlives killTree by design (that's the point of this test),
+    // so nothing else ever reaps it; kill it directly once the pid file names it, regardless
+    // of how the assertion below turns out.
+    t.after(() => {
+      if (!fs.existsSync(pidFile)) return;
+      const grandchildPid = Number(fs.readFileSync(pidFile, 'utf8'));
+      if (!Number.isInteger(grandchildPid) || grandchildPid <= 0) return;
+      try {
+        process.kill(grandchildPid, 'SIGKILL');
+      } catch (err) {
+        if (err.code !== 'ESRCH') throw err;
+      }
+    });
+    // Generous timeout: on a loaded CI box, a timeout firing before the stub has even
+    // spawned its grandchild would let the direct child's own `close` fire normally (no
+    // escaped grandchild holding stdout open yet), failing the regex below for the wrong
+    // reason. killBackstopMs stays short so the rejection itself is still fast once the
+    // timeout does fire.
     await assert.rejects(
-      runEntry(c, HANG_WITH_ESCAPING_GRANDCHILD, [], { timeoutMs: 300, killBackstopMs: 500 }),
-      /did not exit within 300 ms, and did not close after being killed/,
+      runEntry(c, HANG_WITH_ESCAPING_GRANDCHILD, [pidFile], { timeoutMs: 3000, killBackstopMs: 500 }),
+      /did not exit within 3000 ms, and did not close after being killed/,
     );
   },
 );
