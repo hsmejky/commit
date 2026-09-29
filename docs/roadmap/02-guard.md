@@ -36,12 +36,12 @@ guard, end silently; under `COMMIT_GUARD_DEBUG=1` one stderr line records it.
 
 **Blocked by:** GRD-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, Q1, C:guard (Output), stories 18, 20.
 
-- [ ] Seam 2: non-JSON stdin, empty stdin, JSON without `tool_input.command`, an unknown `tool_name` → no stdout, exit 0, no heartbeat.
-- [ ] Seam 2 with `COMMIT_GUARD_DEBUG=1`: exactly one stderr line holding the fields known so far (`agent_id` when present); without the variable, no stderr.
+- [x] Seam 2: non-JSON stdin, empty stdin, JSON without `tool_input.command`, an unknown `tool_name` → no stdout, exit 0, no heartbeat.
+- [x] Seam 2 with `COMMIT_GUARD_DEBUG=1`: exactly one stderr line holding the fields known so far (`agent_id` when present); without the variable, no stderr.
 
 
 ## GRD-03: Bash tokenizer and the first deny
