@@ -19,6 +19,7 @@ const PUBLIC_SURFACE_PATH = path.join(REPO_ROOT, 'docs', 'decisions', 'public-su
 const REPLY_AND_HANDBACK_PATH = path.join(REPO_ROOT, 'docs', 'contracts', 'reply-and-handback.md');
 const GUARD_CONTRACT_PATH = path.join(REPO_ROOT, 'docs', 'contracts', 'guard.md');
 const WORKER_INPUT_PATH = path.join(REPO_ROOT, 'docs', 'contracts', 'worker-input.md');
+const COMMIT_SKILL_PATH = path.join(REPO_ROOT, 'plugin', 'skills', 'commit', 'SKILL.md');
 
 function readAgent() {
   return parseAgentFile(AGENT_PATH);
@@ -116,12 +117,13 @@ test('WRK-01: the agent resolves as commit:commit-worker from the plugin layout'
 // (WRK-05) and the README spawn line (REL-03) as those slices add them (story 42 as
 // settled by PRE-15; Q24 as amended)"
 //
-// All sources below are doc-only as of this slice: plugin/scripts/lib has no guard
-// deny-catalogue module yet (GRD-05, "ready-for-agent") and no `/commit` skill or README
-// exist yet (WRK-05, REL-03), so this test extracts the model each source's contract text
-// names and compares it to the frontmatter. WRK-05 and REL-03 append their own source to
-// SPAWN_INSTRUCTION_SOURCES below once they ship; INT-01/GRD-05 may later move the guard
-// entry to reading plugin/scripts/lib instead of the doc.
+// Most sources below are doc-only as of this slice: plugin/scripts/lib has no guard
+// deny-catalogue module yet (GRD-05, "ready-for-agent") and no README exists yet
+// (REL-03), so this test extracts the model each source's contract text names and
+// compares it to the frontmatter. WRK-05 (below) reads the shipped `/commit` skill file
+// itself, not a doc describing it. REL-03 appends its own source to
+// SPAWN_INSTRUCTION_SOURCES once it ships; INT-01/GRD-05 may later move the guard entry to
+// reading plugin/scripts/lib instead of the doc.
 //
 // Each `extractModel` uses `\s+` between words (not literal single spaces) and collects
 // every match with `matchAll`, asserting at least one: a doc reflow, or a second respawn
@@ -157,6 +159,19 @@ const SPAWN_INSTRUCTION_SOURCES = [
       const re = /`model:\s*"(\w+)"`/g;
       const matches = [...text.matchAll(re)];
       assert.ok(matches.length > 0, 'expected "`model: \\"<name>\\"`" in worker-input.md');
+      return matches.map((m) => m[1]);
+    },
+  },
+  {
+    name: "the /commit skill's spawn (plugin/skills/commit/SKILL.md, WRK-05)",
+    read: () => fs.readFileSync(COMMIT_SKILL_PATH, 'utf8'),
+    extractModels: (text) => {
+      const re = /spawn\s+`?commit:commit-worker`?\s+with\s+`?model:\s*"(\w+)"`?/gi;
+      const matches = [...text.matchAll(re)];
+      assert.ok(
+        matches.length > 0,
+        'expected "spawn commit:commit-worker with model: \\"<name>\\"" in plugin/skills/commit/SKILL.md',
+      );
       return matches.map((m) => m[1]);
     },
   },
