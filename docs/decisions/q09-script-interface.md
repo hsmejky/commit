@@ -134,7 +134,7 @@
     deferred past 0.1.0, and only the state `version` is checked; Q3: the plugin steers, it
     is not a security boundary). The scan
     backstop still holds, because it rescans the index and
-    reads `scanIgnore` from HEAD. Per mode:
+    reads `scanIgnore` from HEAD (amended by the CFG-01 decision pass, below). Per mode:
     - `split`: rebuild the temporary index from the lists `plan` stored (Q11) and match,
       then reset, stage, verify, commit.
     - `staged`: the pre-staged set is group 1 and is committed as-is, without reset or
@@ -259,6 +259,14 @@
   The loop the flag repetition prevents cannot recur: the respawn carries a mode, and a
   forced `modeChoice` (`killedLeftover`) needs a takeover, which the respawn no longer
   does.
+- **Amended.** By the CFG-01 decision pass (2026-09-29): supersedes "reads `scanIgnore`
+  from HEAD" in the `commit` paragraph. The backstop exempts paths with the `scanIgnore`
+  patterns `plan` stored in `state.json` (recompiled through the glob matcher on each
+  call), like every other stored fact, so it scans under the same rules as `plan`'s scan
+  and the confirmation. HEAD differs from them once an earlier group of the run commits a
+  `scanIgnore` change; the new patterns apply from the next run (Q10 as amended). The
+  backstop's safety does not rest on HEAD: it rescans the index, and the stored patterns
+  are as agent-writable as the rest of the run folder (Q3, Q16).
 - **Rejected.**
   - `--take-over` of an absent lock as a plain `acquire` (spec pass 10): it keeps a flag
     that no longer names anything and adds a lock case the contracts must define; the

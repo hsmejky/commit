@@ -63,16 +63,25 @@ and ranges (`types`: non-empty array of `^[a-z][a-z0-9-]*$`; `scope`: `forbidden
 defaults; `sources` per key. Every `scanIgnore` pattern is compiled by M7 `compileGlob`
 inside `validateLayer` itself (not only via `loadConfig`), whose `config` errors (including a
 pattern with no literal character) M4 reports as layer errors, so a caller that validates a
-layer's text directly (M19 `configFor`) also catches a bad glob. Returns compiled
+layer's text directly (M19 `configFor`) also catches a bad glob. The repo layer at HEAD is
+not validated as a layer: only its `scanIgnore` is read, and when it is invalid (the file at
+HEAD is not valid JSON, the value is not an array of strings, or a pattern fails M7
+`compileGlob`) `loadConfig` uses `[]` and adds a warning naming the repo config at HEAD, not
+a `config` error (fail-closed: `[]` exempts nothing); the worktree layer, its `scanIgnore`
+included, is validated as usual, so a copy still invalid there is a `config` error and a
+fixed copy is committable (Q6, Q10 as amended by CFG-01). Returns compiled
 `scanIgnore` matchers (via M7) and exports
-`isRepoConfigPath(path)`, so M8 compiles nothing and knows no config file names. It also
+`isRepoConfigPath(path)` and the constant `REPO_CONFIG_PATH` (`.claude/commit.json`), so M8
+compiles nothing and knows no config file names and M18 spells no path. It also
 owns the `scanIgnore` change test, pure so that no other module parses the config: pure
 `scanIgnoreChanged(headPatterns, snapshotBlob) → boolean` compares the `scanIgnore` patterns
-`loadConfig` read at HEAD with the `scanIgnore` parsed from the repo config's content on the
-snapshot side (M10 `snapshotBlob`). A missing file or key counts as no patterns; the two
+`loadConfig` read at HEAD (`[]` when the value there was invalid) with the `scanIgnore`
+parsed from the repo config's content on the snapshot side (M10
+`snapshotBlob(REPO_CONFIG_PATH)`). A missing file or key counts as no patterns; the two
 lists are compared in order, element by element, so an edit to another key never counts;
 a snapshot blob that is not valid JSON, or whose `scanIgnore` is not an array of strings,
-counts as changed.
+counts as changed. HEAD's `[]` after an invalid value is compared like any other: a fixed
+copy that carries patterns counts as changed, so its units are flagged (`humanOnly`).
 `loadConfig({ claudeHome, toplevel, unborn })`, `readLayers(…)`, pure
 `validateLayer(obj, layer)`, all typed. Sources: Q6, Q10, C:plan, C:plan-hunks.
 

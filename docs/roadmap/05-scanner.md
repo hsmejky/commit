@@ -221,8 +221,9 @@ added line, and drops units whose path a `scanIgnore` matcher matches.
 **What to build:** M4 pure `scanIgnoreChanged(headPatterns, snapshotBlob)`, M10
 `snapshotBlob(path)` for the repo config on the snapshot side, and M8's `scanIgnoreUnits`:
 when the parsed `scanIgnore` differs, every unit whose path or old path is the repo config
-is flagged; M18 `plan` step 5 stores the flag and the units in the scan map, as
-`scan.scanIgnoreChanged` and `scanIgnoreUnits`.
+is flagged (CFG-01 item 2); M18 `plan` step 5 calls `snapshotBlob(REPO_CONFIG_PATH)` (CFG-01
+item 3), outputs the flag as `scan.scanIgnoreChanged` (item 4) and puts the units in the
+scan map as `scanIgnoreUnits`.
 
 **Blocked by:** SCN-13, CFG-07, CFG-01, CHG-08, CHG-16.
 
@@ -235,18 +236,22 @@ story 149.
       none.
 - [ ] Seam 1: editing only `maxSubjectLength` → `scan.scanIgnoreChanged: false`, empty
       `scanIgnoreUnits`; adding a pattern → `true` and every repo-config unit in the scan
-      map (provisional: depends on CFG-01 open item 2 settling whether every repo-config
-      unit, or only the changed unit, is flagged).
+      map, including a hunk that edits only another key (CFG-01 item 2).
 - [ ] Seam 1: snapshot content that is not valid JSON, or a non-array `scanIgnore`, counts
       as changed; a missing file or key is no patterns.
 - [ ] Seam 1: renaming or moving `.claude/commit.json` while also changing `scanIgnore` →
-      the unit is flagged by its old path, since it is the repo config file (C:plan-hunks).
+      the unit is flagged by its old path, since it is the repo config file (C:plan-hunks);
+      a rename away with no edit, while HEAD holds patterns, → `true` too, since
+      `snapshotBlob(REPO_CONFIG_PATH)` reads no file (CFG-01 item 3).
+- [ ] Seam 1: an invalid `scanIgnore` at HEAD fixed in the worktree with a pattern → `true`
+      and the repo-config units flagged (CFG-01 item 5).
 - [ ] Seam 1 (macOS runner, case-insensitive FS): a `scanIgnore` pattern differing in case
       from the path does not exempt it.
 - [ ] Seam 1: a `scanIgnore` pattern committed at HEAD exempts a matching hit from
       `scan.hits`.
-- [ ] A static test asserts M18's source imports `isRepoConfigPath` and passes it to
-      `scanUnits`, M8's source does not import it, and neither holds a repo-config filename
+- [ ] A static test asserts M18's source imports `isRepoConfigPath` and `REPO_CONFIG_PATH`,
+      passes the first to `scanUnits` and the second to `snapshotBlob`, M8's source does
+      not import them, and neither holds a repo-config filename
       literal of its own.
 
 

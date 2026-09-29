@@ -83,7 +83,10 @@ created between groups are both caught:
   tree when unborn) against that tree, so the scanned tree is the recorded one. That diff
   is cut like the `plan` diff: the same pinned options, raw and patch passes, the same
   attribute-hidden `--text` pass (an attribute cannot hide a text file from the backstop
-  either) and the same 1 MB scan limit; append trailers ([grammar](message-grammar.md)); run
+  either) and the same 1 MB scan limit. Paths are exempted with the `scanIgnore` patterns
+  `plan` stored in `state.json`, recompiled on each call, not a fresh read of HEAD, which
+  an earlier group's `scanIgnore` change may have moved (Q9, Q10 as amended by CFG-01);
+  append trailers ([grammar](message-grammar.md)); run
   `git commit --cleanup=verbatim -F -` (with `--amend --only` in `reword`), timed out at
   what is left of the 540-second budget. On that timeout the process tree is killed and
   `index.lock` is handled per Q18: in `reword` (`--amend --only` holds the lock until the

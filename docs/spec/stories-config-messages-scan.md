@@ -63,7 +63,7 @@
 
 ## scanIgnore
 
-148. As a developer, I want `scanIgnore` read from the repo config at HEAD, so that an agent cannot add an exception mid-run. [Q10]
+148. As a developer, I want `scanIgnore` read from the repo config at HEAD, and an invalid value there treated as no patterns with a warning rather than a refusal, so that an agent cannot add an exception mid-run and a broken exception list stays fixable through the plugin. [Q6, Q10]
 149. As a developer, I want a `scanIgnore` change to apply only from the next commit (the human confirmation is story 89), so that exceptions are deliberate. [Q10]
 150. As a developer, I want a small case-sensitive glob dialect in which braces, classes, a leading `!` and a pattern with no literal character (such as `**`, `**/?*` or `*/**`) are config errors, so that matching is predictable on every OS and one line cannot switch the scan off. [C:scanignore-globs, Q10]
 151. As a developer, I want the worker to add `scanIgnore` entries only when I ask, so that exceptions never widen on their own. [Q10]

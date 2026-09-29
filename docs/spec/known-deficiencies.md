@@ -136,7 +136,7 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   [C:worker-input](../contracts/worker-input.md). Fix: make `reword`/`edit` run to the end
   of the prompt, or define a block form; add a two-paragraph fixture.
 
-## Module interfaces and `scanIgnore`
+## Module interfaces
 
 - **KD-S24. `osUser` missing from `validatePlan` and `commitAll`.** M14 and M16 scan with
   it but their signatures and the run state lack it. Where: [modules-m14-m19.md](modules-m14-m19.md).
@@ -145,19 +145,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   by the signal handler; no function owns it. Where: [modules-m10-m13.md](modules-m10-m13.md),
   [C:run-folder](../contracts/run-folder.md). Fix: an idempotent, `ENOENT`-tolerant
   `run.close()` called from M18's `finally` and the signal handler. Slice: RUN-20 (10).
-- **KD-S26. `snapshotBlob(path)` gets no config path.** M4 exports only
-  `isRepoConfigPath`; for a unit renamed away from `.claude/commit.json`, passing the new
-  path misses the `scanIgnore` change. Where: M18 step 5, M10, M4. Fix: M4 exports the
-  path, or `snapshotBlob` always reads the repo config path. Slice: CFG-01 (3).
-- **KD-S27. Q10's `scanIgnore` row contradicts its amendment.** The row flags only the unit
-  changing `scanIgnore`; the amendment flags every unit of the file.
-  [C:confirmation-triggers](../contracts/confirmation-triggers.md) is ambiguous too. Fix:
-  align both rows. Slice: CFG-01 (2).
-- **KD-S28. "M18 also stores as `scan.scanIgnoreChanged`".** It is a `plan` output field,
-  not state. Fix: "outputs as". Slice: CFG-01 (4).
-- **KD-S29. Backstop `scanIgnore`: HEAD or stored patterns.** Q9 reads it from HEAD, M16
-  recompiles the stored patterns; they differ after an earlier group commits a change.
-  Fix: pick one rule in Q9 and M16. Slice: CFG-01 (1).
 
 ## Testing
 

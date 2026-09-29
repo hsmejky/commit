@@ -20,16 +20,25 @@ names the repo-config path for `snapshotBlob`, when M4 exports only `isRepoConfi
 the unclear wording "stored as `scan.scanIgnoreChanged`"; (5) a repo config that is invalid
 at HEAD while the worktree copy is fixed: a `config` refusal makes the fix uncommittable.
 
+**Decisions (2026-09-29, Q6, Q9, Q10 amended by the CFG-01 decision pass):** (1) the
+backstop uses the `scanIgnore` patterns stored at `plan` (Q9 amended); (2) every unit of the
+repo config file is flagged when the `scanIgnore` value changed (Q10 row and
+C:confirmation-triggers aligned); (3) M4 exports `REPO_CONFIG_PATH` and M18 calls
+`snapshotBlob(REPO_CONFIG_PATH)`; (4) M18 step 5 "outputs as" `scan.scanIgnoreChanged`; (5)
+an invalid `scanIgnore` at HEAD is `[]` plus a warning (fail-closed), the worktree layer is
+validated as usual, and HEAD's `[]` against a fixed copy with patterns counts as a change
+(`humanOnly`).
+
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q6, Q10, M4, M8, M16, M18, C:scanignore-globs, C:plan-hunks, C:commit-release,
 stored-facts table.
 
-- [ ] Each of the five items has a recorded decision, and decisions, contracts and spec
-      agree
-- [ ] CFG-07, SCN-14, EXE-13 and INT-16 cite the settled behaviour
+- [x] Each of the five items has a recorded decision, and decisions, contracts and spec
+      agree.
+- [x] CFG-07, SCN-14, EXE-13 and INT-16 cite the settled behaviour.
 
 
 ## CFG-02: Unparseable repo config refuses `plan` (tracer)
@@ -139,25 +148,33 @@ the user layer) → warning, ignored. Warnings go to `plan.warnings` and stderr.
 every other repo key from the worktree; reports source `repo@HEAD`; compiles each pattern
 with M7 `compileGlob` inside `validateLayer` itself (not only via `loadConfig`, so a caller
 that validates a layer's text directly also catches a bad glob) and reports its `config`
-errors as repo-layer errors; returns compiled matchers and exports `isRepoConfigPath(path)`.
+errors as repo-layer errors; returns compiled matchers and exports `isRepoConfigPath(path)`
+and `REPO_CONFIG_PATH`. An invalid `scanIgnore` at HEAD is `[]` plus a warning, not a
+`config` refusal; the worktree layer, its `scanIgnore` included, is validated as usual
+(CFG-01 item 5).
 
 **Blocked by:** CFG-06, SCN-03, CFG-01.
 
 **Status:** ready-for-agent
 
-**Sources:** Q10 (read at HEAD), Q6, M4, C:plan (`config.sources`), C:scanignore-globs,
-stories 107, 148, 150.
+**Sources:** Q10 (read at HEAD; amended by CFG-01), Q6 (amended by CFG-01), M4, C:plan
+(`config.sources`), C:scanignore-globs, stories 107, 148, 150.
 
 - [ ] Seam 1: `scanIgnore` added in the worktree only → effective `[]`; after it is
       committed → effective patterns with source `repo@HEAD`.
 - [ ] Seam 1: on an unborn repo `scanIgnore` is `[]` while other worktree repo keys apply.
-- [ ] Seam 1: a HEAD pattern `**/*` and one with braces → exit 1 `config` naming the
-      pattern.
-- [ ] Seam 1: `scanIgnore` given as a string, and as an array with a non-string entry, each
-      → exit 1 `config` naming the key.
+- [ ] Seam 1: a pattern `**/*` and one with braces, at HEAD and unchanged in the worktree
+      → exit 1 `config` naming the pattern (the worktree layer).
+- [ ] Seam 1: `scanIgnore` given as a string, and as an array with a non-string entry, at
+      HEAD and unchanged in the worktree, each → exit 1 `config` naming the key.
+- [ ] Seam 1: each of those values (and unparseable JSON) at HEAD only, with a valid copy in
+      the worktree → no refusal, `config.values.scanIgnore` is `[]` and `warnings` names the
+      repo config at HEAD (CFG-01 item 5).
 - [ ] `validateLayer`, called directly (not through `loadConfig`) on a repo layer with
       `scanIgnore: ["**"]`, returns a `config` error naming the pattern.
-- [ ] `isRepoConfigPath` is true for the repo config path only.
+- [ ] `isRepoConfigPath` is true for `.claude/commit.json` and false for
+      `sub/.claude/commit.json` and `.claude/commit.JSON`; `REPO_CONFIG_PATH` is
+      `.claude/commit.json`.
 
 
 ## CFG-08: Default attribution trailer (M5 tracer)

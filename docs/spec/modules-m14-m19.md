@@ -189,10 +189,11 @@ the reply with M17.
      notice).
   5. M9 `applyCaps` (`split` only); M10 `snapshot` (a failed `git add` → `git-failed`,
      discard) and `assignIds`; when a unit's path or old path is the repo config (M4
-     `isRepoConfigPath`), M4 `scanIgnoreChanged` compares step 1's HEAD patterns with that
-     file's M10 `snapshotBlob` (no unit of it: `false`); M8 scan with that boolean, which
-     M18 also stores as `scan.scanIgnoreChanged`, and M8's `scanIgnoreUnits` go in the
-     scan map.
+     `isRepoConfigPath`), M4 `scanIgnoreChanged` compares step 1's HEAD patterns (`[]` when
+     the value at HEAD was invalid) with M10 `snapshotBlob(REPO_CONFIG_PATH)`, the path M4
+     exports, never the unit's own path (no unit of it: `false`); M8 scan with that
+     boolean, which M18 also outputs as `scan.scanIgnoreChanged`, and M8's
+     `scanIgnoreUnits` go in the scan map.
   6. M15 `planRefusal` post-scan (`staged-hit`, clean → discard, no clean check in
      `reword`); then M11 signing
      (`signing` → discard).

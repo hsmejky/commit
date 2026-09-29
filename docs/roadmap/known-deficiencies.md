@@ -19,7 +19,7 @@ fixed, delete it here; IDs are never reused.
   in INT; test or drop the race.
 - **KD-R3. EXE-24 re-asserts GIT-08's teardown.** Fix: limit EXE-24 to "no commit after the
   kill" and the `indexReset` case.
-- **KD-R4. INF-07 waits needlessly** behind CFG-07 (and so CFG-01 and EXE-01, needs-human)
+- **KD-R4. INF-07 waits needlessly** behind CFG-07 (and so EXE-01, needs-human)
   though it needs only the `scanIgnore` glob compile. Optional fix: a CFG-03b "`validateLayer`
   compiles `scanIgnore`" blocked by CFG-03 and SCN-03, blocking CFG-07 and INF-07.
 
@@ -47,15 +47,10 @@ fixed, delete it here; IDs are never reused.
   blocker, and M14's signature, KD-S24); four WRK-04 worker-behaviour bullets. Fix: a
   static spawn-options test plus a non-UTF-8 byte case; prompt-phrase checks for WRK-04,
   behaviour left to WRK-06.
-- **KD-R12.** SCN-14's "What to build", its "flags both hunks" and rename cases assume
-  CFG-01 item 2 (KD-S27) without a provisional mark. Mark them.
-- **KD-R13.** SCN-14's static test (no repo-config filename literal in M18 or M8) presumes
-  CFG-01 item 3 (KD-S26). Mark it provisional.
 - **KD-R14.** CHG-19's "map unchanged" after `diff-changed` has no observable; say "run
   ended".
-- **KD-R15.** CFG-07's "`isRepoConfigPath` true for the repo config path only" names no
-  seam or inputs. Add cases: `.claude/commit.json` true, `sub/.claude/commit.json` and
-  `.claude/commit.JSON` false.
+- **KD-R15.** CFG-07's `isRepoConfigPath` and `REPO_CONFIG_PATH` criterion names no seam
+  (its inputs are listed); an in-process M4 call has the same problem as KD-R28.
 - **KD-R16.** CHG-03b's fault criteria say "no lock file"; a lock temp file may legitimately
   remain. Say "no `.commit-plan/lock`".
 - **KD-R17.** CHG-23's `index.lock` grep trips on M16's expected notice and on
@@ -153,8 +148,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R53.** CFG-03 lacks a wrong-JSON-type case such as `body: 1` → `config` (not
   `body: "required"`).
 - **KD-R54.** The README RUN-20 gate row names only one path to RUN-24 (also via RPL-09).
-- **KD-R55.** CHG-17's Gates line restates its PRE-15 blocker; CFG-01 criteria lack final
-  periods. Delete the line; pick one punctuation rule.
+- **KD-R55.** CHG-17's Gates line restates its PRE-15 blocker. Delete the line.
 - **KD-R56.** CHG-16 states the 1 MB rule it hands to SCN-13; CHG-12's Sources omit story
   219.
 - **KD-R57.** The README claims the blocking edges were checked against each slice's

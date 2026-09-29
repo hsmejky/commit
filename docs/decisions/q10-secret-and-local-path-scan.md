@@ -49,7 +49,7 @@
     | --- | --- | --- | --- |
     | pattern hit | the unit must be in `notIncluded`; in a group it is a lint error ("h4 has scan hit `github-token`; move it to notIncluded") | never: the unit is always left out, and the report names it with two lines, `!git --literal-pathspecs add -- <path>` and then `!git commit -m "<message>"` (no `&&`, which Windows PowerShell 5.1 cannot parse), to commit it by hand (a `!` command has no terminal, so a bare `git commit` could hang on an editor; the guard does not see `!` commands). The path is bare when it holds only `[A-Za-z0-9._/@+-]` and in single quotes otherwise (literal in Bash and PowerShell); a path holding `'`, a PowerShell single quote (U+2018–U+201B) or a control character gets no line, only "commit by hand"; `<message>` stays a placeholder | **blocks** |
     | skipped file | may be included | when the unit is included | does not block |
-    | `scanIgnore` change | may be included | when the unit that changes the `scanIgnore` value in `.claude/commit.json` is included (a unit that edits only another key, e.g. `maxSubjectLength`, does not); it takes effect from the next commit | does not block |
+    | `scanIgnore` change | may be included | when the unit that changes the `scanIgnore` value in `.claude/commit.json` is included (a unit that edits only another key, e.g. `maxSubjectLength`, does not); it takes effect from the next commit. Amended by pass 9 and the CFG-01 decision pass, below: when the value changed, every unit of the file (by path or old path) is flagged | does not block |
 
     A hit is therefore a notice, not a question: nothing unscanned-and-flagged can be
     committed through the plugin, so a subagent commits the rest and passes the notice to its
@@ -138,6 +138,32 @@
     attribute-hidden `--text` passes and the same 1 MB limit as the `plan` diff, from the
     same change-set code, so an attribute cannot hide a text file from the backstop either
     (pass 3).
+- **Amended.** By the CFG-01 decision pass (2026-09-29), settling KD-S26 to KD-S29:
+  - The `scanIgnore` row of the table: when the parsed value differs, **every** unit of
+    `.claude/commit.json` (its path or old path) is flagged, as pass 9 says; the row's
+    "the unit that changes the `scanIgnore` value" is superseded. A unit that edits only
+    another key is flagged only when the same diff changes `scanIgnore`; with the value
+    unchanged, no unit is flagged.
+  - The `commit` backstop exempts paths with the `scanIgnore` patterns `plan` stored in the
+    run state (recompiled through the glob matcher on each call), not a fresh read of HEAD
+    (Q9 as amended). After an earlier group commits a `scanIgnore` change, HEAD holds the
+    new patterns, but the run was scanned, grouped and confirmed under the old ones; "takes
+    effect from the next commit" means the next run.
+  - The change test reads the repo config on the snapshot side at the fixed repo-config
+    path, which the config loader exports (`REPO_CONFIG_PATH`), never at a unit's new path:
+    a rename away from `.claude/commit.json` leaves no file there (no patterns), which
+    differs from HEAD's patterns when HEAD had any.
+  - `plan` outputs the test's result as `scan.scanIgnoreChanged`; it is an output field,
+    not run state.
+  - A `scanIgnore` that is invalid at HEAD (the file is not valid JSON, the value is not an
+    array of strings, or a pattern is a glob error, including one with no literal
+    character) is no longer a `config` refusal: the loader uses `[]` (no exemptions, so
+    the scan fails closed) and adds a warning (stderr and `plan.warnings`). The worktree
+    layer is validated as before, so a copy that is still invalid there is refused with
+    `config`. The change test compares HEAD's `[]` with the fixed version: a fix that
+    carries patterns counts as a change, so its units are flagged and including them makes
+    the confirmation `humanOnly`. Before, the `config` refusal made the fix itself
+    uncommittable through the plugin.
 - **Rejected.**
   - Using gitleaks when installed (breaks zero-deps and behaves differently per machine).
   - A CLI override flag: an agent would add it to itself on refusal. The same holds for any
@@ -166,6 +192,11 @@
   - Treating a filtered file like a binary one (not scanned): `nbstripout` and similar
     filters commit text that the scan can check, and the cleaned form is exactly what
     history gets.
+  - The backstop re-reading `scanIgnore` at HEAD (CFG-01): a `scanIgnore` change committed
+    by an earlier group of the same run would exempt later groups under patterns that
+    `plan`'s scan and the confirmation never used.
+  - An invalid `scanIgnore` at HEAD as a `config` refusal (CFG-01): the repair of the file
+    could then only be committed by hand.
 - **Consequences.** This repo's own fixtures with fake secrets live under `tests/fixtures/`, and
   the repo config lists that in `scanIgnore`. Since `scanIgnore` is read at HEAD,
   `.claude/commit.json` must be committed before the first commit that adds

@@ -76,9 +76,12 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
 - Scan map, written by `plan` (Q10): every scan hit and skipped file mapped to the unit that
   holds it (`"scanned": { "h4": ["github-token"], "h9": "skipped" }`), with the units flagged
   for a `scanIgnore` change (`"scanIgnoreUnits": ["h2", "h3"]`). The test compares the
-  `scanIgnore` patterns read at HEAD with the ones parsed from the repo config on the
-  snapshot side (a missing file or key is no patterns; compared in order; content that is
-  not valid JSON, or a `scanIgnore` that is not an array of strings, counts as changed).
+  `scanIgnore` patterns read at HEAD (`[]`, with a warning, when the value there is
+  invalid, Q6) with the ones parsed from the repo config at its fixed path on the snapshot
+  side, never at a unit's new path (a missing file or key is no patterns, so a rename away
+  from the repo config reads none; compared in order; content that is not valid JSON, or a
+  `scanIgnore` that is not an array of strings, counts as changed). `plan` outputs the
+  result as `scan.scanIgnoreChanged`.
   When they differ, every unit of the repo config file (its path or old path) is flagged,
   since a whole-file comparison cannot tell which hunk carries the change; when they are
   equal, as when only another repo-config key (e.g. `maxSubjectLength`) was edited, the list

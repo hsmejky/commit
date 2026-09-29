@@ -282,7 +282,8 @@ set; the index unstaged; HEAD re-read within `cleanupDeadline` (unmoved → no `
 ## EXE-13: the backstop scan refuses a secret in the recorded tree
 
 **What to build:** before each commit (not `reword`): M10 `writeTree` records the tree,
-M8 `scanUnits` with matchers recompiled by M7 from the stored patterns runs over
+M8 `scanUnits` with matchers recompiled by M7 from the patterns stored at `plan` (not
+HEAD, CFG-01 item 1) runs over
 `treeDiffUnits(expected HEAD, recorded tree)`; a hit → exit 3 `scan` with `hits`, the group
 unstaged.
 
@@ -295,7 +296,9 @@ unstaged.
 - [ ] Seam 1: a fixture writes into the stored group a unit of a file holding a test secret
       that `plan` did not scan (state edited after `plan`) → exit 3, `hits` names the file,
       nothing committed, `unstaged` present.
-- [ ] Seam 1: the same secret in a path the stored `scanIgnore` covers → committed.
+- [ ] Seam 1: the same secret in a path the stored `scanIgnore` covers → committed; in a
+      path only a `scanIgnore` pattern committed by an earlier group of the run covers →
+      still exit 3 (CFG-01 item 1).
 - [ ] Seam 1: a text file hidden by `-diff` in `.gitattributes` holding the secret → still
       exit 3.
 - [ ] Seam 1, unborn HEAD: the backstop diffs against the empty tree.

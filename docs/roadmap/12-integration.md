@@ -272,7 +272,8 @@ hit fails lint in `check`.
 - [ ] Seam 1: an included over-1 MB file → `confirm` with
       `humanOnly: true`, `ifNoUser` `no` plus `returnToParent`
 - [ ] An edited `scanIgnore` in the repo config → `humanOnly` confirm; an edit to another key
-      of that file → no trigger
+      of that file alone → no trigger; both in one diff, with only the other key's hunk
+      included → still `humanOnly`, since every unit of the file is flagged (CFG-01 item 2)
 
 
 ## INT-17: Runs without a user (`--no-user`)

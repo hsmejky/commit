@@ -19,7 +19,9 @@ pattern that is only `/`, before the leading-`/` strip and trailing-`/`-to-`**` 
 are applied: `/`, `//`, `a//b`), or a pattern with no literal character (Q10): one made only
 of `*`, `?`, `**` and `/` (`**`, `**/*`, `**/?*`, `*/**`, `/**`), so one amended line cannot
 switch the scan off. A broad pattern with a literal character (`src/**`) stays legal.
-Every row, and every error, has a fixture.
+Every row, and every error, has a fixture. A config error stops `plan` when the pattern is
+in the repo layer in the working tree; in the `scanIgnore` read at HEAD it makes the value
+`[]` with a warning instead (Q6, Q10 as amended by CFG-01).
 
 ## Differences from git pathspecs (SCN-04)
 

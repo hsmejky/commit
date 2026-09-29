@@ -56,7 +56,9 @@ and of the real index.
   need no handling of their own; conversion warnings on stderr are not errors.
 - `snapshotBlob(path) → Buffer | null`: the repo config's content on the snapshot side of
   the last `snapshot` (the working-tree file in `split`, the index entry in `staged`;
-  `null` when the path is absent there), which M18 passes to M4 `scanIgnoreChanged`.
+  `null` when the path is absent there), which M18 passes to M4 `scanIgnoreChanged`. M18
+  always passes M4's `REPO_CONFIG_PATH`, never a unit's path, so a rename away from the repo
+  config reads `null` (no patterns) at that path.
 - `assignIds(units)`, `matchIds(idMap, units)` (typed, `unmatched`).
 - Backstop reads (M16): `writeTree() → treeId` records the real index's tree
   (`git write-tree`); `treeDiffUnits(fromTree, toTree) → units` diffs two trees (`fromTree` the
