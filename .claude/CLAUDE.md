@@ -33,7 +33,8 @@ README, manifests.
 - `plugin/agents/commit-worker.md` runs the commit (Q24, Q25). `plugin/skills/commit/SKILL.md`
   (`/commit`) only spawns the worker.
 - `plugin/skills/commit-config/SKILL.md`: config skill (Q7).
-- `tests/*.test.js`, `tests/fixtures/`.
+- `tests/*.test.js`, `tests/fixtures/`, `tests/helpers/` (shared test helpers, not run by
+  `npm test`).
 - `tools/`: episode analysis (Q24), not packaged.
 - `docs/`: `contracts/`, `decisions/`, `spec/`, `roadmap/`, one file per topic plus a `README.md` index.
 

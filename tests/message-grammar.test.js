@@ -4,8 +4,8 @@
 
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const { libPath, loadLib } = require('./helpers/load-lib');
+const { loadLib } = require('./helpers/load-lib');
+const { assertPureSource } = require('./helpers/assert-pure-source');
 
 // Q6 defaults: the commitlint `config-conventional` types.
 const DEFAULT_TYPES = Object.freeze([
@@ -106,21 +106,8 @@ test('parse and lint are exported functions', () => {
 });
 
 test('the message grammar source does no I/O and reads no ambient state', () => {
-  const source = readFileSync(libPath('message-grammar'), 'utf8');
-  const forbidden = [
-    [/^\s*import\b/m, 'a static import'],
-    [/\bimport\s*\(/, 'a dynamic import'],
-    [/\brequire\s*\(/, 'require'],
-    [/\bprocess\b/, 'process'],
-    [/\bglobalThis\b/, 'globalThis'],
-    [/\bfetch\s*\(/, 'fetch'],
-    [/\bDate\b/, 'the clock'],
-    [/\bMath\.random\b/, 'randomness'],
-    [/\bconsole\b/, 'console'],
-  ];
-  for (const [pattern, what] of forbidden) {
-    assert.doesNotMatch(source, pattern, `message-grammar.mjs must not use ${what}`);
-  }
+  // M6 has no dependencies in the module map (docs/spec/modules.md): no imports allowed.
+  assertPureSource('message-grammar');
 });
 
 // The lint keys of Q6; `scanIgnore` is not a message rule.

@@ -22,8 +22,9 @@
   plugin/skills/commit-config/SKILL.md
   docs/contracts/, decisions/, spec/  one file per topic, README.md index in each
   tools/                              episode analysis (Q24), not packaged
-  tests/*.test.js, tests/fixtures/
+  tests/*.test.js, tests/fixtures/, tests/helpers/  shared test helpers, not run by npm test
   package.json                        no dependencies, no "type" field; not in plugin/
+  .gitattributes                      * text=auto eol=lf; tests/fixtures/** -text
   LICENSE (MIT), README.md
   ```
 
@@ -88,6 +89,15 @@
   Node 24 it loads but prints `MODULE_TYPELESS_PACKAGE_JSON` to stderr on every guard call;
   and the root `package.json` lies outside `plugin/`, so it is likely not shipped with the
   plugin and cannot settle the type.
+- **Amended.** By the MSG-01 review (2026-09-29): added `tests/helpers/`, shared test
+  helpers not matched by `tests/*.test.js` and so not run by `npm test` (e.g. `load-lib.js`,
+  `assert-pure-source.js`); a purity test for a pure module (M6, and later M8, M14, M19)
+  calls a shared `assertPureSource` helper there instead of repeating the ban list per test.
+  Also added `.gitattributes` at the repo root: `* text=auto eol=lf` normalizes line endings
+  to LF everywhere except `tests/fixtures/** -text`, which keeps fixtures' exact bytes (e.g.
+  CRLF cases) untouched. Why: Git for Windows and the windows CI runner default to
+  `core.autocrlf=true`, which would rewrite committed bytes on checkout that later
+  byte-comparing tests rely on.
 - **Rejected.**
   - Node 18 or 20 as the minimum: both are end-of-life, and Claude Code's npm install
     already requires Node 22.
