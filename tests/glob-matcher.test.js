@@ -126,6 +126,7 @@ const configErrors = [
   { label: '`**` inside a segment', pattern: 'a**b' },
   { label: 'braces', pattern: 'a{b,c}.txt' },
   { label: 'a character class', pattern: 'a[bc].txt' },
+  { label: 'a stray bracket', pattern: 'a]b.txt' },
   { label: 'a leading `!`', pattern: '!a.txt' },
   { label: 'a backslash', pattern: 'a\\b.txt' },
   { label: 'an empty pattern', pattern: '' },

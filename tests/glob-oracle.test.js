@@ -16,7 +16,7 @@
 //      compares UTF-16 code units. A BMP character (2 UTF-8 bytes, 1 UTF-16 unit) or an
 //      astral character (4 UTF-8 bytes, 2 UTF-16 units) needs a different `?` count in each.
 //   2. A pattern ending in `/`: git's `:(glob)` wildmatch never matches a trailing literal
-///     `/` against a file path (file paths never end in `/`), so any pattern combining a
+//      `/` against a file path (file paths never end in `/`), so any pattern combining a
 //      wildcard elsewhere with a trailing `/` (e.g. `src/*/`) matches nothing in git while
 //      ours expands it to "everything under that directory". A *purely literal* trailing-`/`
 //      pattern happens to still match the same set in git, but only via a different
@@ -32,11 +32,11 @@
 //      else") row matches only that exact whole path, so it matches nothing (the directory
 //      itself is never a file).
 //
-// GIT_LITERAL_PATHSPECS is deliberately never set here: manual verification (see the roadmap
-// slice's report) showed it disables pathspec magic outright, including `:(glob)` itself, so
-// `:(glob)tests/*.json` would then be read as a literal (and non-existent) path named
-// ":(glob)tests/*.json" rather than as a glob pattern. `withoutInheritedGitVars` still drops
-// it if the host happens to export it.
+// GIT_LITERAL_PATHSPECS is deliberately never set here: manual verification showed it
+// disables pathspec magic outright, including `:(glob)` itself, so `:(glob)tests/*.json`
+// would then be read as a literal (and non-existent) path named ":(glob)tests/*.json" rather
+// than as a glob pattern. `withoutInheritedGitVars` still drops it if the host happens to
+// export it.
 
 const { test, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -87,6 +87,7 @@ function makeRepo() {
     USERPROFILE: homeDir,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: emptyConfig,
+    LC_ALL: 'C',
   };
   return { homeDir, repoDir, env };
 }
@@ -152,7 +153,7 @@ before(() => {
 });
 
 after(() => {
-  fs.rmSync(path.dirname(repoDir), { recursive: true, force: true });
+  if (repoDir) fs.rmSync(path.dirname(repoDir), { recursive: true, force: true });
 });
 
 function ourMatchSet(pattern) {
@@ -175,9 +176,13 @@ const ROWS = [
   'a+b.txt',
   'a*b*c',
   '*a*a*',
-  // `a?.txt` and `a??.txt` are deliberately not full-set rows here: the fixture tree also
-  // holds non-ASCII names (below), against which `?` diverges (excluded row 1); the specific
-  // divergence is demonstrated directly in that test instead of a whole-set comparison.
+  'a?c',
+  'a??',
+  // `?` alone (e.g. `??`) is not a valid row here: it is only `?` characters, so it fails
+  // compileGlob's "no literal character" rule (C:scanignore-globs, Q10) and never reaches
+  // git at all.
+  'tests/?.json',
+  '?b.txt',
   'tests/**/key.pem',
   '**/key.pem',
   'a/**/b/**/c',
@@ -228,7 +233,7 @@ test('excluded: a leading `/` (git reads it as an absolute filesystem path, not 
 
   const result = gitRaw(repoDir, env, ['ls-files', '-z', '--', ':(glob)/docs/*.md']);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Invalid path/);
+  assert.match(result.stderr, /Invalid path|outside repository/);
 });
 
 test('excluded: a literal pattern naming an existing directory (git\'s directory-prefix fallback)', () => {
