@@ -5,7 +5,7 @@
 // checks the graph the roadmap README claims: no duplicate or missing id, no cycle,
 // every in-group blocker has a lower number, README's slice counts match the files,
 // and edges already implied transitively are reported, not failed. A release-mode
-// switch (read only by this test) lists every slice not `Status: done`.
+// switch (read only by this test) lists every slice whose `**Status:**` is not `done`.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -54,7 +54,7 @@ test('only NN-*.md files are treated as roadmap group files', () => {
   assert.equal(isGroupFileName('known-deficiencies.md'), false);
 });
 
-test("an id cited only in README.md or known-deficiencies.md is not a heading and can't be a duplicate", () => {
+test("slice headings in README.md or known-deficiencies.md are ignored and can't be duplicates", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'roadmap-graph-'));
   try {
     fs.writeFileSync(
