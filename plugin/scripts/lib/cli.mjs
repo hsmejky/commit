@@ -66,6 +66,18 @@ export const SUBCOMMAND_OPTIONS = Object.freeze({
 // or `null` when `values` is legal. `plan`'s `confirmed` and `check`'s `all`/`confirmed` are
 // not declared in SUBCOMMAND_OPTIONS at all, so passing them is already an unrecognized-flag
 // `usage` refusal from `parseArgs` itself, before these rules run.
+// Shared "--plan is required and must be a valid planId" rule for `check`, `commit` and
+// `release` (RPL-02 review finding 6: this exact pair of checks appeared three times).
+function requirePlanId(values) {
+  if (values.plan === undefined) return '--plan <planId> is required';
+  if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
+  return null;
+}
+
+// The flags of `plan`'s mint form (C:cli-and-exit-codes synopsis line 1), every one of which
+// `--hunks` (line 2, its own separate form) excludes.
+const MINT_FORM_FLAGS = ['reword', 'dictated', 'staged', 'split', 'take-over', 'no-user'];
+
 const RULE_CHECKS = Object.freeze({
   plan(values) {
     const modeFlags = ['reword', 'staged', 'split'].filter((flag) => values[flag]);
@@ -80,8 +92,21 @@ const RULE_CHECKS = Object.freeze({
       if (values['take-over'] !== undefined) return '--no-user cannot be combined with --take-over';
       if (!values.split && !values.reword) return '--no-user requires --split or --reword';
     }
-    if (values.hunks && values.plan === undefined) {
-      return '--hunks requires --plan <planId>';
+    // `plan --hunks --plan <planId>` is a separate synopsis form from the mint form above,
+    // not a variant of it (RPL-02 review finding 1): `--hunks` excludes every mint-form flag,
+    // and `--plan` itself belongs only to the `--hunks` form, never the mint form.
+    if (values.hunks) {
+      const mintFlagsSet = MINT_FORM_FLAGS.filter(
+        (flag) => values[flag] !== undefined && values[flag] !== false,
+      );
+      if (mintFlagsSet.length > 0) {
+        return `--hunks cannot be combined with ${mintFlagsSet.map((f) => `--${f}`).join(', ')}`;
+      }
+      if (values.plan === undefined) {
+        return '--hunks requires --plan <planId>';
+      }
+    } else if (values.plan !== undefined) {
+      return '--plan requires --hunks';
     }
     if (values.plan !== undefined && !isValidPlanId(values.plan)) {
       return '--plan must be a lowercase UUID v4';
@@ -91,22 +116,14 @@ const RULE_CHECKS = Object.freeze({
     }
     return null;
   },
-  check(values) {
-    if (values.plan === undefined) return '--plan <planId> is required';
-    if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
-    return null;
-  },
+  check: requirePlanId,
   commit(values) {
-    if (values.plan === undefined) return '--plan <planId> is required';
-    if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
+    const planError = requirePlanId(values);
+    if (planError !== null) return planError;
     if (!values.all) return '--all is required';
     return null;
   },
-  release(values) {
-    if (values.plan === undefined) return '--plan <planId> is required';
-    if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
-    return null;
-  },
+  release: requirePlanId,
   infer() {
     return null;
   },
@@ -158,6 +175,42 @@ export function failure(kind, message) {
 }
 
 /**
+ * Parses and validates one subcommand's argv: pure and side-effect free (no process, no
+ * filesystem, no git), reachable directly at Seam 3. `main` builds the failure shape from
+ * its result; a test can assert against the result itself instead of spawning a subprocess
+ * for every legal synopsis line, which would otherwise depend on repo or index state the
+ * argv rules themselves never need (RPL-02 review finding 2).
+ *
+ * @param {string} subcommand one of SUBCOMMANDS.
+ * @param {string[]} args argv after the subcommand.
+ * @returns {{ ok: true, values: object } | { ok: false, message: string }}
+ */
+export function parseArgv(subcommand, args) {
+  // One strict parseArgs per subcommand (RPL-02): unknown flags, a flag given the wrong
+  // shape (e.g. `--plan` with no value), and any other malformed argv all throw here, before
+  // any git call and before a run folder could exist. `allowPositionals: false` rejects a
+  // stray bare argument the synopsis never has room for.
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args,
+      options: SUBCOMMAND_OPTIONS[subcommand],
+      strict: true,
+      allowPositionals: false,
+    }));
+  } catch (err) {
+    return { ok: false, message: `${subcommand}: ${err.message}` };
+  }
+
+  const ruleError = RULE_CHECKS[subcommand](values);
+  if (ruleError !== null) {
+    return { ok: false, message: `${subcommand}: ${ruleError}` };
+  }
+
+  return { ok: true, values };
+}
+
+/**
  * Runs one CLI call.
  *
  * @param {string[]} argv the arguments after the script path.
@@ -177,25 +230,9 @@ export async function main(argv, env) {
     return failure('usage', `unknown subcommand ${JSON.stringify(subcommand)}; ${expected}`);
   }
 
-  // One strict parseArgs per subcommand (RPL-02): unknown flags, a flag given the wrong
-  // shape (e.g. `--plan` with no value), and any other malformed argv all throw here, before
-  // any git call and before a run folder could exist. `allowPositionals: false` rejects a
-  // stray bare argument the synopsis never has room for.
-  let values;
-  try {
-    ({ values } = parseArgs({
-      args: argv.slice(1),
-      options: SUBCOMMAND_OPTIONS[subcommand],
-      strict: true,
-      allowPositionals: false,
-    }));
-  } catch (err) {
-    return failure('usage', `${subcommand}: ${err.message}`);
-  }
-
-  const ruleError = RULE_CHECKS[subcommand](values);
-  if (ruleError !== null) {
-    return failure('usage', `${subcommand}: ${ruleError}`);
+  const parsed = parseArgv(subcommand, argv.slice(1));
+  if (!parsed.ok) {
+    return failure('usage', parsed.message);
   }
 
   // RPL-04+: every subcommand routes to M18 once its workflow exists; a legal argv is
