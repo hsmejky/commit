@@ -112,10 +112,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    newline and `git commit -m x`, `node "/opt/x/commit.cjs" plan # note`.
 
    **Blanket rule (fail closed).** Before any tokenizing, a command that passed step 1 and
-   is not exempt is denied with the blanket message (deny table) when its text, with (Bash)
-   every NUL and carriage return dropped first, then that shell's escaped
-   newlines removed regardless of quotes (Bash `\` then a newline; PowerShell backtick,
-   optionally followed by a carriage return, then a newline), holds anywhere, inside quotes or not:
+   is not exempt is denied with the blanket message (deny table) when its text, with that
+   shell's escaped newlines removed regardless of quotes (Bash `\` then a newline;
+   PowerShell backtick, optionally followed by a carriage return, then a newline), holds
+   anywhere, inside quotes or not, one of the constructs below. For Bash the rule is checked
+   on each of the two readings described below, and a trigger in either denies: the text
+   with every NUL and carriage return dropped, then its escaped newlines removed; and, when
+   the command holds a carriage return, the text with only every NUL dropped, then its
+   escaped newlines removed. On that second reading a `\` before a carriage return escapes
+   the carriage return and is no line continuation, so `<<`, `\`, CR, LF, `<` is a heredoc
+   there (delimiter CR) while the first reading sees the here-string `<<<`. The constructs:
    - in both shells: `$(` (so also `$((`), `${`, or `#` (a comment; PowerShell `<# … #>`
      included);
    - in Bash: a backtick; a run of two or more `<` other than exactly three (a heredoc
@@ -145,9 +151,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    a `$'…'` span a `\` plus newline stays, like in single quotes; `$"…"` is read like double
    quotes): every `\` (Bash) or backtick (PowerShell) immediately followed by a newline is
    removed; `\\` immediately followed by a newline keeps that newline, since the pair `\\`
-   already escapes a backslash and does not extend to the character after it; a `\` (or
-   backtick) immediately followed by a carriage return then a newline counts as the same
-   escaped newline on the reading where the CR survived; a trailing unquoted `\` (or
+   already escapes a backslash and does not extend to the character after it; a PowerShell
+   backtick immediately followed by a carriage return then a newline counts as the same
+   escaped newline, while a Bash `\` immediately followed by a carriage return is, on the
+   reading where the CR survived, an escaped carriage return (a word character) and the
+   newline after it still ends the line, as in Linux and macOS bash; a trailing unquoted `\` (or
    backtick) at the very end of the command, with nothing after it, is dropped rather than
    read as a literal character (C:guard oracle class `unterminated`). Tokenise with the
    quoting rules of `tool_name`, then split into segments on `&&`, `||`, `;`, `|`, `&` and

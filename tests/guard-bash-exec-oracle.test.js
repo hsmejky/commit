@@ -5,7 +5,7 @@
 // directory and no repository reachable. Assertion A: whenever bash calls git with arguments
 // A, and the guard denies the plain command `git 'A1' 'A2' …`, the guard denies the case too
 // (so the tokenizer never reads a command more leniently than bash runs it). Assertion B:
-// every `bypass` seed case read the same by every bash (see INPUT_MODE) calls `git commit` (skipped on
+// every `bypass` seed case outside INPUT_MODE calls `git commit` (skipped on
 // bash before 4, which lacks `{name}` redirections). Bash is required on CI (`CI` set);
 // elsewhere the check is skipped when no working bash is found.
 
@@ -27,6 +27,7 @@ const bashCases = JSON.parse(fs.readFileSync(SEED, 'utf8')).cases.filter((c) => 
 const NOT_DENIED = new Map([
   ['b-brace-sub', 'GRD-12: a subcommand holding `{` is unreadable'],
   ['b-brace-cmd', 'C:guard step 3 known gap (Q3): brace expansion in the command position'],
+  ['b-procsub-no-target', 'C:guard step 4 (later slice): a `(` among git\'s arguments is denied'],
 ]);
 
 let runHook;
@@ -40,9 +41,10 @@ function denies(command) {
   return stdout.includes('"permissionDecision":"deny"');
 }
 
-// A carriage return (the Windows bash drops it, others keep it) or a trailing `\` (a line
-// continuation when bash reads a script, literal in `.`, `-c` and `eval`): bash's reading
-// depends on its build or input mode, and the guard covers both.
+// Bypass cases that need not run `git commit` themselves: a carriage return (the Windows bash
+// drops it, other builds keep it in the word, so bash's reading depends on its build; the
+// guard reads both ways) or a trailing `\` (bash keeps it as a literal `\` at the end of its
+// input, sourced or under `eval`, and runs `git commit\`; the guard drops it).
 const INPUT_MODE = /\r|\\$/;
 
 const quote = (arg) => `'${arg.replace(/'/g, "'\\''")}'`;

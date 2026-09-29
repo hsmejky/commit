@@ -70,8 +70,15 @@ export function runHook(stdinText, context = {}) {
     if (!mentionsCommit(command)) return NO_OUTPUT;
     const shell = SHELL_OF[toolName];
     // The PowerShell tokenizer is GRD-06; until it exists, only the blanket rule applies there.
-    if (shell === 'powershell' && blanketTrigger(command, shell) === null) return NO_OUTPUT;
-    const result = classify(segments(command, shell), { agentType: payload.agent_type, shell });
+    let parsed;
+    if (shell === 'powershell') {
+      const kind = blanketTrigger(command, shell);
+      if (kind === null) return NO_OUTPUT;
+      parsed = { blanket: kind };
+    } else {
+      parsed = segments(command, shell);
+    }
+    const result = classify(parsed, { agentType: payload.agent_type, shell });
     if (result.decision === 'deny') return { stdout: denyOutput(result.message), stderr: '' };
     return NO_OUTPUT;
   } catch {
@@ -97,7 +104,10 @@ export function denyOutput(message) {
 // newline) removed regardless of quotes; every `$` directly before a quote character
 // removed; every `'`, `"`, `\`, backtick and typographic quote U+2018-U+201B, U+201C-U+201E
 // removed. Parsing still sees the command as written, so a split `co''mmit`, `co$'m'mit` or
-// `com\` plus newline plus `mit` reaches the tokenizer.
+// `com\` plus newline plus `mit` reaches the tokenizer. One text covers both Bash readings
+// (with and without carriage returns): it only ever removes characters that are not letters,
+// and removes every character the carriage-return-kept reading's mention text would, so any
+// `commit` there is also found here.
 const NUL_OR_CR = /[\0\r]/g;
 const ESCAPED_NEWLINE = /[\\`]\n/g;
 const DOLLAR_BEFORE_QUOTE = /\$(?=['"\u2018-\u201E])/g;

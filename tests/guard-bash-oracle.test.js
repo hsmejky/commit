@@ -21,6 +21,10 @@ const matchCases = JSON.parse(fs.readFileSync(SEED, 'utf8')).cases.filter(
   (c) => c.shell === 'bash' && c.oracle.bash === 'match',
 );
 
+// A `\c`, `\u` or `\U` escape in `$'…'` is decoded by bash 4 and later only (`\u`, `\U`: 4.2);
+// macOS /bin/bash 3.2 keeps it literal, so such a case is skipped there.
+const NEEDS_BASH_4 = /\$'[^']*\\[cuU]/;
+
 let segmentSpans;
 
 beforeEach(async () => {
@@ -33,10 +37,12 @@ test('Seam 3: each Bash seed segment with oracle `match` has bash\'s own words',
   const bash = requireBash(t, cwd);
   if (bash === null) return;
   assert.ok(matchCases.length > 50, 'the seed has match cases');
+  const cases = bash.major >= 4 ? matchCases : matchCases.filter((c) => !NEEDS_BASH_4.test(c.command));
+  if (cases.length < matchCases.length) t.diagnostic(`bash before 4: ${matchCases.length - cases.length} case(s) skipped`);
   // One script for every case: each segment's words, then a record separator.
   const expected = [];
   let script = '';
-  for (const c of matchCases) {
+  for (const c of cases) {
     const spans = segmentSpans(c.command, 'bash');
     assert.equal(spans.length, c.segments.length, `${c.id}: span count`);
     spans.forEach(([start, end], i) => {

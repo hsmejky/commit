@@ -196,6 +196,13 @@ test('Seam 3: the blanket rule sees through NULs and carriage returns', () => {
   assert.equal(blanketTrigger('<\r\\\n< commit', 'bash'), 'heredoc');
 });
 
+test('Seam 3: the blanket rule also checks the carriage-return-kept Bash reading', () => {
+  // `\` then CR is an escaped CR there, not a line continuation: `<<` stays a heredoc,
+  // while the CR-dropped reading sees the here-string `<<<`.
+  assert.equal(blanketTrigger(": <<\\\r\n<'\n\r\ngit commit -m x\n'\n", 'bash'), 'heredoc');
+  assert.equal(blanketTrigger(': <<\\\n<x commit', 'bash'), null);
+});
+
 test('Seam 3: segmentSpans of a blanket command is null', () => {
   assert.equal(segmentSpans('echo $(x) commit', 'bash'), null);
 });

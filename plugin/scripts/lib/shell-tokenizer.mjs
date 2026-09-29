@@ -31,9 +31,13 @@ export function isExemptScriptCall(command, shell) {
 
 /**
  * The blanket rule (C:guard step 2): the kind of construct that keeps a non-exempt command
- * from being tokenized, or null. Checked anywhere in the text, inside quotes or not: for
- * Bash on the text with every NUL and carriage return removed, then every escaped newline;
- * for PowerShell on the text with its escaped newlines removed.
+ * from being tokenized, or null. Checked anywhere in the text, inside quotes or not. For
+ * Bash it is checked on both readings of `bashReadings`, each with every escaped newline
+ * (`\` then a newline) removed: the text with every NUL and carriage return removed, then
+ * the text with only every NUL removed, where a `\` before a carriage return escapes that
+ * carriage return and is no line continuation (so `<<` `\` CR LF `<` is a heredoc there, not
+ * the here-string `<<<` of the first reading). For PowerShell it is checked on the text with
+ * its escaped newlines removed.
  *
  * @param {string} command
  * @param {'bash'|'powershell'} shell
@@ -41,8 +45,15 @@ export function isExemptScriptCall(command, shell) {
  */
 export function blanketTrigger(command, shell) {
   if (isExemptScriptCall(command, shell)) return null;
-  const bash = shell === 'bash';
-  const text = bash ? command.replace(/[\0\r]/g, '').replace(/\\\n/g, '') : command.replace(/`\r?\n/g, '');
+  if (shell !== 'bash') return triggerIn(command.replace(/`\r?\n/g, ''), false);
+  const withoutNul = command.replace(/\0/g, '');
+  const dropped = triggerIn(withoutNul.replace(/\r/g, '').replace(/\\\n/g, ''), true);
+  if (dropped !== null || !withoutNul.includes('\r')) return dropped;
+  return triggerIn(withoutNul.replace(/\\\n/g, ''), true);
+}
+
+// The blanket trigger kind found in one reading's text, or null.
+function triggerIn(text, bash) {
   if (text.includes('$(') || text.includes('${')) return 'substitution';
   if (bash ? text.includes('`') : text.includes('@(')) return 'substitution';
   if (text.includes('#')) return 'comment';
@@ -115,7 +126,8 @@ function bashReadings(command) {
 // Removes each escaped newline (`\` then a newline) outside single quotes and `$'…'`, as
 // bash's input reader does before its lexer, so one can split a word, an operator, a
 // descriptor or a `$'` opener; and drops a trailing unquoted `\`. Quote spans are found as
-// the tokenizer finds them (`quoteEnd`).
+// the tokenizer finds them (`quoteEnd`). Its quote and `$`-run tracking mirrors `readWord`'s
+// (both use `quoteKind` and `quoteEnd`): the two must agree, so change them together.
 function join({ text: s, origin }) {
   let text = '';
   const map = [];
@@ -288,7 +300,8 @@ function redirection(s, from, fd, push) {
 
 // Reads one Bash word from `i` (not a word-ending character) up to an unquoted word-ending
 // character, with quote removal. `extglob` marks a word ended by an extglob `(`, which is
-// kept in the word and is also a `(` token.
+// kept in the word and is also a `(` token. Its quote and `$`-run tracking mirrors `join`'s:
+// change them together.
 function readWord(s, i) {
   let value = '';
   let prev = null; // the previous character, when it was an unquoted literal

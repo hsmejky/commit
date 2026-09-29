@@ -4691,6 +4691,60 @@
    "oracle": {
     "bash": "redirection"
    }
+  },
+  {
+   "id": "b-bypass-cr-heredoc",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": ": <<\\\r\n<'\n\r\ngit commit -m x\n'\n",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-bypass-crlf-heredoc",
+   "shell": "bash",
+   "topic": "bypass",
+   "command": ": <<\\\r\n<'\r\n\r\ngit commit -m x\r\n'\r\n",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-procsub-no-target",
+   "shell": "bash",
+   "topic": "process substitution",
+   "command": "git < <(:) commit -m x",
+   "segments": [
+    [
+     "git",
+     {
+      "redir": "<",
+      "target": null
+     },
+     {
+      "op": "("
+     },
+     ":",
+     {
+      "op": ")"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": [
+     "redirection",
+     "expansion"
+    ]
+   }
   }
  ]
 }

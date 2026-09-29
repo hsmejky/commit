@@ -48,11 +48,15 @@ const EXEMPT = {
   bash: new RegExp(`^ *node(?:\\.exe)? ${EXEMPT_PATH}${EXEMPT_TAIL}`),
   powershell: new RegExp(`^ *(?:& )?node(?:\\.exe)? ${EXEMPT_PATH}${EXEMPT_TAIL}`),
 };
+// Bash is checked on both readings: carriage returns dropped (the Windows bash) and kept
+// (other builds, where `\` before a carriage return is no line continuation).
 function trigger(shell, command) {
   if (EXEMPT[shell].test(command)) return false;
-  const s = shell === 'bash'
-    ? command.replace(/[\0\r]/g, '').replace(/\\\n/g, '')
-    : command.replace(/`\r?\n/g, '');
+  if (shell !== 'bash') return triggerText(shell, command.replace(/`\r?\n/g, ''));
+  const s = command.replace(/\0/g, '');
+  return triggerText(shell, s.replace(/\r/g, '').replace(/\\\n/g, '')) || triggerText(shell, s.replace(/\\\n/g, ''));
+}
+function triggerText(shell, s) {
   if (/\$\(|\$\{/.test(s)) return true;
   if (/#/.test(s)) return true;
   if (shell === 'bash') {
