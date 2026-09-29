@@ -712,6 +712,51 @@ test('scanUnits: non-ASCII content one byte over the 1 MB limit is skipped, no h
   });
 });
 
+// SCN-13b: M10's `overScanLimit` flag ------------------------------------------------------
+
+test('scanUnits: a unit flagged overScanLimit is skipped even with short added lines, no hits', () => {
+  const token = githubToken('x');
+  const units = [
+    { ...textUnit('assets/cut.json', [{ line: 1, text: token }]), overScanLimit: true },
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [],
+    skipped: [{ path: 'assets/cut.json', reason: 'added content over 1 MB' }],
+  });
+});
+
+test('scanUnits: a flagged binary unit with empty addedLines is still skipped (flag wins over the silent binary skip)', () => {
+  const units = [
+    { path: 'assets/cut.bin', oldPath: null, status: 'M', kind: 'binary', addedLines: [], overScanLimit: true },
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [],
+    skipped: [{ path: 'assets/cut.bin', reason: 'added content over 1 MB' }],
+  });
+});
+
+test('scanUnits: two flagged units of the same path are one skipped entry; an unflagged, under-limit unit is still scanned', () => {
+  const token = githubToken('x');
+  const units = [
+    { ...textUnit('assets/split.bin', [{ line: 1, text: 'a' }]), overScanLimit: true },
+    { ...textUnit('assets/split.bin', [{ line: 2, text: 'b' }]), overScanLimit: true },
+    textUnit('src/ok.js', [{ line: 1, text: `const token = "${token}";` }]),
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'src/ok.js', line: 1 }],
+    skipped: [{ path: 'assets/split.bin', reason: 'added content over 1 MB' }],
+  });
+});
+
 test('scanUnits: a symlink unit whose target is a home path is a hit', () => {
   const units = [
     {

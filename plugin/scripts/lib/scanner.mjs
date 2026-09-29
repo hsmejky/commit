@@ -332,10 +332,13 @@ function isOsUserSegment(segment, osUserSegment) {
  *   `line` is the added line's number in the new file, as the unit gives it
  * @typedef {{ line: number, text: string }} AddedLine
  * @typedef {{ path: string, oldPath: string | null, status: string, kind: string,
- *   addedLines: readonly AddedLine[] }} Unit
+ *   addedLines: readonly AddedLine[], overScanLimit?: boolean }} Unit
  *   A unit record from M10 (only the fields M8 reads). `kind: "binary"` marks a binary unit
  *   (SCN-13); every other kind, including `"symlink"`, is scanned like text, so a symlink's
- *   target reaches `scanUnits` as its unit's one added line
+ *   target reaches `scanUnits` as its unit's one added line. `overScanLimit: true` (SCN-13b)
+ *   marks a unit whose file M10 stopped collecting added lines for at M10's own 1 MB scan
+ *   limit, so `addedLines` may be cut short or empty and stay under M8's own byte measure;
+ *   absent (or falsy) otherwise
  */
 
 // SCN-13, Q19, C:plan, M10 (docs/spec/modules-m10-m13.md): a unit whose added lines total
@@ -453,13 +456,16 @@ export function createScanner(patterns) {
 
   /**
    * Scan the added lines of units (SCN-13). A pattern hitting a line more than once is one
-   * hit, since a hit's location is its path and line. Three unit-level rules run before any
-   * line is scanned, in order: a unit whose path a `scanIgnore` matcher (M4's compiled M7
-   * matchers) matches is dropped outright — no hit, not `skipped` either, since it is
-   * exempted, not scanned-and-rejected; a binary unit (`kind: "binary"`) is skipped silently,
-   * the same way; a unit whose added lines total more than 1 MB (`addedContentLength`,
-   * tracked or untracked alike) is reported in `skipped` with the reason
-   * `"added content over 1 MB"` (C:plan) and not scanned. Every other unit, symlinks
+   * hit, since a hit's location is its path and line. Unit-level rules run before any line is
+   * scanned, in order: a unit whose path a `scanIgnore` matcher (M4's compiled M7 matchers)
+   * matches is dropped outright — no hit, not `skipped` either, since it is exempted, not
+   * scanned-and-rejected; a unit that is over the 1 MB added-content limit — flagged
+   * `overScanLimit: true` by M10 (SCN-13b), or whose added lines total more than 1 MB by
+   * M8's own measure (`addedContentLength`, tracked or untracked alike) — is reported in
+   * `skipped` with the reason `"added content over 1 MB"` (C:plan) and not scanned, the flag
+   * checked before the binary kind so it wins over the silent binary skip, and a path gets
+   * one `skipped` entry however many of its units are over; a binary unit (`kind: "binary"`)
+   * that is not over the limit is skipped silently, the same way. Every other unit, symlinks
    * included, is scanned line by line like a text unit.
    *
    * @param {readonly Unit[]} units
@@ -472,16 +478,22 @@ export function createScanner(patterns) {
     const osUserSegment = osUserSegmentName(osUser);
     const hits = [];
     const skipped = [];
+    const skippedPaths = new Set();
     for (const unit of units) {
       if (scanIgnore.some((matcher) => matches(matcher, unit.path))) continue;
-      // Binary before size is harmless either way round: a binary unit's `addedLines` is
-      // always empty, so `addedContentLength` would be 0 and never trip the size check
-      // regardless of order (Q10: the size check runs "before any content decision").
-      if (unit.kind === 'binary') continue;
-      if (addedContentLength(unit) > MAX_ADDED_LENGTH) {
-        skipped.push({ path: unit.path, reason: OVER_SIZE_LIMIT_REASON });
+      // SCN-13b: M10 sets `overScanLimit: true` on a unit when it stopped collecting that
+      // file's added lines at its own 1 MB scan limit, so a cut-short (or emptied)
+      // `addedLines` may stay under M8's own byte measure here. The flag is checked before
+      // the binary kind, so it wins over the silent binary skip too (a flagged unit with
+      // empty `addedLines` and `kind: "binary"` is still reported skipped).
+      if (unit.overScanLimit === true || addedContentLength(unit) > MAX_ADDED_LENGTH) {
+        if (!skippedPaths.has(unit.path)) {
+          skippedPaths.add(unit.path);
+          skipped.push({ path: unit.path, reason: OVER_SIZE_LIMIT_REASON });
+        }
         continue;
       }
+      if (unit.kind === 'binary') continue;
       const lines = unit.addedLines.map(({ text }) => text);
       unit.addedLines.forEach(({ line }, index) => {
         const seen = new Set();
