@@ -23,19 +23,22 @@ completes it.
 
 **Blocked by:** INT-01, RPL-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:commit-release (release), C:run-folder, M12, M18 `release`, stories 194, 206.
 
-- [ ] Seam 1: a fixture writes a lock holding `planId` X (C:run-folder shape) and a folder
+- [x] Seam 1: a fixture writes a lock holding `planId` X (C:run-folder shape) and a folder
       `X/`. `release --plan X` exits 0 with `status: "nothing"`, and the lock and the
       folder are gone.
-- [ ] Seam 1: the lock holds Y, or there is no lock. `release --plan X` exits 0 with the
+- [x] Seam 1: the lock holds Y, or there is no lock. `release --plan X` exits 0 with the
       "nothing to release: the run has already ended or was taken over" text, and Y's lock
       and folder are unchanged.
-- [ ] Seam 1: the reply's `text` ends with the tree state.
-- [ ] Seam 1: a lock whose content names a traversal or absolute path instead of a minted
-      `planId` deletes nothing outside `.commit-plan/`.
+- [x] Seam 1: the reply's `text` ends with the tree state.
+- [x] Seam 1: a lock whose content names a traversal or absolute path instead of a minted
+      `planId` deletes nothing outside `.commit-plan/`. The forged lock in this fixture can
+      never match (`--plan` is always a fresh, valid `planId`), so the containment itself —
+      a forged, matching-shaped `planId` still resolving inside `.commit-plan/` — is proved
+      by `run.test.js`'s `insideRunDir` table, not by this fixture (review-RUN-01 finding 9).
 
 
 ## RUN-02: `call.lock` guards `release` against a running call
