@@ -7,10 +7,17 @@
 // `node:util` `parseArgs` per subcommand and the flag-combination rules of
 // C:cli-and-exit-codes; every illegal combination and a malformed `planId` is refused
 // `usage` here, before M18 (and everything below it, including any git call or the
-// `.commit-plan` folder) is ever reached. Routing to M18 itself is a later slice: a legal
-// argv still falls through to the `internal` placeholder below until M18 exists.
+// `.commit-plan` folder) is ever reached. A legal argv routes to its M18 workflow (INT-01:
+// `plan`); a subcommand whose workflow is not built yet falls through to an `internal`
+// placeholder.
 
 import { parseArgs } from 'node:util';
+
+import * as workflows from './workflows.mjs';
+
+// The M18 workflow each subcommand routes to, as far as built. `plan --hunks` is its own
+// synopsis form and not built yet, so `workflows.plan` refuses it.
+const WORKFLOWS = Object.freeze({ plan: workflows.plan });
 
 /** The subcommands of the synopsis in C:cli-and-exit-codes. */
 const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);
@@ -235,7 +242,12 @@ export async function main(argv, env) {
     return failure('usage', parsed.message);
   }
 
-  // RPL-04+: every subcommand routes to M18 once its workflow exists; a legal argv is
-  // parsed and validated here already.
-  return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
+  const workflow = WORKFLOWS[subcommand];
+  if (workflow === undefined) {
+    // Every subcommand routes to M18 once its workflow exists; a legal argv is parsed and
+    // validated here already.
+    return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
+  }
+  const result = await workflow(parsed.values, env, { cwd: process.cwd() });
+  return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }
