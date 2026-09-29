@@ -109,18 +109,21 @@ text.
 
 ## GRD-06: PowerShell tokenizer
 
-**What to build:** G2 for PowerShell (backtick escapes, `''` and `""`, here-strings closing
-at column 0, the `&` call operator), so the same denies hold for PowerShell commands.
+**What to build:** G2 for PowerShell (backtick escapes, among them the NUL escape `` `0 ``
+/ `` `u{0} ``, `''` and `""`, here-strings closing at column 0, the `&` call operator), so
+the same denies hold for PowerShell commands.
 
 **Blocked by:** GRD-03, GRD-04.
 
 **Status:** ready-for-agent
 
-**Sources:** Q3, Q15, C:guard (Parsing step 2 PowerShell column), stories 13, 14.
+**Sources:** Q3, Q3 (PRE-03 amendment), Q15, C:guard (Parsing step 2 PowerShell column),
+stories 13, 14.
 
 - [ ] Seam 3: ``git commit -m "a`"b"``, `& git commit -m x`, a compound PowerShell command → denied; a here-string holding `git commit` piped into another command → no output.
 - [ ] Seam 3: PowerShell `git commit --no-edit # done` (the generic row, after GRD-04's allowlist) and `<# git commit -m x #> git status` → denied (the documented comment false positive).
-- [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` and `` git commit`0 --no-edit `` → denied: a PowerShell NUL ends the token's value and drops the words after it in the segment, as the native command line is cut there.
+- [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` and `` git commit`0 --no-edit `` → denied: a PowerShell NUL ends the token's value and the git command's arguments, as the native command line is cut there.
+- [ ] Seam 3: `` Write-Output x`0 (git commit -m x) `` and `` if ("x`0") {git commit -m x} `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
 - [ ] Seam 2: one PowerShell deny case end to end.
 - [ ] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
 

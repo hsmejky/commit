@@ -2024,6 +2024,28 @@
    }
   },
   {
+   "id": "p-nul",
+   "shell": "powershell",
+   "topic": "quotes",
+   "command": "git commit`0x -m x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     {
+      "op": ")"
+     },
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-nul",
+    "ps7": "ps-nul"
+   }
+  },
+  {
    "id": "p-typo",
    "shell": "powershell",
    "topic": "quotes",

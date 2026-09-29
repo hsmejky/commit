@@ -42,9 +42,10 @@ line under debug, with the fields known so far, and still no stdout.
 literal single quotes, `\"` `\\` `\$` in double quotes, `$'…'` with its backslash escapes
 decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value
 there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`);
-PowerShell: backtick escapes, where `` `0 `` (and `` `u{0} ``) is a NUL that ends the
-token's value there, as the native command line is cut at it, so the words after it in the
-segment are dropped too (`` git commit`0x -m x `` is `git commit`), `''` and `""`,
+PowerShell: backtick escapes, where `` `0 `` (and `` `u{0} `` in PowerShell 7) is a NUL
+that ends the token's value there, as the native command line is cut at it, and a `)` token
+follows the cut token, ending the git command's arguments while the later tokens stay in
+the segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`,
 here-strings closing at column 0); in both shells typographic quotes as quotes,
 as PowerShell reads them (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`;
 Q3 as amended); escaped newlines (Bash `\` plus newline,

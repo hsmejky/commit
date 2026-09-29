@@ -12,10 +12,11 @@
     of the shell named in `tool_name` (Bash: `\` escapes, `'…'` literal, `$'…'` read with
     its backslash escapes, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the
     `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
-    `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, where `` `0 `` (and `` `u{0} ``)
-    is a NUL that ends the token's value there, as the native command line is cut at it, so
-    the words after it in the segment are dropped too (`` git commit`0x -m x `` is
-    `git commit`), `''` inside `'…'`, here-strings),
+    `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, where `` `0 `` (and `` `u{0} `` in
+    PowerShell 7) is a NUL that ends the token's value there, as the native command line is
+    cut at it, and then ends the git command's arguments like a `)` token while the later
+    tokens stay in the segment (`` git commit`0x -m x `` is `git commit`), `''` inside
+    `'…'`, here-strings),
     segments split on `&&`, `||`, `;`, `|`, `&` and newlines. Unquoted `(` and `)` are
     tokens of their own, and so are Bash `<(` / `>(` (read as `(`) and PowerShell `{` / `}`,
     so a `git` inside a subshell, a process substitution or a script block is found.
@@ -101,11 +102,16 @@
     `abef`): Bash cuts the decoded string at the NUL, so reading on past it would hide
     `commit`.
   - A PowerShell NUL escape outside `'…'` (`` `0 ``, and `` `u{0} `` in PowerShell 7) ends
-    the token's value there, and the words after it in the segment are dropped. Windows
-    PowerShell 5.1 and PowerShell 7 both pass the native command line cut at the NUL
-    (verified 2026-09-29), so `` git commit`0x -m x `` and `` git commit`0 --no-edit ``
-    both run a bare `git commit`. Reading on past the NUL would hide `commit` in the first
-    and keep an allowlisted `--no-edit` that git never sees in the second: two fail opens.
+    the token's value there, and the cut token then acts like a `)` token: it ends the git
+    command's arguments for steps 4 and 5 (global options, subcommand, `commit`'s args),
+    but the later tokens stay in the segment for step 3. Windows PowerShell 5.1 and
+    PowerShell 7 both pass the native command line cut at the NUL (verified 2026-09-29), so
+    `` git commit`0x -m x `` and `` git commit`0 --no-edit `` both run a bare `git commit`.
+    Reading on past the NUL would hide `commit` in the first and keep an allowlisted
+    `--no-edit` that git never sees in the second: two fail opens. The shell cuts only that
+    one native command's line, though, and a nested command still runs
+    (`` Write-Output x`0 (git commit -m x) ``, `` if ("x`0") {git commit -m x} ``):
+    dropping the later tokens from the segment would lose it, a third fail open.
   - PowerShell unquoted `{` and `}` are tokens of their own, like `(` and `)`, and a `}`
     token ends `commit`'s arguments like `)`. PowerShell lets a script block glue its
     brace to the first word (`&{git commit -m x}`, `if ($true) {git commit -m x}`), so

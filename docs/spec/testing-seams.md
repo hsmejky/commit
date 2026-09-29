@@ -108,8 +108,9 @@ oracle-skipped, as listed in C:guard (Oracle-skip classes, from the tokenizer sp
 redirections, heredocs, expansions (`$`, `$(…)`, backticks, brace expansion, globs, process
 substitution), unterminated quotes, subshell parentheses, PowerShell script-block braces,
 PowerShell assignment and keyword statements, splats, `--%`, a PowerShell backtick plus
-newline inside a word, a carriage return in Bash, typographic quotes in Bash, and comments
-(the shell would expand, reject or drop them).
+newline inside a word, a PowerShell NUL escape (`` `0 ``, `` `u{0} ``), a carriage return
+in Bash, typographic quotes in Bash, and comments (the shell would expand, reject or drop
+them).
 
 **End-to-end time budget (Seam 1).** A three-group `split` run with the stepping clock: group
 1 commits, the clock steps to 61 s elapsed (fewer than 480 s left), the call stops with a
