@@ -1,0 +1,8 @@
+# github-token negatives: no non-comment line holds a hit.
+too short: ghp_123456789abcdefghijABCDEFGHIJklmnop
+unknown prefix: ghx_0123456789abcdefghijABCDEFGHIJklmnop
+inside a word: xghp_0123456789abcdefghijABCDEFGHIJklmnop
+upper-case prefix: GHP_0123456789abcdefghijABCDEFGHIJklmnop
+split by a dash: ghp_0123456789abcdefgh-ijABCDEFGHIJklmnop
+pat too short: github_pat_0123456789ABCDEFGHIJk
+bare prefixes: ghp_ github_pat_ ghs_

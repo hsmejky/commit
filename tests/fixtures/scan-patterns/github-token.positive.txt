@@ -1,0 +1,10 @@
+# github-token positives: every non-comment line holds exactly one hit.
+GH_TOKEN=ghp_0123456789abcdefghijABCDEFGHIJklmnop
+oauth: gho_0123456789abcdefghijABCDEFGHIJklmnop
+user_to_server = "ghu_0123456789abcdefghijABCDEFGHIJklmnop"
+server_to_server: ghs_0123456789abcdefghijABCDEFGHIJklmnop
+refresh ghr_0123456789abcdefghijABCDEFGHIJklmnop end
+long: ghp_0123456789abcdefghijABCDEFGHIJklmnopQRST
+url https://ghp_0123456789abcdefghijABCDEFGHIJklmnop@github.com/o/r.git
+GITHUB_PAT=github_pat_0123456789ABCDEFGHIJkl
+fine-grained github_pat_11ABCDEFG0123456789abc_0123456789abcdefghijABCDEFGHIJ0123456789abcdefghijABCDEFGHI
