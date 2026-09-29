@@ -57,6 +57,7 @@ container.
 - [ ] The matrix has nine legs (three OSes × Node 22 oldest, 22 latest, 24) and each runs FND-01's tests green.
 - [ ] The container job's first step fails unless `git --version` is 2.34.x, then runs the test command with Node 22 installed in the container.
 - [ ] On the windows leg, a step asserts both `powershell.exe` and `pwsh` are available (the guard's PowerShell oracle runs under each, GRD-06).
+- [ ] The container job installs `git-lfs` and sets `COMMIT_REQUIRE_LFS=1`, so `tests/lfs-filtered-file.test.js` (PRE-10) runs instead of skipping on git 2.34.
 
 
 ## FND-04: Process-seam harness (Seam 1 and Seam 2 inputs)

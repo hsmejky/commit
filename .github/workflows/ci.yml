@@ -69,10 +69,10 @@ jobs:
     container:
       image: ubuntu:22.04
     steps:
-      - name: Install git and assert minimum version (2.34.x)
+      - name: Install git and git-lfs, and assert minimum git version (2.34.x)
         run: |
           apt-get update -qq
-          apt-get install -y --no-install-recommends git ca-certificates
+          apt-get install -y --no-install-recommends git git-lfs ca-certificates
           ver=$(git --version | sed -E 's/^git version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           echo "git version: $ver"
           case "$ver" in
@@ -93,4 +93,6 @@ jobs:
           node-version: '22'
 
       - name: Run tests
+        env:
+          COMMIT_REQUIRE_LFS: '1'
         run: npm test
