@@ -548,16 +548,16 @@ never stored;
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q9, Q18, Q22, C:run-folder, C:plan, C:reply-and-handback, M12, M18 (takeover
 paragraph), testing modules (run integrity).
 
-- [ ] Each of the eight items (1-5, 7-9) has a recorded decision (an **Amended** bullet in
+- [x] Each of the eight items (1-5, 7-9) has a recorded decision (an **Amended** bullet in
       the Q it changes), and decisions, contracts and spec agree.
-- [ ] The run-integrity case list holds only buildable cases, including the fixtures that
+- [x] The run-integrity case list holds only buildable cases, including the fixtures that
       items (3), (4) and (5) add.
-- [ ] RUN-21, RUN-22, RUN-23, RUN-24 and RUN-25 are updated to cite the settled behaviour;
+- [x] RUN-21, RUN-22, RUN-23, RUN-24 and RUN-25 are updated to cite the settled behaviour;
       GIT-08 does not wait on this slice (it needs only RUN-20's basics).
 
 
