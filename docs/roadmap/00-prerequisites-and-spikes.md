@@ -51,17 +51,17 @@ tokenizer fixtures.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, Q1, C:guard (Parsing), Dependency policy "Tokenizer spike", Further Notes "G2 tokenizer spike".
 
 Gates: GRD-03 and every later tokenizer or classifier slice (GRD-06 to GRD-12).
 
-- [ ] The prototype is run on heredocs, `$(...)`, backticks, `bash -c '…'`, reordered flags, PowerShell here-strings, unterminated quotes, escaped newlines (Bash `\` and PowerShell backtick plus newline), subshells such as `( git commit )`, and case variants of `git` and `commit`.
-- [ ] Each case's segments are compared with bash's own words (`printf '%s\0'`) and with the PowerShell parser API (5.1 and 7 where available); every difference is classed either as one of the deliberate oracle-skip classes (Testing Decisions, "Parser oracles") or as fragility.
-- [ ] The already-decided behaviours are confirmed: case-insensitive `git` basename, `commit` substring and subcommand; `(` and `)` as tokens; heredoc bodies dropped.
-- [ ] Any fragility found is answered by a wider fail-closed rule or a documented false positive, recorded as a Q3 amendment and in C:guard; the case list is handed to GRD-03 as the fixture seed.
-- [ ] If the hand-written design proves fragile, the unbash question (a Q1 amendment) is raised with the user, not adopted by the spike.
+- [x] The prototype is run on heredocs, `$(...)`, backticks, `bash -c '…'`, reordered flags, PowerShell here-strings, unterminated quotes, escaped newlines (Bash `\` and PowerShell backtick plus newline), subshells such as `( git commit )`, and case variants of `git` and `commit`.
+- [x] Each case's segments are compared with bash's own words (`printf '%s\0'`) and with the PowerShell parser API (5.1 and 7 where available); every difference is classed either as one of the deliberate oracle-skip classes (Testing Decisions, "Parser oracles") or as fragility.
+- [x] The already-decided behaviours are confirmed: case-insensitive `git` basename, `commit` substring and subcommand; `(` and `)` as tokens; heredocs blanket-denied (round 8).
+- [x] Any fragility found is answered by a wider fail-closed rule or a documented false positive, recorded as a Q3 amendment and in C:guard; the case list is handed to GRD-03 as the fixture seed.
+- [x] If the hand-written design proves fragile, the unbash question (a Q1 amendment) is raised with the user, not adopted by the spike.
 
 
 ## PRE-04: Spike: hook `if` condition on compound commands
