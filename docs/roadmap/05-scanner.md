@@ -29,12 +29,12 @@ trailing `/`, leading `/`; linear-time matching.
 
 **Blocked by:** SCN-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scanignore-globs, M7.
 
-- [ ] Seam 3: one fixture per row with its match and non-match examples.
-- [ ] Seam 3: a long path against a many-`*` pattern completes in linear time (bounded
+- [x] Seam 3: one fixture per row with its match and non-match examples.
+- [x] Seam 3: a long path against a many-`*` pattern completes in linear time (bounded
       duration assertion).
 
 
