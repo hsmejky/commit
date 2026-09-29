@@ -139,11 +139,28 @@ test('scanUnits: two rows hitting one line are two hits at that line', () => {
 });
 
 test('a row whose false-positive rule holds for the value is not a hit', () => {
-  const placeholder = (value) => value.endsWith('=changeme');
+  const placeholder = (match) => match[0].endsWith('=changeme');
   const hits = withAssignmentRow(placeholder).scanText('TOKEN=changeme\nTOKEN=s3cr3t-value', {
     osUser: null,
   });
   assert.deepEqual(hits, [{ patternId: 'test-assignment', start: 15, end: 33 }]);
+});
+
+test('a false-positive rule receives the full match, so it can read a capture group', () => {
+  // The row's own value lives in a capture group, not the whole match (`KEY=<value>`).
+  const captureRow = {
+    id: 'test-capture',
+    regex: /KEY=(\S+)/,
+    notHit: (match) => match[1] === 'placeholder',
+    source: 'test',
+  };
+  const scanner = createScanner([captureRow]);
+
+  const hits = scanner.scanText('KEY=placeholder\nKEY=real-value', { osUser: null });
+
+  assert.deepEqual(hits, [
+    { patternId: 'test-capture', start: 16, end: 30 },
+  ]);
 });
 
 test('scanUnits: hits in unit order, then line order; one hit per pattern and line', () => {

@@ -6,8 +6,11 @@
  * @property {string} id the public pattern ID
  * @property {RegExp} regex the row's regex, with whole-regex flags only (no inline flags);
  *   the scanner adds `g` itself
- * @property {null | ((value: string, context: { osUser: string | null }) => boolean)} notHit
- *   the row's false-positive rule ("Not a hit when"): true drops the match; `null` for none
+ * @property {null | ((match: RegExpExecArray, context: { osUser: string | null }) => boolean)} notHit
+ *   the row's false-positive rule ("Not a hit when"): true drops the match; `null` for none.
+ *   Takes the full match array (`match[0]` the whole match, `match[1]…` its capture groups),
+ *   so a row whose rule reads a captured value (the `generic-secret` value, the `local-path`
+ *   user segment) can pick its own group instead of the whole match
  * @property {string} source where the row's shape and sample cases were checked against
  */
 
@@ -31,7 +34,7 @@ export const PATTERNS = Object.freeze([
  * @typedef {{ patternId: string, path: string, line: number }} UnitHit
  *   `line` is the added line's number in the new file, as the unit gives it
  * @typedef {{ line: number, text: string }} AddedLine
- * @typedef {{ path: string, oldPath: string | null, kind: string,
+ * @typedef {{ path: string, oldPath: string | null, status: string, kind: string,
  *   addedLines: readonly AddedLine[] }} Unit
  *   A unit record from M10 (only the fields M8 reads)
  */
@@ -63,11 +66,14 @@ export function createScanner(patterns) {
       regex.lastIndex = 0;
       let match;
       while ((match = regex.exec(line)) !== null) {
+        // A zero-length match (e.g. a table row whose regex can match empty) would leave
+        // `lastIndex` unchanged and loop forever; step past it by one instead. This guards
+        // any table passed to `createScanner`, not just the built-in `PATTERNS`.
         if (match[0].length === 0) {
           regex.lastIndex += 1;
           continue;
         }
-        if (row.notHit === null || !row.notHit(match[0], context)) {
+        if (row.notHit === null || !row.notHit(match, context)) {
           hits.push({ patternId: row.id, start: match.index, end: match.index + match[0].length });
         }
       }
