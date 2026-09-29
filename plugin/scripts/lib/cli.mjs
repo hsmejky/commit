@@ -3,12 +3,114 @@
 // `main` peels the subcommand off argv and returns the single JSON object the entry point
 // prints (`version: 1`) with its exit code. M1 alone owns the envelope and the kind → exit
 // code map (architectural decisions "Typed results and one error table"); the domain code →
-// kind side of that table is `lib/domain-codes.mjs` (M18, RPL-03). This is still the RPL-01/
-// RPL-02 tracer for argv: no or an unknown subcommand is a `usage` refusal; per-subcommand
-// argv parsing (RPL-02) and the routing to the M18 workflows come later.
+// kind side of that table is `lib/domain-codes.mjs` (M18, RPL-03). RPL-02 adds one strict
+// `node:util` `parseArgs` per subcommand and the flag-combination rules of
+// C:cli-and-exit-codes; every illegal combination and a malformed `planId` is refused
+// `usage` here, before M18 (and everything below it, including any git call or the
+// `.commit-plan` folder) is ever reached. Routing to M18 itself is a later slice: a legal
+// argv still falls through to the `internal` placeholder below until M18 exists.
+
+import { parseArgs } from 'node:util';
 
 /** The subcommands of the synopsis in C:cli-and-exit-codes. */
 const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);
+
+// `planId` is `crypto.randomUUID()` output (C:run-folder): a lowercase UUID v4, version
+// nibble `4` and variant nibble `8`-`b` included, so an uppercase value, a path, or any
+// other string that merely looks like a UUID is rejected.
+const PLAN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * Checks whether a value is a `planId` in the exact minted form (C:run-folder).
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isValidPlanId(value) {
+  return typeof value === 'string' && PLAN_ID_PATTERN.test(value);
+}
+
+// One strict `parseArgs` options object per subcommand (C:cli-and-exit-codes synopsis).
+// `no-user` is declared literally, as its own boolean flag: `node:util`'s `parseArgs` has no
+// automatic `--no-<flag>` negation to opt out of, unlike some CLI-parsing libraries, so
+// `--no-no-user` is simply an unrecognized flag under strict parsing, the same as any other
+// typo. Exported (read-only) so a test can assert no flag name here ever mentions scanning
+// (story 146: nothing here can gate the secret/path scan).
+export const SUBCOMMAND_OPTIONS = Object.freeze({
+  plan: Object.freeze({
+    reword: { type: 'boolean' },
+    dictated: { type: 'boolean' },
+    staged: { type: 'boolean' },
+    split: { type: 'boolean' },
+    'take-over': { type: 'string' },
+    'no-user': { type: 'boolean' },
+    hunks: { type: 'boolean' },
+    plan: { type: 'string' },
+  }),
+  check: Object.freeze({
+    plan: { type: 'string' },
+  }),
+  commit: Object.freeze({
+    plan: { type: 'string' },
+    all: { type: 'boolean' },
+    confirmed: { type: 'boolean' },
+  }),
+  release: Object.freeze({
+    plan: { type: 'string' },
+  }),
+  infer: Object.freeze({}),
+});
+
+// Business rules `parseArgs` itself cannot express (it only knows a flag's type, not
+// whether it is required or mutually exclusive with another). Each returns a usage message
+// or `null` when `values` is legal. `plan`'s `confirmed` and `check`'s `all`/`confirmed` are
+// not declared in SUBCOMMAND_OPTIONS at all, so passing them is already an unrecognized-flag
+// `usage` refusal from `parseArgs` itself, before these rules run.
+const RULE_CHECKS = Object.freeze({
+  plan(values) {
+    const modeFlags = ['reword', 'staged', 'split'].filter((flag) => values[flag]);
+    if (modeFlags.length > 1) {
+      return `at most one of --reword, --staged or --split (got ${modeFlags.map((f) => `--${f}`).join(', ')})`;
+    }
+    if (values.dictated && !values.reword) {
+      return '--dictated requires --reword';
+    }
+    if (values['no-user']) {
+      if (values.staged) return '--no-user cannot be combined with --staged';
+      if (values['take-over'] !== undefined) return '--no-user cannot be combined with --take-over';
+      if (!values.split && !values.reword) return '--no-user requires --split or --reword';
+    }
+    if (values.hunks && values.plan === undefined) {
+      return '--hunks requires --plan <planId>';
+    }
+    if (values.plan !== undefined && !isValidPlanId(values.plan)) {
+      return '--plan must be a lowercase UUID v4';
+    }
+    if (values['take-over'] !== undefined && !isValidPlanId(values['take-over'])) {
+      return '--take-over must be a lowercase UUID v4';
+    }
+    return null;
+  },
+  check(values) {
+    if (values.plan === undefined) return '--plan <planId> is required';
+    if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
+    return null;
+  },
+  commit(values) {
+    if (values.plan === undefined) return '--plan <planId> is required';
+    if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
+    if (!values.all) return '--all is required';
+    return null;
+  },
+  release(values) {
+    if (values.plan === undefined) return '--plan <planId> is required';
+    if (!isValidPlanId(values.plan)) return '--plan must be a lowercase UUID v4';
+    return null;
+  },
+  infer() {
+    return null;
+  },
+});
 
 // Kind → exit code, the exit table of C:cli-and-exit-codes, 0-6 (0 is `ok`, carried by the
 // caller building a success envelope directly; there is no failure kind for it here).
@@ -74,6 +176,29 @@ export async function main(argv, env) {
   if (!SUBCOMMANDS.includes(subcommand)) {
     return failure('usage', `unknown subcommand ${JSON.stringify(subcommand)}; ${expected}`);
   }
-  // RPL-02+: every subcommand routes to M18 once its argv parsing and workflow exist.
+
+  // One strict parseArgs per subcommand (RPL-02): unknown flags, a flag given the wrong
+  // shape (e.g. `--plan` with no value), and any other malformed argv all throw here, before
+  // any git call and before a run folder could exist. `allowPositionals: false` rejects a
+  // stray bare argument the synopsis never has room for.
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: argv.slice(1),
+      options: SUBCOMMAND_OPTIONS[subcommand],
+      strict: true,
+      allowPositionals: false,
+    }));
+  } catch (err) {
+    return failure('usage', `${subcommand}: ${err.message}`);
+  }
+
+  const ruleError = RULE_CHECKS[subcommand](values);
+  if (ruleError !== null) {
+    return failure('usage', `${subcommand}: ${ruleError}`);
+  }
+
+  // RPL-04+: every subcommand routes to M18 once its workflow exists; a legal argv is
+  // parsed and validated here already.
   return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
 }
