@@ -60,7 +60,10 @@
 3. **Seam 3: in-process, table-driven tests** of modules whose oracle is a contracts table
    and whose interface is stable: M6 `lint` and `parse` (C:message-grammar); M7
    (C:scanignore-globs); M8 `scanUnits` and `scanText` (C:scan-patterns, including
-   `osUser: null`); M9 `hideFilter`, `summaryOnly` and `bucketOf` (the hidden rules of C:untracked-files,
+   `osUser: null`), plus `createScanner(table)`, the factory the module's own `scanText` and
+   `scanUnits` are built over, so the engine's rules (offsets, overlapping hits, a
+   false-positive rule reading a capture group) are checked against a test table independent
+   of C:scan-patterns' rows; M9 `hideFilter`, `summaryOnly` and `bucketOf` (the hidden rules of C:untracked-files,
    C:summary-only-files); G1 `runHook` with injected `claudeHome` and `now`
    as the single in-process guard entry, plus the G2/S2 unit carve-outs below (Bash and PowerShell tokenizer fixtures, allowlist,
    global options, script calls). The guard has this second seam beside Seam 2 on purpose:

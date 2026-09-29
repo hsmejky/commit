@@ -16,7 +16,9 @@ and of the real index.
   a root commit) with exactly Q11's pinned options; `diff.renameLimit` stays the user's
   (Q11). Paths and whole-file kinds come from a `--raw -z` pass, so no path is ever parsed out
   of patch text; the patch pass supplies only hunk bodies, ranges and the added lines the
-  scan reads. The patch pass is one `git diff -z --raw -p` call over the whole diff, with no
+  scan reads. A unit carries `addedLines: [{ line, text }]`, where `line` is the 1-based
+  line number in the new file and `text` is the lossy UTF-8 decode of the line, without the
+  `+` and `\n`. The patch pass is one `git diff -z --raw -p` call over the whole diff, with no
   pathspecs (a path list would go on argv, and a pathspec narrows rename detection, Q11),
   read as a stream (M2 `onStdout`) keeping only what a later step needs: hunks of
   body-carrying units and, for M8, added lines up to the 1 MB scan limit (then the file is
