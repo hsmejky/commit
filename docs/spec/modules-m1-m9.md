@@ -144,7 +144,19 @@ every collapsed directory. Per collapsed directory, its untracked candidates bec
 `collapsed` entry `{ dir, count, bytes }` and its staged-new paths a `stagedExcluded` entry
 `{ dir, count, reason: "collapsed" }`, each counting only its own kind: a directory holding
 only staged-new paths appears in `stagedExcluded` alone, one holding both appears in both. Also `bucketOf(path)` and
-`summaryOnly(path, stats) → reason | null` in C:summary-only-files order. `applyCaps` sums
-the `bytes` of each collapsed directory from the candidates' sizes, which M10 `inventory`
-sets together with `binary`. Sources: Q11, Q16,
+`summaryOnly(path, stats) → reason | null` in C:summary-only-files order. `stats` is
+`{ added, deleted, generated, size }`: `added`/`deleted` are the file's changed-line counts
+(their sum is the `lines` rule's input), `generated` is the `linguist-generated`
+`.gitattributes` flag (the `generated` rule), and `size` is the file's byte size (the `size`
+rule; the same field M10 `inventory` sets on a candidate together with `binary`), matching
+the field names `plan --hunks` and `applyCaps` already use for the same values. `applyCaps`
+sums the `bytes` of each collapsed directory from the candidates' sizes, which M10
+`inventory` sets together with `binary`. `bucketOf` classifies by path alone, checked in this
+order: `test` (a `test`, `tests` or `__tests__` path segment, or a `*.test.*`/`*.spec.*`
+name — `spec`/`specs` alone is not a segment rule, since it also names non-test
+directories), `ci` (a `.github/workflows/`, `.circleci/`, `.gitlab/`, `.buildkite/`,
+`.gitea/workflows/`, `.forgejo/workflows/` or `.woodpecker/` path, or a `.gitlab-ci.yml`,
+`.travis.yml`, `.drone.yml` or `Jenkinsfile` name), `docs` (under `docs/`, or a `.md`/`.mdx`
+name), `build` (a known manifest, lockfile or build-tool config name, e.g. `package.json`,
+`Cargo.toml`, `Dockerfile`, `*.config.{js,mjs,cjs,ts}`), else `code`. Sources: Q11, Q16,
 Q19, C:untracked-files, C:summary-only-files.
