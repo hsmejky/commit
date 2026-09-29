@@ -300,3 +300,66 @@ test('plan with no repo config file gets no config refusal and goes on', async (
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   assert.equal(result.json.reply.status, 'nothing');
 });
+
+// CFG-03 (docs/roadmap/04-config-and-attribution.md, Q6, stories 106 and 110): pure
+// `validateLayer`, wired into `loadConfig`, stops `plan` on a wrong JSON type, an
+// out-of-range or non-integer number, or a bad or empty `types` array.
+
+const CFG_03_BAD_VALUES = [
+  ['maxSubjectLength', '"72"'],
+  ['maxSubjectLength', '19'],
+  ['maxSubjectLength', '201'],
+  ['maxSubjectLength', '0'],
+  ['maxSubjectLength', '72.5'],
+  ['types', '[]'],
+  ['types', '["Feat"]'],
+  ['types', '["1x"]'],
+  ['types', '"feat"'],
+  ['scope', '3'],
+  ['subjectCase', 'true'],
+];
+
+for (const [key, rawValue] of CFG_03_BAD_VALUES) {
+  test(`plan with repo config ${key}: ${rawValue} exits 1 config naming the key and creates no .commit-plan`, async (t) => {
+    const c = createCase(t);
+    c.writeFile('.claude/commit.json', `{ "${key}": ${rawValue} }`);
+
+    const result = await runCommit(c, ['plan']);
+
+    assertRefusal(result, 'config', 1);
+    assert.match(result.json.error.message, new RegExp(key));
+    assertNoRunFolder(c.repoDir);
+  });
+}
+
+test('plan with repo config maxSubjectLength at both range boundaries (20 and 200) goes on', async (t) => {
+  for (const value of [20, 200]) {
+    const c = createCase(t);
+    c.writeFile('.claude/commit.json', `{ "maxSubjectLength": ${value} }`);
+    // Committed, so the tree stays clean and `plan` reaches the `nothing` reply instead of
+    // steps 7-8 (not built yet): only the config load and validation is under test here.
+    c.git(['add', '.claude/commit.json']);
+    c.git(['commit', '-q', '-m', 'add config']);
+
+    const result = await runCommit(c, ['plan']);
+
+    assert.equal(result.exitCode, 0, `${value}: stdout ${result.stdout}\nstderr ${result.stderr}`);
+    assert.equal(result.json.reply.status, 'nothing', String(value));
+  }
+});
+
+const CFG_03_NON_OBJECT_TOP_LEVELS = ['[]', 'null', '42', '"x"'];
+
+for (const body of CFG_03_NON_OBJECT_TOP_LEVELS) {
+  test(`plan with a repo config top level of ${body} exits 1 config naming the repo layer and creates no .commit-plan`, async (t) => {
+    const c = createCase(t);
+    c.writeFile('.claude/commit.json', body);
+
+    const result = await runCommit(c, ['plan']);
+
+    assertRefusal(result, 'config', 1);
+    assert.match(result.json.error.message, /repo/);
+    assert.match(result.json.error.message, /\.claude[/\\]commit\.json/);
+    assertNoRunFolder(c.repoDir);
+  });
+}
