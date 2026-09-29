@@ -68,14 +68,14 @@ return its stdout, stderr, exit code and (for Seam 1) its single JSON object.
 
 **Blocked by:** FND-01, FND-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q15, What makes a good test, Seams (Seam 1, Seam 2), Architectural decisions "Injected environment".
 
-- [ ] A self-test builds a temp repo, commits through plain git, and `git log` shows the fixed author, committer and dates on every OS leg.
-- [ ] The spawned process sees only the temp OS home, Claude home (`CLAUDE_CONFIG_DIR`) and `CLAUDE_PROJECT_DIR` the case sets; no host git config, Claude settings or user identity leaks in (checked by a stub entry point in the test tree that prints what it sees).
-- [ ] The Seam 1 helper fails a case whose stdout is not exactly one JSON object and reports stdout length (for the size budgets); the Seam 2 helper feeds `PreToolUse` JSON on stdin and reads the heartbeat file from the temp Claude home.
-- [ ] Temp directories are removed after each case, also on failure.
+- [x] A self-test builds a temp repo, commits through plain git, and `git log` shows the fixed author, committer and dates on every OS leg.
+- [x] The spawned process sees only the temp OS home, Claude home (`CLAUDE_CONFIG_DIR`) and `CLAUDE_PROJECT_DIR` the case sets; no host git config, Claude settings or user identity leaks in (checked by a stub entry point in the test tree that prints what it sees).
+- [x] The Seam 1 helper fails a case whose stdout is not exactly one JSON object and reports stdout length (for the size budgets); the Seam 2 helper feeds `PreToolUse` JSON on stdin and reads the heartbeat file from the temp Claude home.
+- [x] Temp directories are removed after each case, also on failure.
 
 
 ## FND-05: Stepping clock for Seam 1 time tests
