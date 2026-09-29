@@ -70,8 +70,12 @@ export function insideRunDir(runDir, name) {
   return resolved;
 }
 
-// Whether the run-folder directory is a plain directory. A link (symlink or junction) or a
-// non-directory is never followed: a release behind it deletes nothing (C:run-folder).
+// Whether `dir` is a plain directory: never a symlink or junction, never a non-directory.
+// Shared by the run-folder directory check and the `<planId>` folder check right before a
+// `call.lock` write (review-RUN-01 finding 1): a link swapped in for either is never
+// followed, so a release or a lock write behind it never lands outside the run-folder
+// directory (C:run-folder). Formerly two line-for-line copies (`isPlainDirectory`,
+// `isRunFolder`); merged (review-RUN-02 findings 3, 10).
 function isPlainDirectory(dir) {
   let stats;
   try {
@@ -95,35 +99,14 @@ const LOCK_MAX_BYTES = 65536;
  * @param {string} runDir
  * @returns {string | null} the holder's `planId`, or `null` when no run holds the lock.
  */
+// Reads without following a link (`readLockFile`, `lstat`): a link in place of `lock` is
+// never a legitimate state (`plan` only ever hard-links a regular file into place), and
+// this keeps every lock-type read consistent (review-RUN-02 finding 3; formerly a
+// `statSync`-based duplicate of `lockPlanId`'s parse, merged per finding 10). A file-in-use
+// error propagates as `InUse` for the caller to map to `busy` (finding 4).
 function lockHolder(runDir) {
-  const lockPath = insideRunDir(runDir, 'lock');
-  let stats;
-  try {
-    // Follows a link (read, never delete, follows it), so a link to a huge file or a FIFO is
-    // caught the same as one in place directly.
-    stats = fs.statSync(lockPath);
-  } catch (err) {
-    // No lock, a broken link, or a path component that is not a directory.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR' || err.code === 'ELOOP') return null;
-    throw err;
-  }
-  if (!stats.isFile() || stats.size > LOCK_MAX_BYTES) return null;
-  let text;
-  try {
-    text = fs.readFileSync(lockPath, 'utf8');
-  } catch (err) {
-    // The lock vanished between the stat and the read.
-    if (err.code === 'ENOENT') return null;
-    throw err;
-  }
-  let content;
-  try {
-    content = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (content === null || typeof content !== 'object' || Array.isArray(content)) return null;
-  return isValidPlanId(content.planId) ? content.planId : null;
+  const file = readLockFile(insideRunDir(runDir, 'lock'));
+  return file === null ? null : lockPlanId(file.bytes);
 }
 
 /** A `call.lock` (and, later, the run lock) is stale once its mtime is this old (Q22). */
@@ -173,7 +156,10 @@ function readLockFile(file) {
  * @param {{ from: string, to: string,
  *   verify: (bytes: Buffer | null, stats: fs.Stats) => boolean }} options
  * @returns {{ outcome: 'moved' | 'put-back' | 'conflict' | 'gone' | 'busy' }} `gone`: the
- *   rename found nothing; `busy`: a file-in-use error on the rename or the read.
+ *   rename found nothing; `busy`: a file-in-use error on the rename, the read, or the
+ *   put-back link — the private copy is always kept in this case, never dropped (review-
+ *   RUN-02 finding 5); `conflict`: the put-back link met `EEXIST` (a new file already at
+ *   `from`), the only case where the private copy is safely dropped without it.
  */
 export function moveAsideVerified({ from, to, verify }) {
   try {
@@ -194,10 +180,19 @@ export function moveAsideVerified({ from, to, verify }) {
   if (moved !== null && verify(moved.bytes, moved.stats)) return { outcome: 'moved' };
   try {
     fs.linkSync(to, from);
-  } catch {
-    // A new file already in place (`EEXIST`), or one that cannot be linked back (in use, a
-    // directory, vanished): the private copy is kept, never forced over `from`.
-    return { outcome: readInUse ? 'busy' : 'conflict' };
+  } catch (err) {
+    // `EEXIST`: a new file is already in place at `from` (another call's live lock, or a
+    // takeover's own lock) — the stale private copy is safely dropped (review-RUN-02
+    // finding 5: only this case is `conflict`; a non-`EEXIST` failure below never deletes
+    // another call's live lock, because nothing proves one is there).
+    if (err.code === 'EEXIST') return { outcome: readInUse ? 'busy' : 'conflict' };
+    // A file-in-use failure on the link itself: `from` may still be empty. The private copy
+    // stays at `to`, never dropped, so the lock is not lost; `busy` tells the caller to
+    // leave it and retry.
+    if (IN_USE.has(err.code)) return { outcome: 'busy' };
+    // Anything else (`EMLINK`, a vanished `to`, …) is unexpected: surface it, and leave the
+    // private copy in place rather than guess at deleting it (finding 5).
+    throw err;
   }
   fs.rmSync(to, { force: true });
   return { outcome: readInUse ? 'busy' : 'put-back' };
@@ -250,22 +245,19 @@ export function isCallLockStale({ bytes, mtimeMs, now, host, isAlive }) {
   return now - mtimeMs >= STALE_AFTER_MS;
 }
 
-const BUSY_MESSAGE = 'another /commit call on this run is still running; try again once it has finished';
+// `busy`'s text (Q22, C:cli-and-exit-codes `lock` row) covers two different causes: a live
+// `call.lock` naming a running process (`fileInUse: false`), and a lock-type file another
+// process has open, which on Windows fails a rename, read or link with `EPERM`/`EBUSY`/
+// `EACCES` (`fileInUse: true`). On Windows both really mean "another process has the file",
+// so the same text fits; on POSIX those codes more often mean a real permission problem, not
+// a running call, so the file-in-use case gets its own text there (review-RUN-02 finding 6).
+export const BUSY_MESSAGE = 'another /commit call on this run is still running; try again once it has finished';
+export const BUSY_FILE_IN_USE_MESSAGE = process.platform === 'win32'
+  ? BUSY_MESSAGE
+  : "the run's lock could not be read or replaced (permission denied or in use); try again";
 
-function busy() {
-  return { ok: false, code: 'busy', message: BUSY_MESSAGE };
-}
-
-// `<planId>` checked with `lstat` right before its `call.lock` is touched: a link (a
-// junction swapped in after the lock check) is never followed (review-RUN-01 finding 1).
-function isRunFolder(folder) {
-  try {
-    const stats = fs.lstatSync(folder);
-    return stats.isDirectory() && !stats.isSymbolicLink();
-  } catch (err) {
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false;
-    throw err;
-  }
+function busy(fileInUse = false) {
+  return { ok: false, code: 'busy', message: fileInUse ? BUSY_FILE_IN_USE_MESSAGE : BUSY_MESSAGE };
 }
 
 /**
@@ -276,32 +268,39 @@ function isRunFolder(folder) {
  *
  * @returns {{ ok: true, path: string | null } | { ok: false, code: 'busy', message: string }}
  */
+// A TOCTOU gap remains between each `isPlainDirectory` check here (and in `closeCallLock`)
+// and the operation that follows it (the `wx` create, the rename, the `rmSync`): a junction
+// swapped in inside that window still redirects the operation. Node has no
+// `openat`/`O_NOFOLLOW` for directory path components, so this cannot be fully closed;
+// impact is small (`wx` never overwrites, the payload is `{pid,host}`, and `rmSync` could at
+// worst delete a same-named file in the junction's target). Accepted residual gap: KD-S79
+// (review-RUN-02 finding 7).
 function takeCallLock(runDir, planId, { now, pid, host, isAlive }) {
   const folder = insideRunDir(runDir, planId);
   const callLock = insideRunDir(runDir, `${planId}/call.lock`);
   const content = JSON.stringify({ pid, host });
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (!isRunFolder(folder)) return { ok: true, path: null };
+    if (!isPlainDirectory(folder)) return { ok: true, path: null };
     try {
       fs.writeFileSync(callLock, content, { flag: 'wx' });
       return { ok: true, path: callLock };
     } catch (err) {
       if (err.code === 'ENOENT') return { ok: true, path: null };
-      if (IN_USE.has(err.code)) return busy();
+      if (IN_USE.has(err.code)) return busy(true);
       if (err.code !== 'EEXIST') throw err;
     }
     let judged;
     try {
       judged = readLockFile(callLock);
     } catch (err) {
-      if (err instanceof InUse) return busy();
+      if (err instanceof InUse) return busy(true);
       throw err;
     }
     if (judged === null) continue;
     if (!isCallLockStale({ bytes: judged.bytes, mtimeMs: judged.stats.mtimeMs, now: now(), host, isAlive })) {
       return busy();
     }
-    if (!isRunFolder(folder)) return { ok: true, path: null };
+    if (!isPlainDirectory(folder)) return { ok: true, path: null };
     const aside = insideRunDir(runDir, `${planId}/call.lock.${crypto.randomUUID()}`);
     const { outcome } = moveAsideVerified({
       from: callLock,
@@ -309,16 +308,20 @@ function takeCallLock(runDir, planId, { now, pid, host, isAlive }) {
       verify: (bytes, stats) => stats.mtimeMs === judged.stats.mtimeMs
         && (bytes === null ? judged.bytes === null : judged.bytes !== null && bytes.equals(judged.bytes)),
     });
+    // `moveAsideVerified`'s own `busy` outcome always stems from a file-in-use errno (the
+    // rename, the read of the moved file, or, now, a non-`EEXIST` link-back failure below).
     if (outcome === 'moved' || outcome === 'conflict') fs.rmSync(aside, { recursive: true, force: true });
-    if (outcome !== 'moved' && outcome !== 'gone') return busy();
+    if (outcome !== 'moved' && outcome !== 'gone') return busy(true);
   }
   return busy();
 }
 
 // `run.close()` for `release`: removes the call's own `call.lock`; `ENOENT`-tolerant (the
-// folder deleted by the release itself or by a takeover) and never through a link.
+// folder deleted by the release itself or by a takeover) and never through a link. RUN-04
+// builds the real `run.close()` (also used by GIT-08's signal handler); this private stand-in
+// is meant to be replaced by it, not duplicated further.
 function closeCallLock(runDir, planId) {
-  if (!isRunFolder(insideRunDir(runDir, planId))) return;
+  if (!isPlainDirectory(insideRunDir(runDir, planId))) return;
   try {
     fs.rmSync(insideRunDir(runDir, `${planId}/call.lock`), { force: true });
   } catch (err) {
@@ -358,7 +361,16 @@ export function releaseById({
 }) {
   const runDir = runDirOf(toplevel);
   if (!isValidPlanId(planId) || !isPlainDirectory(runDir)) return { ok: true, released: false };
-  if (lockHolder(runDir) !== planId) return { ok: true, released: false };
+  let holder;
+  try {
+    holder = lockHolder(runDir);
+  } catch (err) {
+    // review-RUN-02 finding 4: the very first lock read maps a file-in-use error to `busy`
+    // like every other lock operation (Q22), instead of throwing to `internal`.
+    if (err instanceof InUse) return busy(true);
+    throw err;
+  }
+  if (holder !== planId) return { ok: true, released: false };
   const call = takeCallLock(runDir, planId, { now, pid, host, isAlive });
   if (!call.ok) return call;
   try {
@@ -368,7 +380,7 @@ export function releaseById({
       to: aside,
       verify: (bytes) => lockPlanId(bytes) === planId,
     });
-    if (outcome === 'busy') return busy();
+    if (outcome === 'busy') return busy(true);
     if (outcome !== 'moved') return { ok: true, released: false };
     // Folder first, then the renamed lock: a kill in between leaves a renamed lock whose
     // chain ends at a missing folder, which the next adopter counts done (C:run-folder).

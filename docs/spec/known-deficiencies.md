@@ -41,6 +41,16 @@ delete it here; IDs are never reused.
   `release`, a no-op "nothing to release" (no repo means no run folder), or a documented
   `internal` with a real message, then update the message and the tables together
   (review-RUN-01 finding 7).
+- **KD-S79. A TOCTOU gap remains between `<planId>`'s `lstat` and the operation that
+  follows it.** `release`'s `call.lock` write, its rename, and `closeCallLock`'s `rmSync`
+  each `lstat` `<planId>` right before touching `call.lock`, but a junction swapped in
+  inside that window still redirects the operation; Node has no `openat`/`O_NOFOLLOW` for
+  directory path components, so this cannot be fully closed. Impact is small: the `wx`
+  create never overwrites and the payload is `{pid,host}`; `closeCallLock`'s `rmSync` could
+  at worst delete a same-named file in the junction's target. Where:
+  `plugin/scripts/lib/run.mjs` (`takeCallLock`, `closeCallLock`),
+  [C:run-folder](../contracts/run-folder.md). Disposition: accepted for 0.1.0
+  (review-RUN-02 finding 7).
 
 ## Error tables and API contract
 

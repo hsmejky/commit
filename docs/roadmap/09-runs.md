@@ -127,6 +127,9 @@ exclusively when the call starts and removed when it ends by M12 `run.close()` (
       `taken-over`, not `internal` (C:cli-and-exit-codes `lock` row).
 - [ ] M12 test row: `run.close()` called twice, and after the folder was deleted, succeeds
       without error.
+- [ ] `run.close()` (M12, built here) replaces the private `closeCallLock` RUN-02 added to
+      `plugin/scripts/lib/run.mjs`; RUN-04 removes `closeCallLock` and calls `run.close()`
+      from `release` too, not only from `commit`'s `finally` (review-RUN-02 finding 9).
 
 
 ## RUN-05: `plan` creates the provisional run folder and checks the directory

@@ -72,10 +72,13 @@
     never overwrites one), deletes its copy and refuses with `lock`, carrying the details
     of the lock it found, so the question can be asked again about the right run. If the
     put-back link fails with `EEXIST` (a third `plan` linked its lock in the gap), it keeps
-    its private copy for the sweep, reads the lock now in place and refuses with `lock`
-    (`held`) naming that new holder; the moved run is refused at its next step with
-    `taken-over`. That refusal does not end the run, so its folder stays until `plan`'s
-    24-hour sweep; accepted.
+    its private copy as an orphan renamed lock for the next `acquire` to adopt (RUN-20b
+    orphan pass, [contracts](../contracts/run-folder.md)), reads the lock now in place and
+    refuses with `lock` (`held`) naming that new holder; the moved run is refused at its
+    next step with `taken-over`. That refusal does not end the run, so its folder stays
+    until adoption or `plan`'s 24-hour sweep deletes it; accepted (review-RUN-02 finding 1:
+    adoption, not the sweep, owns a put-back's orphaned private copy — the sweep never
+    deletes a renamed lock file).
   - On Windows, a rename, read or `utimes` of a lock that another process holds open fails
     with `EPERM`, `EBUSY` or `EACCES`, not `ENOENT`. Every lock operation other than the
     lock link maps those to "someone else is on it" and refuses with `busy` (CLI kind

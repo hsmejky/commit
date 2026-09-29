@@ -303,3 +303,140 @@ test('releaseById: no call.lock when the lock does not match', (t) => {
   assert.deepEqual(fs.readdirSync(path.join(f.runDir, planId)), []);
   assert.deepEqual(fs.readdirSync(f.folder), ['state.json']);
 });
+
+// review-RUN-02 finding 8: the file-in-use → `busy` mapping (Q22) exercised on every lock
+// operation `release` can reach, with the same in-process monkeypatch pattern used above (a
+// real subprocess cannot cause an `EPERM`/`EBUSY`/`EACCES` on demand).
+// `matches` sees the full argument list, since the path that identifies the call differs by
+// function: the first argument for `readFileSync`/`writeFileSync`, the *second* (the target)
+// for `renameSync`/`linkSync`.
+// Returns a `restore` function so a test can lift the fault early, before an assertion that
+// itself needs the real `fnName` (e.g. reading back a file the fault targets) — `t.after`
+// alone only lifts it once the test body has finished.
+function withFsFault(t, fnName, matches, code = 'EPERM') {
+  const original = fs[fnName];
+  const restore = () => { fs[fnName] = original; };
+  t.after(restore);
+  fs[fnName] = function faulty(...args) {
+    if (matches(args)) {
+      const err = new Error(`${code}: fault injected by test`);
+      err.code = code;
+      throw err;
+    }
+    return original.apply(this, args);
+  };
+  return restore;
+}
+
+const FAULT_CODES = ['EPERM', 'EBUSY', 'EACCES'];
+
+for (const code of FAULT_CODES) {
+  test(`releaseById: ${code} on the first lock read maps to busy, not internal (finding 4)`, (t) => {
+    const planId = crypto.randomUUID();
+    const f = runFixture(t, planId);
+    const lockPath = path.join(f.runDir, 'lock');
+    withFsFault(t, 'readFileSync', (args) => args[0] === lockPath, code);
+
+    const result = run.releaseById({ toplevel: f.toplevel, planId, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'busy');
+    assert.equal(result.message, run.BUSY_FILE_IN_USE_MESSAGE);
+    assert.equal(fs.existsSync(lockPath), true, 'nothing was touched');
+  });
+
+  test(`moveAsideVerified: ${code} on the rename maps to busy, nothing moved (finding 8)`, (t) => {
+    const dir = tempDir(t);
+    const from = path.join(dir, 'lock');
+    const to = path.join(dir, 'lock.private');
+    fs.writeFileSync(from, 'A');
+    withFsFault(t, 'renameSync', (args) => args[1] === to, code);
+
+    const result = run.moveAsideVerified({ from, to, verify: () => true });
+
+    assert.equal(result.outcome, 'busy');
+    assert.equal(fs.readFileSync(from, 'utf8'), 'A', 'the file never moved');
+    assert.equal(fs.existsSync(to), false);
+  });
+
+  test(`moveAsideVerified: ${code} reading the moved file maps to busy and still puts it back (finding 8)`, (t) => {
+    const dir = tempDir(t);
+    const from = path.join(dir, 'lock');
+    const to = path.join(dir, 'lock.private');
+    fs.writeFileSync(from, 'A');
+    withFsFault(t, 'readFileSync', (args) => args[0] === to, code);
+    let verifyCalled = false;
+
+    const result = run.moveAsideVerified({ from, to, verify: () => { verifyCalled = true; return true; } });
+
+    assert.equal(result.outcome, 'busy');
+    assert.equal(verifyCalled, false, 'verify never ran: its bytes could not be read');
+    assert.equal(fs.readFileSync(from, 'utf8'), 'A', 'the file was linked back despite the busy outcome');
+    assert.equal(fs.existsSync(to), false);
+  });
+
+  test(`moveAsideVerified: ${code} on the put-back link keeps the private copy, never deletes it (finding 5, 8)`, (t) => {
+    const dir = tempDir(t);
+    const from = path.join(dir, 'lock');
+    const to = path.join(dir, 'lock.private');
+    fs.writeFileSync(from, 'B');
+    withFsFault(t, 'linkSync', (args) => args[1] === from, code);
+
+    const result = run.moveAsideVerified({ from, to, verify: () => false });
+
+    assert.equal(result.outcome, 'busy');
+    assert.equal(fs.existsSync(from), false, 'nothing was ever put back at from');
+    assert.equal(fs.readFileSync(to, 'utf8'), 'B', 'the private copy is kept, not deleted');
+  });
+}
+
+test('moveAsideVerified: an unexpected put-back link failure (not EEXIST, not file-in-use) throws and keeps the private copy', (t) => {
+  const dir = tempDir(t);
+  const from = path.join(dir, 'lock');
+  const to = path.join(dir, 'lock.private');
+  fs.writeFileSync(from, 'B');
+  withFsFault(t, 'linkSync', (args) => args[1] === from, 'ENOSPC');
+
+  assert.throws(() => run.moveAsideVerified({ from, to, verify: () => false }), /ENOSPC/);
+  assert.equal(fs.readFileSync(to, 'utf8'), 'B', 'the private copy is kept, not deleted, on the throw');
+});
+
+for (const code of FAULT_CODES) {
+  test(`releaseById: ${code} on the wx call.lock create maps to busy (finding 8)`, (t) => {
+    const planId = crypto.randomUUID();
+    const f = runFixture(t, planId);
+    withFsFault(t, 'writeFileSync', (args) => args[0] === f.callLock, code);
+
+    const result = run.releaseById({ toplevel: f.toplevel, planId, now: () => T0, pid: 7, host: HOST, isAlive: dead });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'busy');
+    assert.equal(result.message, run.BUSY_FILE_IN_USE_MESSAGE);
+  });
+
+  test(`releaseById: ${code} reading an existing call.lock maps to busy (finding 8)`, (t) => {
+    const planId = crypto.randomUUID();
+    const f = runFixture(t, planId);
+    writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+    const restoreFault = withFsFault(t, 'readFileSync', (args) => args[0] === f.callLock, code);
+
+    const result = run.releaseById({ toplevel: f.toplevel, planId, now: () => T0, pid: 7, host: HOST, isAlive: dead });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'busy');
+    assert.equal(result.message, run.BUSY_FILE_IN_USE_MESSAGE);
+    restoreFault();
+    assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 4242, host: HOST }, 'the live call.lock is untouched');
+  });
+}
+
+test('releaseById: a live call.lock (genuine busy, not file-in-use) keeps the held-lock text, distinct from the file-in-use text', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+
+  const result = run.releaseById({ toplevel: f.toplevel, planId, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.code, 'busy');
+  assert.equal(result.message, run.BUSY_MESSAGE);
+});

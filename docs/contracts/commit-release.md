@@ -178,12 +178,20 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
 **release** `--plan <planId>`: reads the lock first. If it holds this `planId`, `release`
 creates the run's `call.lock` like every `--plan` call (another call on this run still
 running → exit 6 `lock`, `busy`, and the run is kept, so a folder is never deleted under a
-running call), then removes the lock and deletes the run folder; otherwise a no-op with exit
-0 before touching the run folder (the run has already ended, or was taken over and the lock
-is someone else's, Q22). Removing the lock uses the same rename-to-private-name,
-verify-`planId`, unlink-or-put-back sequence `acquire`'s takeover uses (RUN-02), not a bare
-unlink by name: reading the lock and deleting it are two steps, and a takeover of a now-stale
-lock could land in between (review-RUN-01 finding 1). Outside a working tree (not a repo, a
-bare repository, or git timing out), what `release` does is not yet settled (KD-S78). Output `{ "version": 1, "ok": true, "reply": {
+running call; a `<planId>` folder that is missing, a link, or not a plain directory gets no
+`call.lock` at all — `release` proceeds straight to removing the run lock,
+[contracts](run-folder.md) `call.lock` row), then removes the lock and deletes the run
+folder; otherwise a no-op with exit 0 before touching the run folder (the run has already
+ended, or was taken over and the lock is someone else's, Q22). Removing the lock uses the
+same rename-to-private-name, verify-`planId`, unlink-or-put-back sequence `acquire`'s
+takeover uses (RUN-02), not a bare unlink by name: reading the lock and deleting it are two
+steps, and a takeover of a now-stale lock could land in between (review-RUN-01 finding 1).
+Its private name is `lock.<fresh randomUUID>`, not `lock.<planId>` like `acquire`'s takeover
+(review-RUN-02 finding 2): the renaming run (this `release` call) has no run folder of its
+own, so on a put-back miss the kept private copy is an orphan whose chain ends at once (its
+name resolves to no folder) — adoption finishes it with no facts to check, and the 24-hour
+sweep leaves it alone like any other renamed lock file, [contracts](run-folder.md) orphan
+paragraph. Outside a working tree (not a repo, a bare repository, or git timing out), what
+`release` does is not yet settled (KD-S78). Output `{ "version": 1, "ok": true, "reply": {
 "status": "nothing", "text": "nothing committed", … } }`; after a no-op the `text` says
 "nothing to release: the run has already ended or was taken over".
