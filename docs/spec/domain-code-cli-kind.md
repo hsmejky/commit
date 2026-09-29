@@ -15,14 +15,14 @@
 | `signing-locked` | M11 via M15 | `signing` | 6 |
 | `pushed` | M3 via M15 | `pushed` | 6 |
 | `staged-hit` | M15 | `staged-hit` | 6 |
-| `held` (also from `peek` at `plan` step 3), `taken-over` (also a late `ENOENT` on the call's `call.lock` or run folder), `ended` (also a state `version` mismatch), `busy` (also a live `call.lock`, a lock operation that failed with `EPERM`, `EBUSY` or `EACCES`, or a lock link whose `EPERM`/`EBUSY` persists after retries while the hard-link probe succeeds) | M12 | `lock` | 6 |
-| `index-locked` | M10 via M16 | `index-lock` | 6 |
+| `held` (also from `peek` at `plan` step 3), `taken-over` (also a late `ENOENT` on the call's own `call.lock` or run folder), `ended` (also a state `version` mismatch, and `--take-over` of a run that already ended: a rename `ENOENT` whose re-peek finds no lock, or an `ENOENT` on that run's `call.lock`), `busy` (also a live `call.lock`, a lock operation that failed with `EPERM`, `EBUSY` or `EACCES`, or a lock link whose `EPERM`/`EBUSY` persists after retries while the hard-link probe succeeds) | M12 | `lock` | 6 |
+| `index-locked` (also a foreign `index.lock` blocking the takeover's index repair at `plan` step 3) | M10 via M16; M10 via M18 (`plan` step 3 takeover repair) | `index-lock` | 6 |
 | `unmatched` (hash set differs), `mismatch` (staged ≠ group) | M10 via `plan --hunks` and M16 | `diff-changed` | 6 |
 | `index-changed` (index fingerprint changed, HEAD unchanged) | M18 `plan` step 7; M16 before each group | `diff-changed` | 6 |
 | `head-moved` | M3 via `plan` (after `acquire`), `plan --hunks` and M16 | `head-moved` | 6 |
 | `lint` | M14 | `lint` | 2 |
 | `backstop-hit` | M8 via M16 | `scan` | 3 |
-| `git-failed` (also a failed `git add` in M10 `snapshot`, in `plan`, `plan --hunks`, `check` and `commit`) | M16, M10 via M18 and M16 | `git` | 4 |
+| `git-failed` (also a failed `git add` in M10 `snapshot`, in `plan`, `plan --hunks`, `check` and `commit`, and a takeover repair's `git reset -q` failing otherwise at `plan` step 3) | M16, M10 via M18 and M16 | `git` | 4 |
 | `stage-failed` (`git apply --cached` or `git add` failed after the reset) | M10 via M16 | `git` | 4 |
 | `timed-out` (also `plan` or a separate `plan --hunks` past its 540-second deadline) | M2 via M16 and M18 | `timeout` | 5 |
 | unexpected throw | any | `internal` | 1 |
@@ -62,5 +62,14 @@ still staged; `--no-user` without `--reword` refuses with `killed-leftover` (exi
 goes on with a notice naming those paths, since `--amend --only` never touches the index.
 So the leftover is never committed unasked. A kill during the repair leaves the old folder
 and its `indexReset` for the next takeover (C:run-folder: the renamed lock file names the
-run to read). The new run's reply carries the `unstaged` notice either way (stories 210,
+run to read). A repair whose `git reset -q` fails (a foreign `index.lock` → `index-lock`,
+the deadline → `timeout`, another git error → `git-failed`) skips `finishTakeover`: the
+taken-over folder and the renamed lock stay as evidence, M18 releases its own lock and
+deletes its own folder, and the reply carries the notices so far plus a "repair failed"
+notice. `finishTakeover` deletes every chain folder first and the renamed lock files last.
+A renamed lock file with no lock in place, or left beside a new holder's lock (a kill
+between rename and link, a kept chain, a put-back copy), is an orphan that the next
+`acquire` adopts: it walks the chain as for a takeover, and at step 3 M18 repairs and
+finishes it; at step 7 an adopted chain that needs the repair refuses `index-changed`
+instead and leaves the chain for the next `plan` (C:run-folder). The new run's reply carries the `unstaged` notice either way (stories 210,
 227; Q17, Q18 and Q22 as amended).

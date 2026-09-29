@@ -216,8 +216,66 @@
   takeover's notices like every other ending (pass 10). A `modeChoice` answer under the
   forced `modeChoice` of pass 6 replaces the refused call's mode flag (Q9 as amended by
   the same pass).
+- **Amended.** By the RUN-20b decision pass (2026-09-29), settling KD-S1 to KD-S5 and KD-S8
+  ([contracts](../contracts/run-folder.md) takeover paragraph):
+  - Orphan renamed locks (KD-S4). A kill between the rename and the link leaves
+    `lock.<planId>` with no `lock` in place, and the next `peek` took the path with no
+    takeover, so the repair never ran and a `--staged` run could commit the killed group's
+    partial staging. An orphan is a `lock.<planId>` file not on the acquirer's own chain.
+    `peek` reports no lock plus an orphan like a stale lock: at step 3 `acquire` links its
+    own lock (nothing to rename) and adopts it. Every `acquire`, after its link succeeds,
+    adopts each orphan: it walks the chain (the file's content names run X; X's folder with
+    a `state.json` gives the facts, one without follows `lock.X`, a missing one ends the
+    chain with no facts), the repair runs, then `finishTakeover` deletes the chain, the
+    renaming runs' provisional folders included. A step-7 `acquire` whose adopted chain
+    needs the repair does not repair after the inventory: it leaves the chain, releases its
+    own lock and folder and refuses `index-changed`; the next `plan` adopts at step 3. A
+    takeover whose rename succeeded but whose link fails with `EEXIST` deletes nothing of
+    the takeover and refuses `held`: the holder in place linked after the rename, so it
+    adopts the renamed lock. Supersedes "keeps its private copy for the sweep" and "its
+    folder stays until `plan`'s 24-hour sweep" in the body and "keeps the private copy" in
+    the pass-4 amendment: the put-back copy is an orphan the new holder adopts. The sweep
+    never deletes a renamed lock file or a folder on its chain.
+  - Deletion order (KD-S5). `finishTakeover` deletes every chain folder first, then every
+    renamed lock file; a kill in between leaves renamed locks whose chain ends at a missing
+    folder, which the next adopter counts as done (no facts, no repair) and deletes. The
+    reverse order could leave a folder with `indexReset` and no renamed lock leading to it,
+    forgetting a pending `killedLeftover`.
+  - A failed repair (KD-S2). When the repair's `git reset -q` fails, `finishTakeover` does
+    not run: the chain (the taken-over folder and the renamed lock) is kept as evidence and
+    becomes an orphan for the next `plan`; the run releases its own lock and deletes its own
+    folder. A foreign `index.lock` → `index-lock` (domain code `index-locked`), the
+    540-second deadline → `timeout`, any other git error → `git-failed`; the reply carries
+    the notices so far plus "the takeover's index repair failed (<cause>); the next /commit
+    retries it". Deleting the evidence would lose the killed group's staging for good;
+    keeping the run's own lock would block every later run for 15 minutes.
+  - A lock or run already gone (KD-S3). Supersedes "the others get `ENOENT` and retry the
+    link, which then refuses them with `lock`" in the body: a rename that fails with
+    `ENOENT` re-peeks once. A lock in place → `lock` (`held`) with a fresh handback naming
+    it. No lock → the automatic takeover adopts the winner's renamed lock (the winner, if
+    alive, then meets `EEXIST` and refuses `held`), while `--take-over <planId>` refuses
+    `ended` ("that run has already ended; run /commit again"): the handback was answered
+    after the named run ended on its own. The same `ended` replaces `taken-over` for an
+    `ENOENT` on the named run's `call.lock` (its folder is gone): the renamed lock is
+    deleted (its chain ends at a missing folder) and the run releases its own lock and
+    folder. `taken-over` was false there, since nobody took that run over. Q9's rationale is
+    corrected to match.
+  - The run-integrity case of pass 10, "a reset plus a mixed index → `modeChoice` with the
+    takeover, reset and `unstaged` notices" (KD-S1), cannot be built: the repair is
+    `git reset -q`, which leaves the index equal to HEAD, so a reset never leaves a mixed
+    index. Replaced by two cases: an automatic stale takeover with `killedLeftover` in an
+    interactive run → the forced `modeChoice` carrying the takeover, `killedLeftover` and
+    `unstaged` notices; a reset under `--take-over <planId> --staged` → `staged-empty`
+    carrying the reset notice.
+  - Documentation sync (KD-S8), deciding nothing new: the reply's `notices` definitions in
+    the contracts ([reply and handback](../contracts/reply-and-handback.md),
+    [run folder](../contracts/run-folder.md)) now name the step-3 takeover notices pass 10
+    already keeps, also when `plan` ends before step 8 stores them.
 - **Rejected.**
   - Documenting the risk only: the damage (a reset index mid-run) is silent.
+  - The kill between the rename and the link as an accepted gap (RUN-20b decision pass):
+    the next run would take the path with no takeover, skip the repair, and a `--staged`
+    run could commit the killed group's partial staging unasked.
   - A `pid` in the lock: every subcommand is a separate short-lived process, so the pid says
     nothing about whether the run is alive.
   - Expiry measured from `created`: a multi-group run with slow hooks, or a user slow to

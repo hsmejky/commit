@@ -78,13 +78,12 @@
     --no-user`) and never gets a `modeChoice` (Q17). `--take-over <planId>` replaces a live
     lock, and only the one the user was asked about (Q22). A `respawn` that `plan` builds
     repeats the `mode` flag of the `plan` call that produced it, besides its own answer:
-    the `lock` handback of a `plan --staged` carries `mode: staged` next to `takeOver`.
-    Without that, `modeChoice`, then `lock`, then `take over` looped: the takeover respawn
-    had no mode and got `modeChoice` again. A `modeChoice` never carries `takeOver`, also
-    under `--take-over <planId>`: the takeover finishes at `plan` step 3, before the mode
-    decision, and the `modeChoice` releases the lock (Q22 pass 9), so its answer's
-    respawn meets no lock of the taken-over run (amended by spec pass 10, below).
-    `--reword` is the exception: the
+    the `lock` handback of a `plan --staged` carries `mode: staged` next to `takeOver`, and
+    a `modeChoice` produced under `--take-over <planId>` carries `takeOver: <planId>` next
+    to `mode` (superseded by spec pass 10, below). Without that, `modeChoice`, then `lock`,
+    then `take over` looped: the takeover respawn had no mode, got `modeChoice` again
+    (which takes no lock), and the next answer had no `takeOver`, so it met the same live
+    lock. `--reword` is the exception: the
     caller adds its own `reword` line (Q25), which also carries a dictated text the script
     never sees.
   - `plan --hunks --plan <planId>`: run inside `plan` on the first spawn, and by the worker
@@ -286,10 +285,28 @@
   call's flag. The `modeChoice` source is therefore "`plan` without a mode flag, or a
   forced `modeChoice` under any flag", also for Q25's handback table. Fixture: that
   `split` answer ([contracts](../contracts/reply-and-handback.md)).
+- **Amended.** By the RUN-20b decision pass (2026-09-29), settling KD-S3, KD-S7 and KD-S9:
+  - The body's respawn sentence is restored to its original wording, which the pass-10
+    amendment quotes and supersedes; it had been rewritten in place (KD-S9).
+  - Qualifies "that `respawn` also carries the mode flag of the refused call, so the
+    takeover plans the same mode and cannot fall back to a `modeChoice`" (KD-S7): it holds
+    when the refused call had a mode flag. A bare first-spawn `plan`'s takeover respawn has
+    no mode and can get an ordinary `modeChoice` (the
+    [contracts](../contracts/reply-and-handback.md) fixture `plan --take-over <planId>` on
+    a mixed index); a forced `modeChoice` (`killedLeftover`) comes under any flag.
+  - `--take-over <planId>` of a run that already ended (KD-S3): the `lock` handback can be
+    answered after the named run ended on its own, so the case is reachable. Its rename
+    `ENOENT` re-peeks once (a lock in place → `held` with a fresh handback), and with no
+    lock, or with the named run's folder gone (`ENOENT` on its `call.lock`), it refuses
+    `lock` (`ended`, "that run has already ended; run /commit again"), not `taken-over`
+    (Q22 as amended by the same pass). The rejection below is corrected in place.
 - **Rejected.**
   - `--take-over` of an absent lock as a plain `acquire` (spec pass 10): it keeps a flag
     that no longer names anything and adds a lock case the contracts must define; the
-    respawn without `takeOver` gets the same result through the ordinary path.
+    user, told that the run already ended (`ended`), runs /commit again and gets the
+    ordinary path (rationale corrected by the RUN-20b decision pass: the case is
+    reachable, since the `lock` handback can be answered after the run ended, and it now
+    refuses `ended`).
   - The script doing the staging itself via `git commit --only -- <files>`, which discards
     partially staged hunks and duplicates git.
   - `plan --hunks` minting the `planId` and taking the lock: every respawn would be refused

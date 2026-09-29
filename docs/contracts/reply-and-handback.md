@@ -67,7 +67,9 @@ handles it the same way.
   notices and the "N files left" paths; the confirmation block keeps its own cap of 20
   files per group. Messages are never cut: the user has to read a rejected or proposed
   message whole.
-- `notices`: scan-hit notices, `indexOnly` notices, the notices `plan` stored, and
+- `notices`: scan-hit notices, `indexOnly` notices, the notices `plan` stored, the
+  takeover notices `plan` kept from step 3 (also when it ends before step 8 stores them,
+  [plan](plan.md) step 3), and
   `commit`'s own (a hook-rewritten tree, "committed tree differs from the scanned index"; a
   hook or another process committing during a group, "another commit was made during group
   `n`; later groups refused" ([commit, release](commit-release.md)); a cleanup error after a
@@ -142,7 +144,7 @@ handles it the same way.
   command run.
 - `respawn`: a [worker input](worker-input.md) prompt; `{text}` marks where the user's words
   go (`needsText: true`). The script puts in it the answer's own fields and repeats the
-  `mode` flag of the `plan` call that built it (Q9), except that a `modeChoice` answer
+  `mode` flag of the `plan` call that built it, if that call had one (Q9), except that a `modeChoice` answer
   replaces that flag (Q9 as amended by the RUN-20 decision pass): a forced `modeChoice`
   from `plan --take-over <planId> --staged` answered `split` respawns with `mode: split`
   alone. `takeOver` appears only in a `lock`

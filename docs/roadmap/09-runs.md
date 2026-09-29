@@ -567,9 +567,10 @@ paragraph), testing modules (run integrity).
 mtime against the injected clock; an unparseable lock or a `planId` not in the minted form
 is judged by mtime alone). M12 `acquire({ takeOver })` then renames the lock to
 `lock.<own planId>`, verifies its bytes and mtime, links its own lock and reads no killed
-run (`killedRun: null`). `finishTakeover` deletes the old folder and the renamed file in
-the order RUN-20b settled. A notice names the stale `planId` and goes into every output
-`plan` ends with.
+run (`killedRun: null`). `finishTakeover` deletes the old folder first and the renamed
+file last (RUN-20b item 2). A rename that fails with `ENOENT` re-peeks once: a lock in
+place → `lock` with a fresh handback (RUN-20b item 4). A notice names the stale `planId`
+and goes into every output `plan` ends with.
 
 **Blocked by:** RUN-07, RUN-08, RUN-12, RUN-13, RUN-18, RUN-20, RUN-20b.
 
@@ -601,7 +602,10 @@ whatever its age. It verifies that the moved lock holds that `planId`. On a mism
 puts the lock back and refuses with `lock`, naming the holder now in place and giving a
 fresh handback. It creates the old run's `call.lock` (a live call → `busy`, a dead pid on
 this host → proceeds). An unparseable lock is never taken over this way. A lock or folder
-that is already gone behaves as RUN-20b settled.
+that is already gone refuses `ended` ("that run has already ended; run /commit again"):
+a rename `ENOENT` whose re-peek finds no lock, or an `ENOENT` on the old run's `call.lock`
+(its folder is gone), which also deletes the renamed lock; a re-peek that finds another
+lock → `lock` naming it (RUN-20b item 4).
 
 **Blocked by:** RUN-21.
 
@@ -618,7 +622,8 @@ that is already gone behaves as RUN-20b settled.
 - [ ] Seam 1: a fresh unparseable lock and `--take-over` with any `planId` → `lock`, and
       the lock is untouched. A traversal `planId` in the flag → `usage`, and nothing
       outside `.commit-plan/` is touched.
-- [ ] Seam 1: the settled absent-lock case (RUN-20b item 4) has its fixture.
+- [ ] Seam 1 (RUN-20b item 4): no lock in place, then `plan --take-over X` → exit 6
+      `lock` (`ended`), and no lock or folder of the new run is left.
 
 
 ## RUN-23: takeover of a killed run repairs the index
@@ -628,7 +633,8 @@ killed group's paths (both halves of a rename), `preStaged`, `indexOnly`, `index
 the group's status. It deletes nothing. M18 then repairs the index before inventory:
 nothing staged → no reset and no reset notice; every staged path within the killed group's
 paths → `git reset -q` with the reset notice. `finishTakeover` runs only after the repair.
-The takeover, reset and `unstaged` notices reach every output `plan` ends with.
+The takeover, reset and `unstaged` notices reach every output `plan` ends with. A repair
+that fails, and an adopted orphan chain, are RUN-25's (RUN-20b items 1 and 3).
 
 **Blocked by:** RUN-21, RUN-20b, CHG-20, EXE-11, EXE-02.
 
@@ -671,7 +677,10 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
       `state` (`killed-leftover`) naming those paths. The index is unchanged, and the lock
       and the folder are gone.
 - [ ] Seam 1: the same under `--reword` → the run goes on with a notice naming the paths.
-- [ ] Seam 1: the replacement cases that RUN-20b item 5 settled.
+- [ ] Seam 1 (RUN-20b item 5): an automatic stale takeover with `killedLeftover` in an
+      interactive run → the forced `modeChoice` carrying the takeover, `killedLeftover`
+      and `unstaged` notices; a repair that resets under `--take-over <id> --staged` →
+      `staged-empty` carrying the reset notice.
 
 
 ## RUN-25: a killed takeover is recovered through the renamed lock chain
@@ -679,8 +688,12 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
 **What to build:** a takeover killed during its repair leaves the taken-over folder and
 the renamed lock file. The next takeover reads the facts through the renamed lock files,
 following them back to the first folder with a `state.json`, and deletes every folder on
-that chain after the repair. It also covers the orphan renamed lock, the repair-failure
-handling and the deletion order, as RUN-20b settled them.
+that chain after the repair. It also covers, as RUN-20b settled them: the orphan renamed
+lock (`peek` treats it like a stale lock and every `acquire` adopts it; at step 7 a chain
+that needs the repair refuses `index-changed`), the repair failure (the chain kept, the
+run's own lock and folder released, `index-lock`/`timeout`/`git-failed` with a "repair
+failed" notice), the deletion order (folders first, renamed locks last) and a sweep that
+never deletes a renamed lock.
 
 **Blocked by:** RUN-23, RUN-20b.
 
@@ -690,18 +703,25 @@ handling and the deletion order, as RUN-20b settled them.
 
 - [ ] Seam 1: a takeover killed during its repair, then taken over → the repair uses the
       first run's facts, and every folder on the chain plus the renamed files are gone.
-- [ ] Seam 1: the repair-failure fixture (a foreign `index.lock` blocking the reset)
-      behaves as RUN-20b item 3 settled.
-- [ ] Seam 1: an orphan `lock.<planId>` with no lock in place behaves as RUN-20b item 1
-      settled (including what `sweep` does with it).
+- [ ] Seam 1 (RUN-20b item 3): a foreign `index.lock` blocking the repair → exit 6
+      `index-lock` with the notices so far and the "repair failed" notice; the taken-over
+      folder and the renamed lock remain, the new run's lock and folder are gone; once the
+      `index.lock` is removed, the next `plan` adopts the chain and repairs.
+- [ ] Seam 1 (RUN-20b item 1): an orphan `lock.<planId>` with no lock in place (a takeover
+      killed between its rename and its link) → `plan` adopts it at step 3: the repair
+      uses the chain's facts, then the chain's folders and the renamed file are gone.
+- [ ] M12 test row: `sweep` over an orphan renamed lock and its chain folder, both aged
+      past 24 hours, leaves both in place.
+- [ ] Seam 1 (RUN-20b item 2): a renamed lock whose chain ends at a missing folder →
+      counted done, no repair, and deleted.
 
 
 ## RUN-26: manual check: a lock put-back that meets `EEXIST`
 
 **What to build:** a manual check of the race no fixture can produce from outside the
 process. A takeover that moved the wrong lock, and whose put-back fails with `EEXIST`,
-refuses `held` naming the new holder and keeps its private copy for the sweep. The moved
-run is `taken-over` at its next step.
+refuses `held` naming the new holder and leaves its private copy, which the new holder
+adopts as an orphan (RUN-20b item 1). The moved run is `taken-over` at its next step.
 
 **Blocked by:** RUN-22.
 
@@ -710,8 +730,9 @@ run is `taken-over` at its next step.
 **Sources:** testing modules (Other checks, M12 manual check), Q22, C:plan (`--take-over`).
 
 - [ ] Reproduced by hand (for example with a debugger pause between the rename and the
-      put-back): the refusal names the new holder, the private copy remains until a sweep
-      24 hours later, and the moved run's next call → `taken-over`.
+      put-back): the refusal names the new holder, the private copy is adopted by that
+      holder's `acquire` as an orphan rather than left for the sweep, and the moved run's
+      next call → `taken-over`.
 
 
 ## RUN-27: every ending outcome releases the run, and only those do

@@ -50,8 +50,6 @@ fixed, delete it here; IDs are never reused.
 - **KD-R18.** EXE-14's "(with no extra commit — this is EXE-06's case)" reads backwards.
   Reword (see KD-R41).
 - **KD-R19.** MSG-01's header-mismatch criterion lacks its seam ("Seam 3 table").
-- **KD-R20.** RUN-20b demands an **Amended** bullet for items 5, 8 and 9 (KD-S1, KD-S8,
-  KD-S9), which change no decision. Allow a documentation-sync note.
 
 ## Test mechanisms
 
@@ -111,7 +109,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R41. Tree notice alongside the first-parent notice** (EXE-06, EXE-14). Both checks
   are independent, so a hook commit fires both. State that the tree check runs only when
   the first parent matches; assert no tree notice in EXE-06. Q4's body was also rewritten
-  in place (as KD-S9): restore it.
+  in place (as Q9's was, restored by RUN-20b): restore it.
 - **KD-R42.** The tree check has no reference tree in `reword` (EXE-20). Skip it there or
   compare with the expected HEAD's tree.
 - **KD-R43.** EXE-06 states the first-parent rule without its `reword` exception. Add it.

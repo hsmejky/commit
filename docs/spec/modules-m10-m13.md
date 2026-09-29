@@ -145,18 +145,29 @@ on this host, else like the lock at 15 minutes, and replaced with the same atomi
 clock, including for an unparseable lock or one whose `planId` is not in the minted form,
 which is never taken over by `--take-over`; atomic takeover by renaming to a private name, verifying bytes plus mtime
 (automatic) or `planId` (`--take-over`), putting a mismatched lock back with a hard link (a
-put-back that fails with `EEXIST` keeps the private copy for the sweep and refuses `held`
-naming the lock now in place; the moved run meets `taken-over` at its next step), then
-linking its own lock and reading the taken-over run's facts for the index repair from its
-`state.json` (following the renamed lock files of a takeover killed mid-repair back to the
-first folder with a `state.json`, C:run-folder), without deleting anything; the repair
-itself is M18's (the killed-process paragraph under the error table above), and
-`finishTakeover` afterwards deletes the taken-over run's folder (every folder on that
-chain) and the renamed lock file; an automatic takeover adds a notice naming the stale
+put-back that fails with `EEXIST` keeps the private copy, which the new holder adopts as
+an orphan, and refuses `held` naming the lock now in place; the moved run meets
+`taken-over` at its next step; a rename that fails with `ENOENT` re-peeks once: a lock in
+place → `held` naming it, no lock → the automatic takeover adopts the orphan while
+`--take-over` refuses `ended`; a rename that succeeded followed by a link that fails with
+`EEXIST` deletes nothing of the takeover, discards the provisional folder and refuses
+`held`), then linking its own lock and reading the taken-over run's facts for the index
+repair from its `state.json` (following the renamed lock files of a takeover killed
+mid-repair back to the first folder with a `state.json`, C:run-folder), without deleting
+anything; an `ENOENT` on the `--take-over` run's `call.lock` (its folder is gone) →
+`ended`, after deleting the renamed lock and releasing its own; every `acquire`, after its
+link succeeds, adopts each orphan renamed lock (`lock.<planId>` not on its own chain) by
+walking its chain the same way (a chain ending at a missing folder has no facts); the
+repair itself is M18's (the killed-process paragraph under the error table above), and
+`finishTakeover` afterwards deletes every folder on the chains first, then the renamed
+lock files; after a failed repair M18 does not call it, so the chain stays for the next
+adopter; an automatic takeover adds a notice naming the stale
 `planId`; a file-in-use error on any other operation → `busy` (C:run-folder);
 `release` a no-op on mismatch, and on a match it takes the `call.lock` (`busy`) before
 deleting; 24-hour sweep of `<planId>/` folders (minted form only, never
-following a link) the lock does not name, and of leftover takeover and lock temp files.
+following a link) the lock does not name, and of leftover takeover and lock temp files,
+never of a renamed lock file (`lock.<planId>`) or a folder on its chain (adoption owns
+them).
 Every write of `state.json` and `plan.json` goes to a temporary name, then a rename; on Windows a rename
 that fails as file-in-use is retried briefly before it counts as a failure (C:run-folder). A cleanup error after
 a successful commit (for example a Windows file lock on a temp file) never changes the
@@ -165,16 +176,22 @@ outcome: it becomes a notice and the sweep removes the leftovers later. Typed st
 (Versioned run state); `open` refuses `ended` on a `version` mismatch. Paths absolute with
 forward slashes.
 - `Run.create({ now }) → provisional`; `provisional.peek()` (typed, `held` with holder, or
-  ok when no live lock, carrying the stale holder when there is one; read-only); `provisional.acquire({ takeOver? })` (typed, `held`
-  with holder, `busy`, `taken-over`, `run-folder`) or `provisional.discard()`. `takeOver`
-  is the stale holder `peek` reported (automatic) or the `--take-over` `planId`; without it
-  `acquire` only links the lock (step 7). Success: `{ run, takeover }`, `takeover` `null`
-  without `takeOver`, else `{ planId, notice, killedRun }`, where `killedRun` is `null`
-  when no taken-over `state.json` is readable, else `{ groupPaths, preStaged, indexOnly,
-  indexReset, groupStatus }` (`groupPaths`: the current group's unit paths, both halves of
-  a rename included).
-- `run.finishTakeover()`: after M18's repair, deletes the taken-over folder(s) and the
-  renamed lock file; a no-op without a takeover.
+  ok when no live lock, carrying the stale holder when there is one, and the orphan
+  renamed locks when there is no lock, which M18 treats like a stale lock; read-only);
+  `provisional.acquire({ takeOver? })` (typed, `held` with holder, `busy`, `taken-over`,
+  `ended` (a `--take-over` run already gone), `run-folder`) or `provisional.discard()`.
+  `takeOver` is the stale holder `peek` reported (automatic, or the orphans alone when there
+  is no lock) or the `--take-over` `planId`; without it `acquire` only links the lock
+  (step 7) and adopts any orphan. Success: `{ run, takeover }`, `takeover` `null` when it
+  took over and adopted nothing, else `{ planId, notice, killedRun }` (`planId`: the
+  taken-over run's, or the first adopted one's), where `killedRun` is `null` when no chain
+  reaches a readable `state.json`, else `{ groupPaths, preStaged, indexOnly, indexReset,
+  groupStatus }` (`groupPaths`: the current group's unit paths, both halves of a rename
+  included), united over every chain whose run has `indexReset` and a group not
+  `committed` when there are several.
+- `run.finishTakeover()`: after M18's repair, deletes every folder on the chains first,
+  then the renamed lock files; a no-op without a takeover; not called after a failed
+  repair.
 - `Run.open(planId, { now })` (typed: `taken-over`, `ended`, `busy`).
 - `run.close()`: removes the call's own `call.lock`; idempotent and `ENOENT`-tolerant (a
   folder already deleted by `release` or a takeover is not an error). Called from M18's

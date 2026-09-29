@@ -183,12 +183,17 @@ the reply with M17.
   1. M3 probe (plus reword facts, `unmerged`); M4 config; M5 attribution.
   2. M15 `planRefusal` (pre-folder refusals: `env`, `config`, `state`, `pushed`).
   3. M12 `create` (run-folder directory check, provisional folder); M12 `peek` before any
-     inventory work: a live lock → `lock`, discard; a stale lock → the automatic takeover,
-     here. `--take-over` skips `peek`, and its takeover of the named lock, whatever its age,
-     runs here too. A takeover is M12 `acquire({ takeOver })`, then the index repair from its
-     `killedRun` (the killed-process paragraph under the error table), then M12
-     `finishTakeover`, all before step 4, so inventory never sees a killed group's partial
-     staging. From here on the run holds the lock: every later outcome that takes no lock
+     inventory work: a live lock → `lock`, discard; a stale lock, or no lock but an orphan
+     renamed lock → the automatic takeover (adopting the orphans' chains), here.
+     `--take-over` skips `peek`, and its takeover of the named lock, whatever its age,
+     runs here too (`ended` when that run is already gone). A takeover is M12
+     `acquire({ takeOver })`, then the index repair from its `killedRun` (the
+     killed-process paragraph under the error table), then M12 `finishTakeover`, all
+     before step 4, so inventory never sees a killed group's partial staging. A repair
+     whose `git reset -q` fails (`index-lock`, `timeout`, `git-failed`) skips
+     `finishTakeover`, keeping the chain for the next `plan`, then releases its own lock and
+     deletes its own folder, and the reply carries the notices so far plus a "repair
+     failed" notice (C:run-folder). From here on the run holds the lock: every later outcome that takes no lock
      on the path with no takeover (clean, `modeChoice`, `staged-empty`, `staged-hit`,
      `signing`, `killed-leftover`, `git-failed`, `timeout`, …) releases the lock and deletes
      the folder, so each discard below is then an M12 `release` (C:plan step 3). The
@@ -212,7 +217,11 @@ the reply with M17.
      `reword`); then M11 signing
      (`signing` → discard).
   7. Store the stored-facts rows except notices; on the path with no takeover M12 `acquire`
-     (a race lost after `peek` → `lock`, discard), skipped after a step-3 takeover; then
+     (a race lost after `peek` → `lock`, discard; an orphan it adopts whose `killedRun`
+     calls for the repair → no repair and no `finishTakeover`, the chain left for the next
+     `plan`'s step 3, then release and refuse `index-changed` with a notice, since the
+     inventory is already taken; an orphan with nothing to repair is finished here),
+     skipped after a step-3 takeover; then
      re-read HEAD and the index fingerprint, on both paths: a moved HEAD (another run
      committed since the inventory) releases and refuses `head-moved`;
      a changed index fingerprint with an unchanged HEAD releases and refuses

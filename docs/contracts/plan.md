@@ -22,12 +22,22 @@ the same rule [`commit`](commit-release.md) follows.
    HEAD (`state`) and `pushed`. None of them creates the run folder.
 3. Mint `planId`, check `.commit-plan` and create the run folder (provisional); then a
    read-only lock `peek`, before any inventory work: a live lock → `lock`, delete the
-   folder; a stale lock → the automatic takeover, here: `acquire` takes it over.
-   `plan --take-over <planId>` skips the `peek`; its `acquire` also runs here, taking over
-   the named lock whatever its age. After either takeover's `acquire`, and before step 4's
-   inventory runs, `plan` applies the taken-over run's index-repair check (reset, or leave
-   the index for step 4's mode decision), then deletes the taken-over run's folder
-   ([run folder](run-folder.md)). From a step-3 `acquire` on, the run holds the lock: every
+   folder; a stale lock → the automatic takeover, here: `acquire` takes it over; no lock
+   but an orphan renamed lock file (`lock.<planId>`, a takeover killed before its link) →
+   the same path: `acquire` links its own lock and adopts the orphan's chain
+   ([run folder](run-folder.md)). A takeover rename that fails with `ENOENT` (another
+   takeover won) re-peeks once: a lock in place → `lock` with a fresh handback naming it;
+   no lock → the orphan's adoption. `plan --take-over <planId>` skips the `peek`; its
+   `acquire` also runs here, taking over the named lock whatever its age; a named lock or
+   folder already gone (the run ended while the user decided) → `lock` (`ended`), unless
+   the re-peek finds another lock in place (`lock`, `held`, naming it). After either
+   takeover's `acquire`, and before step 4's inventory runs, `plan` applies the taken-over
+   run's index-repair check (reset, or leave the index for step 4's mode decision), then
+   deletes the taken-over run's folder ([run folder](run-folder.md)). A repair whose
+   `git reset -q` fails (`index-lock` for a foreign `index.lock`, `timeout`, `git-failed`)
+   keeps the taken-over folder and the renamed lock for the next `plan`, releases the lock,
+   deletes the folder and ends with the notices so far plus a "repair failed" notice.
+   From a step-3 `acquire` on, the run holds the lock: every
    later outcome that takes no lock on the path with no takeover (a clean tree,
    `modeChoice`, `staged-empty`, `staged-hit`, `signing`, `killed-leftover`, `git-failed`,
    `timeout`, …) releases the lock and deletes the folder. The takeover's notices (the
@@ -37,7 +47,8 @@ the same rule [`commit`](commit-release.md) follows.
    ends with, whatever step it ends at: a clean tree, `modeChoice`, `staged-empty`,
    `staged-hit`, `signing`, `killed-leftover`, `git-failed`, `timeout`, `head-moved`,
    `index-changed` and `internal` included. The taken-over run's folder is gone by then, so
-   the reply is the only place the user learns of the takeover (Q22, story 210).
+   the reply is the only place the user learns of the takeover (Q22, story 210). An orphan
+   that appears only after the `peek` is adopted by step 7's `acquire` (below).
 4. Inventory and the index fingerprint (a hash of `git ls-files --stage -z`: read-only, takes
    no index lock); hidden rule; mode (`modeChoice`, `staged-empty` for `--staged` with an
    empty index, or after a takeover `killed-leftover` ([run folder](run-folder.md)) → delete
@@ -51,7 +62,11 @@ the same rule [`commit`](commit-release.md) follows.
    reports "nothing to commit".
 7. Write `state.json` with every stored fact except `notices` ([run folder](run-folder.md));
    on the path with no takeover, take the lock here (a race lost after the `peek` →
-   `lock`, delete the folder); after a takeover the lock is already held from step 3 and
+   `lock`, delete the folder); that `acquire` adopts an orphan renamed lock that appeared
+   after the `peek`: one whose chain calls for the index-repair check leaves the chain for
+   the next `plan`, releases the lock, deletes the folder and refuses `diff-changed`
+   (`index-changed`) with a notice, since the inventory is already taken
+   ([run folder](run-folder.md)); after a takeover the lock is already held from step 3 and
    no `acquire` runs; then re-read HEAD and the index
    fingerprint, on both paths, against what step 4's inventory recorded (Q22 as amended by
    the RUN-20 decision pass). A moved HEAD (another run committed since the inventory)
@@ -188,15 +203,22 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   whatever its age, and deletes that run's folder after the index-repair check
   ([run folder](run-folder.md)). Only through the `lock` handback's
   `respawn`, i.e. after the user said yes; that `respawn` also carries the mode flag of the
-  refused call (`plan --staged` → `mode: staged`), so the takeover plans the same mode and
-  cannot fall back to a `modeChoice` (except with `killedLeftover`, above, whose answers
-  carry no `takeOver`). Uses the same atomic rename as the automatic
+  refused call, if it had one (`plan --staged` → `mode: staged`), so, when the refused call
+  had a mode flag, the takeover plans the same mode and cannot fall back to a `modeChoice`
+  (except with `killedLeftover`, above, whose answers carry no `takeOver`); a bare
+  first-spawn `plan`'s takeover respawn has no mode and can get an ordinary `modeChoice`
+  (the [reply and handback](reply-and-handback.md) fixture `plan --take-over <planId>` on a
+  mixed index). Uses the same atomic rename as the automatic
   takeover of a stale lock; instead of the staleness check it requires the moved lock to
   hold the given `planId`, else it puts the lock back and refuses with `lock`, carrying the
   new holder's details and a fresh `lock` handback (Q22). When the put-back link fails with
-  `EEXIST` (a third `plan` locked in the gap), it keeps its private copy for the 24-hour
-  sweep and refuses with `lock` (`held`) naming the lock now in place; the moved run is
-  refused `taken-over` at its next step. It skips `plan`'s read-only `peek` (step 3).
+  `EEXIST` (a third `plan` locked in the gap), it keeps its private copy, which the new
+  holder adopts as an orphan ([run folder](run-folder.md)), and refuses with `lock`
+  (`held`) naming the lock now in place; the moved run is refused `taken-over` at its next
+  step. A rename that fails with `ENOENT`, or an `ENOENT` on the named run's `call.lock`
+  (its folder is gone), means the run already ended: `lock` (`ended`, "that run has
+  already ended; run /commit again"), unless a re-peek finds another lock in place
+  (`held`, with a fresh handback naming it). It skips `plan`'s read-only `peek` (step 3).
 - `state.kind`: `branch`, `detached`. The refused states (not a repository, a bare
   repository, and an in-progress merge, cherry-pick, revert, rebase, bisect or paused
   sequence, i.e. a `sequencer/` directory found via `git rev-parse --git-path`; a pending
