@@ -402,9 +402,9 @@ test('generic-secret call rule: a call-shaped value too long to be a real call s
 const CALLEE_BYPASS_CASES = [
   // [case, key, value]
   ['a digit inside the bare callee, no argument', 'SECRET', 'Xk9aQ2xL7mZ4pRkW8vT3()'],
-  ['a digit inside the leading segment of a dotted callee', 'token', 'a.Xk9aQ2xL7mZ4pRkW8vT3()'],
-  ['a digit inside the trailing segment of a dotted callee', 'token', 'Xk9aQ2xL7mZ4pRkW8vT3.x()'],
-  ['a digit inside the callee, with a well-shaped argument', 'token', 'Xk9aQ2xL7mZ4(pRkW8vT3)'],
+  ['a digit inside the trailing segment of a dotted callee', 'token', 'a.Xk9aQ2xL7mZ4pRkW8vT3()'],
+  ['a digit inside the leading segment of a dotted callee', 'token', 'Xk9aQ2xL7mZ4pRkW8vT3.x()'],
+  ['a digit inside the callee, with a well-shaped argument', 'token', 'Xk9aQ2xL7mZ4(scope)'],
   ['a digit inside every segment of a dotted callee', 'token', 'Xk9a.Q2xL.7mZ4.pRkW.8vT3(a)'],
   ['a digit inside the callee after a leading $', 'token', '$Xk9aQ2xL7mZ4pRkW8vT3()'],
   ['a hex-shaped callee with digits throughout', 'token', 'f3a9c2e1b7d4a8f6c0e2b9d7a1c3e5f7()'],

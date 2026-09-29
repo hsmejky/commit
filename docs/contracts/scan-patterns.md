@@ -58,7 +58,10 @@ standing in as the callee or the argument, not a plausible identifier (`Xk9aQ2xL
 `Xk9a.Q2xL.7mZ4.pRkW.8vT3(a)`, `$Xk9aQ2xL7mZ4pRkW8vT3()` and a hex-shaped
 `f3a9c2e1b7d4a8f6c0e2b9d7a1c3e5f7()` all hit). This is a hardening against accidental leaks,
 not deliberate evasion, so an all-letter random callee (`XkaQxLmZpRkWvT()`) remains a residual
-limit, accepted because a real secret does not accidentally end in `()`. Second, an
+limit, accepted because a real secret does not accidentally end in `()`. This word-shape check
+is itself a documented false positive: a real call whose callee or argument has a digit
+anywhere but a segment's end, such as `oauth2Client.getAccessToken()`, `getOAuth2Token()` or
+`sha256Hash(password)`, is treated the same as a digit-smuggled secret and still hits. Second, an
 identifier-shaped but high-entropy argument (`abc(Xk9aQ2xL7mZ4pRkW8vT3)`) is a secret smuggled
 into the argument position, not a parameter name, so the argument, if any, must also have
 Shannon entropy below 3.5. The 40-character cap catches the same smuggling one level up: a
@@ -66,7 +69,8 @@ value long enough to hold a real secret as its own identifier-shaped "callee", s
 immediately followed by a trivial `(x)`, is longer than any plausible call site and so is
 never treated as one, whatever its argument — including a real, long call such as
 `token = this.authService.getAccessTokenForUser(user)` (44 characters), which is a documented
-false positive alongside the multi-argument case below. Only a zero- or one-argument call is
+false positive alongside the word-shape case above and the multi-argument case below. Only a
+zero- or one-argument call is
 excluded this way: a multi-argument call's value stops at the row's own `,` lookahead before
 reaching a closing `)` (the value captured from `fetchAccessToken(a, b);` is
 `fetchAccessToken(a`), so it never matches the call shape and remains a documented false
@@ -112,8 +116,9 @@ value (`token = "fetchToken(…)"`), and one per bypass the call rule's shape, w
 entropy checks close off (an unquoted value with a punctuation, digit-led or hyphenated
 argument, a call-shaped high-entropy argument, a call-shaped value longer than 40 characters,
 and a digit inside a callee or argument segment — a bare callee, a leading and a trailing
-dotted segment, a dotted callee with every segment affected, a `$`-prefixed callee, and a
-hex-shaped callee); and a negative for `tokenizer` and for each call form in the "Not a hit
+dotted segment, a dotted callee with every segment affected, a `$`-prefixed callee, a
+hex-shaped callee, and a well-shaped callee with a digit-affected argument
+(`token = fetchToken(a1b2c3)`)); and a negative for `tokenizer` and for each call form in the "Not a hit
 when" clause (a bare call, a `snake_case` call, a dotted method call with an argument), and
 `local-path` a negative for
 `/home/node/app`
