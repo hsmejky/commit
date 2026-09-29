@@ -29,15 +29,32 @@ function outcome(op, fn) {
     fn();
     return { op, ok: true };
   } catch (err) {
-    return { op, ok: false, code: err.code, syscall: err.syscall, path: err.path, dest: err.dest };
+    return {
+      op,
+      ok: false,
+      code: err.code,
+      syscall: err.syscall,
+      path: err.path,
+      dest: err.dest,
+      info: err.info,
+    };
   }
 }
 
 function callbackOutcome(op, run) {
   return new Promise((resolve) => {
     run((err) => {
-      if (err) resolve({ op, ok: false, code: err.code, syscall: err.syscall, path: err.path, dest: err.dest });
-      else resolve({ op, ok: true });
+      if (err) {
+        resolve({
+          op,
+          ok: false,
+          code: err.code,
+          syscall: err.syscall,
+          path: err.path,
+          dest: err.dest,
+          info: err.info,
+        });
+      } else resolve({ op, ok: true });
     });
   });
 }
@@ -47,7 +64,15 @@ async function promiseOutcome(op, run) {
     await run();
     return { op, ok: true };
   } catch (err) {
-    return { op, ok: false, code: err.code, syscall: err.syscall, path: err.path, dest: err.dest };
+    return {
+      op,
+      ok: false,
+      code: err.code,
+      syscall: err.syscall,
+      path: err.path,
+      dest: err.dest,
+      info: err.info,
+    };
   }
 }
 

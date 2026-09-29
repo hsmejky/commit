@@ -6,9 +6,12 @@
 // entry points (Architectural decisions, "Module type fixed by extension").
 //
 // Same program/outcome shape as tests/fixtures/fault/run-ops.cjs, reached here through named
-// imports instead of property access on the module object.
+// imports instead of property access on the module object. The link/rename promise forms are
+// imported from `node:fs/promises` (KD-R29), not `node:fs`'s `promises` property, so the
+// preload's patch is checked against both module specifiers.
 
-import { linkSync, renameSync, link, rename, promises as fsPromises } from 'node:fs';
+import { linkSync, renameSync, link, rename } from 'node:fs';
+import { link as linkPromise, rename as renamePromise } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -18,15 +21,32 @@ function outcome(op, fn) {
     fn();
     return { op, ok: true };
   } catch (err) {
-    return { op, ok: false, code: err.code, syscall: err.syscall, path: err.path, dest: err.dest };
+    return {
+      op,
+      ok: false,
+      code: err.code,
+      syscall: err.syscall,
+      path: err.path,
+      dest: err.dest,
+      info: err.info,
+    };
   }
 }
 
 function callbackOutcome(op, run) {
   return new Promise((resolve) => {
     run((err) => {
-      if (err) resolve({ op, ok: false, code: err.code, syscall: err.syscall, path: err.path, dest: err.dest });
-      else resolve({ op, ok: true });
+      if (err) {
+        resolve({
+          op,
+          ok: false,
+          code: err.code,
+          syscall: err.syscall,
+          path: err.path,
+          dest: err.dest,
+          info: err.info,
+        });
+      } else resolve({ op, ok: true });
     });
   });
 }
@@ -36,7 +56,15 @@ async function promiseOutcome(op, run) {
     await run();
     return { op, ok: true };
   } catch (err) {
-    return { op, ok: false, code: err.code, syscall: err.syscall, path: err.path, dest: err.dest };
+    return {
+      op,
+      ok: false,
+      code: err.code,
+      syscall: err.syscall,
+      path: err.path,
+      dest: err.dest,
+      info: err.info,
+    };
   }
 }
 
@@ -69,10 +97,10 @@ export async function runProgram(program) {
         results.push(await callbackOutcome(step.op, (cb) => rename(step.oldPath, step.newPath, cb)));
         break;
       case 'linkPromise':
-        results.push(await promiseOutcome(step.op, () => fsPromises.link(step.existing, step.newPath)));
+        results.push(await promiseOutcome(step.op, () => linkPromise(step.existing, step.newPath)));
         break;
       case 'renamePromise':
-        results.push(await promiseOutcome(step.op, () => fsPromises.rename(step.oldPath, step.newPath)));
+        results.push(await promiseOutcome(step.op, () => renamePromise(step.oldPath, step.newPath)));
         break;
       default:
         throw new Error(`named-imports: unknown op ${step.op}`);

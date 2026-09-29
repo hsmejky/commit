@@ -38,12 +38,14 @@ test('with the userInfo fault unset, os.userInfo() returns normally', async (t) 
   assert.equal(result.ok, true);
 });
 
-test('with the userInfo fault set, os.userInfo() throws', async (t) => {
+test('with the userInfo fault set, os.userInfo() throws shaped like the real SystemError', async (t) => {
   const c = createCase(t, { repo: false });
   const [result] = await runOps(c, RUN_OPS, [{ op: 'userInfo' }], {
     COMMIT_TEST_FAULT_USERINFO: '1',
   });
   assert.equal(result.ok, false);
+  assert.equal(result.code, 'ERR_SYSTEM_ERROR');
+  assert.equal(result.info && result.info.code, 'ENOENT');
 });
 
 // --- AC2: a named fs boundary fails only for a target path matching the basename ---------
@@ -92,48 +94,134 @@ test('linkSync fails only for a target path matching the configured basename', a
   assert.equal(fs.existsSync(miss), true);
 });
 
-test('the callback forms of link and rename fail for a matching target path too', async (t) => {
+test('the callback forms of link and rename fail for a matching target path too, and leave a non-matching call alone', async (t) => {
   const c = createCase(t, { repo: false });
   const existing = path.join(c.root, 'src');
+  const existing2 = path.join(c.root, 'src-miss');
   const linkHit = path.join(c.root, 'run.lock');
+  const linkMiss = path.join(c.root, 'other.lock');
   const renameSrc = path.join(c.root, 'src2');
+  const renameSrc2 = path.join(c.root, 'src3');
   const renameHit = path.join(c.root, 'state.json');
+  const renameMiss = path.join(c.root, 'other-state.json');
+  const logFile = path.join(c.root, 'calls.log');
   const results = await runOps(
     c,
     RUN_OPS,
     [
       { op: 'write', path: existing, content: 'x' },
+      { op: 'write', path: existing2, content: 'x2' },
       { op: 'write', path: renameSrc, content: 'y' },
+      { op: 'write', path: renameSrc2, content: 'y2' },
       { op: 'link', existing, newPath: linkHit },
+      { op: 'link', existing: existing2, newPath: linkMiss },
       { op: 'rename', oldPath: renameSrc, newPath: renameHit },
+      { op: 'rename', oldPath: renameSrc2, newPath: renameMiss },
     ],
-    { COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock', COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+    {
+      COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock',
+      COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json',
+      COMMIT_TEST_FAULT_LOG: logFile,
+    },
   );
-  const [, , linkResult, renameResult] = results;
+  const [, , , , linkResult, linkMissResult, renameResult, renameMissResult] = results;
   assert.equal(linkResult.ok, false);
+  assert.equal(linkMissResult.ok, true);
   assert.equal(renameResult.ok, false);
+  assert.equal(renameMissResult.ok, true);
+  const lines = fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean);
+  assert.deepEqual(lines, [linkHit, linkMiss, renameHit, renameMiss]);
 });
 
-test('the promise forms of link and rename fail for a matching target path too', async (t) => {
+test('the promise forms of link and rename fail for a matching target path too, and leave a non-matching call alone', async (t) => {
   const c = createCase(t, { repo: false });
   const existing = path.join(c.root, 'src');
+  const existing2 = path.join(c.root, 'src-miss');
   const linkHit = path.join(c.root, 'run.lock');
+  const linkMiss = path.join(c.root, 'other.lock');
   const renameSrc = path.join(c.root, 'src2');
+  const renameSrc2 = path.join(c.root, 'src3');
   const renameHit = path.join(c.root, 'state.json');
+  const renameMiss = path.join(c.root, 'other-state.json');
+  const logFile = path.join(c.root, 'calls.log');
   const results = await runOps(
     c,
     RUN_OPS,
     [
       { op: 'write', path: existing, content: 'x' },
+      { op: 'write', path: existing2, content: 'x2' },
       { op: 'write', path: renameSrc, content: 'y' },
+      { op: 'write', path: renameSrc2, content: 'y2' },
       { op: 'linkPromise', existing, newPath: linkHit },
+      { op: 'linkPromise', existing: existing2, newPath: linkMiss },
       { op: 'renamePromise', oldPath: renameSrc, newPath: renameHit },
+      { op: 'renamePromise', oldPath: renameSrc2, newPath: renameMiss },
     ],
-    { COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock', COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+    {
+      COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock',
+      COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json',
+      COMMIT_TEST_FAULT_LOG: logFile,
+    },
   );
-  const [, , linkResult, renameResult] = results;
+  const [, , , , linkResult, linkMissResult, renameResult, renameMissResult] = results;
   assert.equal(linkResult.ok, false);
+  assert.equal(linkMissResult.ok, true);
   assert.equal(renameResult.ok, false);
+  assert.equal(renameMissResult.ok, true);
+  const lines = fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean);
+  assert.deepEqual(lines, [linkHit, linkMiss, renameHit, renameMiss]);
+});
+
+// --- a list of `name[=code]` entries lets different targets fail with different codes -----
+
+test('the link and rename basenames accept a comma-separated list of name[=code] entries', async (t) => {
+  const c = createCase(t, { repo: false });
+  const existingA = path.join(c.root, 'src-a');
+  const existingB = path.join(c.root, 'src-b');
+  const existingC = path.join(c.root, 'src-c');
+  const lockTarget = path.join(c.root, 'run.lock');
+  const probeTarget = path.join(c.root, 'probe.tmp');
+  const missTarget = path.join(c.root, 'other.tmp');
+  const results = await runOps(
+    c,
+    RUN_OPS,
+    [
+      { op: 'write', path: existingA, content: 'a' },
+      { op: 'write', path: existingB, content: 'b' },
+      { op: 'write', path: existingC, content: 'c' },
+      { op: 'linkSync', existing: existingA, newPath: lockTarget },
+      { op: 'linkSync', existing: existingB, newPath: probeTarget },
+      { op: 'linkSync', existing: existingC, newPath: missTarget },
+    ],
+    { COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock=EPERM,probe.tmp=ENOTSUP' },
+  );
+  const [, , , lockResult, probeResult, missResult] = results;
+  assert.equal(lockResult.ok, false);
+  assert.equal(lockResult.code, 'EPERM');
+  assert.equal(probeResult.ok, false);
+  assert.equal(probeResult.code, 'ENOTSUP');
+  assert.equal(missResult.ok, true);
+});
+
+test('a name[=code] list entry without a code falls back to the configured default code', async (t) => {
+  const c = createCase(t, { repo: false });
+  const existing = path.join(c.root, 'src');
+  const target = path.join(c.root, 'state.json');
+  const results = await runOps(
+    c,
+    RUN_OPS,
+    [
+      { op: 'write', path: existing, content: 'x' },
+      { op: 'renameSync', oldPath: existing, newPath: target },
+    ],
+    {
+      COMMIT_TEST_FAULT_RENAME_BASENAME: 'other.json,state.json',
+      COMMIT_TEST_FAULT_RENAME_CODE: 'EEXIST',
+    },
+  );
+  const [, renameResult] = results;
+  assert.equal(renameResult.ok, false);
+  assert.equal(renameResult.code, 'EEXIST');
 });
 
 // --- AC3: the errno option controls the injected error's code; default is EIO -------------
@@ -182,12 +270,57 @@ test('a stub using named ESM imports (import { renameSync } from node:fs) sees t
   assert.equal(fs.existsSync(target), false);
 });
 
+test('a stub using named ESM imports (import { linkSync } from node:fs) sees the fault too', async (t) => {
+  const c = createCase(t, { repo: false });
+  const existing = path.join(c.root, 'src');
+  const target = path.join(c.root, 'run.lock');
+  const results = await runOps(
+    c,
+    RUN_NAMED_IMPORTS,
+    [
+      { op: 'write', path: existing, content: 'x' },
+      { op: 'linkSync', existing, newPath: target },
+    ],
+    { COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock' },
+  );
+  const [, linkResult] = results;
+  assert.equal(linkResult.ok, false);
+  assert.equal(linkResult.code, 'EIO');
+  assert.equal(fs.existsSync(target), false);
+});
+
+test('a stub using named ESM imports (import { link, rename } from node:fs/promises) sees the fault too', async (t) => {
+  const c = createCase(t, { repo: false });
+  const existing = path.join(c.root, 'src');
+  const linkTarget = path.join(c.root, 'run.lock');
+  const renameSrc = path.join(c.root, 'src2');
+  const renameTarget = path.join(c.root, 'state.json');
+  const results = await runOps(
+    c,
+    RUN_NAMED_IMPORTS,
+    [
+      { op: 'write', path: existing, content: 'x' },
+      { op: 'write', path: renameSrc, content: 'y' },
+      { op: 'linkPromise', existing, newPath: linkTarget },
+      { op: 'renamePromise', oldPath: renameSrc, newPath: renameTarget },
+    ],
+    { COMMIT_TEST_FAULT_LINK_BASENAME: 'run.lock', COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+  );
+  const [, , linkResult, renameResult] = results;
+  assert.equal(linkResult.ok, false);
+  assert.equal(fs.existsSync(linkTarget), false);
+  assert.equal(renameResult.ok, false);
+  assert.equal(fs.existsSync(renameTarget), false);
+});
+
 test('a stub using named ESM imports (import { userInfo } from node:os) sees the fault too', async (t) => {
   const c = createCase(t, { repo: false });
   const [result] = await runOps(c, RUN_NAMED_IMPORTS, [{ op: 'userInfo' }], {
     COMMIT_TEST_FAULT_USERINFO: '1',
   });
   assert.equal(result.ok, false);
+  assert.equal(result.code, 'ERR_SYSTEM_ERROR');
+  assert.equal(result.info && result.info.code, 'ENOENT');
 });
 
 // --- AC5: call-order logging ---------------------------------------------------------------
