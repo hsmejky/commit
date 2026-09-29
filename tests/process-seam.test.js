@@ -226,16 +226,52 @@ test('temp directories are removed after each case, also when the case fails', a
 
 // --- A timeout kills the whole process tree, not just the direct child -------------------
 
+// True if `pid` still denotes a live process. On Linux this also treats a zombie (`/proc/
+// <pid>/stat` state `Z`) as gone: the ubuntu:22.04 CI container runs its steps under a
+// `tail -f /dev/null` PID 1 with no `--init`, which never reaps a SIGKILLed orphan, so the
+// grandchild here stays a zombie and `process.kill(pid, 0)` would otherwise keep succeeding
+// against it forever even though it is already dead.
+function isAlive(pid) {
+  if (process.platform === 'linux') {
+    let stat;
+    try {
+      stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    } catch {
+      return false; // no /proc entry: already reaped and gone
+    }
+    // Format: "<pid> (<comm>) <state> ...". <comm> can itself contain ')', so anchor on the
+    // last one rather than the first.
+    const state = stat.slice(stat.lastIndexOf(')') + 1).trim().split(' ')[0];
+    if (state === 'Z') return false; // zombie: dead, just unreaped by this container's PID 1
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test('a timed-out run kills the direct child\'s grandchild too', async (t) => {
   const c = createCase(t, { repo: false });
   const pidFile = path.join(c.root, 'grandchild.pid');
+  // Generous timeout: the stub must start node, spawn its own grandchild and write the pid
+  // file before it hangs, which a loaded CI box (especially Windows) can be slow to do; a
+  // short timeout risks the tree being killed before the pid file even exists.
+  const timeoutMs = 5000;
   await assert.rejects(
-    runEntry(c, HANG_WITH_GRANDCHILD, [pidFile], { timeoutMs: 1000 }),
-    /did not exit within 1000 ms/,
+    runEntry(c, HANG_WITH_GRANDCHILD, [pidFile], { timeoutMs }),
+    new RegExp(`did not exit within ${timeoutMs} ms`),
   );
+  // Poll rather than read once: even with the generous timeout above, a slow disk could still
+  // have the write land just after the kill fires.
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(pidFile) && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+  }
   const grandchildPid = Number(fs.readFileSync(pidFile, 'utf8'));
   // The kill is sent right after the timeout fires; give the OS a moment to tear the
   // grandchild down before checking it is gone (also generous for a loaded CI container).
   await new Promise((resolve) => { setTimeout(resolve, 1000); });
-  assert.throws(() => process.kill(grandchildPid, 0), /ESRCH/, 'grandchild still running');
+  assert.equal(isAlive(grandchildPid), false, 'grandchild still running');
 });

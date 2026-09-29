@@ -43,11 +43,20 @@ const HOST_ALLOWLIST = new Set([
 ]);
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+// Grace period after a timeout's kill is sent before runEntry gives up waiting for the
+// child's own `close` event and rejects anyway: the kill itself can fail silently (no
+// `taskkill` on the host, or a grandchild in its own session still holding a pipe open), and
+// a harness call must not hang forever because of it.
+const KILL_BACKSTOP_MS = 5_000;
 
 // Kills a timed-out child's whole process tree, not just the direct child: a grandchild
 // (e.g. git) can otherwise hold the case's cwd open, which is an EBUSY on Windows cleanup
 // and, via inherited pipes, keeps the run looking alive.
 function killTree(child) {
+  // The child may already have exited (its own `close` just hasn't fired yet in this tick):
+  // a kill is then unnecessary, and on Windows `taskkill /T /PID` against an exited PID risks
+  // hitting a PID the OS has already reused for something else.
+  if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)]);
     return;
@@ -194,16 +203,37 @@ function runEntry(c, script, argv = [], options = {}) {
     child.stdout.on('data', (chunk) => stdout.push(chunk));
     child.stderr.on('data', (chunk) => stderr.push(chunk));
     let timedOut = false;
+    let settled = false;
+    let backstopTimer = null;
     const timer = setTimeout(() => {
       timedOut = true;
       killTree(child);
+      // The child's own `close` should follow the kill almost immediately; if it doesn't,
+      // don't hang the caller forever waiting for it (see KILL_BACKSTOP_MS above).
+      backstopTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.stdin.destroy();
+        reject(new Error(
+          `${path.basename(script)} did not exit within ${timeoutMs} ms, and did not close `
+            + 'after being killed',
+        ));
+      }, KILL_BACKSTOP_MS);
     }, timeoutMs);
     child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      clearTimeout(backstopTimer);
       reject(err);
     });
     child.on('close', (exitCode, signal) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      clearTimeout(backstopTimer);
       if (timedOut) {
         reject(new Error(`${path.basename(script)} did not exit within ${timeoutMs} ms`));
         return;
@@ -282,10 +312,23 @@ async function runGuard(c, hook = {}, options = {}) {
   // Resolved from the env actually used for this spawn, not the case's own claudeHome: a
   // per-spawn CLAUDE_CONFIG_DIR (or HOME/USERPROFILE) override must be honored the same way
   // the real guard's own `process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')`
-  // would resolve it.
+  // would resolve it. Like `os.homedir()`, USERPROFILE wins on Windows and HOME wins
+  // elsewhere (falling back to the other if only it is set); if neither is set, fail with a
+  // clear message rather than let `path.join(undefined, '.claude')` throw a cryptic one.
   const spawnEnv = mergeEnv(c.env, spawnOptions.env);
-  const claudeHome = spawnEnv.CLAUDE_CONFIG_DIR
-    || path.join(spawnEnv.HOME || spawnEnv.USERPROFILE, '.claude');
+  let claudeHome = spawnEnv.CLAUDE_CONFIG_DIR;
+  if (!claudeHome) {
+    const home = process.platform === 'win32'
+      ? (spawnEnv.USERPROFILE || spawnEnv.HOME)
+      : (spawnEnv.HOME || spawnEnv.USERPROFILE);
+    if (!home) {
+      throw new Error(
+        'runGuard cannot resolve a Claude home for this spawn: neither CLAUDE_CONFIG_DIR nor '
+          + 'HOME/USERPROFILE is set',
+      );
+    }
+    claudeHome = path.join(home, '.claude');
+  }
   const heartbeatPath = path.join(claudeHome, 'commit-guard', 'heartbeat.json');
   const heartbeat = fs.existsSync(heartbeatPath)
     ? JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'))

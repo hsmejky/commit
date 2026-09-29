@@ -68,6 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:22.04
+      options: --init
     steps:
       - name: Install git and git-lfs, and assert minimum git version (2.34.x)
         run: |
