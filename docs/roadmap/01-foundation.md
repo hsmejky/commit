@@ -157,24 +157,24 @@ not `**Status:** done`.
 
 **Blocked by:** FND-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** `docs/roadmap/README.md` (the graph claims), to-tickets.
 
-- [ ] Only files whose name starts with a two-digit group number (`NN-*.md`) are parsed as
+- [x] Only files whose name starts with a two-digit group number (`NN-*.md`) are parsed as
       group files; `README.md` and `known-deficiencies.md` are not, so a slice ID they cite
       is neither a duplicate nor a heading.
-- [ ] A duplicate `## <ID>:` heading anywhere in the group files fails the test, naming the ID.
-- [ ] A `**Blocked by:**` entry naming an ID with no matching `## <ID>:` heading fails the test.
-- [ ] A cycle in the blocking-edge graph fails the test, naming the cycle.
-- [ ] An in-group blocker whose number is not lower than the slice's own fails the test.
-- [ ] A letter-suffix ID (e.g. a slice numbered `03b`) sorts just after its base number and
+- [x] A duplicate `## <ID>:` heading anywhere in the group files fails the test, naming the ID.
+- [x] A `**Blocked by:**` entry naming an ID with no matching `## <ID>:` heading fails the test.
+- [x] A cycle in the blocking-edge graph fails the test, naming the cycle.
+- [x] An in-group blocker whose number is not lower than the slice's own fails the test.
+- [x] A letter-suffix ID (e.g. a slice numbered `03b`) sorts just after its base number and
       before the next number in this check (`03` < `03b` < `04`, as `README.md` describes),
       and a gap in a group's numbering left by a removed or merged ID does not fail the
       test.
-- [ ] The total slice count and each per-group count `README.md` states are compared against the files under `docs/roadmap/`; a mismatch fails the test.
-- [ ] A blocking edge already reachable through another blocker is listed in the test's output as transitively implied, and does not fail the test.
-- [ ] Run with a release-mode switch the test file itself defines (an env var read only by the test, not the shipped CLI): the test lists every slice other than REL-05 whose `**Status:**` line is not `**Status:** done`, and fails when the list is non-empty. REL-05 is excluded because its own criterion is that FND-09 reports every *other* slice as done, which would otherwise be circular.
+- [x] The total slice count and each per-group count `README.md` states are compared against the files under `docs/roadmap/`; a mismatch fails the test.
+- [x] A blocking edge already reachable through another blocker is listed in the test's output as transitively implied, and does not fail the test.
+- [x] Run with a release-mode switch the test file itself defines (an env var read only by the test, not the shipped CLI): the test lists every slice other than REL-05 whose `**Status:**` line is not `**Status:** done`, and fails when the list is non-empty. REL-05 is excluded because its own criterion is that FND-09 reports every *other* slice as done, which would otherwise be circular.
 
 
 ## FND-10: Fault-injection preload for Seam 1
