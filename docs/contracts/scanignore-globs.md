@@ -6,8 +6,9 @@ forward slashes, case-sensitively on every OS, and must match the whole path.
 | Syntax | Meaning | Example | Matches | Does not match |
 | --- | --- | --- | --- | --- |
 | `*` | any characters except `/`, including none | `tests/*.json` | `tests/a.json` | `tests/x/a.json` |
-| `?` | exactly one character except `/` | `a?.txt` | `ab.txt` | `a/.txt`, `a.txt` |
-| `**` | zero or more whole segments; only as a whole segment | `tests/**/key.pem` | `tests/key.pem`, `tests/a/b/key.pem` | `testskey.pem` |
+| `?` | exactly one UTF-16 code unit except `/` (a character outside the BMP takes `??`) | `a?.txt` | `ab.txt` | `a/.txt`, `a.txt` |
+| `**` | zero or more whole segments, only as a whole segment; a trailing `/**` takes one or more (everything under the directory, never the directory itself) | `tests/**/key.pem` | `tests/key.pem`, `tests/a/b/key.pem` | `testskey.pem` |
+| `tests/**` | — | `tests/**` | `tests/a.txt`, `tests/a/b.txt` | `tests` |
 | trailing `/` | everything under that directory, same as `dir/**` | `tests/fixtures/` | `tests/fixtures/a/b.txt` | `tests/fixtures` (a file) |
 | leading `/` | stripped; patterns are always relative to the repo root | `/docs/*.md` | `docs/a.md` | `x/docs/a.md` |
 | anything else | literal | `a+b.txt` | `a+b.txt` | — |
