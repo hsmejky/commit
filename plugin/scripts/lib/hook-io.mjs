@@ -59,7 +59,9 @@ export function runHook(stdinText, context = {}) {
     if (typeof toolName !== 'string' || !KNOWN_TOOL_NAMES.has(toolName)) {
       return failOpen(known, debug);
     }
-    const command = payload && payload.tool_input && payload.tool_input.command;
+    // `payload` is already known truthy here: `toolName` above is a string only when
+    // `payload.tool_name` read that way, which requires `payload` itself to be truthy.
+    const command = payload.tool_input && payload.tool_input.command;
     if (typeof command !== 'string') {
       return failOpen(known, debug);
     }

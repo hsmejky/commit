@@ -34,13 +34,17 @@ character removed, then every `'`, `"`, `\`, backtick and typographic quote
 `scriptCalls` holds a `plan` call, write the heartbeat (S1) before the decision is emitted
 (C:guard: "before deciding"), so a denied compound command that also calls `plan` still
 counts → emit the deny JSON or nothing, never `allow`. A crash anywhere, including in the classifier, fails open (exit 0, no output, no
-heartbeat); a stderr log with `agent_id` when `COMMIT_GUARD_DEBUG=1`, holding the
-decision, the deny reason and the command in the same redacted form as the heartbeat
-(script-call form or the matched `git commit` segment's options, never message text or
-other segments), cut to 200 characters; for a blanket deny (G2) the trigger kind instead of
-the command. A crash or unreadable input writes the same one
-line under debug, with the fields known so far, and still no stdout.
-`runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`. Sources: Q1, Q3, Q23, C:guard.
+heartbeat); under `COMMIT_GUARD_DEBUG=1`, `formatDebugLine` writes one JSON object on one
+stderr line, with keys `agent_id`, `decision`, `reason` and `command`, each key left out
+when unknown; `command` is in the same redacted form as the heartbeat (script-call form or
+the matched `git commit` segment's options, never message text or other segments), cut to
+200 characters; for a blanket deny (G2) the trigger kind instead of the command. A crash or
+unreadable input writes the same one-key-subset object under debug, with the fields known
+so far (down to `{}`), and still no stdout; the guard entry point writes that same `{}`
+itself when the crash happens before the library loads at all (GRD-02). GRD-16 extends the
+object with the same keys, defining no new ones.
+`runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`; `formatDebugLine(fields)
+→ string`. Sources: Q1, Q3, Q23, C:guard.
 
 **G2 Shell tokenizer.** First the blanket rule (C:guard step 2, Q3 as amended): with that
 shell's escaped newlines removed regardless of quotes (Bash `\`, PowerShell backtick, each

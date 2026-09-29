@@ -31,12 +31,15 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 - Crash or unreadable input: no output (fail open), no heartbeat.
 - Node older than 22: no output (fail open), no heartbeat; the guard entry point checks
   `process.versions.node` before it loads the shared library (Q1).
-- Debug log: with `COMMIT_GUARD_DEBUG=1`, a stderr line holding `agent_id`, the decision,
-  the deny reason and the command redacted like the heartbeat's (the script-call form, or
-  the matched `git commit` segment's options; never message text or other segments), cut to
-  200 characters. A blanket deny (parsing step 2) logs the decision and the trigger kind
-  instead of the command. A crash or unreadable input logs the same way (one line, with the
-  fields known so far), still with no stdout and exit 0.
+- Debug log: with `COMMIT_GUARD_DEBUG=1`, one JSON object on one stderr line, with keys
+  `agent_id`, `decision`, `reason` and `command`, each key left out when unknown (so an
+  early fail-open logs `{}` or `{"agent_id":"…"}` only). `command` is redacted like the
+  heartbeat's (the script-call form, or the matched `git commit` segment's options; never
+  message text or other segments), cut to 200 characters. A blanket deny (parsing step 2)
+  logs the decision and the trigger kind instead of the command. A crash or unreadable input
+  logs the same way (one line, with the fields known so far), still with no stdout and exit
+  0. GRD-16 extends this with the same keys once deny decisions are logged; it defines no
+  new ones.
 - Heartbeat: when any segment is a script call with subcommand `plan` (below), write
   `<Claude home>/commit-guard/heartbeat.json` (the Claude home is `CLAUDE_CONFIG_DIR` when
   set, else `<os.homedir()>/.claude`; guard and `plan` resolve it the same way) =

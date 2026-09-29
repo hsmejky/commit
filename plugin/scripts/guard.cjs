@@ -21,7 +21,12 @@ if (major >= 22) {
       now: Date.now,
     });
   }).then(null, function () {
-    // Fail open: a crash anywhere ends with no output and exit 0 (C:guard Output).
+    // Fail open: a crash anywhere ends with no output and exit 0 (C:guard Output). This
+    // runs when the dynamic import itself rejects (the library never loaded, so it cannot
+    // write its own debug line) or when main() rejects for some other reason; either way,
+    // under debug this writes the one-line empty object itself (C:guard Output: "A crash …
+    // logs the same way").
+    if (process.env.COMMIT_GUARD_DEBUG === '1') process.stderr.write('{}\n');
     process.exitCode = 0;
   });
 }

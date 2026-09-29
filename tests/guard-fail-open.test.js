@@ -7,7 +7,10 @@
 
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { createCase, runGuard } = require('./helpers/process-seam.js');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { createCase, runGuard, GUARD_ENTRY } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib');
 
 let runHook;
@@ -67,6 +70,7 @@ test('Seam 2: JSON without tool_input.command fails open, carrying agent_id into
   );
   assert.equal(debugged.stdout, '');
   assert.equal(debugged.exitCode, 0);
+  assert.equal(debugged.heartbeat, null);
   const lines = debugged.stderr.split('\n').filter(Boolean);
   assert.equal(lines.length, 1);
   assert.deepEqual(JSON.parse(lines[0]), { agent_id: 'a1' });
@@ -86,9 +90,43 @@ test('Seam 2: an unknown tool_name fails open even when the command mentions com
     { env: { COMMIT_GUARD_DEBUG: '1' } },
   );
   assert.equal(debugged.stdout, '');
+  assert.equal(debugged.exitCode, 0);
+  assert.equal(debugged.heartbeat, null);
   const lines = debugged.stderr.split('\n').filter(Boolean);
   assert.equal(lines.length, 1);
   assert.deepEqual(JSON.parse(lines[0]), {});
+});
+
+test('Seam 2: guard.cjs itself still fails open, and writes the debug line inline, when the dynamic import rejects before the library ever loads', async (t) => {
+  const c = createCase(t);
+  // A copy of guard.cjs with no lib/ next to it: the dynamic import of ./lib/hook-io.mjs
+  // rejects before hook-io.mjs (and its own debug-line writer) ever loads, so guard.cjs's
+  // own top-level catch has to write the one-line empty object itself (finding 2, review
+  // GRD-02).
+  const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-guard-nolib-'));
+  t.after(() => fs.rmSync(isolatedDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const isolatedGuard = path.join(isolatedDir, 'guard.cjs');
+  fs.copyFileSync(GUARD_ENTRY, isolatedGuard);
+
+  const plain = await runGuard(
+    c,
+    { toolName: 'Bash', command: 'git commit -m x' },
+    { script: isolatedGuard },
+  );
+  assert.equal(plain.stdout, '');
+  assert.equal(plain.stderr, '');
+  assert.equal(plain.exitCode, 0);
+  assert.equal(plain.heartbeat, null);
+
+  const debugged = await runGuard(
+    c,
+    { toolName: 'Bash', command: 'git commit -m x' },
+    { env: { COMMIT_GUARD_DEBUG: '1' }, script: isolatedGuard },
+  );
+  assert.equal(debugged.stdout, '');
+  assert.equal(debugged.exitCode, 0);
+  assert.equal(debugged.heartbeat, null);
+  assert.deepEqual(JSON.parse(debugged.stderr.trim()), {});
 });
 
 test('Seam 3: debugEnabled is true only for the exact value "1"', () => {
@@ -116,6 +154,31 @@ const malformedInputs = [
   {
     label: 'an unknown tool_name',
     stdin: JSON.stringify({ tool_name: 'Zsh', tool_input: { command: 'git commit -m x' } }),
+    expectAgentId: false,
+  },
+  {
+    label: 'tool_input absent',
+    stdin: JSON.stringify({ tool_name: 'Bash', agent_id: 'a2' }),
+    expectAgentId: true,
+  },
+  {
+    label: 'tool_input.command is a number',
+    stdin: JSON.stringify({ tool_name: 'Bash', agent_id: 'a2', tool_input: { command: 42 } }),
+    expectAgentId: true,
+  },
+  {
+    label: 'tool_input.command is null',
+    stdin: JSON.stringify({ tool_name: 'Bash', agent_id: 'a2', tool_input: { command: null } }),
+    expectAgentId: true,
+  },
+  {
+    label: 'agent_id is not a string (dropped, not carried into the debug line)',
+    stdin: JSON.stringify({ tool_name: 'Bash', agent_id: 123, tool_input: {} }),
+    expectAgentId: false,
+  },
+  {
+    label: 'the JSON payload is null',
+    stdin: 'null',
     expectAgentId: false,
   },
 ];
