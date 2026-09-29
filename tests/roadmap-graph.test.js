@@ -10,6 +10,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 const {
   isGroupFileName,
   parseSliceId,
@@ -53,12 +55,27 @@ test('only NN-*.md files are treated as roadmap group files', () => {
 });
 
 test("an id cited only in README.md or known-deficiencies.md is not a heading and can't be a duplicate", () => {
-  const groupFile = slice('FND-01', 'Repo skeleton', 'None (can start immediately).', 'done');
-  const records = parseGroupFileContent('01-foundation.md', groupFile);
-  const { byId, duplicates } = buildGraph(records);
-  // README.md mentions FND-01 in prose too, but it is never parsed as a group file.
-  assert.equal(byId.size, 1);
-  assert.deepEqual(duplicates, []);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'roadmap-graph-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmpDir, '01-foundation.md'),
+      slice('FND-01', 'Repo skeleton', 'None (can start immediately).', 'done')
+    );
+    // Both files cite FND-01 in prose, never as a `## FND-01:` heading; isGroupFileName
+    // rejects both names, so parseAllGroupFiles must not read either one as a group file.
+    fs.writeFileSync(path.join(tmpDir, 'README.md'), '# Roadmap\n\nFND-01 delivers the repo skeleton.\n');
+    fs.writeFileSync(
+      path.join(tmpDir, 'known-deficiencies.md'),
+      '# Known deficiencies\n\n- **KD-R1.** FND-01 needs a follow-up.\n'
+    );
+    const records = parseAllGroupFiles(tmpDir);
+    const { byId, duplicates } = buildGraph(records);
+    assert.equal(records.length, 1);
+    assert.equal(byId.size, 1);
+    assert.deepEqual(duplicates, []);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 // --- Parsing -------------------------------------------------------------------------
@@ -336,23 +353,32 @@ test("the real README's per-file and total slice counts match the group files", 
   assert.deepEqual(findCountMismatches(records, readmeCounts), []);
 });
 
-test('transitively implied edges in the real docs/roadmap files do not fail the check', () => {
+test('transitively implied edges in the real docs/roadmap files are listed and do not fail the check', (t) => {
   const records = parseAllGroupFiles(ROADMAP_DIR);
   const { byId } = buildGraph(records);
-  // No assertion on the count: this only proves the check runs to completion over the
-  // real graph without the implied edges being reported as errors elsewhere.
   const implied = findTransitivelyImplied(records, byId);
-  assert.ok(Array.isArray(implied));
+  t.diagnostic(`${implied.length} transitively implied edge(s)`);
+  for (const { slice: sliceId, blocker } of implied) {
+    t.diagnostic(`  ${sliceId} <- ${blocker}`);
+  }
+  // Every reported pair names two ids that actually exist in the real graph.
+  for (const { slice: sliceId, blocker } of implied) {
+    assert.ok(byId.has(sliceId), `${sliceId} should be a real slice id`);
+    assert.ok(byId.has(blocker), `${blocker} should be a real slice id`);
+  }
 });
 
 // Opt-in release mode: not run by `npm test`. Set ROADMAP_GRAPH_CHECK_RELEASE_MODE=1 to
-// check that every slice is Status: done before a 0.1.0 release.
+// check that every slice other than REL-05 is Status: done before a 0.1.0 release. REL-05
+// is excluded here: its own criterion is that every *other* slice is done, so requiring
+// REL-05 itself to already be done would be circular.
 test(
-  'release mode: every real slice is Status: done',
+  'release mode: every real slice other than REL-05 is Status: done',
   { skip: !process.env[RELEASE_ENV_VAR] && `set ${RELEASE_ENV_VAR}=1 to run` },
   () => {
     const records = parseAllGroupFiles(ROADMAP_DIR);
-    assert.deepEqual(findNotDone(records), []);
+    const notDone = findNotDone(records).filter((id) => id !== 'REL-05');
+    assert.deepEqual(notDone, []);
   }
 );
 

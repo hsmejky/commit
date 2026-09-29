@@ -12,8 +12,8 @@ renumbered: a removed or merged slice leaves a gap (for example SCN-08, SCN-10, 
 RPL-10 and INT-03), and a new slice takes the next free number in its group. A slice that
 must come before an existing one takes a letter suffix and sorts just after its base ID:
 CHG-03b comes after CHG-03 and before CHG-04, RUN-20b after RUN-20 and before RUN-21. The
-dependency graph has no cycles and every ID a group file references exists; FND-09 checks this
-mechanically as a repo test, and the blocking edges were checked against each slice's
+dependency graph has no cycles and every ID a `Blocked by` line names exists; FND-09 checks
+this mechanically as a repo test, and the blocking edges were checked against each slice's
 criteria during the review refinement (not just for existence). Known open defects of the
 plan are listed in [known-deficiencies.md](known-deficiencies.md) (KD-R IDs): check it before
 starting a slice it names.

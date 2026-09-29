@@ -155,10 +155,10 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R54.** The README RUN-20 gate row names only one path to RUN-24 (also via RPL-09).
 - **KD-R55.** CHG-17's Gates line restates its PRE-15 blocker; CFG-01 criteria lack final
   periods. Delete the line; pick one punctuation rule.
-- **KD-R56.** FND-09 says "`Status` line" and its release mode fails on REL-05 itself;
-  CHG-16 states the 1 MB rule it hands to SCN-13; CHG-12's Sources omit story 219.
-- **KD-R57.** The README claims FND-09 checks every referenced ID (it parses `Blocked by`
-  only) and that edges were checked against criteria (KD-R5 to KD-R7 disprove it).
+- **KD-R56.** CHG-16 states the 1 MB rule it hands to SCN-13; CHG-12's Sources omit story
+  219.
+- **KD-R57.** The README claims the blocking edges were checked against each slice's
+  criteria (KD-R5 to KD-R7 disprove it).
 - **KD-R58.** EXE-01 item 3 and the README's `internal` gap do not name FND-10's `EIO`
   fault as the candidate seam.
 - **KD-R59.** Sources lines omit stories their criteria cite: CFG-10 (112), INT-18 (91),

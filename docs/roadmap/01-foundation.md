@@ -152,7 +152,8 @@ scanner.
 duplicate or missing ID, no cycle, every in-group blocker has a lower number than the slice
 it blocks, and `README.md`'s slice counts match the files; it reports blocking edges that
 are already reachable through another blocker (transitively implied) without failing on
-them. A release mode reports every slice whose `Status` line is not `Status: done`.
+them. A release mode reports every slice, other than REL-05, whose `**Status:**` line is
+not `Status: done`.
 
 **Blocked by:** FND-01.
 
@@ -173,7 +174,7 @@ them. A release mode reports every slice whose `Status` line is not `Status: don
       test.
 - [ ] The total slice count and each per-group count `README.md` states are compared against the files under `docs/roadmap/`; a mismatch fails the test.
 - [ ] A blocking edge already reachable through another blocker is listed in the test's output as transitively implied, and does not fail the test.
-- [ ] Run with a release-mode switch the test file itself defines (an env var read only by the test, not the shipped CLI): the test lists every slice whose `**Status:**` line is not `Status: done`, and fails when the list is non-empty.
+- [ ] Run with a release-mode switch the test file itself defines (an env var read only by the test, not the shipped CLI): the test lists every slice other than REL-05 whose `**Status:**` line is not `Status: done`, and fails when the list is non-empty. REL-05 is excluded because its own criterion is that FND-09 reports every *other* slice as done, which would otherwise be circular.
 
 
 ## FND-10: Fault-injection preload for Seam 1
