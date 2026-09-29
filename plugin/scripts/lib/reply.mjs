@@ -3,8 +3,9 @@
 //
 // INT-01 builds the thinnest reply the walking skeleton needs: the `nothing` status on a
 // clean working tree, with the base `callerRule`; RUN-01 adds `release`'s two `nothing`
-// texts. RPL-04 onward add `failed`, `committed` and `handback` replies, the handback rule,
-// notices, the trailer line and the "N files left" tree state.
+// texts. RUN-03 adds the omitted tree state (past `release`'s 45 s `releaseDeadline`,
+// C:reply-and-handback). RPL-04 onward add `failed`, `committed` and `handback` replies, the
+// handback rule, notices, the trailer line and the "N files left" tree state.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -36,7 +37,10 @@ const NOTHING_LINES = Object.freeze({
  * Builds a reply from the facts of the output that ends the worker's part.
  *
  * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended',
- *   treeState: { clean: true } | { count: number, paths: string[] } }} facts
+ *   treeState: { clean: true } | { count: number, paths: string[] } | undefined }} facts
+ *   `treeState`: `undefined` when it was never read (`release` past its 45 s
+ *   `releaseDeadline`, or a case with no working tree to read) — the tree-state line is then
+ *   left off `text` entirely, not rendered as if clean (C:reply-and-handback).
  * @returns {object} the reply (C:reply-and-handback).
  * @throws {Error} for a status, reason or tree state not built yet.
  */
@@ -44,7 +48,8 @@ export function reply(facts) {
   if (facts.status !== 'nothing' || !Object.hasOwn(NOTHING_LINES, facts.reason)) {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
-  const text = `${NOTHING_LINES[facts.reason]}\n${renderTreeState(facts.treeState)}`;
+  const firstLine = NOTHING_LINES[facts.reason];
+  const text = facts.treeState === undefined ? firstLine : `${firstLine}\n${renderTreeState(facts.treeState)}`;
   return {
     version: 1,
     status: facts.status,

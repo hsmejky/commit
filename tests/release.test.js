@@ -21,6 +21,7 @@ const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
 const NOTHING_TO_RELEASE = 'nothing to release: the run has already ended or was taken over';
 const CREATED = '2026-01-01T00:00:00.000Z';
 const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
+const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 
 function seedCommit(c) {
   c.writeFile('README.md', 'hello\n');
@@ -517,4 +518,54 @@ test('release with no git binary on PATH exits 1 env and deletes nothing', async
   assert.equal(result.json.ok, false);
   assert.equal(result.json.error.kind, 'env');
   assert.deepEqual(snapshot(runDir), before);
+});
+
+// RUN-03: M15 `releaseDeadline` bounds `release`'s tree-state read to 45 s from the call's
+// start (C:reply-and-handback). The stepping clock (FND-05) is driven from a marker file
+// written before the process even launches, so its "path exists" step is already active on
+// the schedule's first check: every `Date.now()` call after the very first (the call's own
+// start) reads back frozen at `callStarted + elapsedMs`, for the whole call.
+function clockScheduleAt(c, elapsedMs) {
+  const marker = path.join(c.root, 'clock-marker');
+  fs.writeFileSync(marker, '');
+  const schedulePath = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedulePath, JSON.stringify([
+    { event: { type: 'path', path: marker }, elapsedMs },
+  ]));
+  return schedulePath;
+}
+
+test('release past the 45 s tree-state budget (46 s elapsed since the call\'s start) omits the tree state', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  const schedulePath = clockScheduleAt(c, 46_000);
+
+  const result = await runCommit(c, ['release', '--plan', planId], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+  });
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 0, detail);
+  assert.equal(result.json.ok, true, detail);
+  const { reply } = result.json;
+  assert.equal(reply.status, 'nothing');
+  assert.equal(reply.text, 'nothing committed', 'no tree-state line past the 45 s budget');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false, 'the release itself completed: the lock is removed');
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false, 'the run folder is deleted');
+});
+
+test('release below the 45 s tree-state budget still carries the tree state', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  const schedulePath = clockScheduleAt(c, 44_000);
+
+  const result = await runCommit(c, ['release', '--plan', planId], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+  });
+
+  assertNothingReply(result, 'nothing committed');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false);
 });
