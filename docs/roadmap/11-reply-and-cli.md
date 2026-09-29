@@ -38,22 +38,22 @@ and malformed `planId` as `usage` before any git call.
 
 **Blocked by:** RPL-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M1, C:cli-and-exit-codes (synopsis and flag rules), C:run-folder (`planId`
 form), Q9, Q17, story 206.
 
-- [ ] Seam 1, one case per rule: `--dictated` without `--reword`; `--no-user` with
+- [x] Seam 1, one case per rule: `--dictated` without `--reword`; `--no-user` with
       `--staged`, with `--take-over`, or without `--split`/`--reword`; `--no-no-user`;
       unknown flags; a `--plan` value that is not a lowercase UUID v4 (uppercase, traversal,
       absolute path) → exit 1 `usage`
-- [ ] Seam 1: two mode flags together on `plan` (`--staged` with `--split`, or `--reword`
+- [x] Seam 1: two mode flags together on `plan` (`--staged` with `--split`, or `--reword`
       with `--staged`) → exit 1 `usage`; `check`, `commit` and `release` without `--plan` →
       exit 1 `usage`; `commit --plan <id>` without `--all` → exit 1 `usage`; `--confirmed` on
       `plan` or `check` → exit 1 `usage`
-- [ ] No refused call creates `.commit-plan` or runs git (asserted on the temp repo)
-- [ ] Every legal synopsis line parses, asserted by not being refused `usage`
-- [ ] No CLI flag or environment variable exists that turns the scan off (story 146; checked
+- [x] No refused call creates `.commit-plan` or runs git (asserted on the temp repo)
+- [x] Every legal synopsis line parses, asserted by not being refused `usage`
+- [x] No CLI flag or environment variable exists that turns the scan off (story 146; checked
       by a review of the argv/usage table and the entry point's env reads).
 
 
