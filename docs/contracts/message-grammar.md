@@ -17,11 +17,13 @@ the `u` flag.
 - `type` must be in `types` (reason `type '<type>' not in types`); `scope` must obey `scope`:
   `forbidden` with a scope present fails with `scope '<scope>' not allowed (scope:
   forbidden)`; `required` with no scope fails with `scope required (scope: required)`.
-- `maxSubjectLength` counts the **code points** of the whole header line.
+- `maxSubjectLength` counts the **code points** of the whole header line; over the limit
+  fails with `header exceeds maxSubjectLength (<n> > <max>)`.
 - `subjectCase: lower`: fails only when the first character of the description is an
   uppercase letter (`\p{Lu}`), unless the first word is all uppercase with at least two
   letters (`API`, `CI`). Digits, backticks, quotes and symbols pass. `infer` uses the same
-  function.
+  function, exported separately from `lint` as `passesLowerCase(description)`. A failure's
+  reason is `description not lowercase (subjectCase: lower)`.
 - Footer paragraph: the last paragraph (not the header), where every line matches
   `^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(: | #)(.+)$`, or starts with whitespace and
   continues the previous footer. If any line fails, the whole paragraph is body.

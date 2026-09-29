@@ -20,9 +20,10 @@ function config(values = {}) {
 
 let parse;
 let lint;
+let passesLowerCase;
 
 before(async () => {
-  ({ parse, lint } = await loadLib('message-grammar'));
+  ({ parse, lint, passesLowerCase } = await loadLib('message-grammar'));
 });
 
 // MSG-01 AC: `feat: add x` parses to type `feat`, no scope, no breaking flag, description
@@ -194,5 +195,72 @@ for (const { case: name, message } of scopeShapeTable) {
 
   test(`${name} (${JSON.stringify(message)}): lint gives only the header reason`, () => {
     assert.deepEqual(lint(message, config({ scope: 'optional' })), [HEADER_REASON]);
+  });
+}
+
+// MSG-03 AC: a header of exactly `maxSubjectLength` code points passes, one more fails; a
+// header with astral characters (emoji) is counted in code points, not UTF-16 units.
+
+const lengthTable = [
+  { message: `feat: ${'x'.repeat(14)}`, maxSubjectLength: 20, reasons: [] },
+  {
+    message: `feat: ${'x'.repeat(15)}`,
+    maxSubjectLength: 20,
+    reasons: ['header exceeds maxSubjectLength (21 > 20)'],
+  },
+  // 'feat: ' (6) + one astral emoji (1 code point, 2 UTF-16 units) = 7 code points, 8
+  // UTF-16 units; a `.length` count would wrongly fail this against maxSubjectLength 7.
+  { message: 'feat: \u{1F600}', maxSubjectLength: 7, reasons: [] },
+];
+
+for (const { message, maxSubjectLength, reasons } of lengthTable) {
+  test(`lint ${JSON.stringify(message)} under maxSubjectLength: ${maxSubjectLength}`, () => {
+    assert.deepEqual(lint(message, config({ maxSubjectLength })), reasons);
+  });
+}
+
+// MSG-03 AC: under `lower`, an uppercase first character fails unless the first word is an
+// acronym (all uppercase, at least two letters); under `any`, anything passes.
+
+const CASE_REASON = 'description not lowercase (subjectCase: lower)';
+
+const caseTable = [
+  { message: 'feat: Add x', subjectCase: 'lower', reasons: [CASE_REASON] },
+  { message: 'feat: API change', subjectCase: 'lower', reasons: [] },
+  { message: 'feat: CI matrix', subjectCase: 'lower', reasons: [] },
+  { message: 'feat: 2fa', subjectCase: 'lower', reasons: [] },
+  { message: 'feat: `code`', subjectCase: 'lower', reasons: [] },
+  { message: "feat: 'quoted'", subjectCase: 'lower', reasons: [] },
+  { message: 'feat: -dash', subjectCase: 'lower', reasons: [] },
+  { message: 'feat: A thing', subjectCase: 'lower', reasons: [CASE_REASON] },
+  { message: 'feat: Add x', subjectCase: 'any', reasons: [] },
+];
+
+for (const { message, subjectCase, reasons } of caseTable) {
+  test(`lint ${JSON.stringify(message)} under subjectCase: ${subjectCase}`, () => {
+    assert.deepEqual(lint(message, config({ subjectCase })), reasons);
+  });
+}
+
+// MSG-03 AC: a static test asserts the case-check function is exported separately from
+// `lint`.
+
+test('passesLowerCase is exported separately from lint', () => {
+  assert.equal(typeof passesLowerCase, 'function');
+  assert.notEqual(passesLowerCase, lint);
+});
+
+const passesLowerCaseTable = [
+  { description: 'add x', passes: true },
+  { description: 'Add x', passes: false },
+  { description: 'API change', passes: true },
+  { description: 'CI matrix', passes: true },
+  { description: '2fa', passes: true },
+  { description: 'A thing', passes: false },
+];
+
+for (const { description, passes } of passesLowerCaseTable) {
+  test(`passesLowerCase(${JSON.stringify(description)}) is ${passes}`, () => {
+    assert.equal(passesLowerCase(description), passes);
   });
 }

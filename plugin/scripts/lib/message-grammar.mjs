@@ -8,6 +8,24 @@ const HEADER = /^([a-z][a-z0-9-]*)(\(([^()\s]+)\))?(!)?: (\S.*)$/u;
 const HEADER_REASON = "header is not 'type(scope)!: description'";
 
 /**
+ * Whether `description` (the header's description) satisfies the `subjectCase: lower` rule:
+ * its first character is not an uppercase letter, unless the first word is an acronym (every
+ * letter uppercase, at least two letters), which is exempt. Shared with `infer` (M19), which
+ * uses it to measure the share of history that would pass this rule.
+ *
+ * @param {string} description
+ * @returns {boolean}
+ */
+export function passesLowerCase(description) {
+  if (!/^\p{Lu}/u.test(description)) {
+    return true;
+  }
+  const firstWord = /^\p{L}+/u.exec(description)?.[0] ?? '';
+  const letters = Array.from(firstWord);
+  return letters.length >= 2 && letters.every((ch) => /\p{Lu}/u.test(ch));
+}
+
+/**
  * Split a message into its parts. The header is the first line; `header` is `null` when
  * that line does not match the header regex.
  *
@@ -33,7 +51,8 @@ export function parse(message) {
  * regex gives only the header reason: no further rule runs on it.
  *
  * @param {string} message
- * @param {{ types: readonly string[], scope?: 'forbidden' | 'optional' | 'required' }} values
+ * @param {{ types: readonly string[], scope?: 'forbidden' | 'optional' | 'required',
+ *   maxSubjectLength?: number, subjectCase?: 'lower' | 'any' }} values
  * @returns {string[]}
  */
 export function lint(message, values) {
@@ -49,6 +68,14 @@ export function lint(message, values) {
     reasons.push(`scope '${header.scope}' not allowed (scope: forbidden)`);
   } else if (values.scope === 'required' && header.scope === null) {
     reasons.push('scope required (scope: required)');
+  }
+  const headerLine = message.split('\n', 1)[0];
+  const headerLength = Array.from(headerLine).length;
+  if (headerLength > values.maxSubjectLength) {
+    reasons.push(`header exceeds maxSubjectLength (${headerLength} > ${values.maxSubjectLength})`);
+  }
+  if (values.subjectCase === 'lower' && !passesLowerCase(header.description)) {
+    reasons.push('description not lowercase (subjectCase: lower)');
   }
   return reasons;
 }
