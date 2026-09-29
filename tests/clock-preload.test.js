@@ -46,7 +46,7 @@ test('the first Date.now() call returns real time', async (t) => {
   assert.ok(first >= before - 1000 && first <= after + 1000, `${first} not near real time`);
 });
 
-test('with no schedule file, every call returns real time', async (t) => {
+test('with COMMIT_TEST_CLOCK_SCHEDULE unset, every call returns real time', async (t) => {
   const c = createCase(t, { repo: false });
   const before = Date.now();
   const [first, second] = await runOps(c, [{ op: 'now' }, { op: 'now' }]);
@@ -74,6 +74,33 @@ test('a path step is real time until the path exists, then frozen at callStarted
   const frozenAt = beforeMarker + 10_000_000;
   assert.equal(afterMarker, frozenAt, 'must freeze at callStarted + elapsed once the path exists');
   assert.equal(stillFrozen, frozenAt, 'the clock must stay frozen on the next read too');
+});
+
+// --- AC1: two path steps freeze in turn, each until the next step's event holds -----------
+
+test('two path steps freeze in turn at callStarted + each elapsed', async (t) => {
+  const c = createCase(t, { repo: false });
+  const markerA = path.join(c.root, 'a');
+  const markerB = path.join(c.root, 'b');
+  const schedule = [
+    { event: { type: 'path', path: markerA }, elapsedMs: 1_000 },
+    { event: { type: 'path', path: markerB }, elapsedMs: 2_000 },
+  ];
+
+  const [callStarted, afterA, afterB] = await runOps(
+    c,
+    [
+      { op: 'now' },
+      { op: 'touch', path: markerA },
+      { op: 'now' },
+      { op: 'touch', path: markerB },
+      { op: 'now' },
+    ],
+    schedule,
+  );
+
+  assert.equal(afterA, callStarted + 1_000);
+  assert.equal(afterB, callStarted + 2_000);
 });
 
 // --- AC3: a boundary step (exactly 60,000 ms elapsed) reads back exactly -------------------
@@ -111,6 +138,7 @@ test('extra reads before the event holds do not advance the schedule', async (t)
   const marker = path.join(c.root, 'marker');
   const schedule = [{ event: { type: 'path', path: marker }, elapsedMs: 10_000_000 }];
 
+  const before = Date.now();
   const readings = await runOps(
     c,
     [
@@ -120,10 +148,14 @@ test('extra reads before the event holds do not advance the schedule', async (t)
     ],
     schedule,
   );
+  const after = Date.now();
   const [callStarted, ...beforeMarker] = readings.slice(0, 5);
   const afterMarker = readings[5];
   for (const reading of beforeMarker) {
-    assert.notEqual(reading, callStarted + 10_000_000, 'must not freeze before the path exists');
+    assert.ok(
+      reading >= before - 1000 && reading <= after + 1000,
+      `${reading} not near real time (must not freeze before the path exists)`,
+    );
   }
   assert.equal(afterMarker, callStarted + 10_000_000);
 });
@@ -136,6 +168,7 @@ test('a reflogCount step freezes once the ref has at least the given number of e
     { event: { type: 'reflogCount', repo: c.repoDir, atLeast: 2 }, elapsedMs: 20_000_000 },
   ];
 
+  const before = Date.now();
   const [callStarted, beforeCommits, afterOneCommit, afterTwoCommits] = await runOps(
     c,
     [
@@ -148,10 +181,38 @@ test('a reflogCount step freezes once the ref has at least the given number of e
     ],
     schedule,
   );
+  const after = Date.now();
 
-  assert.notEqual(beforeCommits, callStarted + 20_000_000);
-  assert.notEqual(afterOneCommit, callStarted + 20_000_000, 'one entry must not meet atLeast: 2');
+  assert.ok(
+    beforeCommits >= before - 1000 && beforeCommits <= after + 1000,
+    `${beforeCommits} not near real time`,
+  );
+  assert.ok(
+    afterOneCommit >= before - 1000 && afterOneCommit <= after + 1000,
+    `${afterOneCommit} not near real time (one entry must not meet atLeast: 2)`,
+  );
   assert.equal(afterTwoCommits, callStarted + 20_000_000);
+});
+
+// --- schedule validation: elapsedMs must be finite and strictly increasing -----------------
+
+test('a schedule with a non-finite or non-increasing elapsedMs fails the launch', async (t) => {
+  const badSchedules = [
+    [{ event: { type: 'path', path: '/x' }, elapsedMs: Number.NaN }],
+    [{ event: { type: 'path', path: '/x' }, elapsedMs: 1_000 }, { event: { type: 'path', path: '/y' }, elapsedMs: 1_000 }],
+    [{ event: { type: 'path', path: '/x' }, elapsedMs: 2_000 }, { event: { type: 'path', path: '/y' }, elapsedMs: 1_000 }],
+  ];
+  for (const schedule of badSchedules) {
+    const c = createCase(t, { repo: false });
+    const schedulePath = path.join(c.root, 'schedule.json');
+    fs.writeFileSync(schedulePath, JSON.stringify(schedule));
+    const result = await runEntry(c, RUN_OPS, [JSON.stringify([{ op: 'now' }])], {
+      nodeArgs: ['--import', PRELOAD],
+      env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+    });
+    assert.notEqual(result.exitCode, 0, `launch must fail for schedule ${JSON.stringify(schedule)}`);
+    assert.match(result.stderr, /elapsedMs/);
+  }
 });
 
 // --- AC4: the preload is never referenced from the packaged plugin directory ---------------

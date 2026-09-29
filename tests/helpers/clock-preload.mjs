@@ -4,9 +4,10 @@
 // packaged: the shipped CLI reads time only through `Date.now()` and gains no test-only
 // switch to reach this (docs/spec/architectural-decisions.md, "Injected environment").
 //
-// Schedule: the file named by COMMIT_TEST_CLOCK_SCHEDULE (unset or absent: no steps) holds a
-// JSON array of steps, each `{ "event": ..., "elapsedMs": <number> }` in increasing
-// `elapsedMs` order. `event` is one of:
+// Schedule: the file named by COMMIT_TEST_CLOCK_SCHEDULE (unset: no steps; a named file that
+// does not exist fails the launch) holds a JSON array of steps, each
+// `{ "event": ..., "elapsedMs": <number> }` in increasing `elapsedMs` order; each step's event
+// is expected to occur in that same order while the schedule is driven. `event` is one of:
 //   { "type": "path", "path": "<absolute path>" }
 //     holds once that path exists.
 //   { "type": "reflogCount", "repo": "<dir>", "ref": "<ref, default HEAD>", "atLeast": <n> }
@@ -27,6 +28,19 @@ const realDateNow = Date.now.bind(Date);
 
 const scheduleFile = process.env.COMMIT_TEST_CLOCK_SCHEDULE;
 const schedule = scheduleFile ? JSON.parse(readFileSync(scheduleFile, 'utf8')) : [];
+
+let previousElapsedMs = -Infinity;
+for (const step of schedule) {
+  if (!Number.isFinite(step.elapsedMs)) {
+    throw new Error(`clock-preload: elapsedMs must be a finite number, got ${step.elapsedMs}`);
+  }
+  if (step.elapsedMs <= previousElapsedMs) {
+    throw new Error(
+      `clock-preload: elapsedMs must strictly increase, got ${step.elapsedMs} after ${previousElapsedMs}`,
+    );
+  }
+  previousElapsedMs = step.elapsedMs;
+}
 
 /** @param {{type: string, [key: string]: unknown}} event */
 function eventHolds(event) {
