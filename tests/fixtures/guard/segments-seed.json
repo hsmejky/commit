@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*).",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*). Round 8 (2026-09-29, user decision): after seven review rounds of bypasses, step 2 opens with a blanket fail-closed rule (C:guard) that denies, before any tokenizing, any command mentioning commit whose text holds a substitution, heredoc, here-string, comment or (Bash) typographic quote anywhere, in or out of quotes; a case classified by the `blanket` oracle-skip class has no segments (the guard never tokenizes it).",
  "cases": [
   {
    "id": "b-plain",
@@ -401,176 +401,89 @@
   {
    "id": "b-heredoc-body",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket false positive",
    "command": "cat <<'EOF' > f\ngit commit -m x\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     },
-     {
-      "redir": ">",
-      "target": "f"
-     }
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "heredoc"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-after",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "cat <<EOF\ngit commit -m x\nEOF\ngit commit -m y",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "y"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-dash",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket false positive",
    "command": "cat <<-EOF\n\tgit commit -m x\n\tEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<-",
-      "delim": "EOF"
-     }
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-dq-delim",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket false positive",
    "command": "cat << \"EOF\"\ngit commit -m x\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-two",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket false positive",
    "command": "cat <<A <<B\ngit commit -m x\nA\ngit commit -m y\nB",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "A"
-     },
-     {
-      "heredoc": "<<",
-      "delim": "B"
-     }
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-unterminated",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket false positive",
    "command": "cat <<EOF\ngit commit -m x",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-F",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "git commit -F - <<'EOF'\nfix: x\nEOF",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-F",
-     "-",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-pipe",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "cat <<EOF | git commit -F -\nbody\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-F",
-     "-"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
@@ -595,216 +508,100 @@
   {
    "id": "b-heredoc-in-subst",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "git commit -m \"$(cat <<'EOF'\nfeat(api): add x\n\nbody (with parens)\nEOF\n)\"",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-m",
-     "$(cat <<'EOF'\nfeat(api): add x\n\nbody (with parens)\nEOF\n)"
-    ],
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-in-subst-allowed",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "x=\"$(cat <<'EOF'\nfix(a): y)\nEOF\n)\" && git status",
-   "segments": [
-    [
-     "x=$(cat <<'EOF'\nfix(a): y)\nEOF\n)"
-    ],
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "git",
-     "status"
-    ]
-   ],
+   "segments": [],
    "decision": "none",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-msg",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "git commit -m \"$(date)\"",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-m",
-     "$(date)"
-    ],
-    [
-     "date"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-inside",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo $(git commit -m x)",
-   "segments": [
-    [
-     "echo",
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-sub",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "git $(echo commit) -m x",
-   "segments": [
-    [
-     "git",
-     "$(echo commit)",
-     "-m",
-     "x"
-    ],
-    [
-     "echo",
-     "commit"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-nested-quotes",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo \"$(printf '\"')\"; git commit -m x",
-   "segments": [
-    [
-     "echo",
-     "$(printf '\"')"
-    ],
-    [
-     "printf",
-     "\""
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-paren-in-quotes",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo \"$(echo \")\")\"; git commit -m x",
-   "segments": [
-    [
-     "echo",
-     "$(echo \")\")"
-    ],
-    [
-     "echo",
-     ")"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-before",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket false positive",
    "command": "x=$(git rev-parse HEAD) && git commit --no-edit",
-   "segments": [
-    [
-     "x=$(git rev-parse HEAD)"
-    ],
-    [
-     "git",
-     "rev-parse",
-     "HEAD"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-cmd-pos",
    "shell": "bash",
-   "topic": "subst gap",
+   "topic": "blanket false positive",
    "command": "$(echo git) commit -m x",
-   "segments": [
-    [
-     "$(echo git)",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "echo",
-     "git"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
@@ -871,91 +668,46 @@
   {
    "id": "b-bt-msg",
    "shell": "bash",
-   "topic": "backtick",
+   "topic": "blanket",
    "command": "git commit -m \"`date`\"",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-m",
-     "`date`"
-    ],
-    [
-     "date"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-bt-inside",
    "shell": "bash",
-   "topic": "backtick",
+   "topic": "blanket",
    "command": "echo `git commit -m x`",
-   "segments": [
-    [
-     "echo",
-     "`git commit -m x`"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-bt-sub",
    "shell": "bash",
-   "topic": "backtick",
+   "topic": "blanket",
    "command": "git `echo commit` -m x",
-   "segments": [
-    [
-     "git",
-     "`echo commit`",
-     "-m",
-     "x"
-    ],
-    [
-     "echo",
-     "commit"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
-   },
-   "finding": "F1"
+    "bash": "blanket"
+   }
   },
   {
    "id": "b-bt-sub-dq",
    "shell": "bash",
-   "topic": "backtick",
+   "topic": "blanket",
    "command": "git \"`echo commit`\" -m x",
-   "segments": [
-    [
-     "git",
-     "`echo commit`",
-     "-m",
-     "x"
-    ],
-    [
-     "echo",
-     "commit"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
-   },
-   "finding": "F1"
+    "bash": "blanket"
+   }
   },
   {
    "id": "b-bash-c",
@@ -1327,7 +1079,7 @@
   {
    "id": "b-cont-split-word",
    "shell": "bash",
-   "topic": "escaped newline gap",
+   "topic": "escaped newline",
    "command": "git com\\\nmit -m x",
    "segments": [
     [
@@ -1337,7 +1089,7 @@
      "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "match"
    }
@@ -1563,46 +1315,24 @@
   {
    "id": "b-comment-trailing",
    "shell": "bash",
-   "topic": "comment",
+   "topic": "blanket",
    "command": "git commit --no-edit # done",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "--no-edit",
-     "#",
-     "done"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "comment"
-   },
-   "finding": "F5"
+    "bash": "blanket"
+   }
   },
   {
    "id": "b-comment-line",
    "shell": "bash",
-   "topic": "comment",
+   "topic": "blanket",
    "command": "# git commit -m x\ngit status",
-   "segments": [
-    [
-     "#",
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "git",
-     "status"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "comment"
-   },
-   "finding": "F5"
+    "bash": "blanket"
+   }
   },
   {
    "id": "b-if",
@@ -1841,19 +1571,12 @@
   {
    "id": "b-typo-quotes",
    "shell": "bash",
-   "topic": "case",
+   "topic": "blanket",
    "command": "git co‘’mmit -m x",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "typographic-quotes-bash"
+    "bash": "blanket"
    }
   },
   {
@@ -2346,27 +2069,13 @@
   {
    "id": "p-array-fixup",
    "shell": "powershell",
-   "topic": "subshell",
+   "topic": "blanket",
    "command": "git commit --fixup @(\"HEAD\",\"--no-verify\")",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "--fixup",
-     "@",
-     {
-      "op": "("
-     },
-     "HEAD,--no-verify",
-     {
-      "op": ")"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "subshell-parens",
-    "ps7": "subshell-parens"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
@@ -2582,177 +2291,97 @@
   {
    "id": "p-hs-pipe",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket false positive",
    "command": "@'\ngit commit -m x\n'@ | Set-Content f.txt",
-   "segments": [
-    [
-     "git commit -m x"
-    ],
-    [
-     "Set-Content",
-     "f.txt"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "ps51": "match",
-    "ps7": "match"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-hs-dq-pipe",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket false positive",
    "command": "@\"\ngit commit -m x\n\"@ | Set-Content f.txt",
-   "segments": [
-    [
-     "git commit -m x"
-    ],
-    [
-     "Set-Content",
-     "f.txt"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "ps51": "match",
-    "ps7": "match"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-hs-msg",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket",
    "command": "git commit -m @'\nfeat: x\n\nbody\n'@",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-m",
-     "feat: x\n\nbody"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "match",
-    "ps7": "match"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-hs-unterminated",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket",
    "command": "@'\ngit commit -m x",
-   "segments": [
-    [
-     ""
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "unterminated",
-    "ps7": "unterminated"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-hs-indented-close",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket",
    "command": "$m = @'\ngit commit -m x\n  '@",
-   "segments": [
-    [
-     "$m",
-     "=",
-     ""
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "@"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "unterminated",
-    "ps7": "unterminated"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-hs-then-commit",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket",
    "command": "$m = @'\nmsg\n'@\ngit commit -F -",
-   "segments": [
-    [
-     "$m",
-     "=",
-     "msg"
-    ],
-    [
-     "git",
-     "commit",
-     "-F",
-     "-"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "ps-expression-statement",
-    "ps7": "ps-expression-statement"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-subexpr-msg",
    "shell": "powershell",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "git commit -m \"$(Get-Date)\"",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "-m",
-     "$(Get-Date)"
-    ],
-    [
-     "Get-Date"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-subexpr-sub",
    "shell": "powershell",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "git $('commit') -m x",
-   "segments": [
-    [
-     "git",
-     "$('commit')",
-     "-m",
-     "x"
-    ],
-    [
-     "commit"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
@@ -2891,23 +2520,13 @@
   {
    "id": "p-subexpr-stmt",
    "shell": "powershell",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "$(git commit -m x)",
-   "segments": [
-    [
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
@@ -3189,7 +2808,7 @@
   {
    "id": "p-cont-split-word",
    "shell": "powershell",
-   "topic": "escaped newline gap",
+   "topic": "escaped newline",
    "command": "git com`\nmit -m x",
    "segments": [
     [
@@ -3199,7 +2818,7 @@
      "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "ps51": "escaped-newline-in-word",
     "ps7": "escaped-newline-in-word"
@@ -3231,53 +2850,26 @@
   {
    "id": "p-comment-trailing",
    "shell": "powershell",
-   "topic": "comment",
+   "topic": "blanket",
    "command": "git commit --no-edit # done",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "--no-edit",
-     "#",
-     "done"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "comment",
-    "ps7": "comment"
-   },
-   "finding": "F5"
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
   },
   {
    "id": "p-comment-block",
    "shell": "powershell",
-   "topic": "comment",
+   "topic": "blanket",
    "command": "<# git commit -m x #> git status",
-   "segments": [
-    [
-     {
-      "redir": "<",
-      "target": "#"
-     },
-     "git",
-     "commit",
-     "-m",
-     "x",
-     "#",
-     {
-      "redir": ">",
-      "target": "git"
-     },
-     "status"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "comment",
-    "ps7": "comment"
-   },
-   "finding": "F5"
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
   },
   {
    "id": "p-GIT-exe",
@@ -3356,913 +2948,355 @@
   {
    "id": "b-subst-assign",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "out=$(git commit -m x 2>&1)",
-   "segments": [
-    [
-     "out=$(git commit -m x 2>&1)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x",
-     {
-      "redir": "2>&1",
-      "target": null
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-dq",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo \"$(git commit -m x)\"",
-   "segments": [
-    [
-     "echo",
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-bt-dq",
    "shell": "bash",
-   "topic": "backtick",
+   "topic": "blanket",
    "command": "echo \"`git commit -m x`\"",
-   "segments": [
-    [
-     "echo",
-     "`git commit -m x`"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-nested",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo $(echo $(git commit -m x))",
-   "segments": [
-    [
-     "echo",
-     "$(echo $(git commit -m x))"
-    ],
-    [
-     "echo",
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-sq",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket false positive",
    "command": "echo '$(git commit -m x)'",
-   "segments": [
-    [
-     "echo",
-     "$(git commit -m x)"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-param-subst",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo ${x:-$(git commit -m x)}",
-   "segments": [
-    [
-     "echo",
-     "${x:-$(git commit -m x)}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-subst-allowed",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket false positive",
    "command": "echo $(git commit --no-edit)",
-   "segments": [
-    [
-     "echo",
-     "$(git commit --no-edit)"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-subst",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "cat <<EOF\n$(git commit -m x)\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-heredoc-subst-quoted",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket false positive",
    "command": "cat <<'EOF'\n$(git commit -m x)\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-funsub-dq",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo \"${ git commit -m x; }\"",
-   "segments": [
-    [
-     "echo",
-     "${ git commit -m x; }"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-funsub-reply",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "echo ${| git commit -m x; }",
-   "segments": [
-    [
-     "echo",
-     "${| git commit -m x; }"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-funsub-heredoc",
    "shell": "bash",
-   "topic": "heredoc",
+   "topic": "blanket",
    "command": "cat <<EOF\n${ git commit -m x; }\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-group",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ { :; }; git commit -m x; }\"",
-   "segments": [
-    [
-     "echo",
-     "${ { :; }; git commit -m x; }\""
-    ],
-    [
-     "{",
-     ":"
-    ],
-    [
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "}"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-function",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ f(){ :; }; git commit -m x; }\"",
-   "segments": [
-    [
-     "echo",
-     "${ f(){ :; }; git commit -m x; }\""
-    ],
-    [
-     "f",
-     {
-      "op": "("
-     },
-     {
-      "op": ")"
-     },
-     "{",
-     ":"
-    ],
-    [
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "}"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-funsub-comment",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ : # ; }\ngit commit -m x; }\"",
-   "segments": [
-    [
-     "echo",
-     "${ : # ; }\ngit commit -m x; }\""
-    ],
-    [
-     ":",
-     "#"
-    ],
-    [
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "}"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-funsub-case",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ case } in a) ;; }) git commit -m x;; esac; }\"",
-   "segments": [
-    [
-     "echo",
-     "${ case } in a) ;; }) git commit -m x;; esac; }\""
-    ],
-    [
-     "case",
-     "}",
-     "in",
-     "a",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "}",
-     {
-      "op": ")"
-     },
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "esac"
-    ],
-    [
-     "}"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-group-heredoc",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "cat <<EOF\n${ { :; }; git commit -m x; }\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "{",
-     ":"
-    ],
-    [
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "}"
-    ],
-    [
-     "EOF"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-subst-comment",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"$( : # )\ngit commit -m x )\"",
-   "segments": [
-    [
-     "echo",
-     "$( : # )\ngit commit -m x )\""
-    ],
-    [
-     ":",
-     "#",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x",
-     {
-      "op": ")"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-subst-case",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"$(case x in x) git commit -m x;; esac)\"",
-   "segments": [
-    [
-     "echo",
-     "$(case x in x) git commit -m x;; esac)\""
-    ],
-    [
-     "case",
-     "x",
-     "in",
-     "x",
-     {
-      "op": ")"
-     },
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "esac",
-     {
-      "op": ")"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-subst-comment-heredoc",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "cat <<EOF\n$( : # )\ngit commit -m x )\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     ":",
-     "#",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "EOF"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-subst-case-heredoc",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "cat <<EOF\n$(case x in x) git commit -m x;; esac)\nEOF",
-   "segments": [
-    [
-     "cat",
-     {
-      "heredoc": "<<",
-      "delim": "EOF"
-     }
-    ],
-    [
-     "case",
-     "x",
-     "in",
-     "x",
-     {
-      "op": ")"
-     },
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "esac",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "EOF"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-quote-after-end",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ { :; }; echo '\"'; }\" ; git commit -m x",
-   "segments": [
-    [
-     "echo",
-     "${ { :; }; echo '\"'; }\" ; git commit -m x"
-    ],
-    [
-     "{",
-     ":"
-    ],
-    [
-     "}"
-    ],
-    [
-     "echo"
-    ],
-    [
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-no-close",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ if :; then :; fi }\" ; git commit -m x",
-   "segments": [
-    [
-     "echo",
-     "${ if :; then :; fi }\" ; git commit -m x"
-    ],
-    [
-     "if",
-     ":"
-    ],
-    [
-     "then",
-     ":"
-    ],
-    [
-     "fi",
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-subst-comment-unquoted",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo $( : # ) \"\ngit commit -m x\n# \"\n)",
-   "segments": [
-    [
-     "echo",
-     "$( : # ) \"\ngit commit -m x\n# \"\n)"
-    ],
-    [
-     ":",
-     "#",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "#"
-    ],
-    [
-     {
-      "op": ")"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-unsure-false-positive",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "echo \"${ { :; }; }\"; git commit --no-edit",
-   "segments": [
-    [
-     "echo",
-     "${ { :; }; }\"; git commit --no-edit"
-    ],
-    [
-     "{",
-     ":"
-    ],
-    [
-     "}"
-    ],
-    [
-     "}"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-sure-param-and-subst",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket false positive",
    "command": "echo \"${x}\" \"$(git log -1)\" && git commit --no-edit",
-   "segments": [
-    [
-     "echo",
-     "${x}",
-     "$(git log -1)"
-    ],
-    [
-     "git",
-     "log",
-     "-1"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-sure-funsub",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket false positive",
    "command": "echo \"${ git log -1; }\" && git commit --no-edit",
-   "segments": [
-    [
-     "echo",
-     "${ git log -1; }"
-    ],
-    [
-     "git",
-     "log",
-     "-1"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-sure-param-length",
    "shell": "bash",
-   "topic": "subst unsure end",
+   "topic": "blanket false positive",
    "command": "echo \"$(echo ${#x})\" && git commit --no-edit",
-   "segments": [
-    [
-     "echo",
-     "$(echo ${#x})"
-    ],
-    [
-     "echo",
-     "${#x}"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
    "id": "p-unsure-subexpr-comment",
    "shell": "powershell",
-   "topic": "subst unsure end",
+   "topic": "blanket",
    "command": "Write-Output $( 1 # ) \"\ngit commit -m x\n# \"\n)",
-   "segments": [
-    [
-     "Write-Output",
-     "$( 1 # ) \"\ngit commit -m x\n# \"\n)"
-    ],
-    [
-     "1",
-     "#",
-     {
-      "op": ")"
-     }
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "#"
-    ],
-    [
-     {
-      "op": ")"
-     }
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-sure-subexpr",
    "shell": "powershell",
-   "topic": "subst unsure end",
+   "topic": "blanket false positive",
    "command": "Write-Output \"$(git log -1)\"; git commit --no-edit",
-   "segments": [
-    [
-     "Write-Output",
-     "$(git log -1)"
-    ],
-    [
-     "git",
-     "log",
-     "-1"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "b-funsub-sq",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket false positive",
    "command": "echo '${ git commit -m x; }'",
-   "segments": [
-    [
-     "echo",
-     "${ git commit -m x; }"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "match"
+    "bash": "blanket"
    }
   },
   {
    "id": "b-funsub-allowed",
    "shell": "bash",
-   "topic": "subst",
+   "topic": "blanket false positive",
    "command": "echo \"${ git commit --no-edit; }\"",
-   "segments": [
-    [
-     "echo",
-     "${ git commit --no-edit; }"
-    ],
-    [
-     "git",
-     "commit",
-     "--no-edit"
-    ]
-   ],
-   "decision": "none",
+   "segments": [],
+   "decision": "deny",
    "oracle": {
-    "bash": "expansion"
+    "bash": "blanket"
    }
   },
   {
@@ -4305,80 +3339,37 @@
   {
    "id": "p-subexpr-dq",
    "shell": "powershell",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "Write-Output \"$(git commit -m x)\"",
-   "segments": [
-    [
-     "Write-Output",
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-subexpr-assign",
    "shell": "powershell",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "$out = $(git commit -m x)",
-   "segments": [
-    [
-     "$out",
-     "=",
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": [
-     "ps-expression-statement",
-     "expansion"
-    ],
-    "ps7": [
-     "ps-expression-statement",
-     "expansion"
-    ]
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-hs-subexpr",
    "shell": "powershell",
-   "topic": "here-string",
+   "topic": "blanket",
    "command": "Write-Output @\"\n$(git commit -m x)\n\"@ | Out-Null",
-   "segments": [
-    [
-     "Write-Output",
-     "$(git commit -m x)"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "Out-Null"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
@@ -4578,69 +3569,25 @@
   {
    "id": "p-stop-herestring",
    "shell": "powershell",
-   "topic": "stop-parsing",
+   "topic": "blanket",
    "command": "Write-Output --% @'\ngit commit -m x\n'@'",
-   "segments": [
-    [
-     "Write-Output",
-     "--%",
-     "@'"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "@"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": [
-     "ps-stop-parsing",
-     "ps-expression-statement"
-    ],
-    "ps7": [
-     "ps-stop-parsing",
-     "ps-expression-statement"
-    ]
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
    "id": "p-stop-escaped-herestring",
    "shell": "powershell",
-   "topic": "stop-parsing",
+   "topic": "blanket",
    "command": "Write-Output `--% @'\ngit commit -m x\n'@",
-   "segments": [
-    [
-     "Write-Output",
-     "--%",
-     "@'"
-    ],
-    [
-     "git",
-     "commit",
-     "-m",
-     "x"
-    ],
-    [
-     "@"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": [
-     "ps-stop-parsing",
-     "unterminated",
-     "ps-expression-statement"
-    ],
-    "ps7": [
-     "ps-stop-parsing",
-     "unterminated",
-     "ps-expression-statement"
-    ]
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
@@ -4668,23 +3615,13 @@
   {
    "id": "p-fixup-subexpr",
    "shell": "powershell",
-   "topic": "subst",
+   "topic": "blanket",
    "command": "git commit --fixup $('HEAD','--no-verify')",
-   "segments": [
-    [
-     "git",
-     "commit",
-     "--fixup",
-     "$('HEAD','--no-verify')"
-    ],
-    [
-     "HEAD,--no-verify"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "expansion",
-    "ps7": "expansion"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {
@@ -4723,6 +3660,251 @@
    "oracle": {
     "ps51": "expansion",
     "ps7": "expansion"
+   }
+  },
+  {
+   "id": "b-blanket-param-rbrace",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"$(echo ${x:-)}; git commit -m x)\"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-param-slash",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"$(echo ${x/)/y}; git commit -m x)\"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-heredoc-subst-tail",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"$(cat <<X\nX)\" ; git commit -m x ; echo \"\nX\n)\"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-heredoc-subst-tail2",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"$(cat <<X\n)\nX\ngit commit -m x\n)\"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-subexpr-comment-assign",
+   "shell": "powershell",
+   "topic": "blanket",
+   "command": "Write-Output $( $a =# ) \"\n1\ngit commit -m x\n# \"\n)",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-subexpr-comment-comma",
+   "shell": "powershell",
+   "topic": "blanket",
+   "command": "Write-Output $( 1,# ) \"\n1\ngit commit -m x\n# \"\n)",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-comment-quote-cont",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo commit \"$( : # it's\ngit com\\\nmit -m x\n)\" # '",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-fp-arith",
+   "shell": "bash",
+   "topic": "blanket false positive",
+   "command": "echo \"$((n+1))\" && git commit --no-edit",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-fp-blockcomment-paren",
+   "shell": "powershell",
+   "topic": "blanket false positive",
+   "command": "Write-Output $( <# ) #> 1 ) ; git commit --no-edit",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-typo-quote",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo ‘ ; git commit -m x ; ‘",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-comment-quote",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": ": # \"\ngit commit -m x\n: # \"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-param-nested-quote",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"${x:-\"'\"}\" ; git commit -m x\n: '\n'",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-comment-glued",
+   "shell": "powershell",
+   "topic": "blanket",
+   "command": "Write-Output 1 # \"\ngit commit -m x\n# \"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-blockcomment-quote",
+   "shell": "powershell",
+   "topic": "blanket",
+   "command": "<# \" #>\ngit commit -m x\n<# \" #>",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-braced-var-quote",
+   "shell": "powershell",
+   "topic": "blanket",
+   "command": "${\"} = 1; git commit -m x; ${\"}",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "b-ansi-c-split",
+   "shell": "bash",
+   "topic": "quotes",
+   "command": "git co$'m'mit -m x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-blanket-ifs-var",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "git${IFS}commit${IFS}-m${IFS}x",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-subst-cont",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"$(git com\\\nmit -m x)\"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "p-blanket-fp-envvar",
+   "shell": "powershell",
+   "topic": "blanket false positive",
+   "command": "${env:X}; git commit --no-edit",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-none-arith",
+   "shell": "bash",
+   "topic": "blanket",
+   "command": "echo \"$(date)\" && git status",
+   "segments": [],
+   "decision": "none",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-blanket-fp-body-heredoc",
+   "shell": "bash",
+   "topic": "blanket false positive",
+   "command": "gh pr create --body \"$(cat <<'EOF'\nAdds the commit skill.\nEOF\n)\"",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
    }
   }
  ]

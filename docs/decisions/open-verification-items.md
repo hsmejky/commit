@@ -28,7 +28,7 @@
   classifier, not kept; bash 5.3, Windows PowerShell 5.1 and PowerShell 7.6 parser API).
   The 143 cases, with the prototype's segments, decision and per-oracle class, are the
   GRD-03 fixture seed: `tests/fixtures/guard/segments-seed.json`, which the amendment's
-  review rounds grew by hand to 209 cases (its schema and oracle classes are checked by
+  review rounds grew by hand to 230 cases (its schema and oracle classes are checked by
   `tests/guard-segments-seed.test.js`). Confirmed: the `git`
   basename, the `commit` substring and the subcommand case-insensitively (`GIT`,
   `Git.exe`, `/usr/bin/GIT`, `git COMMIT`, `git-COMMIT.exe`); `(` and `)` as tokens
@@ -69,6 +69,12 @@
     line), and `$(…)`, `@s` or an array variable in a value (`--fixup @s`) are denied; and
     command substitution bodies are classified as segments of their own
     (`echo $(git commit -m x)`).
+  - Round 8 (user decision after round 7): a blanket fail-closed rule replaced the heredoc,
+    here-string, comment, Bash typographic-quote and substitution-body handling: a command
+    that mentions `commit` and holds `$(`, `${`, `#`, a Bash backtick, heredoc `<<` or
+    typographic quote, or a PowerShell `@(` or here-string opener, is denied untokenized
+    (C:guard step 2). Such seed cases have no segments (oracle class `blanket`); the heredoc
+    and here-string confirmations above describe the superseded rules.
   No finding needs a parser beyond the hand-written design: the fragility is PowerShell
   native-argument binding, which differs between 5.1 and 7 and which unbash (Bash only)
   does not cover (unbash not raised).

@@ -25,61 +25,55 @@ left after the conversion can only be part of a POSIX file name; `recognise(toke
 Q23, Q25, C:guard, C:reply-and-handback.
 
 **G1 Hook I/O.** Read the `PreToolUse` JSON from stdin to its end (not a synchronous read of
-descriptor 0, which throws on Windows pipes); exit early with no output when the command,
-with every `'`, `"`, `\`, backtick and typographic quote (U+2018-U+201B, U+201C-U+201E)
-removed for this check only, lacks `commit` (checked case-insensitively); then tokenise (G2) → classify (G3) → when the classification's
+descriptor 0, which throws on Windows pipes); exit early with no output when the command's
+mention text lacks `commit` (checked case-insensitively): the command, for this check only,
+with every escaped newline of either shell (`\` or a backtick, optionally a carriage
+return, then a newline) removed regardless of quotes, then every `$` directly before a quote
+character removed, then every `'`, `"`, `\`, backtick and typographic quote
+(U+2018-U+201B, U+201C-U+201E) removed (C:guard step 1); then tokenise (G2) → classify (G3) → when the classification's
 `scriptCalls` holds a `plan` call, write the heartbeat (S1) before the decision is emitted
 (C:guard: "before deciding"), so a denied compound command that also calls `plan` still
 counts → emit the deny JSON or nothing, never `allow`. A crash anywhere, including in the classifier, fails open (exit 0, no output, no
 heartbeat); a stderr log with `agent_id` when `COMMIT_GUARD_DEBUG=1`, holding the
 decision, the deny reason and the command in the same redacted form as the heartbeat
 (script-call form or the matched `git commit` segment's options, never message text or
-other segments), cut to 200 characters. A crash or unreadable input writes the same one
+other segments), cut to 200 characters; for a blanket deny (G2) the trigger kind instead of
+the command. A crash or unreadable input writes the same one
 line under debug, with the fields known so far, and still no stdout.
 `runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`. Sources: Q1, Q3, Q23, C:guard.
 
-**G2 Shell tokenizer.** Tokenise per `tool_name` with the rules of C:guard (Bash: `\` escapes,
-literal single quotes, `\"` `\\` `\$` in double quotes, `$'…'` with its backslash escapes
-decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value
-there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`);
-PowerShell: backtick escapes, `` `u{…} `` read as its code point (PowerShell 7), where
-`` `0 `` and a zero `` `u{…} `` (`` `u{0} ``, `` `u{00} ``) are a NUL that ends the
-token's value there, as the native command line is cut at it, and a `cut` token follows
-the cut token, ending git's arguments while the later tokens stay in the segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`,
-here-strings closing at column 0); in both shells typographic quotes as quotes,
-as PowerShell reads them (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`;
-Q3 as amended); escaped newlines (Bash `\` plus newline,
-PowerShell backtick plus newline) removed outside single quotes before splitting; quote
-removal; split into segments on `&&`,
-`||`, `;`, `|`, `&` and newlines outside quotes. An unterminated quote or here-string makes
-the rest of its line one quoted token and scanning continues on the next line (Q3 as
-amended). Redirection operators (`>`, `>>`, `<`, `2>&1` and the like) outside quotes become
-tokens of their own that G3 and S2 drop together with their target, so they are never read
-as commit arguments or options. An unquoted `(` or `)` becomes a token of its own too (not
-dropped), except inside a `$(…)` substitution, which stays in its word up to its matching
-`)`; so G3 finds the `git` of `(git commit -m x)`, and a `)` token ends git's arguments.
-Bash process substitution `<(` / `>(` becomes a `(` token (not a redirection), and in
-PowerShell an unquoted `{` or `}` becomes a token too (not inside `${…}` or `$(…)`), so G3
-finds the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell
-`}` token ends git's arguments like `)`. A command substitution (Bash `$(…)`, `${ …; }`,
-`${| …; }` and backticks, unquoted, in double quotes, in `${…}` and in an
-unquoted-delimiter heredoc body;
-PowerShell `$(…)` unquoted, in double quotes and in `@"…"@`) stays in its word, and its
-body is also tokenised, recursively, into segments that follow the segment holding it, so
-G3 classifies `echo $(git commit -m x)`. When the end of a `$(…)`, `${ …; }` or `${| …; }`
-is unsure (its body holds a word starting with `{` or `#`, a `case`, `esac`, `fi`, `done`
-or `]]` word, or has no closing bracket; C:guard step 2), the body is the whole rest of
-the command with quote characters removed, and the command is denied when that rest holds
-`commit`. In PowerShell a `--%` word after escape removal, not inside quotes, makes the
-rest of its line, up to `|`, `&&` or `||`, words split on whitespace only. Comments are not
-recognised: `#` and what follows, and a PowerShell `<# … #>` block, are ordinary text
-(documented false positives, Q3 as amended), except that a `#` word in a substitution body
-makes its end unsure.
-A Bash heredoc (`<<` or `<<-` outside quotes) drops its operator and delimiter word like a
-redirection, and drops its body, from the next line to the first line equal to the
-delimiter after quote removal (leading tabs stripped with `<<-`; bodies of several heredocs
-on one line in order; an unterminated body runs to the end of the command), so no body
-line is read as a command. `segments(command, shell) → Token[][]`. Sources: Q3, C:guard.
+**G2 Shell tokenizer.** First the blanket rule (C:guard step 2, Q3 as amended): with that
+shell's escaped newlines removed regardless of quotes (Bash `\`, PowerShell backtick, each
+optionally followed by a carriage return, then a newline), a command holding anywhere,
+inside quotes or not, `$(`, `${` or `#` (both shells), a backtick, a `<<` not part of `<<<`
+or a typographic quote U+2018-U+201E (Bash), or `@(` or an `@` directly followed by `'`,
+`"` or U+2018-U+201E (PowerShell) is not tokenized: G2 returns the trigger kind instead of
+segments, and G3 maps it to the blanket deny with no segments and no script calls (so no
+heartbeat and no worker-only rule). Otherwise tokenise per `tool_name` with the rules of
+C:guard (Bash: `\` escapes, literal single quotes, `\"` `\` `\$` in double quotes, `$'…'`
+with its backslash escapes decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends
+the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
+`$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `` `u{…} `` read as its code point
+(PowerShell 7), where `` `0 `` and a zero `` `u{…} `` (`` `u{0} ``, `` `u{00} ``) are a NUL
+that ends the token's value there, as the native command line is cut at it, and a `cut`
+token follows the cut token, ending git's arguments while the later tokens stay in the
+segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`, typographic quotes as
+quotes (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`; Q3 as amended));
+escaped newlines (Bash `\` plus newline, PowerShell backtick plus newline) removed outside
+single quotes before splitting; quote removal; split into segments on `&&`, `||`, `;`,
+`|`, `&` and newlines outside quotes. An unterminated quote makes the rest of its line one
+quoted token and scanning continues on the next line (Q3 as amended). Redirection
+operators (`>`, `>>`, `<`, `2>&1` and the like) outside quotes become tokens of their own
+that G3 and S2 drop together with their target, so they are never read as commit
+arguments or options; `<<<` is one of them. An unquoted `(` or `)` becomes a token of its
+own too (not dropped); so G3 finds the `git` of `(git commit -m x)`, and a `)` token ends
+git's arguments. Bash process substitution `<(` / `>(` becomes a `(` token (not a
+redirection), and in PowerShell an unquoted `{` or `}` becomes a token too, so G3 finds
+the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell `}`
+token ends git's arguments like `)`. In PowerShell a `--%` word after escape removal, not
+inside quotes, makes the rest of its line, up to `|`, `&&` or `||`, words split on
+whitespace only. `segments(command, shell) → Token[][] | { blanket: <trigger kind> }`.
+Sources: Q3, C:guard.
 
 **G3 Command classifier and deny catalogue.** Per segment: find every token whose basename (the
 part after the last `/` or `\`, in both shells) is `git` or `git.exe`, compared
@@ -94,10 +88,11 @@ step 4): a `(` or (in PowerShell) `{` token, a token holding `$`, a backtick, `{
 glob character (`*`, `?`, `[`), and in PowerShell a token holding `,` or `@` or equal to
 `--%`, with the literal-subcommand text in the subcommand position; expand commit arguments and apply
 the Q4 allowlist; a segment is denied when any of its `git` tokens is;
+a blanket result from G2 gives the blanket deny and nothing else;
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
 expansion and the trailing personal-skill line are data here; no text names `/commit`.
-`classify(segments, { agentType, shell }) → { decision: "deny" | "none", message?,
+`classify(segmentsOrBlanket, { agentType, shell }) → { decision: "deny" | "none", message?,
 scriptCalls, matched?: { options } }`, where `matched` holds the matched `git commit`
 segment's options for G1's debug log.
 Sources: Q3, Q4, Q8, Q24, Q25, C:guard.

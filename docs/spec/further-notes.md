@@ -11,7 +11,8 @@ that does not depend on an item does not wait for it.
   quotes, escaped newlines, plus subshells such as `( git commit )`. Case variants of the command name are decided (G3 compares the
   `git` basename and the subcommand case-insensitively, G1's `commit` substring is
   case-insensitive), and so are subshells and heredocs (G2: `(` and `)` are tokens of their
-  own, so `( git commit -m x )` is denied; heredoc bodies are dropped); the spike only
+  own, so `( git commit -m x )` is denied; heredoc bodies were dropped until PRE-03 round 8
+  made a heredoc a blanket deny, C:guard step 2); the spike only
   confirms them. Before the tokenizer slice (G2, G3); the spike fixtures
   become Seam 3 cases (`runHook`). To revisit, not a spike: vendoring unbash (ISC), a Bash-only tokenizer, which would
   need a Q1 amendment; reconsidered only if the spike shows the hand-written tokenizer is

@@ -24,6 +24,38 @@ function readSeed() {
   return JSON.parse(fs.readFileSync(SEED, 'utf8'));
 }
 
+// Independent re-implementation of C:guard's step-1 mention text and step-2 blanket trigger
+// (PRE-03 round 8), used to check the seed is internally consistent with the rule.
+function mentionText(command) {
+  let s = command;
+  s = s.replace(/[\\`]\r?\n/g, '');
+  s = s.replace(/\$(?=['"`\u2018-\u201E])/g, '');
+  s = s.replace(/['"\\`\u2018-\u201E]/g, '');
+  return s;
+}
+function mention(command) {
+  return mentionText(command).toLowerCase().includes('commit');
+}
+function hasHeredocOp(s) {
+  const runs = s.match(/<{2,}/g) || [];
+  return runs.some((r) => r.length !== 3);
+}
+function trigger(shell, command) {
+  const esc = shell === 'bash' ? /\\\r?\n/g : /`\r?\n/g;
+  const s = command.replace(esc, '');
+  if (/\$\(|\$\{/.test(s)) return true;
+  if (/#/.test(s)) return true;
+  if (shell === 'bash') {
+    if (/`/.test(s)) return true;
+    if (hasHeredocOp(s)) return true;
+    if (/[\u2018-\u201E]/.test(s)) return true;
+  } else {
+    if (/@\(/.test(s)) return true;
+    if (/@['"\u2018-\u201E]/.test(s)) return true;
+  }
+  return false;
+}
+
 // Parses the Oracle-skip classes table into Map<class, Set<shell>>.
 function readClassTable() {
   const text = fs.readFileSync(CONTRACT, 'utf8');
@@ -109,9 +141,23 @@ test('segments are arrays of string, op, redirection or heredoc tokens', () => {
 });
 
 test('a denied case has a git or git-commit token in some segment', () => {
-  for (const c of readSeed().cases.filter((x) => x.decision === 'deny')) {
+  for (const c of readSeed().cases.filter((x) => x.decision === 'deny' && x.segments.length > 0)) {
     const hasGit = c.segments.some((s) => s.some((t) => typeof t === 'string' && GIT_BASENAME.test(basename(t))));
     assert.ok(hasGit, `${c.id}: denied but no segment holds a git token`);
+  }
+});
+
+test('blanket trigger matches segments-empty and the oracle, and decision follows mention', () => {
+  for (const c of readSeed().cases) {
+    const shellKey = c.shell === 'bash' ? 'bash' : 'powershell';
+    const trig = trigger(shellKey, c.command);
+    const allBlanket = Object.values(c.oracle).every((v) => v === 'blanket');
+    const segEmpty = c.segments.length === 0;
+    assert.equal(segEmpty, allBlanket, `${c.id}: segments-empty must match all-oracle-blanket`);
+    assert.equal(trig, segEmpty, `${c.id}: trigger must match segments-empty/all-blanket`);
+    if (trig) {
+      assert.equal(c.decision, mention(c.command) ? 'deny' : 'none', `${c.id}: decision must follow mention`);
+    }
   }
 });
 

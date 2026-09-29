@@ -16,34 +16,42 @@ and the module sections point here, and the README states it in full.
   interpreters and constructs that evaluate a string as code (`sh -c '…'`, `pwsh -c`,
   `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
   `Start-Process`),
-  and expansion in the command position (`$(echo git) commit`, `$GIT commit`,
+  shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
+  `Set-Alias g git`) and expansion in the command position (`$GIT commit`,
   PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
-  `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`), `GIT_DIR`
+  `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`; `$(echo git) commit` is denied by
+  the blanket rule, C:guard step 2), `GIT_DIR`
   redirection and env-prefixed config pass it.
-- A command whose text never spells `commit` (`git $(echo com)mit`, PowerShell
-  `git ('com'+'mit')`) passes G1's early exit unparsed (Q3); `sudo -u git git commit` is
+- A command whose text never spells `commit` (`git $(echo com)mit`, `git co${x}mmit`,
+  `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or PowerShell 7 `` git co`u{6d}mit ``)
+  passes G1's early exit unparsed (Q3); `sudo -u git git commit` is
   not addressed. Brace expansion, a parenthesised or globbed subcommand, a backtick
   substitution in the subcommand position, typographic quotes and the dashed `git-commit`
   binary are denied (story 15).
 - Other paths to a commit pass the guard (Q3): `git commit-tree`, `git am`, the replays of
   `git stash` and `git cherry-pick`, and shells provided by MCP servers.
-- A `commit` split by an escaped newline (Bash `\` plus newline, PowerShell backtick plus
-  newline) passes the guard (Q3): G1's early-exit check removes the `\` or backtick but
-  keeps the newline, so the command exits early unparsed.
 - False positives: a command that only mentions `git commit` in text, such as
-  `echo git commit`, is denied, and so is a comment that mentions it
-  (`git commit --no-edit # done`, `# git commit -m x`, PowerShell `<# … #>`), a git
+  `echo git commit`, is denied, and so is a git
   subcommand held in a variable (`git $x`) in a command that mentions `commit` anywhere,
   a quoted variable among git's arguments (`git -C "$dir" commit --no-edit`,
   `git commit --fixup "$sha"`), a `git` word after another PowerShell command's `--%`
   (`Write-Output --% git commit -m x`), and any git command with `$` in a global option
   value in a command that mentions `commit` anywhere (`git -C "$d" log | grep commit`),
-  since git's arguments must be literal (C:guard step 4), and a Bash `$(…)`, `${ …; }` or
-  `${| …; }` or a PowerShell `$(…)` whose body holds a group, a function definition, a
-  comment or `case` (or has no closing bracket) in a command that mentions `commit` after
-  it (`echo "${ { :; }; }"; git commit --no-edit`), since the guard cannot tell where such
-  a substitution ends (C:guard step 2, unsure end). The commit worker and the skills
-  are unaffected: the worker runs only script calls.
+  since git's arguments must be literal (C:guard step 4). By the blanket rule (C:guard
+  step 2, Q3), any command that mentions `commit` anywhere (even in quotes, `commit.cjs`
+  included) and holds `$(`, `${` or `#`, in Bash a backtick, a heredoc `<<` or a
+  typographic quote, or in PowerShell `@(` or a here-string opener, is denied:
+  `git log --format=$(…) | grep commit`, `echo "$(date)" && git commit --no-edit`,
+  `echo "${x}" && git commit --no-edit`, `echo "$((n+1))" && git commit --no-edit`,
+  `gh pr create --body "$(cat <<'EOF' …)"` with `commit` in the body (Claude Code's default
+  PR form; use `--body-file`), `git commit --no-edit # done`,
+  `git log --grep "#12" | grep commit`, PowerShell `Write-Output @'…'@` with `commit` in
+  it. An install path holding `#` or (in Bash) a typographic single quote U+2018–U+201B
+  makes every script call denied (the entry point refuses only `$`, a backtick, `"`, `\`
+  and U+201C–U+201E, and the guard denies before it runs). The commit worker and the
+  skills are unaffected: they run only script calls with plain flags (C:cli, no subcommand
+  reads stdin; free text goes through files written with `Write`, C:worker-input; handback
+  `run` strings hold no trigger, C:reply-and-handback).
 - In interactive mode a `humanOnly` confirmation is advisory (Q16, Q17): the reply asks the
   caller to put it to the user, but nothing enforces that the user, not the model, answers
   it. `--confirmed` stops a steered worker from returning the confirmed command itself, but

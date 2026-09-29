@@ -81,7 +81,8 @@ Case lists:
   with `Proc-Type` and `DEK-Info` header lines (a hit: the body after the header lines
   counts); an encrypted PEM header with no body (not a hit); a new symlink whose target holds
   a home-directory path (blocked: the target is scanned as an added line).
-- Guard: `git commit -m "unterminated` in both shells (deny), an unterminated here-string,
+- Guard: `git commit -m "unterminated` in both shells (deny), the blanket rule's
+  seed cases (C:guard step 2),
   bypass cases from prior art, the closed bypasses of story 15.
 - Replies: a lock with a null holder (no handback); an injected `run` fixture for the caller
   hand-test.
