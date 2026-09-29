@@ -50,27 +50,27 @@ stale one is replaced through the atomic rename, verify and put-back.
 
 **Blocked by:** RUN-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:run-folder (`call.lock` row), architectural decisions (one call per run
 at a time), M12, story 209.
 
-- [ ] Seam 1: `X/call.lock` holds the test process's own pid on this host. `release --plan
+- [x] Seam 1: `X/call.lock` holds the test process's own pid on this host. `release --plan
       X` exits 6 `lock` (`busy`), and the lock and the folder are kept.
-- [ ] Seam 1: the `call.lock` names a dead pid on this host. It is stale at once, and
+- [x] Seam 1: the `call.lock` names a dead pid on this host. It is stale at once, and
       `release` succeeds.
-- [ ] Seam 1: the `call.lock` names a live pid on this host (it answers `process.kill(pid,
+- [x] Seam 1: the `call.lock` names a live pid on this host (it answers `process.kill(pid,
       0)`) but its mtime is aged past 15 minutes → replaced, and `release` succeeds (a
       live-but-old lock on this host is stale by mtime, same as an unreadable or
       another-host one).
-- [ ] Seam 1: the `call.lock` names another host (or is unreadable). If it is fresh →
+- [x] Seam 1: the `call.lock` names another host (or is unreadable). If it is fresh →
       `busy`. With its mtime aged past 15 minutes → replaced, and `release` succeeds.
-- [ ] Seam 1: when the lock does not match, `release` never creates a `call.lock`.
-- [ ] `release` removes the lock through the same rename-to-private-name, verify-`planId`,
+- [x] Seam 1: when the lock does not match, `release` never creates a `call.lock`.
+- [x] `release` removes the lock through the same rename-to-private-name, verify-`planId`,
       unlink-or-put-back sequence `acquire`'s takeover uses, not a bare unlink by name, so a
       takeover racing a `release` between the lock read and the delete cannot delete the new
       holder's lock instead (review-RUN-01 finding 1).
-- [ ] Before this slice's own `<planId>/call.lock` path resolution touches `call.lock`, it
+- [x] Before this slice's own `<planId>/call.lock` path resolution touches `call.lock`, it
       `lstat`s `<planId>` itself and refuses to follow it when it is a link (a junction
       swapped in between the lock check and the `call.lock` write must not redirect the
       write outside the run-folder directory; review-RUN-01 finding 1).
