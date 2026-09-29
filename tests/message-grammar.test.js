@@ -174,9 +174,25 @@ for (const { message, header } of breakingTable) {
   test(`parse ${JSON.stringify(message)} sets the breaking flag`, () => {
     assert.deepEqual(parse(message).header, header);
   });
+}
 
-  test(`lint ${JSON.stringify(message)} lints clean under scope: optional`, () => {
-    assert.deepEqual(lint(message, config({ scope: 'optional' })), []);
+// MSG-02 AC: the breaking flag is independent of the scope rule; a breaking header lints
+// under scope exactly as its non-breaking counterpart would.
+
+const breakingScopeTable = [
+  { message: 'feat!: x', scope: 'forbidden', reasons: [] },
+  { message: 'feat(api)!: x', scope: 'required', reasons: [] },
+  {
+    message: 'feat(api)!: x',
+    scope: 'forbidden',
+    reasons: ["scope 'api' not allowed (scope: forbidden)"],
+  },
+  { message: 'feat!: x', scope: 'required', reasons: ['scope required (scope: required)'] },
+];
+
+for (const { message, scope, reasons } of breakingScopeTable) {
+  test(`lint ${JSON.stringify(message)} under scope: ${scope}`, () => {
+    assert.deepEqual(lint(message, config({ scope })), reasons);
   });
 }
 
@@ -211,6 +227,13 @@ const lengthTable = [
   // 'feat: ' (6) + one astral emoji (1 code point, 2 UTF-16 units) = 7 code points, 8
   // UTF-16 units; a `.length` count would wrongly fail this against maxSubjectLength 7.
   { message: 'feat: \u{1F600}', maxSubjectLength: 7, reasons: [] },
+  // 'feat: ' (6) + emoji (1) + 'x' (1) = 8 code points, one over maxSubjectLength 7; a
+  // `.length` count (10 UTF-16 units) would report the wrong numbers in the reason.
+  {
+    message: 'feat: \u{1F600}x',
+    maxSubjectLength: 7,
+    reasons: ['header exceeds maxSubjectLength (8 > 7)'],
+  },
 ];
 
 for (const { message, maxSubjectLength, reasons } of lengthTable) {
@@ -231,6 +254,7 @@ const caseTable = [
   { message: 'feat: 2fa', subjectCase: 'lower', reasons: [] },
   { message: 'feat: `code`', subjectCase: 'lower', reasons: [] },
   { message: "feat: 'quoted'", subjectCase: 'lower', reasons: [] },
+  { message: 'feat: "quoted"', subjectCase: 'lower', reasons: [] },
   { message: 'feat: -dash', subjectCase: 'lower', reasons: [] },
   { message: 'feat: A thing', subjectCase: 'lower', reasons: [CASE_REASON] },
   { message: 'feat: Add x', subjectCase: 'any', reasons: [] },
@@ -266,29 +290,58 @@ for (const { description, passes } of passesLowerCaseTable) {
 }
 
 // MSG-04 AC: `Closes #12`, `Refs: abc`, `BREAKING CHANGE: x` with an indented continuation
-// line each parse as a footer paragraph with the right tokens and values.
+// line each parse as a footer paragraph with the right tokens, separators, values and raw
+// (verbatim) lines.
 
 const footerTable = [
   {
     message: 'feat: x\n\nCloses #12',
-    footer: [{ token: 'Closes', value: '12' }],
+    footer: [{ token: 'Closes', separator: ' #', value: '12', raw: 'Closes #12' }],
     body: [],
   },
   {
     message: 'feat: x\n\nRefs: abc',
-    footer: [{ token: 'Refs', value: 'abc' }],
+    footer: [{ token: 'Refs', separator: ': ', value: 'abc', raw: 'Refs: abc' }],
     body: [],
   },
   {
     message: 'feat: x\n\nBREAKING CHANGE: removes X\n  and Y',
-    footer: [{ token: 'BREAKING CHANGE', value: 'removes X\nand Y' }],
+    footer: [{
+      token: 'BREAKING CHANGE',
+      separator: ': ',
+      value: 'removes X\nand Y',
+      raw: 'BREAKING CHANGE: removes X\n  and Y',
+    }],
     body: [],
   },
   {
     // MSG-04 AC: `parse` exposes the footer paragraph's entries in order.
     message: 'feat: x\n\nRefs: abc\nCloses #12',
-    footer: [{ token: 'Refs', value: 'abc' }, { token: 'Closes', value: '12' }],
+    footer: [
+      { token: 'Refs', separator: ': ', value: 'abc', raw: 'Refs: abc' },
+      { token: 'Closes', separator: ' #', value: '12', raw: 'Closes #12' },
+    ],
     body: [],
+  },
+  {
+    // A hyphenated token, allowed alongside `BREAKING CHANGE` (C:message-grammar).
+    message: 'feat: x\n\nBREAKING-CHANGE: x',
+    footer: [{ token: 'BREAKING-CHANGE', separator: ': ', value: 'x', raw: 'BREAKING-CHANGE: x' }],
+    body: [],
+  },
+  {
+    // MSG-04/Q20 AC: a tab-indented continuation strips into `value` but `raw` carries the
+    // entry's original lines verbatim, for reword carry-over.
+    message: 'feat: x\n\nBug #1\n\tmore',
+    footer: [{ token: 'Bug', separator: ' #', value: '1\nmore', raw: 'Bug #1\n\tmore' }],
+    body: [],
+  },
+  {
+    // Several blank lines between the body paragraph and the footer still separate them into
+    // two paragraphs (paragraphsOf: any number of blank lines).
+    message: 'feat: x\n\nbody text\n\n\n\nCloses #12',
+    footer: [{ token: 'Closes', separator: ' #', value: '12', raw: 'Closes #12' }],
+    body: ['body text'],
   },
 ];
 
@@ -312,7 +365,15 @@ test('a last paragraph mixing a footer line with prose parses as body', () => {
 test('a `Note:` line in an earlier paragraph is body, not a footer', () => {
   const result = parse('feat: x\n\nNote: x\n\nCloses #12');
   assert.deepEqual(result.body, ['Note: x']);
-  assert.deepEqual(result.footer, [{ token: 'Closes', value: '12' }]);
+  assert.deepEqual(result.footer, [
+    { token: 'Closes', separator: ' #', value: '12', raw: 'Closes #12' },
+  ]);
+});
+
+test('a last paragraph starting with an indented line is body (continuation with nothing to continue)', () => {
+  const result = parse('feat: x\n\n  cont\nRefs: a');
+  assert.equal(result.footer, null);
+  assert.deepEqual(result.body, ['  cont\nRefs: a']);
 });
 
 // MSG-04 AC: under `body: forbidden`, header plus `Closes #12` passes (story 121); header

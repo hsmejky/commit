@@ -239,7 +239,7 @@ Sources: Q7, Q9, Q10, Q16-Q18, Q20-Q23, C:plan, C:check, C:commit-release.
 **M19 History inference.** Pure. `infer(messages) → InferOutput` computes the Conventional
 Commits share (a commit counts as Conventional Commits only when its header matches M6
 `lint`'s header grammar; a footer paragraph does not count as a body, Q7), scope, body,
-case, p95 length with the rounding and clamp of C:infer, types
+case via M6 `passesLowerCase`, p95 length with the rounding and clamp of C:infer, types
 (all 11 standard types always, plus non-standard ones by the 5% rule, dropped list) and
 `wouldFail` via M6 lint; outcomes `too-few-commits` and
 `not-conventional`, which still carry `ccShare` (over all commits read, `null` only when

@@ -31,7 +31,9 @@ the `u` flag.
   `^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(: | #)(.+)$`, or starts with whitespace and
   continues the previous footer. If any line fails, the whole paragraph is body. A
   continuation line's leading whitespace is stripped and the remainder is appended to the
-  entry's value, joined by `\n`; `parse` exposes each entry as `{ token, value }`, in order.
+  entry's value, joined by `\n`; `parse` exposes each entry as `{ token, separator, value,
+  raw }`, in order — `separator` is the captured `: ` or ` #`, and `raw` is the entry's
+  original lines, verbatim, for reword carry-over (Q20).
 - Allowed footer tokens (case-sensitive): `BREAKING CHANGE`, `BREAKING-CHANGE`, `Refs`,
   `Closes`, `Fixes`. Any other token fails lint with: "`<token>` is not an allowed footer
   token. If this is body text, rephrase it or add a non-footer line to the paragraph."

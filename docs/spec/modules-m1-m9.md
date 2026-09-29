@@ -97,7 +97,8 @@ lint against config (`maxSubjectLength` in code points); allowed agent footer to
 reword carry-over (foreign trailers kept verbatim, allowed tokens not carried, every
 `Co-Authored-By: … <noreply@anthropic.com>` dropped); append in the order new footers,
 carried trailers, attribution, into the footer paragraph when the message ends in one,
-otherwise as a new last paragraph (Q5). `normalise`, `parse`, `lint`, `carryOver`, `appendTrailers`.
+otherwise as a new last paragraph (Q5). `normalise`, `parse`, `lint`, `carryOver`,
+`appendTrailers`, `passesLowerCase(description) → boolean`.
 Sources: Q5, Q7, Q13, Q20, C:message-grammar.
 
 **M7 Glob matcher.** Compile and validate `scanIgnore` patterns per C:scanignore-globs;

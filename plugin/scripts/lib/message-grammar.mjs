@@ -8,16 +8,27 @@ const HEADER = /^([a-z][a-z0-9-]*)(\(([^()\s]+)\))?(!)?: (\S.*)$/u;
 const HEADER_REASON = "header is not 'type(scope)!: description'";
 
 // A footer entry's own line: a token (`BREAKING CHANGE` or a word of ASCII letters, digits
-// and hyphens starting with a letter), then `: ` or ` #`, then the value.
-const FOOTER_LINE = /^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(?:: | #)(.+)$/u;
+// and hyphens starting with a letter), then `: ` or ` #` (captured as the separator, for
+// verbatim carry-over, Q20/MSG-08), then the value.
+const FOOTER_LINE = /^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(: | #)(.+)$/u;
 
 // An indented continuation of the previous footer entry's value.
 const CONTINUATION = /^[ \t]+(\S.*)$/u;
 
 /**
- * Group `lines` (already stripped of blank separator lines) into paragraphs: a paragraph is
- * a maximal run of consecutive non-blank lines, and any number of blank lines separates two
- * paragraphs.
+ * The message's header line: everything up to (not including) the first `\n`, or the whole
+ * message when it has none. Shared by `parse` and `lint` so the header line is split once.
+ *
+ * @param {string} message
+ * @returns {string}
+ */
+function headerLineOf(message) {
+  return message.split('\n', 1)[0];
+}
+
+/**
+ * Group `lines` (the message after the header) into paragraphs: a paragraph is a maximal run
+ * of consecutive non-blank lines, and any number of blank lines separates two paragraphs.
  *
  * @param {string[]} lines
  * @returns {string[][]}
@@ -45,25 +56,27 @@ function paragraphsOf(lines) {
  * Parse `lines` as a footer paragraph: every line must either start a footer entry
  * (`FOOTER_LINE`) or continue the previous one (`CONTINUATION`, indented). A continuation
  * line's leading whitespace is stripped and the remainder appended to the entry's value,
- * joined by a newline. Returns `null` (the paragraph is body, not a footer) when any line
- * matches neither, including when the first line is itself a continuation with nothing to
- * continue.
+ * joined by a newline; the continuation's original line (whitespace included) is appended to
+ * the entry's `raw`, also joined by a newline. Returns `null` (the paragraph is body, not a
+ * footer) when any line matches neither, including when the first line is itself a
+ * continuation with nothing to continue.
  *
  * @param {string[]} lines
- * @returns {{ token: string, value: string }[] | null}
+ * @returns {{ token: string, separator: string, value: string, raw: string }[] | null}
  */
 function parseFooterParagraph(lines) {
   const entries = [];
   for (const line of lines) {
     const start = FOOTER_LINE.exec(line);
     if (start !== null) {
-      entries.push({ token: start[1], value: start[2] });
+      entries.push({ token: start[1], separator: start[2], value: start[3], raw: line });
       continue;
     }
     const continuation = entries.length > 0 ? CONTINUATION.exec(line) : null;
     if (continuation !== null) {
       const last = entries[entries.length - 1];
       last.value = `${last.value}\n${continuation[1]}`;
+      last.raw = `${last.raw}\n${line}`;
       continue;
     }
     return null;
@@ -84,9 +97,7 @@ export function passesLowerCase(description) {
   if (!/^\p{Lu}/u.test(description)) {
     return true;
   }
-  const firstWord = /^\p{L}+/u.exec(description)?.[0] ?? '';
-  const letters = Array.from(firstWord);
-  return letters.length >= 2 && letters.every((ch) => /\p{Lu}/u.test(ch));
+  return /^\p{Lu}{2,}(?!\p{L})/u.test(description);
 }
 
 /**
@@ -100,21 +111,17 @@ export function passesLowerCase(description) {
  * @param {string} message
  * @returns {{ header: { type: string, scope: string | null, breaking: boolean,
  *   description: string } | null, body: string[],
- *   footer: { token: string, value: string }[] | null }}
+ *   footer: { token: string, separator: string, value: string, raw: string }[] | null }}
  */
 export function parse(message) {
   const lines = message.split('\n');
-  const headerLine = lines[0];
+  const headerLine = headerLineOf(message);
   const match = HEADER.exec(headerLine);
-  const header =
-    match === null
-      ? null
-      : (([, type, , scope, bang, description]) => ({
-          type,
-          scope: scope ?? null,
-          breaking: bang === '!',
-          description,
-        }))(match);
+  let header = null;
+  if (match !== null) {
+    const [, type, , scope, bang, description] = match;
+    header = { type, scope: scope ?? null, breaking: bang === '!', description };
+  }
 
   const paragraphs = paragraphsOf(lines.slice(1));
   let footer = null;
@@ -159,8 +166,7 @@ export function lint(message, values) {
   } else if (values.scope === 'required' && header.scope === null) {
     reasons.push('scope required (scope: required)');
   }
-  const headerLine = message.split('\n', 1)[0];
-  const headerLength = Array.from(headerLine).length;
+  const headerLength = Array.from(headerLineOf(message)).length;
   if (headerLength > values.maxSubjectLength) {
     reasons.push(`header exceeds maxSubjectLength (${headerLength} > ${values.maxSubjectLength})`);
   }
