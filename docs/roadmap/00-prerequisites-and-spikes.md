@@ -282,24 +282,27 @@ run-folder asserts moved to RUN-05.
 the policy items (explicit `model: "sonnet"` on every spawn, Q2, Q12, Q24, Q25;
 `signing-locked`, Q18; the worker's tool-failure fallback and the tree-state exceptions,
 Q25) and fixed stories 34, 42, 46, 56, 102, 201 and 213 and the glossary line (KD-S16,
-KD-S17, KD-S38, KD-S47, KD-S55, KD-S59, KD-S67, KD-S73 to KD-S76). Open: the stories that
-yield to their decision or contract (KD-S53, KD-S54, KD-S56 to KD-S58, KD-S60 to KD-S66,
-KD-S68 to KD-S72).
+KD-S17, KD-S38, KD-S47, KD-S55, KD-S59, KD-S67, KD-S73 to KD-S76). A second pass
+(2026-09-29) reworded the remaining stories that yield to their decision or contract —
+40, 44, 51, 52, 54, 57, 58, 61, 62, 65, 67, 103, 110, 147, 150, 185 and 228 — settling
+KD-S53, KD-S54, KD-S56 to KD-S58, KD-S60 to KD-S66 and KD-S68 to KD-S72 (KD-S54 and
+KD-S65's non-story parts, the M4 testing-modules row and the M14 identical-hunks line,
+follow too); the "Story wording" table in known deficiencies is now empty and dropped.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q18, Q21, Q24, M3, M11, M15, M16, the four story files, story verification.
 
 Gates: GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03, GIT-12 (slices that assert the settled
 story texts and recorded refusal texts).
 
-- [ ] Every listed story agrees with the decision or contract it cites, or the story is
+- [x] Every listed story agrees with the decision or contract it cites, or the story is
       amended
-- [ ] The `signing-locked` text and the six refusal texts are recorded verbatim in the
+- [x] The `signing-locked` text and the six refusal texts are recorded verbatim in the
       C:cli-and-exit-codes recorded-texts table
-- [ ] GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03 and GIT-12 cite the settled texts
+- [x] GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03 and GIT-12 cite the settled texts
 
 
 ## PRE-16: Spike: managed-settings directory path and CI write permissions
