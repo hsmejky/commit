@@ -102,6 +102,18 @@ const table = [
   { path: 'src/.gitignore', category: 'candidate' },
   { path: 'packages/app/.eslintrc.json', category: 'candidate' },
   { path: 'src/.envrc', category: 'hidden' },
+
+  // Near misses: segment-boundary and `.env.*` edges.
+  // A near-miss directory name is not the exception itself, so the dot rule still applies.
+  { path: '.githubx/a', category: 'hidden' },
+  { path: '.claude/agents-old/a', category: 'hidden' },
+  // `dir/**` excepts every path below it, dot-directories included; only the `.env` rule
+  // can still hide a path there.
+  { path: '.github/.cache/x', category: 'candidate' },
+  // `.env.*` is hidden for any suffix, not only the three templates.
+  { path: '.env.example.local', category: 'hidden' },
+  // `.envrc` is not an `.env.*` name (no dot after `env`); the plain dot rule hides it.
+  { path: '.envrc', category: 'hidden' },
 ];
 
 test('hideFilter keeps input order within each list', () => {

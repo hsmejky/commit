@@ -27,6 +27,12 @@ Hidden exceptions: `.github/**`, `.gitignore`, `.gitattributes`, `.editorconfig`
 `.woodpecker/**`, `.gitlab-ci.yml`, `.travis.yml`.
 Any other path under `.claude/`, including `settings.local.json`, is hidden.
 
+Anchoring: an exception containing `/` is anchored at the repo root; `dir/**` excepts every
+path below `dir/`. An exception without `/` is a file name matched against the last segment
+at any depth, and `*` matches any rest of the name; it does not except a dot-directory above
+it (`.cache/.gitignore` stays hidden). The `.env` rule applies inside excepted directories
+too.
+
 Count cap (`split`), over candidates and staged-new paths together; a collapsed group is
 neither planned nor scanned. Its untracked candidates are reported in `untracked.collapsed`
 (`{ dir, count, bytes }`) and its staged-new paths in `stagedExcluded` (`{ dir, count,

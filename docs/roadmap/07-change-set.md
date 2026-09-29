@@ -278,7 +278,8 @@ UTF-8 is not a unit; it is stored for `notIncluded` with each bad byte as `\xNN`
 
 ## CHG-13: Count caps and collapsed directories (`split`)
 
-**What to build:** M9 `applyCaps(candidates, stagedNew, trackedDirs)` per C:untracked-files
+**What to build:** M9 `applyCaps(candidates: {path, size, binary}[], stagedNew: {path,
+ignored}[], trackedDirs: string[])` per C:untracked-files
 (topmost new directory, root as `"."`, the 200 total with loose files per parent, ties by
 byte order), fed by `ls-tree -r -d` for tracked directories and M10 sizes for `bytes`;
 `plan.json` `untracked.collapsed` and `stagedExcluded`; collapsed paths never added to the

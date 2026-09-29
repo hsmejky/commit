@@ -132,8 +132,12 @@ C:scan-patterns.
 
 **M9 Path classifier.** Pure classification of paths, in two mode-aware steps so that mode
 can be resolved in between: `hideFilter(paths) → { candidates, hidden }` (hidden rules,
-`.env*`, mode-free) and, in `split` only, `applyCaps(candidates, stagedNew, trackedDirs) →
-{ candidates, stagedNew, collapsed, stagedExcluded }` (topmost new directory, root as `"."`,
+`.env*`, mode-free; a `/`-exception is anchored at the repo root and `dir/**` excepts
+everything below it, a name-only exception matches the last segment at any depth and does
+not reach through a dot-directory above it, and the `.env` rule applies inside excepted
+directories too, C:untracked-files) and, in `split` only, `applyCaps(candidates: {path,
+size, binary}[], stagedNew: {path, ignored}[], trackedDirs: string[]) → { candidates,
+stagedNew, collapsed, stagedExcluded }` (topmost new directory, root as `"."`,
 loose files per parent only when they alone exceed 200, ties by byte order; the caps count
 both inputs together). The returned `candidates` and `stagedNew` are the survivors, outside
 every collapsed directory. Per collapsed directory, its untracked candidates become a
