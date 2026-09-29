@@ -61,8 +61,8 @@ async function releaseRefusals(ctx) {
   const { repo } = ctx.probe;
   if (repo === null || repo.kind !== 'worktree') {
     // Not a repo, a bare repository, or git timed out: what `release` does here is unsettled
-    // (KD-S54, docs/spec/known-deficiencies.md), not merely a slice not yet scheduled.
-    throw new Error('release outside a working tree is unsettled (KD-S54)');
+    // (KD-S78, docs/spec/known-deficiencies.md), not merely a slice not yet scheduled.
+    throw new Error('release outside a working tree is unsettled (KD-S78)');
   }
   ctx.toplevel = repo.toplevel;
   return undefined;

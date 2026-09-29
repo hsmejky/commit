@@ -29,7 +29,7 @@ intended: bounded, and inside the cleanup window). The
 `deadline` (M15), or from `cleanupDeadline` for the cleanup and reporting calls after a
 failure or timeout, so `plan`'s calls before `acquire` are bounded too. Every call is
 asynchronous except `toplevel` and `gitVersion`, which use `spawnSync` under a fixed short
-timeout and decode their output as UTF-8 text (KD-S53: a non-UTF-8 toplevel path is mangled
+timeout and decode their output as UTF-8 text (KD-S77: a non-UTF-8 toplevel path is mangled
 to U+FFFD, which then fails as a later call's `cwd`). `run`'s `stdout` is returned as a
 `Buffer`, never decoded by M2, so diff output keeps its raw bytes; with an `onStdout(chunk)` consumer (M10's patch pass only) each chunk goes to it
 as it arrives and nothing is buffered. M2 tracks the child it is running; `killActive()`
