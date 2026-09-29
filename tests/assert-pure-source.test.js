@@ -7,333 +7,123 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { assertPureSourceText } = require('./helpers/assert-pure-source');
 
-test('a comment that merely mentions a banned word passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText(
-      "// this module deliberately avoids process and console\nexport const x = 1;\n",
-      'fixture.mjs',
-    );
-  });
+const fails = (source, options) => {
+  assert.throws(() => assertPureSourceText(source, 'fixture.mjs', options), assert.AssertionError);
+};
+const passes = (source, options) => {
+  assert.doesNotThrow(() => assertPureSourceText(source, 'fixture.mjs', options));
+};
+const allowed = { allowImports: ['./allowed.mjs'] };
+
+// Pure modules that must pass.
+
+test('a pure module with comments, literals, regexes and division passes', () => {
+  passes(
+    [
+      '// Pure: no I/O, no ambient state; every input arrives as an argument.',
+      '/** @param {string} s text read from the diff */',
+      "export const r = /proce[s]s\\.env|\\x2f\\x2f|['\"`]/i;",
+      'export const half = (n) => n / 2 + n / .5;',
+      "export const u = 'http://x'; const t = `a ${half(1)} b`;",
+      'export const chars = Array.from(t);',
+      '',
+    ].join('\n'),
+  );
 });
 
-test('an import outside allowImports fails', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "import { helper } from './not-allowed.mjs';\nexport const x = 1;\n",
-      'fixture.mjs',
-      { allowImports: [] },
-    );
-  }, assert.AssertionError);
+test('allowed imports and re-exports pass in every spelling', () => {
+  passes(
+    [
+      "import { a } from './allowed.mjs';",
+      'import{b}from"./allowed.mjs";',
+      "import * as c from './allowed.mjs'",
+      "import d, { e as f } from\n  './allowed.mjs';",
+      "import './allowed.mjs';",
+      "export*from'./allowed.mjs';",
+      "export { g } from './allowed.mjs';",
+      "// import the helper from the allowed module, which names imports in its comments",
+      '',
+    ].join('\n'),
+    allowed,
+  );
 });
 
-test('an import listed in allowImports passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText(
-      "import { helper } from './allowed.mjs';\nexport const x = 1;\n",
-      'fixture.mjs',
-      { allowImports: ['./allowed.mjs'] },
-    );
-  });
-});
+// Banned words fail wherever they appear: the check never tries to tell code from comments
+// or literals, so no mis-lexing can hide code.
 
-test('a banned ambient-state access still fails even with matching allowImports', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "import { helper } from './allowed.mjs';\nexport const x = process.cwd();\n",
-      'fixture.mjs',
-      { allowImports: ['./allowed.mjs'] },
-    );
-  }, assert.AssertionError);
-});
-
-test('a dynamic import is always banned, even when the specifier is in allowImports', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "export const x = import('./allowed.mjs');\n",
-      'fixture.mjs',
-      { allowImports: ['./allowed.mjs'] },
-    );
-  }, assert.AssertionError);
-});
-
-test('a "//" inside a string literal does not hide a banned use later on the line', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "const u = 'http://x'; const y = process.env;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('a "//" inside a regex literal does not hide a banned use later on the line', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "const r = /\\//; const y = process.env;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('`export ... from` is checked against allowImports like a static import', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "export * from 'node:fs';\n",
-      'fixture.mjs',
-      { allowImports: [] },
-    );
-  }, assert.AssertionError);
-});
-
-test('`export ... from` listed in allowImports passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText(
-      "export { helper } from './allowed.mjs';\n",
-      'fixture.mjs',
-      { allowImports: ['./allowed.mjs'] },
-    );
-  });
-});
-
-test('`import.meta` is banned', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "const url = import.meta.url;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('a regex literal right after a keyword is not mistaken for "//" comment', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "return /\\//.test(s); const y = process.env;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('typeof followed by a regex literal is not mistaken for "//" comment', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "typeof /\\//.test(s); const y = process.env;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('a regex literal right after a keyword with no space is not mistaken for "//" comment', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "return/\\//.test(s); const y = process.env;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('a regex literal right after a keyword does not derail quote tracking on the next line', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "return /'/.test(s);\nconst u = 'http://x'; process.exit();\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('division after a plain identifier is still division and does not break stripping', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "const c = a / b;\nconst y = process.env;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('division followed by a comment naming a banned word on the same line passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText('const c = a / b; // no process here\n', 'fixture.mjs');
-  });
-});
-
-test('a banned word spelled inside a string literal (not real code) passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText("const msg = 'the process module is banned';\n", 'fixture.mjs');
-  });
-});
-
-test('a banned word spelled inside a regex literal (not real code) passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText('const r = /process\\.env/;\n', 'fixture.mjs');
-  });
-});
-
-test('a banned word spelled inside template-literal text (not real code) passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText('const msg = `no process here`;\n', 'fixture.mjs');
-  });
-});
-
-test('a banned word inside a template literal\'s ${…} substitution still fails', () => {
-  assert.throws(() => {
-    assertPureSourceText('const msg = `value: ${process.env.X}`;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('an import specifier string still reads correctly once literals are blanked', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "import { helper } from './not-allowed.mjs';\nexport const x = 1;\n",
-      'fixture.mjs',
-      { allowImports: [] },
-    );
-  }, /not-allowed\.mjs/);
-});
-
-// Fail-closed lexing: whenever the helper cannot tell a literal from real code, it must
-// leave the text in place (still checked), never blank real code.
-
-test('a string holding a "{" inside a ${…} substitution does not hide later code', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "function g() {\n  return `${open ? '{' : ''}`;\n}\nprocess.exit(0);\nconst b = `ok`;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('a template nested inside a ${…} substitution does not hide later code', () => {
-  assert.throws(() => {
-    assertPureSourceText(
-      "const s = `a ${`b ${'}'} c`} d`;\nprocess.exit(0);\nconst b = `ok`;\n",
-      'fixture.mjs',
-    );
-  }, assert.AssertionError);
-});
-
-test('an unterminated template leaves the rest of the source checked', () => {
-  assert.throws(() => {
-    assertPureSourceText('const s = `${a`;\nprocess.exit(0);\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('an unterminated string leaves the rest of the source checked', () => {
-  assert.throws(() => {
-    assertPureSourceText("const s = 'abc\nprocess.exit(0);\n", 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('an unterminated block comment leaves the rest of the source checked', () => {
-  assert.throws(() => {
-    assertPureSourceText('/* open\nprocess.exit(0);\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('division after a postfix ++ is not mistaken for a regex literal', () => {
-  assert.throws(() => {
-    assertPureSourceText('const t = n++ / 2 + process.uptime() / 2;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('division after a postfix -- is not mistaken for a regex literal', () => {
-  assert.throws(() => {
-    assertPureSourceText('const t = n-- / 2 + process.uptime() / 2;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-for (const prop of ['in', 'of', 'new', 'delete', 'return', 'typeof']) {
-  test(`division after a keyword-named property (.${prop}) is not mistaken for a regex literal`, () => {
-    assert.throws(() => {
-      assertPureSourceText(
-        `const avg = counts.${prop} / n + process.uptime() / 2;\n`,
-        'fixture.mjs',
-      );
-    }, assert.AssertionError);
-  });
+for (const [what, source] of [
+  ['process', 'const x = process.cwd();\n'],
+  ['globalThis', 'const g = globalThis;\n'],
+  ['require', "const fs = require('node:fs');\n"],
+  ['require with a comment before the call', "const fs = require /* x */ ('node:fs');\n"],
+  ['fetch', "fetch('https://x');\n"],
+  ['the clock', 'const t = Date.now();\n'],
+  ['randomness', 'const r = Math.random();\n'],
+  ['randomness spaced out', 'const r = Math . random();\n'],
+  ['randomness by bracket', "const r = Math['random']();\n"],
+  ['console', "console.log('x');\n"],
+  ['eval', "eval('1');\n"],
+  ['the Function constructor', "const p = Function('return pro' + 'cess')();\n"],
+  ['a banned word in a comment', '// avoids process\nexport const x = 1;\n'],
+  ['a banned word in a string', "const s = 'the process module';\n"],
+  ['a banned word in a regex', 'const r = /process\\.env/;\n'],
+  ['a banned word in template text', 'const s = `no process here`;\n'],
+]) {
+  test(`${what} fails`, () => fails(source));
 }
 
-test('division after an optional-chained keyword-named property is not mistaken for a regex', () => {
-  assert.throws(() => {
-    assertPureSourceText('const avg = counts?.in / n + process.uptime() / 2;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
+// Reviewer inputs that got impure code past the earlier lexer-based helper.
 
-test('a "/" guessed as a regex start is kept as code when what follows cannot follow a regex', () => {
-  assert.throws(() => {
-    assertPureSourceText('const t = {} / 2 + process.uptime() / 2;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
+for (const [what, source] of [
+  ['a regex after `if (…)` holding "//"', 'if (a) /[//]/.test(a) || process.exit(1);\n'],
+  ['a regex after `if (…)` holding a quote', "if (a) /'/.test(a) || process.exit(1) || /'/.test(b);\n"],
+  ['regexes after `if (…)` holding backticks', 'if (a) /`/.test(a);\nprocess.exit(1);\nif (b) /`/.test(b);\n'],
+  ['regexes after `if (…)` holding "/*" and "*/"', 'if (a) /[/*]/.test(a);\nprocess.exit(1);\nif (b) /[*/]/.test(b);\n'],
+  ['an identifier `of` then division', 'const of = 4; const x = of / 2; process.exit(); const y = x / .5;\n'],
+  ['an identifier `of` then division across lines', 'const of = 4; const x = of / 2 + process.exitCode /\n 2;\n'],
+  ['an object literal then division', 'const r = {} / process.exitCode / .5;\n'],
+  ['a `#in` private field then division', 'class C { #in = 1; m() { return this.#in / 2 + process.exitCode / .5; } }\n'],
+  ['a \\u escape spelling process', 'proc\\u0065ss.exitCode = 0;\n'],
+  ['a \\u{…} escape spelling process', '\\u{70}rocess.exitCode = 0;\n'],
+  ['division after postfix ++', 'const t = n++ / 2 + process.uptime() / 2;\n'],
+  ['a "//" inside a string', "const u = 'http://x'; const y = process.env;\n"],
+  ['an unterminated block comment', '/* open\nprocess.exit(0);\n'],
+  ['a template substitution', 'const msg = `value: ${process.env.X}`;\n'],
+]) {
+  test(`impure code after ${what} fails`, () => fails(source));
+}
 
-// Regressions: the blanking that lets real literals mention banned words keeps working.
+// Imports: every specifier in the raw text is checked, however it is spaced.
 
-test('a banned word in a regex literal after a keyword passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText('function f(s) {\n  return /process\\.env/.test(s);\n}\n', 'fixture.mjs');
-  });
-});
+for (const [what, source] of [
+  ['a static import', "import { helper } from './not-allowed.mjs';\n"],
+  ['an import with no spaces', "import{readFileSync}from'node:fs';\n"],
+  ['an import after a statement on the same line', "const a = 1; import fs from 'node:fs';\n"],
+  ['an import after a regex holding "//"', "if (a) /[//]/.test(a); import fs from 'node:fs';\n"],
+  ['an import after a comment', "/* c */ import fs from 'node:fs';\n"],
+  ['a side-effect import', "import 'node:fs';\n"],
+  ['a side-effect import with no space', 'import"node:fs";\n'],
+  ['a re-export with no spaces', "export*from'node:fs';\n"],
+  ['a named re-export', "export { x } from 'node:fs';\n"],
+]) {
+  test(`${what} outside allowImports fails`, () => fails(source, allowed));
+}
 
-test('banned words in regex literals with flags, in an array and as arguments pass', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText(
-      "const rs = [/console/g, /Date\\b/i];\nconst ok = s.replace(/globalThis/g, '') && /process/.source;\n",
-      'fixture.mjs',
-    );
-  });
-});
+for (const [what, source] of [
+  ['a comment between `from` and the specifier', "import fs from /* x */ './allowed.mjs';\n"],
+  ['a line comment between `from` and the specifier', "export * from // x\n'./allowed.mjs';\n"],
+  ['a comment between `import` and the specifier', "import /* x */ './allowed.mjs';\n"],
+  ['an escape in the specifier', "import fs from './allowed\\x2emjs';\n"],
+  ['a dynamic import', "export const x = import('./allowed.mjs');\n"],
+  ['a dynamic import with a space', "export const x = import ('./allowed.mjs');\n"],
+  ['import.meta', 'const url = import.meta.url;\n'],
+]) {
+  test(`${what} fails even when the specifier is allowed`, () => fails(source, allowed));
+}
 
-test('a regex literal holding quotes, "//" and a class with "/" passes and stays scoped', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText("const r = /['\"]\\/\\/[/*]process/;\nconst y = 1;\n", 'fixture.mjs');
-  });
-  assert.throws(() => {
-    assertPureSourceText("const r = /['\"]\\/\\/[/*]x/;\nprocess.exit(0);\n", 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('a banned word in a string inside a ${…} substitution passes', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText("const s = `a ${cond ? '{process}' : `console`} b`;\n", 'fixture.mjs');
-  });
-});
-
-test('a banned word in real code inside a nested ${…} substitution still fails', () => {
-  assert.throws(() => {
-    assertPureSourceText('const s = `a ${`b ${process.env.X}`} c`;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('an object literal with braces inside a ${…} substitution is balanced', () => {
-  assert.doesNotThrow(() => {
-    assertPureSourceText('const s = `${JSON.stringify({ a: { b: 1 } })} process`;\n', 'fixture.mjs');
-  });
-});
-
-test('a keyword spelled as an identifier prefix still counts as an identifier', () => {
-  assert.throws(() => {
-    assertPureSourceText('const t = index / 2 + process.uptime() / 2;\n', 'fixture.mjs');
-  }, assert.AssertionError);
-});
-
-test('lexing keeps length and line structure, blanking only comments and literal text', () => {
-  const { lexSource } = require('./helpers/assert-pure-source');
-  const source = [
-    "import { a } from './a.mjs'; // note",
-    '/* block',
-    '   comment */ const s = `t ${x ? "{" : `n ${y}`} u`;',
-    "const r = /re\\/x/g; const q = 'str';",
-    'const t = n++ / 2;',
-    '',
-  ].join('\r\n');
-  const { stripped, blanked } = lexSource(source);
-  for (const out of [stripped, blanked]) {
-    assert.equal(out.length, source.length);
-    assert.deepEqual(
-      [...out].map((ch, k) => (ch === '\n' || ch === '\r' ? k : -1)).filter((k) => k >= 0),
-      [...source].map((ch, k) => (ch === '\n' || ch === '\r' ? k : -1)).filter((k) => k >= 0),
-    );
-  }
-  assert.match(stripped, /from '\.\/a\.mjs';/);
-  assert.doesNotMatch(stripped, /note|block|comment/);
-  assert.ok(stripped.includes('/re\\/x/g'));
-  assert.match(blanked, /\$\{x \? " " : ` +\$\{y\}` *\}/);
-  assert.match(blanked, /const r = \/ {5}\/g; const q = ' {3}';/);
-  assert.match(blanked, /const t = n\+\+ \/ 2;/);
+test('a failing import names the specifier', () => {
+  assert.throws(
+    () => assertPureSourceText("import { helper } from './not-allowed.mjs';\n", 'fixture.mjs'),
+    /not-allowed\.mjs/,
+  );
 });

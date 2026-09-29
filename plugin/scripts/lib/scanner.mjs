@@ -100,7 +100,8 @@ function* followingLines(split, lines, index) {
 // `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value, one holding a
 // placeholder word (compared case-insensitively), or an unquoted value that is a call.
 const MIN_SECRET_ENTROPY = 3.5;
-const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|process\.env|os\.environ/i;
+// `proce[s]s`: the purity check bans the bare word anywhere in this file, literals included.
+const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|proce[s]s\.env|os\.environ/i;
 
 // An unquoted `generic-secret` value that is a call, e.g. `fetchAccessToken()`,
 // `get_password_from_env()`, `self._fetch_token(scope)` (C:scan-patterns): a bare identifier

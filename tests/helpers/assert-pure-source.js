@@ -4,282 +4,55 @@
 // docs/spec/modules*.md marks each module pure or effectful). A pure module may still
 // import specific pure exports named in `allowImports` (e.g. M8 imports M7, M14 imports M6
 // and M8, M19 imports M6 and M4's pure `validateLayer` even though M4 itself is effectful);
-// every other import, `require`, or ambient-state access fails. Comments are blanked, and
-// string, regex and template-literal-text content is blanked, before matching, so a comment
-// or a literal value that merely mentions a banned word (e.g. documenting why `process` is
-// not used, or a regex that matches the word `process` in scanned text) does not fail the
-// check; a template literal's `${…}` substitutions are real code and are still checked.
+// every other import, `require`, or ambient-state access fails.
 //
-// The lexer fails closed: whenever it cannot be sure a span is a comment or a literal, it
-// leaves the span as it is, so the banned-word check still sees it. Blanking real code would
-// let an impure module pass; leaving a literal unblanked at worst fails a pure one, which
-// the author then notices and fixes.
+// Fail closed by construction: every check runs on the raw source text. Nothing is ever
+// blanked or skipped, not comments, strings or regex literals, because telling those apart
+// from code takes a JavaScript lexer, and every hand-written one tried here mis-lexed some
+// valid input (a regex read as division, say) and so hid real code. The price is that a
+// banned word fails the check even inside a comment or a literal: a pure module words its
+// comments around it ("no ambient state") and spells a literal differently (a regex for the
+// word itself uses a character class, e.g. `proce[s]s`). A false failure is noticed and
+// fixed; a false pass is not.
+//
+// This catches accidental impurity, not deliberate evasion: `eval` and `Function` are
+// banned, but code built from strings by other routes (e.g. a function's `.constructor`)
+// is beyond a text check.
 
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { libPath } = require('./load-lib');
 
-// Keywords after which a `/` starts a value (a regex literal), not division, even though
-// the keyword itself ends in a word character just like an identifier would. Only counts
-// when the word is not a property name (i.e. not right after `.` or `?.`, as in `a.in / b`).
-const REGEX_PRECEDING_KEYWORDS = new Set([
-  'return', 'typeof', 'case', 'throw', 'in', 'of', 'await', 'yield', 'void', 'delete',
-  'else', 'instanceof', 'new',
-]);
-
-// A `/` guessed as the start of a regex literal is blanked only if what follows its closing
-// `/` (after any flags and spaces) is something that can follow a regex: end of line,
-// `.`, `)`, `,`, `;`, `]`, `}`, `:`, `?`, `==`/`!=`, `&&`, `||`. Division instead continues
-// with an operand (`2`, `n`, `(`...), so e.g. `{} / 2 + process.x / 2` is kept as code.
-const REGEX_FLAGS = /[dgimsuyv]/;
-const REGEX_FOLLOW = /^(?:$|[\r\n.),;\]}:?]|[=!]=|&&|\|\|)/;
-
-const isWordChar = (ch) => /[\w$]/.test(ch);
-const isLineEnd = (ch) => ch === '\n' || ch === '\r';
-// Line terminators stay as they are (keeps line structure), anything else blanks to ' '.
-const blankText = (text) => text.replace(/[^\r\n]/g, ' ');
-
-/**
- * Lex `source` into two same-length texts (line terminators kept in place):
- * `stripped` has comments blanked and literals intact (for reading import specifiers);
- * `blanked` also has the contents of strings, regex literals and template-literal text
- * blanked, keeping `${…}` substitutions (real code, lexed recursively).
- *
- * @param {string} source
- * @returns {{ stripped: string, blanked: string }}
- */
-function lexSource(source) {
-  const n = source.length;
-
-  // A span kept exactly as written in both outputs (code, or text the lexer is unsure of).
-  const raw = (from, to) => {
-    const text = source.slice(from, to);
-    return { stripped: text, blanked: text };
-  };
-
-  // Lexes a `'…'`/`"…"` string starting at `i`. An unterminated string (a raw line break
-  // or end of input before the closing quote) is not a string: kept as is to end of line.
-  function lexString(i) {
-    const quote = source[i];
-    let j = i + 1;
-    while (j < n && source[j] !== quote && !isLineEnd(source[j])) {
-      j += source[j] === '\\' && j + 1 < n ? 2 : 1;
-    }
-    if (j >= n || source[j] !== quote) return { ...raw(i, j), end: j };
-    const text = source.slice(i, j + 1);
-    return { stripped: text, blanked: quote + blankText(source.slice(i + 1, j)) + quote, end: j + 1 };
-  }
-
-  // Lexes a template literal starting at `i`, recursing into each `${…}`. Returns null if
-  // the template or one of its substitutions runs off the end of the input.
-  function lexTemplate(i) {
-    let stripped = '`';
-    let blanked = '`';
-    let j = i + 1;
-    while (j < n) {
-      const c = source[j];
-      if (c === '`') {
-        return { stripped: stripped + c, blanked: blanked + c, end: j + 1 };
-      }
-      if (c === '\\' && j + 1 < n) {
-        stripped += source.slice(j, j + 2);
-        blanked += blankText(source.slice(j, j + 2));
-        j += 2;
-        continue;
-      }
-      if (c === '$' && source[j + 1] === '{') {
-        const inner = lexCode(j + 2, true);
-        if (inner === null) return null;
-        stripped += '${' + inner.stripped + '}';
-        blanked += '${' + inner.blanked + '}';
-        j = inner.end + 1;
-        continue;
-      }
-      stripped += c;
-      blanked += blankText(c);
-      j += 1;
-    }
-    return null;
-  }
-
-  // Scans a regex literal body from the `/` at `i`: returns the index of its closing `/`,
-  // or -1 if none on this line (then the `/` is division).
-  function findRegexEnd(i) {
-    let j = i + 1;
-    let inClass = false;
-    while (j < n && !isLineEnd(source[j])) {
-      const c = source[j];
-      if (c === '\\') {
-        if (j + 1 >= n || isLineEnd(source[j + 1])) return -1;
-        j += 2;
-        continue;
-      }
-      if (c === '[') inClass = true;
-      else if (c === ']') inClass = false;
-      else if (c === '/' && !inClass) return j;
-      j += 1;
-    }
-    return -1;
-  }
-
-  // Lexes code from `i`. At top level runs to end of input; inside a `${…}` substitution
-  // (`inSubstitution`) stops at the `}` that closes it (not consumed; `end` is its index)
-  // and returns null if there is none.
-  function lexCode(i, inSubstitution) {
-    let stripped = '';
-    let blanked = '';
-    const emit = (part) => {
-      stripped += part.stripped;
-      blanked += part.blanked;
-    };
-
-    // State for telling a regex literal (where a value is expected) from division (after a
-    // value): 'start' or 'punct' expect a value, 'value' does not, 'word' depends on
-    // whether the word is a keyword in REGEX_PRECEDING_KEYWORDS used as a keyword.
-    let lastKind = 'start';
-    let lastWord = '';
-    let lastWordIsProperty = false;
-    let lastPunct = '';
-    let depth = 0;
-
-    while (i < n) {
-      const c = source[i];
-      const next = source[i + 1];
-
-      if (/\s/.test(c)) {
-        emit(raw(i, i + 1));
-        i += 1;
-        continue;
-      }
-
-      if (c === '/' && next === '/') {
-        let j = i;
-        while (j < n && !isLineEnd(source[j])) j += 1;
-        const text = blankText(source.slice(i, j));
-        emit({ stripped: text, blanked: text });
-        i = j;
-        continue;
-      }
-
-      if (c === '/' && next === '*') {
-        const close = source.indexOf('*/', i + 2);
-        // An unterminated block comment is not a comment: keep the rest as is.
-        const j = close === -1 ? n : close + 2;
-        const text = close === -1 ? source.slice(i, j) : blankText(source.slice(i, j));
-        emit({ stripped: text, blanked: text });
-        i = j;
-        continue;
-      }
-
-      if (c === '"' || c === "'") {
-        const part = lexString(i);
-        emit(part);
-        i = part.end;
-        lastKind = 'value';
-        continue;
-      }
-
-      if (c === '`') {
-        const part = lexTemplate(i);
-        if (part === null) {
-          // Unterminated template or substitution: keep the rest of the input as is.
-          if (inSubstitution) return null;
-          emit(raw(i, n));
-          i = n;
-          continue;
-        }
-        emit(part);
-        i = part.end;
-        lastKind = 'value';
-        continue;
-      }
-
-      if (isWordChar(c)) {
-        let j = i;
-        while (j < n && isWordChar(source[j])) j += 1;
-        lastWordIsProperty = lastKind === 'punct' && lastPunct === '.';
-        lastWord = source.slice(i, j);
-        lastKind = 'word';
-        emit(raw(i, j));
-        i = j;
-        continue;
-      }
-
-      const regexExpected =
-        lastKind === 'start' ||
-        lastKind === 'punct' ||
-        (lastKind === 'word' && !lastWordIsProperty && REGEX_PRECEDING_KEYWORDS.has(lastWord));
-      if (c === '/' && regexExpected) {
-        const close = findRegexEnd(i);
-        if (close !== -1) {
-          let after = close + 1;
-          while (after < n && REGEX_FLAGS.test(source[after])) after += 1;
-          const flagsEnd = after;
-          while (after < n && (source[after] === ' ' || source[after] === '\t')) after += 1;
-          const followsLikeRegex =
-            (flagsEnd >= n || !isWordChar(source[flagsEnd])) &&
-            REGEX_FOLLOW.test(source.slice(after, after + 2));
-          const text = source.slice(i, flagsEnd);
-          emit({
-            stripped: text,
-            // Unsure it is a regex (it may be division): keep it as code, but still skip it
-            // whole so its quotes or `//` are not lexed as strings or comments.
-            blanked: followsLikeRegex
-              ? '/' + blankText(source.slice(i + 1, close)) + source.slice(close, flagsEnd)
-              : text,
-          });
-          i = flagsEnd;
-          lastKind = 'value';
-          continue;
-        }
-        // No closing `/` on this line: not a regex literal, treat `/` as division.
-      }
-
-      if (inSubstitution && c === '}' && depth === 0) {
-        return { stripped, blanked, end: i };
-      }
-      if (c === '{') depth += 1;
-      else if (c === '}' && depth > 0) depth -= 1;
-
-      emit(raw(i, i + 1));
-      if (c === ')' || c === ']') {
-        lastKind = 'value';
-      } else if ((c === '+' || c === '-') && source[i - 1] === c && lastPunct === c) {
-        // Postfix `++`/`--` ends an operand, so a following `/` is division.
-        lastKind = 'value';
-        lastPunct = '';
-      } else {
-        lastKind = 'punct';
-        lastPunct = c;
-      }
-      i += 1;
-    }
-
-    return inSubstitution ? null : { stripped, blanked, end: n };
-  }
-
-  const { stripped, blanked } = lexCode(0, false);
-  return { stripped, blanked };
-}
-
-// Matches a static import's specifier, with or without a `from` clause (side-effect-only
-// imports), and an `export ... from` re-export, which reaches into another module just
-// like an import does. Does not match dynamic `import(...)`, which is banned
-// unconditionally below.
-const STATIC_IMPORT =
-  /^[ \t]*(?:import\s+(?:[^'";]*?from\s*)?|export\s+[^'";]*?from\s*)['"]([^'"]+)['"]/gm;
-
+// Matched as whole words anywhere in the raw text, so spacing or comments between tokens
+// (`Math . random`, `require /* x */ (`) cannot slip past.
 const AMBIENT_STATE = [
-  [/\bimport\s*\(/, 'a dynamic import'],
-  [/\bimport\.meta\b/, 'import.meta'],
-  [/\brequire\s*\(/, 'require'],
+  [/\brequire\b/, 'require'],
   [/\bprocess\b/, 'process'],
   [/\bglobalThis\b/, 'globalThis'],
-  [/\bfetch\s*\(/, 'fetch'],
+  [/\bfetch\b/, 'fetch'],
   [/\bDate\b/, 'the clock'],
-  [/\bMath\.random\b/, 'randomness'],
+  [/\brandom\b/, 'randomness'],
   [/\bconsole\b/, 'console'],
+  [/\beval\b|\bFunction\b/, 'code built from strings'],
 ];
+
+// A `\u` escape can spell an identifier (`process` is `process`), which a word match
+// cannot see, so it is banned outright; a literal can use `\x..` or the character itself.
+const UNICODE_ESCAPE = /\\u/;
+
+// Every `from` directly followed (after whitespace) by a quote or a `/` (a comment, or
+// division when `from` is a variable). A module specifier always follows the `from` of a
+// static import or re-export, possibly after comments, so any `from` not matched here
+// (e.g. `from the diff`, `Array.from(x)`) cannot belong to one.
+const FROM_CLAUSE = /\bfrom\s*(?=['"/])/g;
+// Every `import` keyword. After it a static import has either its specifier (side-effect
+// import) or its clause (a binding name, `{` or `*`), whose `from` FROM_CLAUSE checks.
+// Anything else (`import(`, `import.meta`, `import /* x */ '…'`) fails.
+const IMPORT_KEYWORD = /\bimport\b/g;
+const IMPORT_CLAUSE_START = /^\s*[\w${*]/;
+// A specifier as it must appear right after `from` or `import` and whitespace: one quoted
+// string with no escapes.
+const SPECIFIER = /^\s*(['"])([^'"\\\r\n]*)\1/;
 
 /**
  * Assert that `source` (a pure module's text; `label` names it in failure messages) does no
@@ -291,22 +64,30 @@ const AMBIENT_STATE = [
  * @param {{ allowImports?: string[] }} [options]
  */
 function assertPureSourceText(source, label, { allowImports = [] } = {}) {
-  const { stripped, blanked } = lexSource(source);
-
   for (const [pattern, what] of AMBIENT_STATE) {
-    assert.doesNotMatch(blanked, pattern, `${label} must not use ${what}`);
+    assert.doesNotMatch(source, pattern, `${label} must not use ${what}, not even in a comment or literal`);
   }
+  assert.doesNotMatch(source, UNICODE_ESCAPE, `${label} must not use a \\u escape`);
 
-  // Import specifiers are read from `stripped`, since their own string content must stay
-  // readable.
-  STATIC_IMPORT.lastIndex = 0;
-  let match;
-  while ((match = STATIC_IMPORT.exec(stripped)) !== null) {
-    const specifier = match[1];
+  const allowed = allowImports.join(', ') || 'none';
+  const checkSpecifier = (index, keyword) => {
+    const match = SPECIFIER.exec(source.slice(index));
     assert.ok(
-      allowImports.includes(specifier),
-      `${label} imports '${specifier}', which is not in allowImports (${allowImports.join(', ') || 'none'})`,
+      match !== null,
+      `${label}: cannot read the module specifier after '${keyword}' at offset ${index}`,
     );
+    assert.ok(
+      allowImports.includes(match[2]),
+      `${label} imports '${match[2]}', which is not in allowImports (${allowed})`,
+    );
+  };
+
+  for (const match of source.matchAll(FROM_CLAUSE)) {
+    checkSpecifier(match.index + 'from'.length, 'from');
+  }
+  for (const match of source.matchAll(IMPORT_KEYWORD)) {
+    const after = match.index + 'import'.length;
+    if (!IMPORT_CLAUSE_START.test(source.slice(after))) checkSpecifier(after, 'import');
   }
 }
 
@@ -321,4 +102,4 @@ function assertPureSource(name, options = {}) {
   assertPureSourceText(source, `${name}.mjs`, options);
 }
 
-module.exports = { assertPureSource, assertPureSourceText, lexSource };
+module.exports = { assertPureSource, assertPureSourceText };
