@@ -28,16 +28,16 @@ tracer on this path; INT-02 (the first end-to-end commit) then closes `plan` →
 
 **Blocked by:** RPL-01, FND-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Further Notes "First slice", M1, M17, M18 `plan` step table, C:plan,
 C:reply-and-handback, C:cli-and-exit-codes, Testing seams (Seam 1).
 
-- [ ] Seam 1: bare `plan` on a clean temp repo exits 0 with one JSON object,
+- [x] Seam 1: bare `plan` on a clean temp repo exits 0 with one JSON object,
       `reply.status: "nothing"`, `callerRule` equal to the base rule text byte for byte
       (C:reply-and-handback), a `text` ending "working tree clean", and no lock or run
       folder left
-- [ ] The test runs the script as a subprocess through the FND-04 harness, with no worker
+- [x] The test runs the script as a subprocess through the FND-04 harness, with no worker
       and no hook
 
 
