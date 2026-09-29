@@ -18,16 +18,16 @@ with no or an unknown subcommand is a `usage` refusal.
 
 **Blocked by:** FND-01, FND-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M1, architectural decisions "Entry points survive an old Node" and "Injected
 environment", "Module type fixed by extension", C:cli-and-exit-codes, Q1, Q9.
 
-- [ ] Seam 1: no subcommand and an unknown subcommand → exit 1, one JSON object
+- [x] Seam 1: no subcommand and an unknown subcommand → exit 1, one JSON object
       `{ version: 1, ok: false, error: { kind: "usage", … } }`, nothing else on stdout
-- [ ] Debug output goes to stderr only; the entry point never reads stdin (a test with an
+- [x] Debug output goes to stderr only; the entry point never reads stdin (a test with an
       open stdin pipe returns without waiting)
-- [ ] The Node check returns the `env` JSON refusal before any library import
+- [x] The Node check returns the `env` JSON refusal before any library import
 
 
 ## RPL-02: Per-subcommand argv and flag combinations
