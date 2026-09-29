@@ -14,11 +14,21 @@ const fs = require('node:fs');
 
 function parseScalar(rawValue) {
   const value = rawValue.trim();
+  if (value.startsWith("'")) {
+    throw new Error(`single-quoted scalars are not supported: ${rawValue}`);
+  }
+  if (/\s#/.test(value)) {
+    throw new Error(`comments are not supported in a scalar: ${rawValue}`);
+  }
   if (value.startsWith('"')) {
     if (!value.endsWith('"') || value.length < 2) {
       throw new Error(`unterminated quoted scalar: ${rawValue}`);
     }
-    return value.slice(1, -1).replace(/\\"/g, '"');
+    const inner = value.slice(1, -1);
+    if (/\\(?!")/.test(inner)) {
+      throw new Error(`unsupported backslash escape in quoted scalar: ${rawValue}`);
+    }
+    return inner.replace(/\\"/g, '"');
   }
   if (value === 'true') return true;
   if (value === 'false') return false;

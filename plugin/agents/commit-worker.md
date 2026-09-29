@@ -1,6 +1,6 @@
 ---
 name: commit-worker
-description: "Follow the reply's callerRule; spawn on \"commit this\"; pass intent: what changed and why; edit no files until it replies; pass interactive: false with no user; don't read the diff first."
+description: "Follow the reply's callerRule; spawn to commit (\"commit this\"); pass intent: what changed and why; edit no files until it replies; pass interactive: false with no user; don't read the diff first."
 model: sonnet
 omitClaudeMd: true
 maxTurns: 25
