@@ -249,5 +249,6 @@ export async function main(argv, env) {
     return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
   }
   const result = await workflow(parsed.values, env, { cwd: env.cwd });
+  if (result.failure !== undefined) return failure(result.failure.kind, result.failure.message);
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }

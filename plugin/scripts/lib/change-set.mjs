@@ -10,14 +10,16 @@ import { run } from './process-adapter.mjs';
  * Reads the working tree's state: every path `git status` reports (tracked changes and
  * untracked, non-ignored files).
  *
- * @param {{ toplevel: string, env: object }} options
+ * @param {{ toplevel: string, env: object, now?: () => number }} options `now`: the
+ *   injected clock, passed on to M2.
  * @returns {Promise<{ clean: true } | { count: number, paths: string[] }>}
  * @throws {Error} when `git status` exits non-zero.
  */
-export async function treeState({ toplevel, env }) {
+export async function treeState({ toplevel, env, now }) {
   const result = await run('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
     cwd: toplevel,
     env,
+    now,
     readOnly: true,
   });
   if (result.code !== 0) {

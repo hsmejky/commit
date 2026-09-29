@@ -7,7 +7,8 @@
 // This slice's only blocker is RPL-01, which built M1's own argv-level `usage` refusals (no
 // or an unknown subcommand). Every other row of docs/spec/domain-code-cli-kind.md is
 // produced by a module (M2-M19) that does not exist yet, so it cannot be reached through the
-// shipped CLI at all; M18 exists (INT-01) but maps no domain code yet. INT-31 extends this
+// shipped CLI at all; M18 exists (INT-01), and GIT-01 made it map the first `env` and
+// `state` rows (git missing, not a repository). INT-31 extends this
 // manifest once the roadmap builds them. The manifest is data so a later slice adds a row (and, once reachable, a Seam
 // 1 case) instead of writing a new test file.
 
@@ -34,8 +35,36 @@ const ROWS = [
   { row: 'already-committed', reachable: false },
   { row: 'no-groups', reachable: false },
   { row: 'config', reachable: false },
-  { row: 'env (install path, M3)', reachable: false },
-  { row: 'not-a-repo, bare, in-progress, unmerged, unborn, merge, encoding', reachable: false },
+  {
+    row: 'env (install path, M3)',
+    kind: 'env',
+    exitCode: 1,
+    reachable: true,
+    // GIT-01: M3 finds no git on PATH (tests/plan-pre-folder-refusals.test.js).
+    async seam1Case(t) {
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const c = createCase(t);
+      const emptyBin = path.join(c.root, 'empty-bin');
+      fs.mkdirSync(emptyBin);
+      const env = { PATH: emptyBin };
+      for (const key of Object.keys(c.env)) {
+        if (key !== 'PATH' && key.toUpperCase() === 'PATH') env[key] = undefined;
+      }
+      return runCommit(c, ['plan'], { env });
+    },
+  },
+  {
+    row: 'not-a-repo, bare, in-progress, unmerged, unborn, merge, encoding',
+    kind: 'state',
+    exitCode: 6,
+    reachable: true,
+    // GIT-01: `plan` outside any repository (tests/plan-pre-folder-refusals.test.js).
+    async seam1Case(t) {
+      const c = createCase(t, { repo: false });
+      return runCommit(c, ['plan'], { cwd: c.root });
+    },
+  },
   { row: 'run-folder', reachable: false },
   { row: 'killed-leftover', reachable: false },
   { row: 'signing-locked', reachable: false },
@@ -74,7 +103,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 1);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 3);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

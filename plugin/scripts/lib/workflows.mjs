@@ -4,27 +4,41 @@
 //
 // `plan` holds one function per row of its step table (M18 `plan`, C:plan "Steps"), run in
 // order by `runSteps`. A step returns `undefined` to go on, or the facts of the output that
-// ends the call. INT-01 builds the walking skeleton: steps 1, 4 and 6, only as far as a clean
-// tree needs, so bare `plan` on a clean tree ends with `nothing`. Later slices insert the
-// other rows (2 pre-folder refusals, 3 run folder and lock peek, 5 snapshot and scan, 7 store
-// and lock, 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
+// ends the call: `{ status }` for a reply, or `{ refusal: { code, message } }` with a domain
+// code this module maps to a CLI kind. INT-01 built the walking skeleton (steps 1, 4 and 6,
+// only as far as a clean tree needs); GIT-01 adds step 2's first rows (`env`, `state`
+// outside a usable repo). Later slices insert the other rows (3 run folder and lock peek,
+// 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in their place in
+// PLAN_STEPS, and widen these.
 
 import { probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
 import { reply } from './reply.mjs';
+import { planRefusal } from './run-policy.mjs';
+import { kindForDomainCode } from './domain-codes.mjs';
 
-/** Step 1: probe the repo state (M3). */
+/** Step 1: probe the repo state, git and Node versions (M3). */
 async function probeRepo(ctx) {
-  const { toplevel } = probe({ cwd: ctx.cwd, env: ctx.injected.env });
-  // GIT-01 turns this into the `state` refusal (not a repository).
-  if (toplevel === null) throw new Error('plan outside a working tree is not built yet');
-  ctx.toplevel = toplevel;
+  ctx.probe = await probe({ cwd: ctx.cwd, env: ctx.injected.env, now: ctx.injected.now });
+  return undefined;
+}
+
+/** Step 2: pre-folder refusals (M15 `planRefusal`); none of them creates the run folder. */
+async function preFolderRefusals(ctx) {
+  const refusal = planRefusal(ctx.probe);
+  if (refusal !== null) return { refusal };
+  const { git, repo } = ctx.probe;
+  // A start-up call past its fixed short timeout (M2); GIT-07 brings the deadline.
+  if (git.status === 'timed-out' || repo.kind === 'timed-out') {
+    return { refusal: { code: 'timed-out', message: 'git did not answer its start-up call in time' } };
+  }
+  ctx.toplevel = repo.toplevel;
   return undefined;
 }
 
 /** Step 4: inventory. Thin: the tree state stands in until CHG-03 builds M10 `inventory`. */
 async function inventory(ctx) {
-  ctx.inventory = await treeState({ toplevel: ctx.toplevel, env: ctx.injected.env });
+  ctx.inventory = await treeState({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   return undefined;
 }
 
@@ -35,7 +49,7 @@ async function postScanRefusals(ctx) {
   throw new Error('plan on a working tree with changes is not built yet');
 }
 
-const PLAN_STEPS = Object.freeze([probeRepo, inventory, postScanRefusals]);
+const PLAN_STEPS = Object.freeze([probeRepo, preFolderRefusals, inventory, postScanRefusals]);
 
 async function runSteps(steps, ctx) {
   for (const step of steps) {
@@ -52,7 +66,9 @@ async function runSteps(steps, ctx) {
  * @param {object} injected the injected environment (docs/spec/architectural-decisions.md
  *   "Injected environment").
  * @param {{ cwd: string }} call the call's working directory.
- * @returns {Promise<{ output: object }>} the success fields M1 wraps in the envelope.
+ * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
+ *   the success fields M1 wraps in the envelope, or the failure M1 turns into the failure
+ *   shape and exit code.
  */
 export async function plan(values, injected, { cwd }) {
   // Only bare `plan` and `plan --split` are built: every other flag changes the mode or the
@@ -63,8 +79,12 @@ export async function plan(values, injected, { cwd }) {
   }
   const ctx = { injected, cwd };
   const facts = await runSteps(PLAN_STEPS, ctx);
+  if (facts.refusal !== undefined) {
+    // A pre-folder refusal carries no reply yet: RPL-04 adds the `failed` reply.
+    return { failure: { kind: kindForDomainCode(facts.refusal.code), message: facts.refusal.message } };
+  }
   // Every reply ends with the tree state, read after the call's last git call (M10).
-  const finalTree = await treeState({ toplevel: ctx.toplevel, env: injected.env });
+  const finalTree = await treeState({ toplevel: ctx.toplevel, env: injected.env, now: injected.now });
   return {
     output: {
       planId: null,
