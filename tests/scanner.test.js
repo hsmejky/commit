@@ -276,6 +276,7 @@ const OS_USER_SEGMENT_CASES = [
   ['a service user: runner', 'runner', '/srv/runner/x', false],
   ['a service user compared case-insensitively', 'Runner', '/srv/Runner/x', false],
   ['a 3-character name that is not a service user', 'bob', '/srv/bob/x', false],
+  ['an OS user holding an illegal character', 'jdoe(1)', '/srv/jdoe(1)/x', false],
   ['no OS user', null, '/srv/jdoe1/x', false],
 ];
 
