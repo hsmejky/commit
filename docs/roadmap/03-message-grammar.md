@@ -16,20 +16,20 @@ header-only `feat: add x` passes under the default types; `Feat: add x` fails.
 
 **Blocked by:** FND-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (header regex, `type`), Q6 (default types), story 106,
 spec Seam 3.
 
-- [ ] Seam 3 table: `feat: add x` parses to type `feat`, no scope, no breaking flag,
+- [x] Seam 3 table: `feat: add x` parses to type `feat`, no scope, no breaking flag,
       description `add x`, and lints clean under the 11 default types.
-- [ ] Seam 3 table: a type outside `types` (`wip: x`) gives one reason naming the type, the
+- [x] Seam 3 table: a type outside `types` (`wip: x`) gives one reason naming the type, the
       exact text C:check shows: `type 'wip' not in types`.
-- [ ] A header that does not match the regex — no `: ` separator, empty description, or an
+- [x] A header that does not match the regex — no `: ` separator, empty description, or an
       uppercase first character (`Feat: x`, which the strict, lowercase-first-character
       regex rejects) — gives the reason `header is not 'type(scope)!: description'`, not a
       throw, and no type check runs.
-- [ ] A static test asserts `parse` and `lint` are exported, pure (no I/O in their source);
+- [x] A static test asserts `parse` and `lint` are exported, pure (no I/O in their source);
       `lint` takes the config values as an argument and reads nothing else.
 
 
