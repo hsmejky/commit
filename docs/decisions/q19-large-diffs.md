@@ -23,6 +23,14 @@
   - The scan still covers lockfiles and `.map` files (tokens do leak into them). Its skip
     limit is 1 MB of added content (Q10). Untracked directories collapsed by the count cap
     (Q16) are neither planned nor scanned.
+- **Amended.** By the PRE-08 spike (2026-09-29, Claude Code 2.1.284): corrects "a diff line
+  over 2000 characters is cut by `Read`". Measured: `Read` shows no per-line character cut
+  (a single 10 000-character line came back whole); instead it enforces a whole-call token
+  budget (~25 000 tokens, roughly 50 000 characters) and errors, asking for `offset`/`limit`,
+  when a requested range is over it, rather than silently truncating a line. The `hunks.txt`
+  paging is unaffected as long as each page the worker `Read`s stays under that budget,
+  which the existing 20 000-character stdout budget and hunk-range paging already do with
+  margin (Q9 amendment).
 - **Rejected.**
   - No cap: a single lockfile update can exceed the worker's useful context.
   - Making files past the cap summary-only (whole-file units): the files past it are not

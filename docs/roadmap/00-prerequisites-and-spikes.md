@@ -144,14 +144,14 @@ stdout budget and the hunk-bodies paging.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q9, Q19, C:plan-hunks, Open verification items (tool output limits).
 
 Gates: CHG-18 (stdout budget and spill to `hunks.json`), INT-02 (first end-to-end commit, reply within the stdout budget), RPL-05 (reply size budgets).
 
-- [ ] Recorded for the current Claude Code version: the Bash and PowerShell tool output cut-off (default, and, by driving a nested headless Claude Code session with `BASH_MAX_OUTPUT_LENGTH` set in its environment, the cut-off with it changed), which end is cut, the `Read` line cap and default page size.
-- [ ] Q9 and Q19 (and C:plan-hunks if the numbers change) are amended with the version and the confirmed or new budget.
+- [x] Recorded for the current Claude Code version (2.1.284, 2026-09-29): the Bash and PowerShell tool output cut-off is no longer a silent character cut — past roughly 29-31 KB it spills the full output to a file with a head preview (`<persisted-output>`), on both tools alike. Driving a nested headless `claude -p` session with `BASH_MAX_OUTPUT_LENGTH` set to 60 000 and 100 000 did not raise the threshold (31-78 KB outputs still spilled), so the env var has no observed effect on it in this version. `Read` showed no per-line character cut up to a 10 000-character line; it instead enforces a whole-call token budget (~25 000 tokens, roughly 50 000 characters) and errors rather than truncating when a requested range is over it, and a default call (no offset/limit) on a 5000-line file returned the whole file rather than stopping at 2000 lines.
+- [x] Q9 and Q19 are amended with the version and the confirmed budget (see their Amended bullets); C:plan-hunks is unchanged since no number came back lower than 20 000.
 
 
 ## PRE-09: Git check: the temporary index

@@ -80,11 +80,22 @@
   the guard. It is Bash-only, and vendoring would need a Q1 amendment (nothing vendored);
   it is reconsidered only if the tokenizer spike shows the hand-written tokenizer is
   fragile.
-- Tool output limits (Q9, Q19): the Bash and PowerShell tools' output cut-off
-  (`BASH_MAX_OUTPUT_LENGTH`, about 30 000 characters by default) and the `Read` tool's
-  2000-character line cap and default page size, on the current Claude Code. They set the
-  20 000-character stdout budget and the `hunks.txt` paging. Spike before the file-level
-  slice.
+- Tool output limits (Q9, Q19): **resolved (spiked)**, Claude Code 2.1.284, 2026-09-29.
+  Bash and PowerShell tools no longer silently cut output; past roughly 29-31 KB (noisy
+  around 30 000 characters, not cleanly pinned to one byte value) they spill the full
+  output to a file and return a `<persisted-output>` head preview (first ~2 KB) instead —
+  nothing is discarded. `BASH_MAX_OUTPUT_LENGTH` set to 60 000 or 100 000 via a nested
+  headless `claude -p` session did not raise this threshold (outputs of 31-78 KB still
+  spilled), so the env var has no observed effect on the spill threshold in this version.
+  The `Read` tool showed no per-line character cut up to at least 10 000 characters on one
+  line; instead it enforces a whole-call token budget (~25 000 tokens, roughly 50 000
+  characters) and errors ("exceeds maximum allowed tokens... use offset and limit") rather
+  than truncating when a requested range is over it. A default call (no offset/limit) on a
+  5000-line/~29 KB file returned the entire file, not capped at 2000 lines — the documented
+  "2000 lines by default" did not act as a hard cap in this session; the real constraint is
+  the token budget. Confirms the 20 000-character `plan --hunks` stdout budget (comfortably
+  under both the ~30 KB tool spill and the ~25 000-token Read budget) and corrects Q19's
+  "`Read` cuts lines over 2000 characters" (see Q19 amendment).
 - The README allow rules (Q16): the commit-worker spike confirmed the cache layout
   `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and the quoted, anchored
   `Bash(node "…/*/scripts/commit.js" *)` rule (stub named `commit.js`; same rule with

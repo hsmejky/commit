@@ -267,6 +267,13 @@
   `scanIgnore` change; the new patterns apply from the next run (Q10 as amended). The
   backstop's safety does not rest on HEAD: it rescans the index, and the stored patterns
   are as agent-writable as the rest of the run folder (Q3, Q16).
+- **Amended.** By the PRE-08 spike (2026-09-29, Claude Code 2.1.284): confirms the
+  20 000-character stdout budget for `plan --hunks`. Measured: the Bash/PowerShell tools'
+  output limit sits at roughly 29-31 KB, comfortably above 20 000 characters, and past it
+  they now spill the full output to a file with a head preview rather than losing data;
+  `Read`'s limit is a whole-call token budget (~25 000 tokens, roughly 50 000 characters),
+  not a per-line cut. Both leave the 20 000-character budget unchanged (see Q19 amendment
+  for the `hunks.txt` paging correction).
 - **Rejected.**
   - `--take-over` of an absent lock as a plain `acquire` (spec pass 10): it keeps a flag
     that no longer names anything and adds a lock case the contracts must define; the
