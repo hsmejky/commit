@@ -20,7 +20,9 @@ before(async () => {
   ({ scanText, scanUnits, PATTERNS, createScanner } = await loadLib('scanner'));
 });
 
-// A `ghp_` token built at run time, so this file's own text holds no hit.
+// A `ghp_` token built at run time, so this file's own text holds no hit. Callers pass the
+// fill explicitly: assigning a call with no argument would itself read as a `generic-secret`
+// value, while the quote in `githubToken('x')` ends the unquoted value too early.
 function githubToken(fill = 'x') {
   return 'gh' + 'p_' + fill.repeat(36);
 }
@@ -31,7 +33,7 @@ function textUnit(unitPath, addedLines) {
 }
 
 test('scanUnits: a github-token added line is one hit with pattern ID, path and line', () => {
-  const token = githubToken();
+  const token = githubToken('x');
   const units = [
     textUnit('src/config.js', [
       { line: 3, text: 'const a = 1;' },
@@ -151,7 +153,7 @@ test('the regex table of C:scan-patterns scanned as added lines is no hit', () =
 });
 
 test('scanText: UTF-16 offsets into the whole text, end exclusive', () => {
-  const token = githubToken();
+  const token = githubToken('x');
   // The emoji is two UTF-16 code units; the message spans lines.
   const before = 'feat: add \u{1F511} rotation\n\nold é token was ';
   const text = `${before}${token} here\n${token}`;
@@ -180,7 +182,7 @@ function withAssignmentRow(notHit = null) {
 }
 
 test('scanText: two overlapping hits stay two entries, ordered by start', () => {
-  const token = githubToken();
+  const token = githubToken('x');
   const text = `export GH_TOKEN=${token}`;
 
   const hits = withAssignmentRow().scanText(text, { osUser: null });
@@ -229,7 +231,7 @@ test('a false-positive rule receives the full match, so it can read a capture gr
 });
 
 test('scanUnits: hits in unit order, then line order; one hit per pattern and line', () => {
-  const token = githubToken();
+  const token = githubToken('x');
   const units = [
     textUnit('a.js', [{ line: 7, text: `x = ["${token}", "${githubToken('y')}"]` }]),
     textUnit('b.js', [
@@ -301,6 +303,24 @@ test('scanUnits: a line both a fixed shape and the OS-user segment match is one 
   const { hits } = scanUnits(units, { scanIgnore: [], osUser: 'jdoe1' });
   assert.deepEqual(hits, [{ patternId: 'local-path', path: 'Dockerfile', line: 4 }]);
 });
+
+// `generic-secret` entropy rule (SCN-09): Shannon entropy in bits per character, a hit from
+// 3.5. 11 equally frequent characters give log2(11) ≈ 3.46, 12 give log2(12) ≈ 3.58.
+const ENTROPY_CASES = [
+  // [case, value, hit]
+  ['11 distinct characters, twice', 'abcdefghijk'.repeat(2), false],
+  ['12 distinct characters', 'abcdefghijkl', true],
+  ['12 distinct characters, quoted', '"abcdefghijkl"', true],
+  ['one repeated character', 'q'.repeat(40), false],
+];
+
+for (const [name, value, hit] of ENTROPY_CASES) {
+  test(`generic-secret entropy: ${name} → ${hit ? 'hit' : 'no hit'}`, () => {
+    const line = ['API_KEY', value].join('=');
+    const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+    assert.equal(hits.length, hit ? 1 : 0);
+  });
+}
 
 test('this test source holds no literal hit', () => {
   assert.deepEqual(scanText(readFileSync(__filename, 'utf8'), { osUser: null }), []);

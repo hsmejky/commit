@@ -40,7 +40,8 @@ unquoted value of 12 or more characters running to whitespace, `,`, `;`, `#` or 
 (`API_KEY=…` in a `.env` file, `password: …` in YAML). The key word may follow `_` or other
 name characters and be followed by `_`-joined name parts (`_KEY`), but not sit inside a
 longer word (`tokenizer`). The entropy and placeholder rules apply to quoted and unquoted
-values alike.
+values alike, and read the value without its quotes: Shannon entropy in bits per character
+(code point), and each placeholder word matched case-insensitively anywhere in the value.
 
 A `private-key` body line starts, after trimming, with a run of 40 or more
 `[A-Za-z0-9+/=]` characters; what follows the run (a closing quote, an `-----END` marker on a

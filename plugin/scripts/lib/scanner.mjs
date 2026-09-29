@@ -92,13 +92,56 @@ function* followingLines(split, lines, index) {
   for (let next = index + 1; next < lines.length; next += 1) yield lines[next];
 }
 
+// `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value or one holding a
+// placeholder word, compared case-insensitively.
+const MIN_SECRET_ENTROPY = 3.5;
+// `proce[s]s` spells `process` so the purity check, which bans the bare word, passes.
+const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|proce[s]s\.env|os\.environ/i;
+
+/**
+ * A `generic-secret` value without its quotes, if it has them.
+ *
+ * @param {string} value
+ */
+function unquote(value) {
+  return value.startsWith('"') || value.startsWith("'") ? value.slice(1, -1) : value;
+}
+
+/**
+ * Whether a `generic-secret` value is not a secret: Shannon entropy below 3.5 bits per
+ * character, or a placeholder word in it.
+ *
+ * @param {string} value the value without quotes
+ */
+function isPlaceholderSecret(value) {
+  return shannonEntropy(value) < MIN_SECRET_ENTROPY || SECRET_PLACEHOLDER.test(value);
+}
+
+/**
+ * Shannon entropy of a string in bits per character (code point).
+ *
+ * @param {string} text
+ */
+function shannonEntropy(text) {
+  const chars = [...text];
+  const counts = new Map();
+  for (const char of chars) counts.set(char, (counts.get(char) ?? 0) + 1);
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const p = count / chars.length;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
 /**
  * The pattern table of C:scan-patterns. A later row is one more entry here.
  *
  * `local-path`'s three fixed shapes are one regex: its `C:\Users\<name>` shape is
- * case-insensitive (flags `iu` in the contract) while `/Users/` and `/home/` are not, so that
- * alternative spells its letters as `[Uu]…` classes; one regex keeps `C:/Users/<name>` one
- * hit instead of a drive hit plus an overlapping `/Users/` hit. Its OS-user segment is a
+ * case-insensitive (flags `iu` in the contract) while the `/Users/<name>` and `/home/<name>`
+ * shapes are not, so that alternative spells its letters as `[Uu]…` classes; one regex keeps
+ * `C:/Users/<name>` one hit instead of a drive hit plus an overlapping `/Users/<name>` hit.
+ * Its OS-user segment is a
  * second entry with the same ID: it matches every whole path segment and keeps only the
  * `osUser` name, independently of the fixed shapes, so neither can consume the other's text.
  * `scanUnits` reports one hit per ID and line either way.
@@ -141,6 +184,13 @@ export const PATTERNS = Object.freeze([
     regex: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:(?<password>[^\s/@]+)@/,
     notHit: (match) => PLACEHOLDER_PASSWORD.test(match.groups.password),
     source: 'secretlint',
+  }),
+  Object.freeze({
+    id: 'generic-secret',
+    regex:
+      /(?<![A-Za-z0-9])[A-Za-z0-9_]*?(secret|token|passw(or)?d|api[_-]?key|client[_-]?secret)(?![A-Za-z0-9])(_[A-Za-z0-9_]*)?["']?\s*[:=]\s*(?<value>["'][^"'\s]{12,}["']|[^"'\s,;#]{12,}(?=[\s,;#]|$))/iu,
+    notHit: (match) => isPlaceholderSecret(unquote(match.groups.value)),
+    source: 'gitleaks',
   }),
   Object.freeze({
     id: 'local-path',
