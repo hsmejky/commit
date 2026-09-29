@@ -264,3 +264,74 @@ for (const { description, passes } of passesLowerCaseTable) {
     assert.equal(passesLowerCase(description), passes);
   });
 }
+
+// MSG-04 AC: `Closes #12`, `Refs: abc`, `BREAKING CHANGE: x` with an indented continuation
+// line each parse as a footer paragraph with the right tokens and values.
+
+const footerTable = [
+  {
+    message: 'feat: x\n\nCloses #12',
+    footer: [{ token: 'Closes', value: '12' }],
+    body: [],
+  },
+  {
+    message: 'feat: x\n\nRefs: abc',
+    footer: [{ token: 'Refs', value: 'abc' }],
+    body: [],
+  },
+  {
+    message: 'feat: x\n\nBREAKING CHANGE: removes X\n  and Y',
+    footer: [{ token: 'BREAKING CHANGE', value: 'removes X\nand Y' }],
+    body: [],
+  },
+  {
+    // MSG-04 AC: `parse` exposes the footer paragraph's entries in order.
+    message: 'feat: x\n\nRefs: abc\nCloses #12',
+    footer: [{ token: 'Refs', value: 'abc' }, { token: 'Closes', value: '12' }],
+    body: [],
+  },
+];
+
+for (const { message, footer, body } of footerTable) {
+  test(`parse ${JSON.stringify(message)} gives the footer paragraph`, () => {
+    const result = parse(message);
+    assert.deepEqual(result.footer, footer);
+    assert.deepEqual(result.body, body);
+  });
+}
+
+// MSG-04 AC: a last paragraph mixing `Refs: x` with a plain sentence parses as body; a
+// `Note: x` line in an earlier paragraph is body.
+
+test('a last paragraph mixing a footer line with prose parses as body', () => {
+  const result = parse('feat: x\n\nRefs: x\nthis is a sentence');
+  assert.equal(result.footer, null);
+  assert.deepEqual(result.body, ['Refs: x\nthis is a sentence']);
+});
+
+test('a `Note:` line in an earlier paragraph is body, not a footer', () => {
+  const result = parse('feat: x\n\nNote: x\n\nCloses #12');
+  assert.deepEqual(result.body, ['Note: x']);
+  assert.deepEqual(result.footer, [{ token: 'Closes', value: '12' }]);
+});
+
+// MSG-04 AC: under `body: forbidden`, header plus `Closes #12` passes (story 121); header
+// plus a prose paragraph fails; header plus prose plus footers fails.
+
+const BODY_REASON = 'body not allowed (body: forbidden)';
+
+const bodyTable = [
+  { message: 'feat: x\n\nCloses #12', reasons: [] },
+  { message: 'feat: x\n\nsome prose', reasons: [BODY_REASON] },
+  { message: 'feat: x\n\nsome prose\n\nCloses #12', reasons: [BODY_REASON] },
+];
+
+for (const { message, reasons } of bodyTable) {
+  test(`lint ${JSON.stringify(message)} under body: forbidden`, () => {
+    assert.deepEqual(lint(message, config({ body: 'forbidden' })), reasons);
+  });
+}
+
+test('lint under body: optional allows a prose body', () => {
+  assert.deepEqual(lint('feat: x\n\nsome prose', config({ body: 'optional' })), []);
+});

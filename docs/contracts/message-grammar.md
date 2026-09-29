@@ -24,13 +24,19 @@ the `u` flag.
   letters (`API`, `CI`). Digits, backticks, quotes and symbols pass. `infer` uses the same
   function, exported separately from `lint` as `passesLowerCase(description)`. A failure's
   reason is `description not lowercase (subjectCase: lower)`.
+- A paragraph is a maximal run of consecutive non-blank lines after the header; any number
+  of blank lines separates two paragraphs. Only the last paragraph is ever a footer; an
+  earlier paragraph that happens to look like one (a `Note: x` line, say) is still body.
 - Footer paragraph: the last paragraph (not the header), where every line matches
   `^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(: | #)(.+)$`, or starts with whitespace and
-  continues the previous footer. If any line fails, the whole paragraph is body.
+  continues the previous footer. If any line fails, the whole paragraph is body. A
+  continuation line's leading whitespace is stripped and the remainder is appended to the
+  entry's value, joined by `\n`; `parse` exposes each entry as `{ token, value }`, in order.
 - Allowed footer tokens (case-sensitive): `BREAKING CHANGE`, `BREAKING-CHANGE`, `Refs`,
   `Closes`, `Fixes`. Any other token fails lint with: "`<token>` is not an allowed footer
   token. If this is body text, rephrase it or add a non-footer line to the paragraph."
-- `body: forbidden`: no paragraph besides the header and a footer paragraph.
+- `body: forbidden`: no paragraph besides the header and a footer paragraph; a violation
+  fails with `body not allowed (body: forbidden)`.
 - Trailers, added by `commit` after lint, in this order after the message's own footers:
   1. `reword` only: trailers carried over from the **old** message's footer paragraph. Not
      carried: allowed tokens (the new message owns them) and any
