@@ -112,6 +112,24 @@ test('a regex literal right after a keyword is not mistaken for "//" comment', (
   }, assert.AssertionError);
 });
 
+test('typeof followed by a regex literal is not mistaken for "//" comment', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "typeof /\\//.test(s); const y = process.env;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('a regex literal right after a keyword with no space is not mistaken for "//" comment', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "return/\\//.test(s); const y = process.env;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
 test('a regex literal right after a keyword does not derail quote tracking on the next line', () => {
   assert.throws(() => {
     assertPureSourceText(
@@ -128,4 +146,10 @@ test('division after a plain identifier is still division and does not break str
       'fixture.mjs',
     );
   }, assert.AssertionError);
+});
+
+test('division followed by a comment naming a banned word on the same line passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText('const c = a / b; // no process here\n', 'fixture.mjs');
+  });
 });
