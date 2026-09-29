@@ -15,10 +15,19 @@ let scanText;
 let scanUnits;
 let PATTERNS;
 let createScanner;
+let compileGlob;
 
 beforeEach(async () => {
   ({ scanText, scanUnits, PATTERNS, createScanner } = await loadLib('scanner'));
+  ({ compileGlob } = await loadLib('glob-matcher'));
 });
+
+// A compiled `scanIgnore` matcher, as M4 would pass it (SCN-13).
+function ignoreGlob(pattern) {
+  const result = compileGlob(pattern);
+  assert.equal(result.ok, true, `${pattern} compiles`);
+  return result.matcher;
+}
 
 // A `ghp_` token built at run time, so this file's own text holds no hit. Callers pass the
 // fill explicitly: assigning a call with no argument would itself read as a `generic-secret`
@@ -325,7 +334,9 @@ test('scanText: a message line one character past the cut → missed', () => {
 // line and never loops. This is structural: it proves the cut runs before any rule sees the
 // line, unlike a wall-clock bound, which only proves something is fast today (SCN-12 review).
 test('scanUnits: a multi-megabyte line is cut to 4096 characters before any rule runs', () => {
-  const hugeLine = ' '.repeat(20_000_000);
+  // Kept under the SCN-13 1 MB added-content skip (else the unit would be skipped, and the
+  // probe would never run at all), while staying 256x the 4096-character cut it tests.
+  const hugeLine = ' '.repeat(1024 * 1024);
   const seen = [];
   const probe = createScanner([
     {
@@ -348,7 +359,7 @@ test('scanUnits: a multi-megabyte line is cut to 4096 characters before any rule
   assert.deepEqual(seen, [4096], 'the rule saw a line already cut to 4096 characters');
   // Loose smoke bound, not the point of the test: catches a gross regression (e.g. the cut
   // being skipped and a quadratic rule run over the full 20M characters) without being flaky.
-  assert.ok(elapsedMs < 2000, `took ${elapsedMs} ms scanning a 20M-character line, bound 2 s`);
+  assert.ok(elapsedMs < 2000, `took ${elapsedMs} ms scanning a 1M-character line, bound 2 s`);
 });
 
 // `private-key` body lookahead (scanner.mjs's `hasKeyBody`/`followingLines`): the lookahead
@@ -572,5 +583,118 @@ test('this test source holds no literal hit', () => {
 });
 
 test('scanner.mjs is pure', () => {
-  assertPureSource('scanner');
+  assertPureSource('scanner', { allowImports: ['./glob-matcher.mjs'] });
+});
+
+// SCN-13 unit-level rules ------------------------------------------------------------------
+
+test('scanUnits: a binary unit is neither a hit nor skipped', () => {
+  const token = githubToken('x');
+  const units = [
+    { path: 'image.png', oldPath: null, status: 'M', kind: 'binary', addedLines: [{ line: 1, text: token }] },
+  ];
+
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
+});
+
+test('scanUnits: content outside addedLines is never scanned', () => {
+  // M8 reads only `addedLines`; a unit that also carries removed-line data under another key
+  // (as M10's own diff-side bookkeeping might) must not have that data reach the scanner.
+  const token = githubToken('x');
+  const units = [
+    {
+      path: 'src/config.js',
+      oldPath: null,
+      status: 'M',
+      kind: 'text',
+      addedLines: [],
+      removedLines: [{ line: 3, text: token }],
+    },
+  ];
+
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
+});
+
+test('scanUnits: a unit with over 1 MB added is skipped with the exact reason, no hits', () => {
+  const token = githubToken('x');
+  const units = [
+    textUnit('assets/big.json', [{ line: 1, text: 'x'.repeat(1024 * 1024 + 1) + token }]),
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [],
+    skipped: [{ path: 'assets/big.json', reason: 'added content over 1 MB' }],
+  });
+});
+
+test('scanUnits: a unit with exactly 1 MB added is scanned, not skipped', () => {
+  const token = githubToken('x');
+  // Split across two added lines, so the token's own line stays well under the per-line
+  // 4096-character cut (SCN-12) while the unit's total added length sits exactly at the 1 MB
+  // boundary.
+  const filler = 'x'.repeat(1024 * 1024 - token.length);
+  const units = [
+    textUnit('assets/exact.json', [
+      { line: 1, text: filler },
+      { line: 2, text: token },
+    ]),
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'assets/exact.json', line: 2 }],
+    skipped: [],
+  });
+});
+
+test('scanUnits: a symlink unit whose target is a home path is a hit', () => {
+  const units = [
+    {
+      path: 'link',
+      oldPath: null,
+      status: 'A',
+      kind: 'symlink',
+      addedLines: [{ line: 1, text: '/ho' + 'me/alice/app' }],
+    },
+  ];
+
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, [
+    { patternId: 'local-path', path: 'link', line: 1 },
+  ]);
+});
+
+test('scanUnits: a secret in a unit matched by a scanIgnore glob is not a hit', () => {
+  const token = githubToken('x');
+  const units = [textUnit('tests/fixtures/sample.js', [{ line: 1, text: token }])];
+
+  const result = scanUnits(units, { scanIgnore: [ignoreGlob('tests/fixtures/**')], osUser: null });
+
+  assert.deepEqual(result, { hits: [], skipped: [] });
+});
+
+test('scanUnits: a scanIgnore glob that does not match the unit path still scans it', () => {
+  const token = githubToken('x');
+  const units = [textUnit('src/config.js', [{ line: 1, text: token }])];
+
+  const result = scanUnits(units, { scanIgnore: [ignoreGlob('tests/fixtures/**')], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'src/config.js', line: 1 }],
+    skipped: [],
+  });
+});
+
+test('scanUnits: any matching scanIgnore matcher in the list drops the unit', () => {
+  const token = githubToken('x');
+  const units = [textUnit('docs/notes.md', [{ line: 1, text: token }])];
+
+  const result = scanUnits(units, {
+    scanIgnore: [ignoreGlob('tests/fixtures/**'), ignoreGlob('docs/**')],
+    osUser: null,
+  });
+
+  assert.deepEqual(result, { hits: [], skipped: [] });
 });

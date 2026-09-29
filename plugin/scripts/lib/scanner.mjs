@@ -1,5 +1,8 @@
-// M8 Scanner (C:scan-patterns). Pure: no I/O, no imports, no ambient state; every input
-// arrives as an argument. A hit names a pattern ID and a location, never the matched value.
+// M8 Scanner (C:scan-patterns). Pure: no I/O, no ambient state; every input arrives as an
+// argument. Its only import is M7's pure `matches`, to honour `scanIgnore` matchers. A hit
+// names a pattern ID and a location, never the matched value.
+
+import { matches } from './glob-matcher.mjs';
 
 /**
  * @typedef {object} PatternRow One row of C:scan-patterns, as data.
@@ -330,8 +333,27 @@ function isOsUserSegment(segment, osUserSegment) {
  * @typedef {{ line: number, text: string }} AddedLine
  * @typedef {{ path: string, oldPath: string | null, status: string, kind: string,
  *   addedLines: readonly AddedLine[] }} Unit
- *   A unit record from M10 (only the fields M8 reads)
+ *   A unit record from M10 (only the fields M8 reads). `kind: "binary"` marks a binary unit
+ *   (SCN-13); every other kind, including `"symlink"`, is scanned like text, so a symlink's
+ *   target reaches `scanUnits` as its unit's one added line
  */
+
+// SCN-13, Q19, C:plan: a unit whose added lines total more than this many UTF-16 code units
+// is reported skipped instead of scanned (the same code-unit measure SCN-12 cuts a single
+// line at, not a raw byte count, since a unit's `addedLines` text is already a decoded JS
+// string by the time it reaches M8).
+const MAX_ADDED_LENGTH = 1024 * 1024;
+const OVER_SIZE_LIMIT_REASON = 'added content over 1 MB';
+
+/**
+ * The total length, in UTF-16 code units, of a unit's added lines — the measure
+ * `MAX_ADDED_LENGTH` bounds (SCN-13).
+ *
+ * @param {Unit} unit
+ */
+function addedContentLength(unit) {
+  return unit.addedLines.reduce((total, { text }) => total + text.length, 0);
+}
 
 /**
  * Build a scanner over a pattern table. The module's own `scanText` and `scanUnits` are
@@ -406,20 +428,33 @@ export function createScanner(patterns) {
   }
 
   /**
-   * Scan the added lines of units. A pattern hitting a line more than once is one hit,
-   * since a hit's location is its path and line. `scanIgnore` (M4's compiled M7 matchers)
-   * is part of the interface but not read yet: the unit-level rules (binaries, the 1 MB
-   * skip, symlink targets, `scanIgnore`) are not implemented here yet, so `skipped` is
-   * always empty.
+   * Scan the added lines of units (SCN-13). A pattern hitting a line more than once is one
+   * hit, since a hit's location is its path and line. Three unit-level rules run before any
+   * line is scanned, in order: a unit whose path a `scanIgnore` matcher (M4's compiled M7
+   * matchers) matches is dropped outright — no hit, not `skipped` either, since it is
+   * exempted, not scanned-and-rejected; a binary unit (`kind: "binary"`) is skipped silently,
+   * the same way; a unit whose added lines total more than 1 MB (`addedContentLength`,
+   * tracked or untracked alike) is reported in `skipped` with the reason
+   * `"added content over 1 MB"` (C:plan) and not scanned. Every other unit, symlinks
+   * included, is scanned line by line like a text unit.
    *
    * @param {readonly Unit[]} units
-   * @param {{ scanIgnore?: readonly unknown[], osUser?: string | null }} [options]
+   * @param {{ scanIgnore?: readonly object[], osUser?: string | null }} [options] `scanIgnore`
+   *   holds M7 `Matcher` values, opaque here; each is checked against a unit's path with M7's
+   *   own `matches`
    * @returns {{ hits: UnitHit[], skipped: { path: string, reason: string }[] }}
    */
-  function scanUnits(units, { osUser = null } = {}) {
+  function scanUnits(units, { scanIgnore = [], osUser = null } = {}) {
     const osUserSegment = osUserSegmentName(osUser);
     const hits = [];
+    const skipped = [];
     for (const unit of units) {
+      if (scanIgnore.some((matcher) => matches(matcher, unit.path))) continue;
+      if (unit.kind === 'binary') continue;
+      if (addedContentLength(unit) > MAX_ADDED_LENGTH) {
+        skipped.push({ path: unit.path, reason: OVER_SIZE_LIMIT_REASON });
+        continue;
+      }
       const lines = unit.addedLines.map(({ text }) => text);
       unit.addedLines.forEach(({ line }, index) => {
         const seen = new Set();
@@ -431,7 +466,7 @@ export function createScanner(patterns) {
         }
       });
     }
-    return { hits, skipped: [] };
+    return { hits, skipped };
   }
 
   return { scanText, scanUnits };
