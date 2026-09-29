@@ -12,9 +12,17 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { libPath } = require('./load-lib');
 
+// Keywords after which a `/` starts a value (a regex literal), not division, even though
+// the keyword itself ends in a word character just like an identifier would.
+const REGEX_PRECEDING_KEYWORDS = new Set([
+  'return', 'typeof', 'case', 'throw', 'in', 'of', 'await', 'yield', 'void', 'delete',
+  'else', 'instanceof', 'new',
+]);
+
 // Strips `//` and `/* */` comments in a single pass, leaving string and regex literals
 // (which may themselves contain `//`, e.g. `'http://x'` or `/\//`) untouched, so a comment
 // stripped from inside one of those doesn't swallow the rest of the line with it.
+// Known limitation: a template literal nested inside `${}` is not tracked (rare).
 function stripComments(source) {
   let out = '';
   let i = 0;
@@ -23,10 +31,20 @@ function stripComments(source) {
   // (starts where a value is expected) from division (follows an identifier, number, `)`,
   // or `]`).
   let lastChar = '';
+  // The identifier word just completed (e.g. `return`), tracked separately from `lastChar`
+  // so it survives intervening whitespace; used to tell a regex literal after a keyword
+  // (e.g. `return /re/`) from division after a plain identifier (e.g. `a / b`).
+  let lastWord = '';
+  let currentWord = '';
 
   while (i < n) {
     const c = source[i];
     const next = source[i + 1];
+
+    if (!/[\w$]/.test(c) && currentWord) {
+      lastWord = currentWord;
+      currentWord = '';
+    }
 
     if (c === '/' && next === '/') {
       while (i < n && source[i] !== '\n') i += 1;
@@ -61,7 +79,11 @@ function stripComments(source) {
       continue;
     }
 
-    if (c === '/' && !/[\w$)\]]/.test(lastChar)) {
+    // A `/` normally starts a regex literal only where a value is expected (not right after
+    // an identifier, number, `)`, or `]`); but a keyword like `return` or `typeof` also ends
+    // in a word character, so check whether the just-completed word is one of those keywords.
+    const afterRegexKeyword = /[a-zA-Z_$]/.test(lastChar) && REGEX_PRECEDING_KEYWORDS.has(lastWord);
+    if (c === '/' && (!/[\w$)\]]/.test(lastChar) || afterRegexKeyword)) {
       let j = i + 1;
       let inClass = false;
       let closed = false;
@@ -91,6 +113,7 @@ function stripComments(source) {
 
     out += c;
     if (!/\s/.test(c)) lastChar = c;
+    if (/[\w$]/.test(c)) currentWord += c;
     i += 1;
   }
 

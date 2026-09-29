@@ -102,3 +102,30 @@ test('`import.meta` is banned', () => {
     );
   }, assert.AssertionError);
 });
+
+test('a regex literal right after a keyword is not mistaken for "//" comment', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "return /\\//.test(s); const y = process.env;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('a regex literal right after a keyword does not derail quote tracking on the next line', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "return /'/.test(s);\nconst u = 'http://x'; process.exit();\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('division after a plain identifier is still division and does not break stripping', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "const c = a / b;\nconst y = process.env;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
