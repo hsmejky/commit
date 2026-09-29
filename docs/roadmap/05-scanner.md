@@ -46,12 +46,12 @@ character.
 
 **Blocked by:** SCN-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scanignore-globs (errors), Q6, Q10, M7, story 150.
 
-- [ ] Seam 3: one fixture per error; `**`, `**/*`, `**/?*`, `*/**`, `/**` → `config`.
-- [ ] Seam 3: `src/**` compiles (broad literal pattern stays legal).
+- [x] Seam 3: one fixture per error; `**`, `**/*`, `**/?*`, `*/**`, `/**` → `config`.
+- [x] Seam 3: `src/**` compiles (broad literal pattern stays legal).
 
 
 ## SCN-04: Glob oracle against git pathspecs (CI)
@@ -61,11 +61,11 @@ character.
 
 **Blocked by:** SCN-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** testing-modules (platform oracles), C:scanignore-globs.
 
-- [ ] CI: each non-excluded row gives the same match set as `git ls-files ':(glob)…'` over
+- [x] CI: each non-excluded row gives the same match set as `git ls-files ':(glob)…'` over
       a fixture tree; excluded rows are listed with the reason.
 
 
