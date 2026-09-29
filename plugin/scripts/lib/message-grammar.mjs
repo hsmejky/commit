@@ -7,6 +7,10 @@ const HEADER = /^([a-z][a-z0-9-]*)(\(([^()\s]+)\))?(!)?: (\S.*)$/u;
 
 const HEADER_REASON = "header is not 'type(scope)!: description'";
 
+// Footer tokens (case-sensitive) an agent may write; the script appends every other
+// trailer-shaped token itself (Q13, C:message-grammar).
+const ALLOWED_FOOTER_TOKENS = new Set(['BREAKING CHANGE', 'BREAKING-CHANGE', 'Refs', 'Closes', 'Fixes']);
+
 // A footer entry's own line: a token (`BREAKING CHANGE` or a word of ASCII letters, digits
 // and hyphens starting with a letter), then `: ` or ` #` (captured as the separator, for
 // verbatim carry-over, Q20/MSG-08), then the value.
@@ -144,7 +148,10 @@ export function parse(message) {
 /**
  * Lint a message against the effective config values. Returns the failure reasons, in
  * rule order; an empty list means the message passes. A header that does not match the
- * regex gives only the header reason: no further rule runs on it.
+ * regex gives only the header reason: no further rule runs on it. Every footer entry
+ * (`parse`'s `footer`) whose token is not one of the allowed agent footer tokens
+ * (`ALLOWED_FOOTER_TOKENS`) adds its own reason, case-sensitive, independent of `body`
+ * (Q13, C:message-grammar) — this also catches a last paragraph such as `Note: see #12`.
  *
  * @param {string} message
  * @param {{ types: readonly string[], scope?: 'forbidden' | 'optional' | 'required',
@@ -153,7 +160,7 @@ export function parse(message) {
  * @returns {string[]}
  */
 export function lint(message, values) {
-  const { header, body } = parse(message);
+  const { header, body, footer } = parse(message);
   if (header === null) {
     return [HEADER_REASON];
   }
@@ -172,6 +179,16 @@ export function lint(message, values) {
   }
   if (values.subjectCase === 'lower' && !passesLowerCase(header.description)) {
     reasons.push('description not lowercase (subjectCase: lower)');
+  }
+  if (footer !== null) {
+    for (const entry of footer) {
+      if (!ALLOWED_FOOTER_TOKENS.has(entry.token)) {
+        reasons.push(
+          `\`${entry.token}\` is not an allowed footer token. If this is body text, rephrase ` +
+            'it or add a non-footer line to the paragraph.',
+        );
+      }
+    }
   }
   if (values.body === 'forbidden' && body.length > 0) {
     reasons.push('body not allowed (body: forbidden)');

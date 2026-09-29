@@ -396,3 +396,59 @@ for (const { message, reasons } of bodyTable) {
 test('lint under body: optional allows a prose body', () => {
   assert.deepEqual(lint('feat: x\n\nsome prose', config({ body: 'optional' })), []);
 });
+
+// MSG-05 AC: each allowed footer token (case-sensitive) passes lint; `refs: x` (wrong case)
+// fails, since it is not among the five allowed tokens.
+
+const NOT_ALLOWED_REASON = (token) =>
+  `\`${token}\` is not an allowed footer token. If this is body text, rephrase it or add a ` +
+  'non-footer line to the paragraph.';
+
+const allowedFooterTable = [
+  { message: 'feat: x\n\nBREAKING CHANGE: x', reasons: [] },
+  { message: 'feat: x\n\nBREAKING-CHANGE: x', reasons: [] },
+  { message: 'feat: x\n\nRefs: abc', reasons: [] },
+  { message: 'feat: x\n\nCloses #12', reasons: [] },
+  { message: 'feat: x\n\nFixes #12', reasons: [] },
+  { message: 'feat: x\n\nrefs: x', reasons: [NOT_ALLOWED_REASON('refs')] },
+];
+
+for (const { message, reasons } of allowedFooterTable) {
+  test(`lint ${JSON.stringify(message)} against the allowed footer tokens`, () => {
+    assert.deepEqual(lint(message, config()), reasons);
+  });
+}
+
+// MSG-05 AC (story 119): the script's own trailer tokens, written into the message text by
+// an agent instead of appended by the script, fail lint like any other disallowed token.
+
+const trailerSpoofTable = [
+  {
+    message: 'feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>',
+    reasons: [NOT_ALLOWED_REASON('Co-Authored-By')],
+  },
+  {
+    message: 'feat: x\n\nSigned-off-by: A <a@b>',
+    reasons: [NOT_ALLOWED_REASON('Signed-off-by')],
+  },
+  {
+    message: 'feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: A <a@b>',
+    reasons: [NOT_ALLOWED_REASON('Co-Authored-By'), NOT_ALLOWED_REASON('Signed-off-by')],
+  },
+];
+
+for (const { message, reasons } of trailerSpoofTable) {
+  test(`lint ${JSON.stringify(message)} rejects a spoofed trailer`, () => {
+    assert.deepEqual(lint(message, config()), reasons);
+  });
+}
+
+// MSG-05 AC: a last paragraph `Note: see #12` fails lint with exactly the fixed hint text,
+// so the worker's lint retry can fix a `Note:` paragraph on its own (Q13, story 120).
+
+test('lint "feat: x\\n\\nNote: see #12" fails with the exact Note hint', () => {
+  assert.deepEqual(lint('feat: x\n\nNote: see #12', config()), [
+    '`Note` is not an allowed footer token. If this is body text, rephrase it or add a ' +
+      'non-footer line to the paragraph.',
+  ]);
+});
