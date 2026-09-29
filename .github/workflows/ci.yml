@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        # 22.0.0 is the documented floor (Q1, Q15: FND-01 was verified manually against it);
+        # '22' resolves to the latest 22.x release, '24' to the latest 24.x release.
+        node-version: ['22.0.0', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Clear inherited git identity
+        shell: bash
+        run: |
+          git config --global --unset-all user.name || true
+          git config --global --unset-all user.email || true
+
+      - name: Assert powershell.exe and pwsh are both available
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $legacy = Get-Command powershell.exe -ErrorAction SilentlyContinue
+          $core = Get-Command pwsh -ErrorAction SilentlyContinue
+          if (-not $legacy) { throw "powershell.exe not found" }
+          if (-not $core) { throw "pwsh not found" }
+          Write-Host "powershell.exe: $($legacy.Source)"
+          Write-Host "pwsh: $($core.Source)"
+
+      - name: Run tests
+        run: npm test
+
+  min-git:
+    name: min-git (ubuntu:22.04 container)
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: Install git and assert minimum version (2.34.x)
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends git ca-certificates
+          ver=$(git --version | sed -E 's/^git version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "git version: $ver"
+          case "$ver" in
+            2.34.*) echo "OK: git $ver" ;;
+            *) echo "expected git 2.34.x, got $ver" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - name: Clear inherited git identity
+        run: |
+          git config --global --unset-all user.name || true
+          git config --global --unset-all user.email || true
+
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run tests
+        run: npm test
