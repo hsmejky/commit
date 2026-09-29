@@ -12,7 +12,10 @@ every step, each call taking the time left at its own start; past it `plan` ends
 `timeout` and deletes the provisional folder (Q9, Q18). After a timeout with the lock held
 (past step 7, or past a takeover's `acquire` at step 3), the cleanup (unstage, if any; releasing the lock; deleting the folder) runs
 against `cleanupDeadline` = `plan`'s start plus 580 s, never the spent 540-second deadline,
-the same rule [`commit`](commit-release.md) follows.
+the same rule [`commit`](commit-release.md) follows. Before this deadline governs later
+calls, the two start-up `spawnSync` calls of step 1 (`toplevel`, `gitVersion`) each carry
+their own fixed short timeout (M2); either one passing it also ends `plan` with exit 5
+`timeout` (domain code `timed-out`), before any run folder exists.
 
 1. Probe the repo state (with `--reword` also its unborn, merge-commit, root-commit and
    pushed facts; unmerged index entries; a pending `SQUASH_MSG`), git and Node versions; load

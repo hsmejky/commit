@@ -14,7 +14,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
 const { parseDomainCodeDocRows, firstColumnKey } = require('./helpers/domain-code-doc.js');
 
 const ROWS = [
@@ -47,10 +47,7 @@ const ROWS = [
       const c = createCase(t);
       const emptyBin = path.join(c.root, 'empty-bin');
       fs.mkdirSync(emptyBin);
-      const env = { PATH: emptyBin };
-      for (const key of Object.keys(c.env)) {
-        if (key !== 'PATH' && key.toUpperCase() === 'PATH') env[key] = undefined;
-      }
+      const env = pathOverride(c, [emptyBin]);
       return runCommit(c, ['plan'], { env });
     },
   },

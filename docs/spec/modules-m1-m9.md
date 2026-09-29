@@ -28,9 +28,10 @@ intended: bounded, and inside the cleanup window). The
 `timeoutMs` of every M2 call, in `plan` as in later subcommands, is computed from the call's
 `deadline` (M15), or from `cleanupDeadline` for the cleanup and reporting calls after a
 failure or timeout, so `plan`'s calls before `acquire` are bounded too. Every call is
-asynchronous; only `toplevel` and `gitVersion` use `spawnSync`, each under a fixed short
-timeout. `stdout` is returned as a `Buffer`, never decoded by M2, so diff output keeps its
-raw bytes; with an `onStdout(chunk)` consumer (M10's patch pass only) each chunk goes to it
+asynchronous except `toplevel` and `gitVersion`, which use `spawnSync` under a fixed short
+timeout and decode their output as UTF-8 text (KD-S53: a non-UTF-8 toplevel path is mangled
+to U+FFFD, which then fails as a later call's `cwd`). `run`'s `stdout` is returned as a
+`Buffer`, never decoded by M2, so diff output keeps its raw bytes; with an `onStdout(chunk)` consumer (M10's patch pass only) each chunk goes to it
 as it arrives and nothing is buffered. M2 tracks the child it is running; `killActive()`
 kills that child's tree the same way, for the entry point's `SIGINT`/`SIGTERM`/`SIGHUP`
 handler.

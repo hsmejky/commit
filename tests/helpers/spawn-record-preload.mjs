@@ -8,8 +8,13 @@
 //   COMMIT_TEST_SPAWN_LOG   a file path; every `node:child_process` call appends one JSON
 //                           line `{ api, file, args, windowsHide, encoding, caller }`, and a
 //                           `setEncoding` call on an asynchronous child's stdout appends
-//                           `{ api: 'stdout.setEncoding', encoding, caller }`. Unset: the
-//                           preload patches nothing.
+//                           `{ api: 'stdout.setEncoding', encoding, caller }`. For an
+//                           asynchronous `spawn`, each stdout `'data'` chunk also appends
+//                           `{ api: 'stdout.data', isBuffer, caller }` (proves the chunk stays
+//                           a `Buffer`, never a decoded string) and the child's `'spawn'`
+//                           event appends `{ api: 'child.spawn-event', caller }` (proves the
+//                           event `spawnedAt` depends on actually fires). Unset: the preload
+//                           patches nothing.
 //
 // `caller` is the base name of the first stack frame under `plugin/scripts/`, i.e. the
 // library module (or entry point) that made the call. After patching, the preload calls
@@ -61,6 +66,29 @@ function wrap(api) {
       result.stdout.setEncoding = function setEncoding(encoding) {
         log({ api: 'stdout.setEncoding', encoding, caller: callerModule() });
         return originalSetEncoding.call(this, encoding);
+      };
+      const originalStdoutOn = result.stdout.on;
+      result.stdout.on = function on(event, listener) {
+        if (event !== 'data') return originalStdoutOn.call(this, event, listener);
+        // Captured at registration time: the 'data' event itself fires later, off the
+        // registering module's own call stack.
+        const registeredBy = callerModule();
+        const wrapped = (chunk) => {
+          log({ api: 'stdout.data', isBuffer: Buffer.isBuffer(chunk), caller: registeredBy });
+          return listener(chunk);
+        };
+        return originalStdoutOn.call(this, event, wrapped);
+      };
+      const originalOn = result.on;
+      result.on = function on(event, listener) {
+        if (event !== 'spawn') return originalOn.call(this, event, listener);
+        // Same reasoning: capture at registration time, not when 'spawn' actually fires.
+        const registeredBy = callerModule();
+        const wrapped = (...args) => {
+          log({ api: 'child.spawn-event', caller: registeredBy });
+          return listener(...args);
+        };
+        return originalOn.call(this, event, wrapped);
       };
     }
     return result;

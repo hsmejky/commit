@@ -29,7 +29,9 @@ function probeGit({ cwd, env }) {
     const version = parseGitVersion(result.output);
     return version === null ? { status: 'unreadable', output: result.output } : { status: 'ok', version };
   }
-  if (result.status === 'failed') return { status: 'unreadable', output: '' };
+  if (result.status === 'failed' || result.status === 'unreadable') {
+    return { status: 'unreadable', output: result.output };
+  }
   return { status: result.status };
 }
 

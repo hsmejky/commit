@@ -23,9 +23,12 @@ function startupGit(args, { cwd, env }) {
   if (result.error) {
     if (result.error.code === 'ENOENT') return { status: 'missing' };
     if (result.error.code === 'ETIMEDOUT') return { status: 'timed-out' };
-    throw result.error;
+    // A non-ENOENT, non-timeout spawn error (e.g. EACCES: git exists but cannot be executed)
+    // is as unusable as a missing git, so it becomes the same `env` refusal instead of an
+    // unhandled throw surfacing as `internal` (GIT-01 review finding 4).
+    return { status: 'unreadable', output: result.error.message };
   }
-  return { status: 'ran', code: result.status, stdout: result.stdout };
+  return { status: 'ran', code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 /**
@@ -34,9 +37,10 @@ function startupGit(args, { cwd, env }) {
  * @param {string} fromCwd the directory to ask from.
  * @param {{ env: object }} options `env`: the injected process environment.
  * @returns {{ status: 'ok', toplevel: string } | { status: 'none' }
- *   | { status: 'missing' } | { status: 'timed-out' }} `toplevel` as git prints it (forward
+ *   | { status: 'missing' } | { status: 'timed-out' }
+ *   | { status: 'unreadable', output: string }} `toplevel` as git prints it (forward
  *   slashes); `none` when `fromCwd` is not inside a working tree; `missing` when no git can
- *   be spawned.
+ *   be spawned; `unreadable` for a non-ENOENT, non-timeout spawn error (e.g. EACCES).
  */
 export function toplevel(fromCwd, { env }) {
   const result = startupGit(['rev-parse', '--show-toplevel'], { cwd: fromCwd, env });
@@ -50,13 +54,17 @@ export function toplevel(fromCwd, { env }) {
  *
  * @param {{ cwd: string, env: object }} options `cwd`: the call's working directory;
  *   `env`: the injected process environment.
- * @returns {{ status: 'ok', output: string } | { status: 'failed', code: number|null }
- *   | { status: 'missing' } | { status: 'timed-out' }} `output` is the first line, trimmed.
+ * @returns {{ status: 'ok', output: string } | { status: 'failed', code: number|null, output: string }
+ *   | { status: 'missing' } | { status: 'timed-out' }
+ *   | { status: 'unreadable', output: string }} `output` is the first line, trimmed; `failed`
+ *   now also carries `output` (git's stderr, or stdout if stderr is empty).
  */
 export function gitVersion({ cwd, env }) {
   const result = startupGit(['--version'], { cwd, env });
   if (result.status !== 'ran') return result;
-  if (result.code !== 0) return { status: 'failed', code: result.code };
+  if (result.code !== 0) {
+    return { status: 'failed', code: result.code, output: (result.stderr || result.stdout || '').trim() };
+  }
   return { status: 'ok', output: result.stdout.split(/\r?\n/)[0].trim() };
 }
 

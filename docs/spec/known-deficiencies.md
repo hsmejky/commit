@@ -25,6 +25,11 @@ delete it here; IDs are never reused.
 - **KD-S14. Timeout text hard-codes "9 min".** A later group may start with 480 s left.
   Where: M16, [C:commit-release](../contracts/commit-release.md), Q18. Fix: compute the
   minutes or say "within the call's time budget". Disposition: accepted for 0.1.0.
+- **KD-S53. Non-UTF-8 toplevel path mangled by the start-up `spawnSync` decode.** `toplevel`'s
+  `spawnSync` call decodes stdout as UTF-8 text so the fixed short-timeout probe can return a
+  string toplevel; on POSIX a toplevel path containing non-UTF-8 bytes is mangled to U+FFFD
+  and then fails as a later call's `cwd`. Where: M2, `plugin/scripts/lib/process-adapter.mjs`.
+  Disposition: accepted for 0.1.0.
 
 ## Error tables and API contract
 

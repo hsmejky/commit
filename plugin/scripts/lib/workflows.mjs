@@ -32,12 +32,7 @@ async function probeRepo(ctx) {
 async function preFolderRefusals(ctx) {
   const refusal = planRefusal(ctx.probe);
   if (refusal !== null) return { refusal };
-  const { git, repo } = ctx.probe;
-  // A start-up call past its fixed short timeout (M2); GIT-07 brings the deadline.
-  if (git.status === 'timed-out' || repo.kind === 'timed-out') {
-    return { refusal: { code: 'timed-out', message: 'git did not answer its start-up call in time' } };
-  }
-  ctx.toplevel = repo.toplevel;
+  ctx.toplevel = ctx.probe.repo.toplevel;
   return undefined;
 }
 

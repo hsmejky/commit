@@ -348,6 +348,24 @@ async function runGuard(c, hook = {}, options = {}) {
   return { ...result, heartbeat, heartbeatPath };
 }
 
+/**
+ * Env overrides that replace a case's PATH (whatever its spelling: Windows keeps `Path`)
+ * with `dirs`, for a spawn that must see only a given set of directories on it (a missing or
+ * shimmed `git`, GIT-01).
+ *
+ * @param {ReturnType<typeof createCase>} c
+ * @param {string[]} dirs
+ * @returns {Record<string, string|undefined>} pass as `runCommit`'s `options.env`.
+ */
+function pathOverride(c, dirs) {
+  const overrides = {};
+  for (const key of Object.keys(c.env)) {
+    if (key.toUpperCase() === 'PATH') overrides[key] = undefined;
+  }
+  overrides.PATH = dirs.join(path.delimiter);
+  return overrides;
+}
+
 module.exports = {
   COMMIT_ENTRY,
   GUARD_ENTRY,
@@ -356,4 +374,5 @@ module.exports = {
   runEntry,
   runCommit,
   runGuard,
+  pathOverride,
 };

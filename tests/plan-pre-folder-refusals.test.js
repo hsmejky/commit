@@ -16,24 +16,13 @@ const { pathToFileURL } = require('node:url');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
   path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
 ).href;
 const SHIM_SKIP = process.platform === 'win32'
   && 'PATH script shims are not found by shell-less spawn on Windows (KD-R21)';
-
-// Env overrides that replace the case's PATH (whatever its spelling: Windows keeps `Path`)
-// with `dirs`.
-function pathOverride(c, dirs) {
-  const overrides = {};
-  for (const key of Object.keys(c.env)) {
-    if (key.toUpperCase() === 'PATH') overrides[key] = undefined;
-  }
-  overrides.PATH = dirs.join(path.delimiter);
-  return overrides;
-}
 
 function assertNoRunFolder(dir) {
   assert.equal(fs.existsSync(path.join(dir, '.commit-plan')), false, `.commit-plan created in ${dir}`);
@@ -128,6 +117,44 @@ test('plan with a PATH git shim reporting an unreadable version exits 1 env', { 
   assertNoRunFolder(c.repoDir);
 });
 
+test('plan with a PATH git shim whose --version fails exits 1 env naming the failure', { skip: SHIM_SKIP }, async (t) => {
+  const c = createCase(t);
+  const dir = path.join(c.root, 'shim-bin-fail');
+  fs.mkdirSync(dir);
+  const shim = path.join(dir, 'git');
+  fs.writeFileSync(shim, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then echo \'fatal: boom\' 1>&2; exit 1; fi',
+    `exec '${realGit(c)}' "$@"`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(shim, 0o755);
+
+  const result = await runCommit(c, ['plan'], { env: pathOverride(c, [dir, c.env.PATH]) });
+
+  assertRefusal(result, 'env', 1);
+  assert.match(result.json.error.message, /boom/);
+  assertNoRunFolder(c.repoDir);
+});
+
+test('plan with a PATH git file that cannot be executed exits 1 env, not internal', { skip: SHIM_SKIP }, async (t) => {
+  const c = createCase(t);
+  const dir = path.join(c.root, 'shim-bin-noexec');
+  fs.mkdirSync(dir);
+  const fakeGit = path.join(dir, 'git');
+  fs.writeFileSync(fakeGit, 'not executable\n');
+  fs.chmodSync(fakeGit, 0o644);
+
+  const result = await runCommit(c, ['plan'], { env: pathOverride(c, [dir, c.env.PATH]) });
+
+  // On a sandbox or CI runner that executes as root, permission bits are ignored and this
+  // file may still run (as a non-git text file, which fails the same way a real EACCES
+  // would be routed: unreadable -> env, not internal). Assert the domain code either way;
+  // only skip the exact-message check when EACCES was not actually produced.
+  assertRefusal(result, 'env', 1);
+  assertNoRunFolder(c.repoDir);
+});
+
 test('plan with a PATH git shim reporting exactly git 2.34.0 goes on', { skip: SHIM_SKIP }, async (t) => {
   const c = createCase(t);
   const shimDir = gitShim(c, 'git version 2.34.0 (Apple Git-1)');
@@ -136,6 +163,25 @@ test('plan with a PATH git shim reporting exactly git 2.34.0 goes on', { skip: S
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   assert.equal(result.json.reply.status, 'nothing');
+});
+
+test('plan with a PATH git shim that never answers --version exits 5 timeout', { skip: SHIM_SKIP, timeout: 30_000 }, async (t) => {
+  const c = createCase(t);
+  const dir = path.join(c.root, 'shim-bin-hang');
+  fs.mkdirSync(dir);
+  const shim = path.join(dir, 'git');
+  fs.writeFileSync(shim, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then sleep 100; fi',
+    `exec '${realGit(c)}' "$@"`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(shim, 0o755);
+
+  const result = await runCommit(c, ['plan'], { env: pathOverride(c, [dir, c.env.PATH]), timeoutMs: 25_000 });
+
+  assertRefusal(result, 'timeout', 5);
+  assertNoRunFolder(c.repoDir);
 });
 
 test('every spawn of plan goes through M2 with windowsHide, and an async stdout is never decoded', async (t) => {
@@ -149,7 +195,7 @@ test('every spawn of plan goes through M2 with windowsHide, and an async stdout 
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
-  const spawns = entries.filter((e) => e.api !== 'stdout.setEncoding');
+  const spawns = entries.filter((e) => e.api === 'spawn' || e.api === 'spawnSync');
   // The version check and toplevel lookup (spawnSync) and at least one asynchronous git
   // call (the tree state) are recorded.
   assert.ok(spawns.some((e) => e.api === 'spawnSync' && e.args[0] === '--version'), JSON.stringify(spawns));
@@ -161,6 +207,38 @@ test('every spawn of plan goes through M2 with windowsHide, and an async stdout 
     if (entry.api === 'spawn') assert.equal(entry.encoding, null, JSON.stringify(entry));
   }
   assert.deepEqual(entries.filter((e) => e.api === 'stdout.setEncoding'), []);
+
+  // GIT-01 review finding 6: the child's 'spawn' event (spawnedAt's precondition) really
+  // fires. (A clean-tree `git status` call's stdout is 0 bytes, so no 'data' event fires
+  // here at all; the Buffer-shaped data-chunk assertion below uses a call whose stdout is
+  // never empty instead.)
+  assert.ok(
+    entries.some((e) => e.api === 'child.spawn-event' && e.caller === 'lib/process-adapter.mjs'),
+    JSON.stringify(entries),
+  );
+});
+
+test('plan in a bare repository: the async classifying git call keeps stdout as a Buffer', async (t) => {
+  const c = createCase(t, { repo: false });
+  const bare = path.join(c.root, 'bare.git');
+  c.git(['init', '-q', '--bare', bare], { cwd: c.root });
+  const log = path.join(c.root, 'spawns.jsonl');
+
+  const result = await runCommit(c, ['plan'], {
+    cwd: bare,
+    nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
+    env: { COMMIT_TEST_SPAWN_LOG: log },
+  });
+
+  assertRefusal(result, 'state', 6);
+  const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  // `git rev-parse --is-bare-repository` (M3 `classifyNoWorkTree`, run through the async M2
+  // `run`) succeeds inside a bare repository and writes "true\n": its stdout is never empty
+  // here, so this proves `run()`'s internal `Buffer.concat(stdout)` is really fed Buffer
+  // chunks, not decoded strings (GIT-01 review finding 6).
+  const dataEntries = entries.filter((e) => e.api === 'stdout.data');
+  assert.ok(dataEntries.length > 0, JSON.stringify(entries));
+  for (const entry of dataEntries) assert.equal(entry.isBuffer, true, JSON.stringify(entry));
 });
 
 // M15 is pure (docs/spec/modules.md): the run-policy module's raw source holds no process,

@@ -127,6 +127,12 @@ Plan text that depends on a design fix; fix the design and the slice together.
   Precedence".
 - **KD-R51.** The errno option and ESM sync of the fault preload sit under "Seams
   (confirmed by the user)" without the user's sign-off. Confirm or mark pending.
+- **KD-R61.** GIT-01's not-a-repo classification cannot distinguish git's dubious-ownership
+  refusal (`safe.directory`, git 2.34.2+/2.35.2+, common on shared or WSL mounts) from an
+  actual non-repository; such a repo is reported as "not a git repository", which is
+  misleading. Where: `plugin/scripts/lib/process-adapter.mjs` `toplevel`,
+  `plugin/scripts/lib/repo-probe.mjs` `classifyNoWorkTree`. Fix: detect the refusal (e.g. from
+  stderr text) and give it its own state or message. Slice: GIT-03 or GIT-04.
 
 ## Bookkeeping
 
