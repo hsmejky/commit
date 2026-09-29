@@ -70,7 +70,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    together with their target, so they are never read as commit arguments or options; the
    `&` inside `2>&1` or `>&` is not a separator. An unquoted `(` or `)` becomes a token of
    its own the same way (not dropped), except inside a `$(…)` substitution, which stays in
-   its word up to its matching `)`: step 3 then finds the `git` token of `(git commit -m x)`,
+   its word up to its matching `)` (brackets counted outside quotes; when bash may end it
+   elsewhere, the unsure-end rule below applies): step 3 then finds the `git` token of
+   `(git commit -m x)`,
    a `(` among git's arguments is denied (step 4), and a `)` token ends git's arguments
    (steps 4 and 5), so `(git commit --no-edit)` stays allowed. Bash process substitution
    `<(` or `>(` outside quotes becomes a `(` token (not a redirection, so the next word is
@@ -82,9 +84,10 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `)`. In Bash `{` and `}` stay in their word (brace expansion, step 4), a backtick
    substitution stays in its word up to the next backtick not escaped by `\`, like `$(…)`,
    and so does a Bash 5.3 `${` followed by a space, a tab, a newline or `|` (`${ cmd; }`,
-   `${| cmd; }`, a command substitution run in the current shell), up to the `}` word that
-   closes it in command position, as for a `{ …; }` group (a `}` inside quotes or inside a
-   nested `${…}` does not close it); its body is the text after that blank or `|`.
+   `${| cmd; }`, a command substitution run in the current shell), up to the first `}` word,
+   outside quotes and nested `${…}`, that is the first word of a command (after the body's
+   start, a newline, `;`, `&`, `&&`, `||` or `|`); its body is the text after that blank or
+   `|`. When bash may end it elsewhere, the unsure-end rule below applies.
    A command substitution is read twice: it stays in its word, and its body is also
    tokenised as a command of its own, with the same rules and recursively, into segments that
    come right after the segment holding it, before the next segment of the text (after those
@@ -96,7 +99,38 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    double quotes, inside `${…}`, and in the body of a heredoc whose delimiter is unquoted (its
    segments come right after the segment holding the `<<`); not inside single quotes, `$'…'` or a heredoc
    with a quoted delimiter. PowerShell reads `$(…)` unquoted, inside double quotes and inside
-   an `@"…"@` here-string; not inside single quotes, `@'…'@` or after `--%`. In PowerShell a
+   an `@"…"@` here-string; not inside single quotes, `@'…'@` or after `--%`.
+   **Unsure end (fail closed).** The shell may end a `$(…)`, `${ …; }` or `${| …; }`
+   substitution after the `)` or `}` found above, when that one sits in a comment, a case
+   pattern, a nested `{ …; }` group or a function body, or before it, at a `}` after a
+   compound command (`${ (:) }`, `${ if :; then :; fi }`); the text in between is then read
+   in the wrong context, and a command there, in double quotes or a heredoc body, was never
+   classified. Verified 2026-09-29 with bash 5.3, each of these runs `git commit -m x`:
+   `echo "${ { :; }; git commit -m x; }"`, `echo "${ f(){ :; }; git commit -m x; }"`,
+   `echo "${ : # ; }` plus newline plus `git commit -m x; }"`,
+   `echo "${ case } in a) ;; }) git commit -m x;; esac; }"`, `echo "$( : # )` plus newline
+   plus `git commit -m x )"` and `echo "$(case x in x) git commit -m x;; esac)"`; and with
+   PowerShell 5.1 and 7, `Write-Output $( 1 # ) "`, then the lines `git commit -m x`, `# "`
+   and `)`. So the end is unsure when the body found above holds, after quote removal and
+   anywhere in it (a redirection target and a heredoc delimiter count as words), a word
+   that starts with `{` or `#` or is `case`, `esac`, `fi`, `done` or `]]`, or a `{` token
+   (PowerShell), or, in a `${ …; }` or `${| …; }` body, a `(` or `)` token (a `$(…)` counts
+   its brackets, so `$((n+1))` is not unsure), or when no closing `)` or `}` is found.
+   Then the substitution's word (or the heredoc body holding it) runs to the end of the
+   whole command, the rest of the command written as it is, and no later segment of the
+   enclosing text is read; the body is
+   the whole rest of the command after the `$(`, or after the blank or `|` of `${`, with
+   step 1's characters removed (so no quote in it, such as the one that closes an enclosing
+   double quote, can hide a later command, whichever way the shell reads it), tokenised as a
+   body like any other. Steps 3 to 5 classify its segments; when none is denied and that
+   rest holds `commit` (step 1's check), the command is denied with the unsure-end message
+   (deny table), since the words the shell runs there are unknown. Guessing the real end
+   would need bash's grammar; the rule costs false positives only in a command that
+   mentions `commit` after such a substitution (documented false positives, below). A word
+   such as `${x}`, `${#x}` or `$#` does not start with `{` or `#`, so `$(echo ${#x})` and
+   `$(git log -1)` keep the rules above. In PowerShell a `$(…)` inside a string ends at its
+   matching `)` even after `#` (verified 2026-09-29); the rule applies there too, as to
+   every `$(…)`. In PowerShell a
    word equal to `--%` after escape removal, not inside quotes (`--%`, `` `--% ``,
    `` -`-% ``), stops parsing: the rest of its line, up to the next `|`, `&&` or `||`,
    is split into words on whitespace only, so quotes, backticks, `$`, brackets, `;`, `&`,
@@ -108,7 +142,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    does `` Write-Output `--% @' `` (verified 2026-09-29 with PowerShell 5.1 and 7). A quoted
    `'--%'` does not stop parsing (step 4 denies it among git's arguments). Comments are not
    recognised in either shell: `#` and the words after it, and a PowerShell `<# … #>` block,
-   are read like any other text (documented false positives, below):
+   are read like any other text (documented false positives, below). The one exception: a
+   word starting with `#` in a substitution body makes its end unsure (above), since the
+   comment may hide the `)` or `}` that seemed to close it:
 
    | Rule | `Bash` | `PowerShell` |
    | --- | --- | --- |
@@ -138,13 +174,25 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    body line `${ git commit -m x; }` (deny), `echo '$(git commit -m x)'`, the same heredoc
    with `<<'EOF'`, `echo $(git commit --no-edit)` and `echo "${ git commit --no-edit; }"`
    (no output); PowerShell `$(git commit -m x)`, `Write-Output "$(git commit -m x)"` and its
-   `@"…"@` form (deny); stop-parsing: `git --% -c x.y=; commit -m x`, the
+   `@"…"@` form (deny); unsure end: each form verified above, `cat <<EOF` with the body line
+   `${ { :; }; git commit -m x; }`, and with the body lines `$( : # )` and
+   `git commit -m x )`, and with the body line `$(case x in x) git commit -m x;; esac)`,
+   `echo "${ { :; }; echo '"'; }" ; git commit -m x` (a quote after the real end would hide
+   the commit if the rest kept its quotes), `echo "${ if :; then :; fi }" ; git commit -m x`
+   (no `}` found) and Bash `echo $( : # ) "` with the lines `git commit -m x`, `# "` and `)`
+   (deny), `echo "${x}" "$(git log -1)" && git commit --no-edit`,
+   `echo "${ git log -1; }" && git commit --no-edit`,
+   `echo "$(echo ${#x})" && git commit --no-edit` and PowerShell
+   `Write-Output "$(git log -1)"; git commit --no-edit` (no output); stop-parsing:
+   `git --% -c x.y=; commit -m x`, the
    `Write-Output --% @'` case and its `` Write-Output `--% @' `` form (deny), and
    `Write-Output --% (git commit -m x)` (no output: PowerShell passes the brackets as text).
    Documented false positives (fail closed): a comment that mentions `git commit`,
    `git commit --no-edit # done`, `# git commit -m x` on its own line, PowerShell
-   `<# git commit -m x #> git status` (deny), and a `git` word after another command's `--%`
-   (`Write-Output --% git commit -m x`, deny).
+   `<# git commit -m x #> git status` (deny), a `git` word after another command's `--%`
+   (`Write-Output --% git commit -m x`, deny), and a substitution whose end is unsure (a
+   group, a function definition, a comment or `case` in its body) in a command that mentions
+   `commit` after it (`echo "${ { :; }; }"; git commit --no-edit`, deny).
 3. In each segment, find a token whose basename (the part after the last `/` or `\`, in both
    shells, e.g. `git.exe` out of a Bash-quoted `"C:\Program Files\Git\cmd\git.exe"`) is `git`
    or `git.exe`, compared
@@ -286,3 +334,4 @@ on `-n`, and `--squash -m x` on `--squash`.
 | any other token among git's arguments that is not literal (step 4) | `Write git's arguments literally. <route>` |
 | `-C` / `--reuse-message`, `-c` / `--reedit-message` (after `commit`) | `git commit <flag> is not allowed here. <route>` (the generic row) |
 | unknown global option | `Could not parse git options before 'commit'. <route>` |
+| a substitution whose end is unsure, with `commit` in the rest of the command (step 2), when no segment is denied | `Could not tell where a command substitution ends (a group, function, comment or case in it). Keep such substitutions out of this command. <route>` |

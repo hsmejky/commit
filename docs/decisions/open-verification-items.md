@@ -28,7 +28,7 @@
   classifier, not kept; bash 5.3, Windows PowerShell 5.1 and PowerShell 7.6 parser API).
   The 143 cases, with the prototype's segments, decision and per-oracle class, are the
   GRD-03 fixture seed: `tests/fixtures/guard/segments-seed.json`, which the amendment's
-  review rounds grew by hand to 184 cases (its schema and oracle classes are checked by
+  review rounds grew by hand to 209 cases (its schema and oracle classes are checked by
   `tests/guard-segments-seed.test.js`). Confirmed: the `git`
   basename, the `commit` substring and the subcommand case-insensitively (`GIT`,
   `Git.exe`, `/usr/bin/GIT`, `git COMMIT`, `git-COMMIT.exe`); `(` and `)` as tokens

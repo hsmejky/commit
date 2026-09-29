@@ -61,14 +61,20 @@ dropped), except inside a `$(…)` substitution, which stays in its word up to i
 Bash process substitution `<(` / `>(` becomes a `(` token (not a redirection), and in
 PowerShell an unquoted `{` or `}` becomes a token too (not inside `${…}` or `$(…)`), so G3
 finds the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell
-`}` token ends git's arguments like `)`. A command substitution (Bash `$(…)` and backticks,
-unquoted, in double quotes, in `${…}` and in an unquoted-delimiter heredoc body;
+`}` token ends git's arguments like `)`. A command substitution (Bash `$(…)`, `${ …; }`,
+`${| …; }` and backticks, unquoted, in double quotes, in `${…}` and in an
+unquoted-delimiter heredoc body;
 PowerShell `$(…)` unquoted, in double quotes and in `@"…"@`) stays in its word, and its
 body is also tokenised, recursively, into segments that follow the segment holding it, so
-G3 classifies `echo $(git commit -m x)`. In PowerShell an unquoted `--%` makes the rest of
-its line, up to `|`, `&&` or `||`, words split on whitespace only. Comments are not recognised: `#` and what
-follows, and a PowerShell `<# … #>` block, are ordinary text (documented false positives,
-Q3 as amended).
+G3 classifies `echo $(git commit -m x)`. When the end of a `$(…)`, `${ …; }` or `${| …; }`
+is unsure (its body holds a word starting with `{` or `#`, a `case`, `esac`, `fi`, `done`
+or `]]` word, or has no closing bracket; C:guard step 2), the body is the whole rest of
+the command with quote characters removed, and the command is denied when that rest holds
+`commit`. In PowerShell a `--%` word after escape removal, not inside quotes, makes the
+rest of its line, up to `|`, `&&` or `||`, words split on whitespace only. Comments are not
+recognised: `#` and what follows, and a PowerShell `<# … #>` block, are ordinary text
+(documented false positives, Q3 as amended), except that a `#` word in a substitution body
+makes its end unsure.
 A Bash heredoc (`<<` or `<<-` outside quotes) drops its operator and delimiter word like a
 redirection, and drops its body, from the next line to the first line equal to the
 delimiter after quote removal (leading tabs stripped with `<<-`; bodies of several heredocs

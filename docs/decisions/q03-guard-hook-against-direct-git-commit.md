@@ -207,6 +207,26 @@
   - Unbash is still not indicated: the Bash finding was a rule gap, not tokenizer
     fragility; the fragility sits in PowerShell's native-argument binding, which differs
     between 5.1 and 7 and which a Bash parser does not cover.
+- **Amended.** By the seventh review round of the PRE-03 amendment (2026-09-29): **a
+  substitution whose end is unsure fails closed.** The tokenizer ends a `$(…)` at its
+  matching `)` and a `${ …; }` at the first `}` that starts a command, but bash ends it
+  elsewhere when that `)` or `}` sits in a comment, a case pattern, a nested `{ …; }` group
+  or a function body (`echo "${ { :; }; git commit -m x; }"`,
+  `echo "$(case x in x) git commit -m x;; esac)"`, `echo "$( : # )` plus newline plus
+  `git commit -m x )"`, and PowerShell 5.1 and 7 run an unquoted `$( 1 # )` the same way),
+  or earlier, at a `}` after a compound command (`${ if :; then :; fi }`); the commit ran
+  in double quotes or a heredoc body that the guard never classified (verified with bash
+  5.3). Matching bash's grammar is not attempted. When a body holds a word starting with
+  `{` or `#`, a `case`, `esac`, `fi`, `done` or `]]` word, a PowerShell `{` token, a `(` or
+  `)` token in a `${ …; }` body, or has no closing `)` or `}`, the rest of the command from
+  the opener is the body, with step 1's quote characters removed, and the command is
+  denied when that rest holds `commit`. Keeping the quotes was rejected: the quote that
+  closes an enclosing double quote then opens one in the body and hides a later command
+  (`echo "${ { :; }; echo '"'; }" ; git commit -m x`); so was classifying only the rest's
+  segments, since words bash splits differently could look like an allowed form. The cost
+  is a false positive in a command that mentions `commit` after such a substitution
+  (`echo "${ { :; }; }"; git commit --no-edit`); ordinary `${x}`, `${#x}`, `$((n+1))` and
+  `$(git log -1)` are unaffected (C:guard step 2).
 - **Rejected.**
   - Description tuning alone; the hook alone.
   - Git-native enforcement (a `pre-commit` / `commit-msg` hook, e.g. via `core.hooksPath`).

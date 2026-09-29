@@ -38,7 +38,11 @@ and the module sections point here, and the README states it in full.
   `git commit --fixup "$sha"`), a `git` word after another PowerShell command's `--%`
   (`Write-Output --% git commit -m x`), and any git command with `$` in a global option
   value in a command that mentions `commit` anywhere (`git -C "$d" log | grep commit`),
-  since git's arguments must be literal (C:guard step 4). The commit worker and the skills
+  since git's arguments must be literal (C:guard step 4), and a Bash `$(…)`, `${ …; }` or
+  `${| …; }` or a PowerShell `$(…)` whose body holds a group, a function definition, a
+  comment or `case` (or has no closing bracket) in a command that mentions `commit` after
+  it (`echo "${ { :; }; }"; git commit --no-edit`), since the guard cannot tell where such
+  a substitution ends (C:guard step 2, unsure end). The commit worker and the skills
   are unaffected: the worker runs only script calls.
 - In interactive mode a `humanOnly` confirmation is advisory (Q16, Q17): the reply asks the
   caller to put it to the user, but nothing enforces that the user, not the model, answers
