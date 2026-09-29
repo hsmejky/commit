@@ -5,12 +5,14 @@
 // a deny or nothing (C:guard Output); a crash or unreadable input fails open.
 
 import { Buffer } from 'node:buffer';
+import { blanketTrigger, segments } from './shell-tokenizer.mjs';
+import { classify } from './command-classifier.mjs';
 
 const NO_OUTPUT = Object.freeze({ stdout: '', stderr: '' });
 
 // C:guard's decision inputs: the only two shells the guard understands. Anything else is
 // incomplete input (GRD-02), the same as a missing command.
-const KNOWN_TOOL_NAMES = new Set(['Bash', 'PowerShell']);
+const SHELL_OF = Object.freeze({ Bash: 'bash', PowerShell: 'powershell' });
 
 /**
  * Whether stderr debug logging is enabled (C:guard Output).
@@ -56,7 +58,7 @@ export function runHook(stdinText, context = {}) {
       known.agent_id = payload.agent_id;
     }
     const toolName = payload && payload.tool_name;
-    if (typeof toolName !== 'string' || !KNOWN_TOOL_NAMES.has(toolName)) {
+    if (typeof toolName !== 'string' || !Object.hasOwn(SHELL_OF, toolName)) {
       return failOpen(known, debug);
     }
     // `payload` is already known truthy here: `toolName` above is a string only when
@@ -66,28 +68,49 @@ export function runHook(stdinText, context = {}) {
       return failOpen(known, debug);
     }
     if (!mentionsCommit(command)) return NO_OUTPUT;
-    // Tokenizing (G2) and classifying (G3) follow here (GRD-03); until they exist, a command
-    // that mentions `commit` ends with no output too.
+    const shell = SHELL_OF[toolName];
+    // The PowerShell tokenizer is GRD-06; until it exists, only the blanket rule applies there.
+    if (shell === 'powershell' && blanketTrigger(command, shell) === null) return NO_OUTPUT;
+    const result = classify(segments(command, shell), { agentType: payload.agent_type, shell });
+    if (result.decision === 'deny') return { stdout: denyOutput(result.message), stderr: '' };
     return NO_OUTPUT;
   } catch {
     return failOpen(known, debug);
   }
 }
 
-// The characters removed for the early-exit check only (C:guard Parsing step 1): `'`, `"`,
-// `\`, backtick, and the typographic quotes U+2018-U+201B and U+201C-U+201E. Parsing still
-// sees the command as written, so a split `co''mmit` reaches the tokenizer.
+/**
+ * The deny JSON on stdout (C:guard Output); the guard emits no other permission decision.
+ *
+ * @param {string} message
+ * @returns {string}
+ */
+export function denyOutput(message) {
+  return JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: message },
+  });
+}
+
+// The mention text, for the early-exit check only (C:guard Parsing step 1), in this order:
+// every escaped newline of either shell (`\` or a backtick, optionally a carriage return,
+// then a newline) removed regardless of quotes; every `$` directly before a quote character
+// removed; every `'`, `"`, `\`, backtick and typographic quote U+2018-U+201B, U+201C-U+201E
+// removed. Parsing still sees the command as written, so a split `co''mmit`, `co$'m'mit` or
+// `com\` plus newline plus `mit` reaches the tokenizer.
+const ESCAPED_NEWLINE = /[\\`]\r?\n/g;
+const DOLLAR_BEFORE_QUOTE = /\$(?=['"\u2018-\u201E])/g;
 const QUOTE_LIKE = /['"\\`\u2018-\u201E]/g;
 
 /**
- * Whether the command skips the early exit: with every quote-like character removed, it
- * contains `commit`, compared case-insensitively (ASCII letters only).
+ * Whether the command skips the early exit: its mention text contains `commit`, compared
+ * case-insensitively (ASCII letters only).
  *
  * @param {string} command
  * @returns {boolean}
  */
 export function mentionsCommit(command) {
-  return /commit/i.test(command.replace(QUOTE_LIKE, ''));
+  const text = command.replace(ESCAPED_NEWLINE, '').replace(DOLLAR_BEFORE_QUOTE, '').replace(QUOTE_LIKE, '');
+  return /commit/i.test(text);
 }
 
 /**

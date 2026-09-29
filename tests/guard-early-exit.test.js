@@ -91,8 +91,17 @@ const mentionTable = [
   { command: 'git co‚‛mmit', mentions: true },
   { command: 'git co“”mmit', mentions: true },
   { command: 'git co„mmit', mentions: true },
-  // The documented escaped-newline gap: the newline is not removed, so this exits early.
-  { command: 'git com\\\nmit -m x', mentions: false },
+  // Escaped newlines of either shell are removed regardless of quotes, then every `$` right
+  // before a quote character (C:guard Parsing step 1).
+  { command: 'git com\\\nmit -m x', mentions: true },
+  { command: 'git com\\\r\nmit -m x', mentions: true },
+  { command: 'git com`\nmit -m x', mentions: true },
+  { command: '"git com\\\nmit"', mentions: true },
+  { command: "git co$'m'mit -m x", mentions: true },
+  { command: 'git co$"m"mit -m x', mentions: true },
+  { command: 'git co$‘m’mit -m x', mentions: true },
+  { command: 'git co$mmit -m x', mentions: false },
+  { command: 'git com\nmit -m x', mentions: false },
 ];
 
 for (const { command, mentions } of mentionTable) {
