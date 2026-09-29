@@ -17,7 +17,7 @@ where spans overlap), so no secret reaches the caller ([reply](reply-and-handbac
 | `anthropic-key` | `\bsk-ant-(api\|admin)\d{2}-[A-Za-z0-9_-]{93}AA(?![A-Za-z0-9_-])` | — | gitleaks, secretlint |
 | `private-key` | `-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY( BLOCK)?-----` with flag `i` | none of the next 3 non-blank added lines of the same unit (or message), not counting RFC 1421 header lines (`Proc-Type:`, `DEK-Info:`), is a key body line: 40 or more characters of `[A-Za-z0-9+/=]` after trimming; literal `\n` escapes after the header split the header's line into lines first, and 40 or more such characters after the header on its own line also count as a body (a one-line key) | gitleaks, secretlint |
 | `connection-string` | `\b[a-z][a-z0-9+.-]*://[^\s:/@]+:[^\s/@]+@` | the password is `${…}`, `<…>`, `$VAR`, `%VAR%`, `***`, `password`, `pass` or `secret` | secretlint |
-| `generic-secret` | `(?<![A-Za-z0-9])[A-Za-z0-9_]*?(secret\|token\|passw(or)?d\|api[_-]?key\|client[_-]?secret)(?![A-Za-z0-9])(_[A-Za-z0-9_]*)?["']?\s*[:=]\s*(["'][^"'\s]{12,}["']\|[^"'\s,;#]{12,}(?=[\s,;#]\|$))` with flags `iu` | the value has Shannon entropy below 3.5, contains `example`, `changeme`, `dummy`, `xxx`, `${`, `<`, `process.env` or `os.environ`, or, when unquoted, is a call: matches `^[A-Za-z_$][\w$.]*\(.*\)$` (`fetchAccessToken()`, `self._fetch_token(scope)`) | gitleaks |
+| `generic-secret` | `(?<![A-Za-z0-9])[A-Za-z0-9_]*?(secret\|token\|passw(or)?d\|api[_-]?key\|client[_-]?secret)(?![A-Za-z0-9])(_[A-Za-z0-9_]*)?["']?\s*[:=]\s*(["'][^"'\s]{12,}["']\|[^"'\s,;#]{12,}(?=[\s,;#]\|$))` with flags `iu` | the value has Shannon entropy below 3.5, contains `example`, `changeme`, `dummy`, `xxx`, `${`, `<`, `process.env` or `os.environ`, or, when unquoted, is a call site of 40 or fewer characters matching `^[A-Za-z_$][\w$.]*\((?:[A-Za-z_$][\w$.]*)?\)$` (empty or a single identifier argument) whose argument, if any, itself has Shannon entropy below 3.5 (`fetchAccessToken()`, `self._fetch_token(scope)`) | gitleaks |
 | `local-path` | ``\b[a-z]:[\\/]+users[\\/]+[^\\/\s"'`<>]+`` (flags `iu`), ``/Users/[^/\s"'`<>]+``, ``/home/[^/\s"'`<>]+``; plus the current OS user name as a whole path segment (`[\\/]<name>[\\/]`) in any path, only when the name has 4 or more characters and is not a service user (below) | the user segment is a placeholder or service user (below), or contains a character no OS allows in a user name: `[ ] ( ) * + ? \| ^ $ { } < > %` | this plugin (Q10) |
 
 Sources, credited here and in the README; data and sample cases only, no code, and nothing
@@ -44,10 +44,21 @@ values alike, and read the value without its quotes: Shannon entropy in bits per
 (code point), and each placeholder word matched case-insensitively anywhere in the value.
 The call rule applies only to an unquoted value (a quoted call-shaped value, e.g.
 `token = "fetchToken(abc123XYZ)"`, still hits): an unquoted value made entirely of a bare or
-dotted identifier followed by a parenthesised argument list, such as `fetchAccessToken()` in
-`const token = fetchAccessToken();` or `self._fetch_token(scope)` in
-`token = self._fetch_token(scope)`, is a call site reading a secret, not the secret itself,
-and is not a hit.
+dotted identifier followed by an empty parameter list or a single identifier argument, and no
+longer than 40 characters, such as `fetchAccessToken()` in `const token = fetchAccessToken();`
+or `self._fetch_token(scope)` in `token = self._fetch_token(scope)`, is a call site reading a
+secret, not the secret itself, and is not a hit — unless that argument itself has Shannon
+entropy of 3.5 or more, since an identifier-shaped but high-entropy argument
+(`abc(Xk9aQ2xL7mZ4pRkW8vT3)`) is a secret smuggled into the argument position, not a
+parameter name, and stays subject to the ordinary entropy and placeholder rules above. The
+40-character cap catches the same smuggling one level up: a value long enough to hold a real
+secret as its own identifier-shaped "callee", such as a JWT immediately followed by a trivial
+`(x)`, is longer than any plausible call site and so is never treated as one, whatever its
+argument. Only a zero- or one-argument call is excluded this way: a multi-argument call's
+value stops at the row's own `,` lookahead before reaching a closing `)` (the value captured
+from `fetchAccessToken(a, b);` is `fetchAccessToken(a`), so it never matches the call shape
+and remains a documented false positive — `fetchAccessToken(a, b);` and `jwt.sign(payload,
+key)` still hit.
 
 A `private-key` body line starts, after trimming, with a run of 40 or more
 `[A-Za-z0-9+/=]` characters; what follows the run (a closing quote, an `-----END` marker on a
@@ -83,10 +94,14 @@ themselves.
 
 Each ID has a positive and a negative fixture under `tests/fixtures/`; `generic-secret` has
 one positive per spelling above (among them a JSON key, an unquoted `.env` value and a
-YAML value), plus a positive for a dotted key with an unquoted value (`config.apiKey=…`) and
-a quoted call-shaped value (`token = "fetchToken(…)"`), and a negative for `tokenizer` and for
-each call form in the "Not a hit when" clause (a bare call, a `snake_case` call, a dotted
-method call with an argument), and `local-path` a negative for `/home/node/app`
+YAML value), plus a positive for a dotted key with an unquoted value (`config.apiKey=…`), a
+dotted, parenthesis-free unquoted value (`token = config.apiKeyValue`), a quoted call-shaped
+value (`token = "fetchToken(…)"`), and one per bypass the call rule's shape and entropy checks
+close off (an unquoted value with a punctuation, digit-led or hyphenated argument, a
+call-shaped high-entropy argument, and a 40-character-or-longer call-shaped value); and a
+negative for `tokenizer` and for each call form in the "Not a hit when" clause (a bare call, a
+`snake_case` call, a dotted method call with an argument), and `local-path` a negative for
+`/home/node/app`
 and for a name that stops at a backtick (`` `/home/node` ``), and a positive for a name that
 stops at a backtick (`` `/Users/jdoe` ``). `slack-token` has one positive per prefix form; `private-key` has
 a negative for a header with no body (a placeholder), a negative for an encrypted PEM

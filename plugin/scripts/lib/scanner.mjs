@@ -98,18 +98,24 @@ function* followingLines(split, lines, index) {
 }
 
 // `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value, one holding a
-// placeholder word (compared case-insensitively), or an unquoted value that is a call.
+// placeholder word (compared case-insensitively), or an unquoted value that is a call site.
 const MIN_SECRET_ENTROPY = 3.5;
 // `proce[s]s`: the purity check bans the bare word anywhere in this file, literals included.
 const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|proce[s]s\.env|os\.environ/i;
 
 // An unquoted `generic-secret` value that is a call, e.g. `fetchAccessToken()`,
-// `get_password_from_env()`, `self._fetch_token(scope)` (C:scan-patterns): a bare identifier
-// (optionally dotted, as a method call) followed by a parenthesised argument list running to
-// the end of the value. The value never carries a trailing `;`, `,`, `#` or its own quotes
-// (the row's regex lookahead stops there), so the call's closing `)` is always the value's
-// last character.
-const UNQUOTED_CALL_VALUE = /^[A-Za-z_$][\w$.]*\(.*\)$/;
+// `get_password_from_env()`, `self._fetch_token(scope)` (C:scan-patterns): a bare or dotted
+// identifier followed by an empty parameter list or a single identifier argument, running to
+// the end of the value. Only a zero- or one-argument call is shaped this way: a multi-argument
+// call's value stops at the row's own `,` lookahead before reaching its own `)` (`a` in
+// `fetchAccessToken(a, b);`), so it never matches here and stays a documented false positive
+// (C:scan-patterns) — this regex does not, and cannot, cover that case.
+const UNQUOTED_CALL_VALUE = /^[A-Za-z_$][\w$.]*\((?<argument>[A-Za-z_$][\w$.]*)?\)$/;
+
+// A call-shaped value this long is no longer a plausible name reference in source (the
+// longest real example above is 25 characters); it is far more likely a secret dressed up as
+// one, e.g. a JWT ending in `(x)` (C:scan-patterns).
+const MAX_CALL_VALUE_LENGTH = 40;
 
 /**
  * A `generic-secret` value without its quotes, alongside whether it was quoted: the call rule
@@ -123,8 +129,25 @@ function unquote(value) {
 }
 
 /**
+ * Whether an unquoted `generic-secret` value is a call site reading a secret, rather than the
+ * secret itself (C:scan-patterns): short enough to be a real call (`MAX_CALL_VALUE_LENGTH` or
+ * fewer characters), shaped like one (`UNQUOTED_CALL_VALUE`), and, when it carries an
+ * argument, that argument does not itself look like a secret (the row's own entropy floor) —
+ * an identifier-shaped but high-entropy argument (`abc(Xk9aQ2xL7mZ4pRkW8vT3)`) is not a call.
+ *
+ * @param {string} value
+ */
+function isCallSite(value) {
+  if (value.length > MAX_CALL_VALUE_LENGTH) return false;
+  const match = UNQUOTED_CALL_VALUE.exec(value);
+  if (match === null) return false;
+  const { argument } = match.groups;
+  return argument === undefined || shannonEntropy(argument) < MIN_SECRET_ENTROPY;
+}
+
+/**
  * Whether a `generic-secret` value is not a secret: Shannon entropy below 3.5 bits per
- * character, a placeholder word in it, or (unquoted only) the value is a call.
+ * character, a placeholder word in it, or (unquoted only) the value is a call site.
  *
  * @param {string} value the value without quotes
  * @param {boolean} quoted whether the value was quoted before `unquote`
@@ -133,7 +156,7 @@ function isPlaceholderSecret(value, quoted) {
   return (
     shannonEntropy(value) < MIN_SECRET_ENTROPY ||
     SECRET_PLACEHOLDER.test(value) ||
-    (!quoted && UNQUOTED_CALL_VALUE.test(value))
+    (!quoted && isCallSite(value))
   );
 }
 

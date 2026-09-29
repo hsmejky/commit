@@ -369,6 +369,26 @@ test('generic-secret call rule: an unquoted JWT-shaped value still hits', () => 
   assert.equal(hits.length, 1);
 });
 
+test('generic-secret call rule: an unquoted dotted non-call value still hits', () => {
+  const line = ['token', 'config.apiKeyValue'].join(' = ');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
+test('generic-secret call rule: a call whose identifier-shaped argument itself looks like a secret still hits', () => {
+  const argument = 'Xk9aQ2xL7mZ4pRkW8vT3';
+  const line = ['SECRET', `abc(${argument})`].join(' = ');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
+test('generic-secret call rule: a call-shaped value too long to be a real call still hits', () => {
+  const jwt = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJ0ZXN0In0', 'FAKEsignatureAbC123'].join('.');
+  const line = ['AUTH_TOKEN', `${jwt}(x)`].join('=');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
 test('this test source holds no literal hit', () => {
   assert.deepEqual(scanText(readFileSync(__filename, 'utf8'), { osUser: null }), []);
 });
