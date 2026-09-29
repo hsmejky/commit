@@ -261,8 +261,14 @@ function findTransitivelyImplied(records, byId) {
   return implied;
 }
 
-function findNotDone(records) {
-  return records.filter((record) => record.status !== 'done').map((record) => record.id);
+// Lists the ids of every slice whose status is not `done`. `exclude` names ids to omit
+// from the result regardless of status (e.g. REL-05, whose own criterion is that every
+// *other* slice is done, so requiring REL-05 itself to already be done would be circular).
+function findNotDone(records, { exclude = [] } = {}) {
+  const excluded = new Set(exclude);
+  return records
+    .filter((record) => record.status !== 'done' && !excluded.has(record.id))
+    .map((record) => record.id);
 }
 
 function parseReadmeCounts(content) {

@@ -61,12 +61,16 @@ test("an id cited only in README.md or known-deficiencies.md is not a heading an
       path.join(tmpDir, '01-foundation.md'),
       slice('FND-01', 'Repo skeleton', 'None (can start immediately).', 'done')
     );
-    // Both files cite FND-01 in prose, never as a `## FND-01:` heading; isGroupFileName
-    // rejects both names, so parseAllGroupFiles must not read either one as a group file.
-    fs.writeFileSync(path.join(tmpDir, 'README.md'), '# Roadmap\n\nFND-01 delivers the repo skeleton.\n');
+    // Both files contain a real `## FND-01:` heading (which would otherwise parse as a
+    // duplicate of the one in 01-foundation.md); isGroupFileName rejects both names, so
+    // parseAllGroupFiles must not read either one as a group file.
+    fs.writeFileSync(
+      path.join(tmpDir, 'README.md'),
+      slice('FND-01', 'Repo skeleton', 'None (can start immediately).', 'done')
+    );
     fs.writeFileSync(
       path.join(tmpDir, 'known-deficiencies.md'),
-      '# Known deficiencies\n\n- **KD-R1.** FND-01 needs a follow-up.\n'
+      slice('FND-01', 'Repo skeleton', 'None (can start immediately).', 'done')
     );
     const records = parseAllGroupFiles(tmpDir);
     const { byId, duplicates } = buildGraph(records);
@@ -317,6 +321,14 @@ test('release mode reports nothing when every slice is done', () => {
   assert.deepEqual(findNotDone(records), []);
 });
 
+test('release mode excludes ids named in the exclude option, but still reports other not-done slices', () => {
+  const records = parseGroupFileContent('16-release.md', [
+    slice('REL-05', 'Release checklist', 'None (can start immediately).', 'ready-for-agent'),
+    slice('REL-06', 'Other slice', 'REL-05.', 'ready-for-agent'),
+  ].join('\n'));
+  assert.deepEqual(findNotDone(records, { exclude: ['REL-05'] }), ['REL-06']);
+});
+
 // --- Against the real repo -----------------------------------------------------------
 
 test('the real docs/roadmap group files parse with globally unique ids', () => {
@@ -377,7 +389,7 @@ test(
   { skip: !process.env[RELEASE_ENV_VAR] && `set ${RELEASE_ENV_VAR}=1 to run` },
   () => {
     const records = parseAllGroupFiles(ROADMAP_DIR);
-    const notDone = findNotDone(records).filter((id) => id !== 'REL-05');
+    const notDone = findNotDone(records, { exclude: ['REL-05'] });
     assert.deepEqual(notDone, []);
   }
 );

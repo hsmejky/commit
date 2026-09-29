@@ -153,7 +153,7 @@ duplicate or missing ID, no cycle, every in-group blocker has a lower number tha
 it blocks, and `README.md`'s slice counts match the files; it reports blocking edges that
 are already reachable through another blocker (transitively implied) without failing on
 them. A release mode reports every slice, other than REL-05, whose `**Status:**` line is
-not `Status: done`.
+not `**Status:** done`.
 
 **Blocked by:** FND-01.
 
