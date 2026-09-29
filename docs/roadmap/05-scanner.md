@@ -14,11 +14,11 @@ patterns and `*`, whole-path, case-sensitive on every OS.
 
 **Blocked by:** FND-01, PRE-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scanignore-globs (`*`, literal rows), M7, Q10.
 
-- [ ] Seam 3: `tests/*.json` matches `tests/a.json`, not `tests/x/a.json`; `a+b.txt` matches
+- [x] Seam 3: `tests/*.json` matches `tests/a.json`, not `tests/x/a.json`; `a+b.txt` matches
       itself only; `Tests/a.json` does not match `tests/*.json`.
 
 
