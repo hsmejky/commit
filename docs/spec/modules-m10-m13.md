@@ -18,7 +18,10 @@ and of the real index.
   of patch text; the patch pass supplies only hunk bodies, ranges and the added lines the
   scan reads. A unit carries `addedLines: [{ line, text }]`, where `line` is the 1-based
   line number in the new file and `text` is the lossy UTF-8 decode of the line, without the
-  `+` and `\n`. The patch pass is one `git diff -z --raw -p` call over the whole diff, with no
+  `+` and `\n`. It also carries `size` in bytes for M9 `summaryOnly`'s `size` rule — the new
+  content's size, or the old content's for a deletion — each read with a `cat-file -s <blob>`
+  call (`inventory` sets the same field on an untracked candidate). The patch pass is one
+  `git diff -z --raw -p` call over the whole diff, with no
   pathspecs (a path list would go on argv, and a pathspec narrows rename detection, Q11),
   read as a stream (M2 `onStdout`) keeping only what a later step needs: hunks of
   body-carrying units and, for M8, added lines up to the 1 MB scan limit (then the file is

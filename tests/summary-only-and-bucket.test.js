@@ -127,6 +127,15 @@ test('summaryOnly: 262145 bytes is size (boundary)', () => {
   assert.equal(summaryOnly('src/big.bin', stats({ size: 262145 })), 'size');
 });
 
+// Binary units carry no numstat counts (git reports `-\t-`), normalised to added: 0,
+// deleted: 0; only `size` can still apply.
+test('summaryOnly: a binary unit (added: 0, deleted: 0) can still trigger size', () => {
+  assert.equal(
+    summaryOnly('assets/big.bin', stats({ added: 0, deleted: 0, size: 262145 })),
+    'size',
+  );
+});
+
 // No rule matches.
 test('summaryOnly: an ordinary small file is not summary-only', () => {
   assert.equal(summaryOnly('src/index.js', stats({})), null);
@@ -144,8 +153,13 @@ const bucketTable = [
   // test: a `*.test.*` or `*.spec.*` name, with no test/tests segment.
   { path: 'src/foo.spec.ts', bucket: 'test' },
   { path: 'src/foo.test.tsx', bucket: 'test' },
+  // test: RSpec, Go and pytest name conventions, with no test/tests segment.
+  { path: 'app/models/user_spec.rb', bucket: 'test' },
+  { path: 'pkg/foo_test.go', bucket: 'test' },
+  { path: 'src/test_foo.py', bucket: 'test' },
   // `spec`/`specs` alone is not a test segment (this repo's own `docs/spec` is docs, not
-  // test): only the `*.spec.*` name pattern above catches RSpec-style files.
+  // test): RSpec-style files are caught by the `*_spec.rb` name pattern above, not the
+  // segment.
   { path: 'spec/foo.rb', bucket: 'code' },
   { path: 'docs/spec/notes.txt', bucket: 'docs' },
 
@@ -166,7 +180,6 @@ const bucketTable = [
   { path: 'docs/contracts/plan.md', bucket: 'docs' },
   { path: 'README.md', bucket: 'docs' },
   { path: 'guide.mdx', bucket: 'docs' },
-  { path: 'docs/spec/notes.txt', bucket: 'docs' },
 
   // build: a known package manifest, lockfile or build-tool config name.
   { path: 'package.json', bucket: 'build' },

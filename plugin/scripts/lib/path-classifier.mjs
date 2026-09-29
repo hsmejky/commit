@@ -128,7 +128,8 @@ export function summaryOnly(path, stats) {
 // bucketOf: path-derived grouping hints only (Q11), never a grouping rule. Checked in this
 // order: `test`, `ci`, `docs`, `build`, else `code`. `spec`/`specs` is deliberately not a
 // test segment: unlike `test`/`tests`, it also names non-test directories (this repo's own
-// `docs/spec`), so only the `*.spec.*` name pattern catches it.
+// `docs/spec`), so RSpec (`*_spec.rb`), Go (`*_test.go`) and pytest (`test_*.py`) files are
+// caught by their name pattern instead, alongside `*.test.*`/`*.spec.*`.
 const TEST_SEGMENTS = new Set(['test', 'tests', '__tests__']);
 
 const CI_DIRS = Object.freeze([
@@ -138,10 +139,9 @@ const CI_DIRS = Object.freeze([
 const CI_NAMES = Object.freeze(['.gitlab-ci.yml', '.travis.yml', '.drone.yml', 'Jenkinsfile']);
 
 const BUILD_NAMES = Object.freeze([
-  'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb',
-  'Cargo.lock', 'Cargo.toml', 'poetry.lock', 'pyproject.toml', 'uv.lock', 'Gemfile',
-  'Gemfile.lock', 'composer.json', 'composer.lock', 'go.mod', 'go.sum', 'Dockerfile',
-  'Makefile', 'tsconfig.json',
+  ...LOCKFILES,
+  'package.json', 'Cargo.toml', 'pyproject.toml', 'Gemfile', 'composer.json', 'go.mod',
+  'Dockerfile', 'Makefile', 'tsconfig.json',
 ]);
 const BUILD_CONFIG_SUFFIXES = Object.freeze(['.config.js', '.config.mjs', '.config.cjs', '.config.ts']);
 
@@ -153,7 +153,9 @@ function isTestPath(path) {
   const segments = path.split('/');
   const name = segments[segments.length - 1];
   return segments.some((segment) => TEST_SEGMENTS.has(segment))
-    || name.includes('.test.') || name.includes('.spec.');
+    || name.includes('.test.') || name.includes('.spec.')
+    || name.endsWith('_spec.rb') || name.endsWith('_test.go')
+    || (name.startsWith('test_') && name.endsWith('.py'));
 }
 
 /**
