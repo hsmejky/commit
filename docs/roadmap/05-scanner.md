@@ -185,16 +185,16 @@ its first 4096 UTF-16 code units before any regex or rule runs.
 
 **Blocked by:** SCN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scan-patterns (cut), Q10.
 
-- [ ] Seam 3: a `github-token` secret before the cut on a very long diff line → hit; one
+- [x] Seam 3: a `github-token` secret before the cut on a very long diff line → hit; one
       past it → missed (SCN-05's pattern is enough; the other pattern rows add nothing to
       this rule).
-- [ ] Seam 3: the same cut applied to a message line and to a symlink target: a secret
+- [x] Seam 3: the same cut applied to a message line and to a symlink target: a secret
       before the cut → hit, one past it → missed.
-- [ ] Seam 3: a multi-megabyte line scans in linear time (bounded duration).
+- [x] Seam 3: a multi-megabyte line scans in linear time (bounded duration).
 
 
 ## SCN-13: Unit-level rules: added lines, binaries, 1 MB skip, symlinks, `scanIgnore`
