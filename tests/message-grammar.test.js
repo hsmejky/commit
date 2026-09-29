@@ -228,7 +228,7 @@ const lengthTable = [
   // UTF-16 units; a `.length` count would wrongly fail this against maxSubjectLength 7.
   { message: 'feat: \u{1F600}', maxSubjectLength: 7, reasons: [] },
   // 'feat: ' (6) + emoji (1) + 'x' (1) = 8 code points, one over maxSubjectLength 7; a
-  // `.length` count (10 UTF-16 units) would report the wrong numbers in the reason.
+  // `.length` count (9 UTF-16 units) would report the wrong numbers in the reason.
   {
     message: 'feat: \u{1F600}x',
     maxSubjectLength: 7,
