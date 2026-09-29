@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*). Round 8 (2026-09-29, user decision): after seven review rounds of bypasses, step 2 opens with a blanket fail-closed rule (C:guard) that denies, before any tokenizing, any command mentioning commit whose text holds a substitution, heredoc, here-string, comment or (Bash) typographic quote anywhere, in or out of quotes; a case classified by the `blanket` oracle-skip class has no segments (the guard never tokenizes it).",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*). Round 8 (2026-09-29, user decision): after seven review rounds of bypasses, step 2 opens with a blanket fail-closed rule (C:guard) that denies, before any tokenizing, any command mentioning commit whose text holds a substitution, heredoc, here-string, comment or (Bash) typographic quote anywhere, in or out of quotes; a case classified by the `blanket` oracle-skip class has no segments (the guard never tokenizes it). Round 8 review set these by hand from C:guard: Bash extglob openers (b-extglob-*), the pinned quote readings (b-locale-quote, b-cont-*, p-mixed-*), and the script-call exemption (b-exempt-*, p-exempt-*).",
  "cases": [
   {
    "id": "b-plain",
@@ -3905,6 +3905,449 @@
    "decision": "deny",
    "oracle": {
     "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-extglob-at",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "git @(commit) -m x",
+   "segments": [
+    [
+     "git",
+     "@(",
+     {
+      "op": "("
+     },
+     "commit",
+     {
+      "op": ")"
+     },
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-extglob-bang",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "git !(x) commit -m x",
+   "segments": [
+    [
+     "git",
+     "!(",
+     {
+      "op": "("
+     },
+     "x",
+     {
+      "op": ")"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-extglob-plus",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "git +(commit) -m x",
+   "segments": [
+    [
+     "git",
+     "+(",
+     {
+      "op": "("
+     },
+     "commit",
+     {
+      "op": ")"
+     },
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-extglob-star",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "git *(commit) -m x",
+   "segments": [
+    [
+     "git",
+     "*(",
+     {
+      "op": "("
+     },
+     "commit",
+     {
+      "op": ")"
+     },
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-extglob-qmark",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "git ?(commit) -m x",
+   "segments": [
+    [
+     "git",
+     "?(",
+     {
+      "op": "("
+     },
+     "commit",
+     {
+      "op": ")"
+     },
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-extglob-negated-subshell",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "!(git commit -m x)",
+   "segments": [
+    [
+     "!(",
+     {
+      "op": "("
+     },
+     "git",
+     "commit",
+     "-m",
+     "x",
+     {
+      "op": ")"
+     }
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-extglob-negated-allowed",
+   "shell": "bash",
+   "topic": "extglob",
+   "command": "!(git commit --no-edit)",
+   "segments": [
+    [
+     "!(",
+     {
+      "op": "("
+     },
+     "git",
+     "commit",
+     "--no-edit",
+     {
+      "op": ")"
+     }
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "extglob"
+   }
+  },
+  {
+   "id": "b-locale-quote",
+   "shell": "bash",
+   "topic": "quotes",
+   "command": "git $\"commit\" -m x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-cont-ansi-kept",
+   "shell": "bash",
+   "topic": "escaped newline",
+   "command": "git commit -m $'a\\\nb'",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "a\\\nb"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-cont-dq-apostrophe",
+   "shell": "bash",
+   "topic": "escaped newline",
+   "command": "git commit -m \"it's\\\nfine\"",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "it'sfine"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-cont-escaped-quote",
+   "shell": "bash",
+   "topic": "escaped newline",
+   "command": "git commit -m \\'a\\\nb",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "'ab"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "p-mixed-dq-pair",
+   "shell": "powershell",
+   "topic": "typographic quotes",
+   "command": "git commit -m \"a“\"b\"",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "a\"b"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "match",
+    "ps7": "match"
+   }
+  },
+  {
+   "id": "p-mixed-sq-pair",
+   "shell": "powershell",
+   "topic": "typographic quotes",
+   "command": "git commit -m 'e’'f'",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-m",
+     "e'f"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "match",
+    "ps7": "match"
+   }
+  },
+  {
+   "id": "p-mixed-dq-pair-hides",
+   "shell": "powershell",
+   "topic": "typographic quotes",
+   "command": "git status \"x“\"; git commit -m x\"",
+   "segments": [
+    [
+     "git",
+     "status",
+     "x\"; git commit -m x"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "ps51": "match",
+    "ps7": "match"
+   }
+  },
+  {
+   "id": "b-exempt-hash",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/opt/a#b/commit.cjs\" plan",
+   "segments": [
+    [
+     "node",
+     "/opt/a#b/commit.cjs",
+     "plan"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-exempt-typographic",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/home/u/‘q’/commit.cjs\" plan",
+   "segments": [
+    [
+     "node",
+     "/home/u/‘q’/commit.cjs",
+     "plan"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "p-exempt-hash",
+   "shell": "powershell",
+   "topic": "script-call exemption",
+   "command": "& node \"C:/a#b/commit.cjs\" check --plan 3f9a1c2e-0000-4000-8000-000000000000",
+   "segments": [
+    [
+     "node",
+     "C:/a#b/commit.cjs",
+     "check",
+     "--plan",
+     "3f9a1c2e-0000-4000-8000-000000000000"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "ps51": "match",
+    "ps7": "match"
+   }
+  },
+  {
+   "id": "p-exempt-atparen",
+   "shell": "powershell",
+   "topic": "script-call exemption",
+   "command": "node \"C:/x@(y)/commit.cjs\" plan",
+   "segments": [
+    [
+     "node",
+     "C:/x@(y)/commit.cjs",
+     "plan"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "ps51": "match",
+    "ps7": "match"
+   }
+  },
+  {
+   "id": "b-exempt-appended",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/opt/a#b/commit.cjs\" plan; git commit -m x",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-exempt-newline",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/opt/a#b/commit.cjs\" plan\ngit commit -m x",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-exempt-comment",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/opt/x/commit.cjs\" plan # note",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "b-exempt-bang",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/opt/a!b#/commit.cjs\" plan",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "bash": "blanket"
+   }
+  },
+  {
+   "id": "p-exempt-appended",
+   "shell": "powershell",
+   "topic": "script-call exemption",
+   "command": "& node \"C:/a#b/commit.cjs\" plan; git commit -m x",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
+   }
+  },
+  {
+   "id": "p-exempt-dollar",
+   "shell": "powershell",
+   "topic": "script-call exemption",
+   "command": "node \"C:/$(x)/commit.cjs\" plan",
+   "segments": [],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   }
  ]

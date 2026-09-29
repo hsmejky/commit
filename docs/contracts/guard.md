@@ -17,9 +17,12 @@ exit 1 `env` an install path that contains `$`, a backtick, `"`, `\`, or U+201C�
 ([CLI](cli-and-exit-codes.md)), so no shell can expand or mangle it. The check runs on the
 path after Windows separators are converted to `/` (the form the quoted call uses), so a
 native Windows path is not refused; the `"` and `\` fixtures are POSIX only. An install
-path holding a step 2 blanket-rule construct the entry point does not refuse (`#`; in Bash
-`<<` or a typographic single quote U+2018–U+201B; in PowerShell `@(` or `@'`) makes every
-script call blanket denied (a documented false positive, Q3). Fixtures: quoted and
+path holding a step 2 blanket-rule construct the entry point does not refuse does not get
+the plain call the worker and every handback run blanket-denied: that call is in the
+script-call exemption's form (step 2). The same path in any other command that mentions
+`commit` (a chained `cd sub && node …`, a word outside the exemption's form), or a path
+that also holds `!` or a control character, is blanket-denied (a documented false positive,
+Q3). Fixtures: quoted and
 unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path,
 `cd sub && node …`, `echo "node commit.cjs plan"` (not a script call), and a quoted backslash
 path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by basename on `\`).
@@ -73,13 +76,39 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    it builds the word at runtime, such as `git $(echo com)mit`, `git co${x}mmit`,
    `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or a PowerShell 7 `` `u{…} `` escape
    (`` git co`u{6d}mit ``) (Q3, not fixed in 0.1.0; spec story 22).
-2. **Blanket rule (fail closed).** Before any tokenizing, a command that passed step 1 is
-   denied with the blanket message (deny table) when its text, with that shell's escaped
+2. **Script-call exemption.** A command that is, in full, one script call of this form
+   skips the blanket rule below and is tokenized: optional leading and trailing spaces
+   (U+0020 only); in PowerShell an optional `&` and one space; `node` or `node.exe`; one
+   space; a path in ASCII double quotes that ends in `/commit.cjs` or `\commit.cjs` and
+   holds no `"`, U+201C–U+201E, `$`, backtick, `!` or control character (U+0000–U+001F,
+   U+007F, so no CR or LF); one space and a subcommand (`plan`, `check`, `commit`,
+   `release`, `infer`); then zero or more words, each one space and then one or more
+   characters from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_`, `:`, `=` and `-` (the flags and
+   `planId`s of [CLI](cli-and-exit-codes.md), and the form S2 `build` emits). Such a
+   command runs one `node` call and nothing else in both shells: inside ASCII double quotes
+   Bash treats only `$`, a backtick, `"`, `\` and (with history expansion) `!` specially,
+   and PowerShell only `$`, a backtick and the double-quote characters `"` and
+   U+201C–U+201E; with all of them but `\` excluded, a Bash `\` can escape only another `\`
+   or stand for itself, and the path cannot end in `\` (it ends in `commit.cjs`), so the
+   quoted path is one argument and the quote that ends it is the one before the
+   subcommand. The words outside the quotes hold no character either shell reads
+   specially. Inside the quoted path `#`, `<<`, `@(`, `@'` and typographic single quotes
+   U+2018–U+201B are plain characters in both shells, and the tokenizer reads them the same
+   way (verified 2026-09-29 with bash 5.3, Windows PowerShell 5.1 and PowerShell 7). The
+   exempt command is tokenized and classified like any other: script call, heartbeat and
+   worker-only rule apply. A command with anything more is not exempt and gets the blanket
+   rule: `node "/opt/a#b/commit.cjs" plan; git commit -m x`, the same call followed by a
+   newline and `git commit -m x`, `node "/opt/x/commit.cjs" plan # note`.
+
+   **Blanket rule (fail closed).** Before any tokenizing, a command that passed step 1 and
+   is not exempt is denied with the blanket message (deny table) when its text, with that
+   shell's escaped
    newlines removed regardless of quotes (Bash `\`, PowerShell backtick, each optionally
    followed by a carriage return, then a newline), holds anywhere, inside quotes or not:
    - in both shells: `$(` (so also `$((`), `${`, or `#` (a comment; PowerShell `<# … #>`
      included);
-   - in Bash: a backtick; a `<<` that is not part of `<<<` (a heredoc); a typographic quote
+   - in Bash: a backtick; a run of two or more `<` other than exactly three (a heredoc
+     `<<` or `<<-`; `<<<` alone is a here-string redirection, `<<<<` counts); a typographic quote
      U+2018–U+201E;
    - in PowerShell: `@(`; an `@` directly followed by `'`, `"` or U+2018–U+201E (a
      here-string opener).
@@ -93,8 +122,12 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    it has no segments, no script call, no heartbeat and no worker-only rule; the debug log
    records the decision and the trigger kind, not the command text.
 
-   A command with none of these is tokenized. Remove escaped newlines (Bash `\` plus
-   newline, PowerShell backtick plus newline) outside single quotes. Tokenise with the
+   A command with none of these, or an exempt one, is tokenized. Remove escaped newlines
+   (Bash `\` plus newline, PowerShell backtick plus newline) outside single quotes as the
+   tokenizer reads them: a `'` inside double quotes or escaped (Bash `\'`, PowerShell
+   `` `' ``) opens nothing, and in Bash a `\` plus newline inside a `$'…'` span stays (bash
+   keeps both characters there, like in single quotes; `$"…"` is read like double quotes).
+   Tokenise with the
    quoting rules of `tool_name`, then split into segments on `&&`, `||`, `;`, `|`, `&` and
    newlines outside quotes. Redirection operators (`>`, `>>`, `<`, `2>&1`, `>&` and the like)
    outside quotes become tokens of their own, dropped together with their target, so they
@@ -108,7 +141,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    is denied. In PowerShell an unquoted `{` or `}` becomes a token of its own the same way
    (not dropped), so a script block glued to its first word (`&{git commit -m x}`,
    `if ($true) {git commit -m x}`) is denied and a `}` token ends git's arguments like `)`.
-   In Bash `{` and `}` stay in their word (brace expansion, step 4). In PowerShell a word
+   In Bash `{` and `}` stay in their word (brace expansion, step 4). In Bash a `(` directly
+   after `@`, `!`, `+`, `*` or `?` (an extglob opener) ends that word with the `(` kept in
+   it, and is also a `(` token of its own: with `extglob` on (which an earlier line can set,
+   like `expand_aliases`) bash reads an extglob pattern that may match a file named
+   `commit`, so the word holds `(` and is not literal (step 4; `git @(commit) -m x` gives
+   `git`, `@(`, `(`, `commit`, `)`, `-m`, `x` and is denied with the literal-subcommand
+   message); with `extglob` off bash rejects the pattern, except a `!(` that starts a
+   command, which is `!` plus a subshell (`!(git commit -m x)` runs the commit), and the
+   `(` token keeps step 3 finding that `git`. In PowerShell a `!` or `+` before `(` is a
+   word of its own (`!(1)` passes `!` and `1`). In PowerShell a word
    equal to `--%` after escape removal, not inside quotes (`--%`, `` `--% ``, `` -`-% ``),
    stops parsing: the rest of its line, up to the next `|`, `&&` or `||`, is split into
    words on whitespace only, so quotes, backticks, `$`, brackets, `;`, `&` and redirection
@@ -121,12 +163,12 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    | --- | --- | --- |
    | escape character | `\` (outside `'…'`) | `` ` `` (outside `'…'`); `` `u{…} `` with one to six hex digits is the character of that code point, as in PowerShell 7; `` `0 `` and a `` `u{…} `` whose value is 0 (`` `u{0} ``, `` `u{00} ``, `` `u{000000} ``) are a NUL that ends the token's value there, as the native command line is cut at it; the tokenizer emits a `cut` token (`{"op":"cut"}`) after the cut token, which ends git's arguments (step 4): steps 4 and 5 read no token past it, but the tokens after it stay in the segment for step 3, since the shell cuts only that one native command's line and a nested command still runs (`` git commit`0x -m x ``, `` git commit`0 --no-edit `` and `` git commit`u{00} --no-edit `` are a bare `git commit`; `` Write-Output x`0 (git commit -m x) `` and `` if ("x`0") {git commit -m x} `` are denied; verified 2026-09-29 with PowerShell 5.1 and 7; Windows PowerShell 5.1 has no `` `u{…} `` escape: it reads `` `u `` as `u` and the braces as a script block, passed to git as `-encodedCommand …` arguments git rejects) |
    | single quotes | literal, no escapes | literal; `''` is one `'` |
-   | double quotes | `\"`, `\\`, `\$` escaped | `` `" `` and `""` escaped |
+   | double quotes | `\"`, `\\`, `\$` escaped; `$"…"` outside double quotes (locale translation) is `"…"` with the `$` removed, while inside double quotes a `$` before the closing `"` is a plain `$` (`git $"commit" -m x` is `git commit -m x`) | `` `" `` and `""` escaped; the double-quote class is `"` and U+201C–U+201E, and inside a string opened by any of them two characters of the class in a row are one escaped quote, the second of the two, while any one character of the class closes it (`"a“"b"` is `a"b`; `“k"l` is `k` and `l`); the same for the single-quote class `'` and U+2018–U+201B inside a single-quoted string (`'e’'f'` is `e'f`); verified 2026-09-29 with PowerShell 5.1 and 7 |
    | ANSI-C quotes | `$'…'` outside double quotes: the `$` is removed and the span ends at the first `'` not escaped by `\`; its backslash escapes are decoded as Bash does (`\\`, `\'`, `\"`, `\?`, `\a`, `\b`, `\e`, `\E`, `\f`, `\n`, `\r`, `\t`, `\v`, `\nnn`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cx`); an unknown escape keeps its `\` (`echo $'\''` is `echo` and `'`; `git $'commit'` is `git commit`); a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`) | — |
-   | here-strings | — | — (blanket rule) |
-   | heredocs | `<<` and `<<-` never reach the tokenizer (blanket rule); `<<<` stays a plain redirection | — |
+   | here-strings | — | — (blanket rule; `@'` and `@"` reach the tokenizer only inside an exempt script call's quoted path, as plain characters) |
+   | heredocs | `<<` and `<<-` reach the tokenizer only inside an exempt script call's quoted path, as plain characters (blanket rule); `<<<` stays a plain redirection | — |
    | unterminated quote | the rest of that line is one quoted token; scanning continues on the next line | same |
-   | typographic quotes | — (blanket rule) | “…”, ‘…’, „…“, ‚…‛ treated like `"…"` and `'…'` respectively (literal, no escapes inside): U+201C/U+201D/U+201E as double quotes, U+2018/U+2019/U+201A/U+201B as single quotes (verified 2026-09-27 against the PowerShell 7 parser) |
+   | typographic quotes | plain characters; they reach the tokenizer only inside an exempt script call's quoted path (blanket rule) | “…”, ‘…’, „…“, ‚…‛ treated like `"…"` and `'…'` respectively (literal, no escapes inside): U+201C/U+201D/U+201E as double quotes, U+2018/U+2019/U+201A/U+201B as single quotes (verified 2026-09-27 against the PowerShell 7 parser) |
 
    Fixtures for both, among them `git commit -m "a\"b"` (Bash), ``git commit -m "a`"b"``
    (PowerShell), `git commit -m "unterminated` in both shells (deny), `git commit -m x 2>&1`
@@ -138,7 +180,23 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `&{git commit -m x}`, `. {git commit -m x}` and `if ($true) {git commit -m x}` (deny),
    and `&{git commit --no-edit}` (no output); stop-parsing: `git --% -c x.y=; commit -m x`
    (deny) and `Write-Output --% (git commit -m x)` (no output: PowerShell passes the
-   brackets as text). Blanket rule (each with no segments, oracle `blanket`): every form
+   brackets as text). Extglob (oracle class `extglob`): Bash `git @(commit) -m x`,
+   `git !(x) commit -m x`, `git +(commit) -m x`, `git *(commit) -m x`,
+   `git ?(commit) -m x` and `!(git commit -m x)` (deny), `!(git commit --no-edit)` (no
+   output). Quote readings: Bash `git $"commit" -m x`, `git commit -m $'a\` plus newline
+   plus `b'` (the `\` and newline kept), `git commit -m "it's\` plus newline plus `fine"`
+   and `git commit -m \'a\` plus newline plus `b` (the escaped newline removed) (deny);
+   PowerShell `git commit -m "a“"b"` and `git commit -m 'e’'f'` (deny) and
+   `git status "x“"; git commit -m x"` (no output: one string argument). Script-call
+   exemption (tokenized, no output): Bash `node "/opt/a#b/commit.cjs" plan` and
+   `node "/home/u/‘q’/commit.cjs" plan`, PowerShell
+   `& node "C:/a#b/commit.cjs" check --plan <planId>` and
+   `node "C:/x@(y)/commit.cjs" plan`; not exempt (blanket, deny): Bash
+   `node "/opt/a#b/commit.cjs" plan; git commit -m x`, the same call plus a newline and
+   `git commit -m x`, `node "/opt/x/commit.cjs" plan # note` and
+   `node "/opt/a!b#/commit.cjs" plan`, PowerShell
+   `& node "C:/a#b/commit.cjs" plan; git commit -m x` and
+   `node "C:/$(x)/commit.cjs" plan`. Blanket rule (each with no segments, oracle `blanket`): every form
    listed in Q3's round-8 amendment, among them Bash `echo ‘ ; git commit -m x ; ‘`,
    `: # "` plus the lines `git commit -m x` and `: # "`,
    `git${IFS}commit${IFS}-m${IFS}x`, `echo $(git commit -m x)`, `` echo `git commit -m x` ``,
@@ -154,8 +212,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `gh pr create --body "$(cat <<'EOF'` … `commit` … `EOF` `)"` (use `--body-file`),
    `git commit --no-edit # done`, `git log --grep "#12" | grep commit`, PowerShell
    `${env:X}; git commit --no-edit`, `Write-Output $( <# ) #> 1 ) ; git commit --no-edit`
-   and a `@'…'@` here-string holding `commit` (deny); and a `git` word after another
-   command's `--%` (`Write-Output --% git commit -m x`, deny).
+   and a `@'…'@` here-string holding `commit` (deny); a script call whose install path
+   holds a blanket-rule construct, outside the exemption's form (chained, a further word,
+   or a path also holding `!` or a control character, `node "/opt/a!b#/commit.cjs" plan`,
+   deny); and a `git` word after another command's `--%` (`Write-Output --% git commit -m x`,
+   deny).
 3. In each segment, find a token whose basename (the part after the last `/` or `\`, in both
    shells, e.g. `git.exe` out of a Bash-quoted `"C:\Program Files\Git\cmd\git.exe"`) is `git`
    or `git.exe`, compared
@@ -170,7 +231,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    against the allowlist as in step 5.
    Known gap: expansion or aliasing in the command position, where no token is `git` until
    the shell expands it, passes with no output (Q3): Bash brace expansion
-   `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x`, a variable there (Bash
+   `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` or an extglob
+   `@(git) commit -m x` (with `extglob` on; its `git` token is followed by the `)` that ends
+   its arguments), a variable there (Bash
    `$GIT commit -m x`, PowerShell `& $g commit -m x`), a PowerShell expression there,
    `& ('git') commit -m x` (its `git` token is followed by the `)` that ends its arguments,
    step 4), and a shell alias or function for git (Bash `shopt -s expand_aliases` and
@@ -261,6 +324,7 @@ deliberately differs from the shell and the check is skipped:
 | `splat` | PowerShell | `@name` is a word; the parser yields a splatted variable |
 | `ps-stop-parsing` | PowerShell | the rest of the line after a `--%` word (after escape removal, not inside quotes) is split into words on whitespace (step 2); the parser yields it as one verbatim element |
 | `ps-array-comma` | PowerShell | a `,` stays in its word or is a word of its own; the parser yields one array-literal element for the words it joins |
+| `extglob` | Bash | a `(` directly after `@`, `!`, `+`, `*` or `?` ends that word with the `(` kept and is also a `(` token; bash (`extglob` off) rejects the pattern as a syntax error, or runs `!(…)` at a command's start as a negated subshell |
 | `escaped-newline-in-word` | PowerShell | a backtick plus newline inside a word is removed (step 2); PowerShell keeps the newline in the word |
 | `ps-nul` | PowerShell | a NUL escape (`` `0 ``, a zero `` `u{…} ``) ends its token's value and a `cut` token follows it, ending git's arguments while the later tokens stay in the segment; the parser keeps the NUL and the rest in the word and has no `cut` there (the native command line is cut only when the command runs); Windows PowerShell 5.1 reads `` `u{…} `` as `u` and a script block |
 | `carriage-return` | Bash | a carriage return is a character of its word; the Windows (Cygwin) bash strips it before a newline |

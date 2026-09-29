@@ -25,7 +25,7 @@ function readSeed() {
 }
 
 // Independent re-implementation of C:guard's step-1 mention text and step-2 blanket trigger
-// (PRE-03 round 8), used to check the seed is internally consistent with the rule.
+// (PRE-03 round 8, with the script-call exemption), used to check the seed is internally consistent with the rule.
 function mentionText(command) {
   let s = command;
   s = s.replace(/[\\`]\r?\n/g, '');
@@ -40,7 +40,16 @@ function hasHeredocOp(s) {
   const runs = s.match(/<{2,}/g) || [];
   return runs.some((r) => r.length !== 3);
 }
+// C:guard step 2 script-call exemption: one plain script call, tokenized despite a trigger in
+// its double-quoted path.
+const EXEMPT_PATH = '"[^"\\u201C-\\u201E$`!\\u0000-\\u001F\\u007F]*[/\\\\]commit\\.cjs"';
+const EXEMPT_TAIL = ' (?:plan|check|commit|release|infer)(?: [A-Za-z0-9._:=-]+)* *$';
+const EXEMPT = {
+  bash: new RegExp(`^ *node(?:\\.exe)? ${EXEMPT_PATH}${EXEMPT_TAIL}`),
+  powershell: new RegExp(`^ *(?:& )?node(?:\\.exe)? ${EXEMPT_PATH}${EXEMPT_TAIL}`),
+};
 function trigger(shell, command) {
+  if (EXEMPT[shell].test(command)) return false;
   const esc = shell === 'bash' ? /\\\r?\n/g : /`\r?\n/g;
   const s = command.replace(esc, '');
   if (/\$\(|\$\{/.test(s)) return true;

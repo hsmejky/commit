@@ -46,9 +46,10 @@ and the module sections point here, and the README states it in full.
   `gh pr create --body "$(cat <<'EOF' …)"` with `commit` in the body (Claude Code's default
   PR form; use `--body-file`), `git commit --no-edit # done`,
   `git log --grep "#12" | grep commit`, PowerShell `Write-Output @'…'@` with `commit` in
-  it. An install path holding `#` or (in Bash) a typographic single quote U+2018–U+201B
-  makes every script call denied (the entry point refuses only `$`, a backtick, `"`, `\`
-  and U+201C–U+201E, and the guard denies before it runs). The commit worker and the
+  it. An install path holding a blanket-rule construct the entry point does not refuse
+  leaves the plain script call exempt (C:guard step 2 script-call exemption); only such a
+  call outside the exempt form (chained after `cd sub &&`, a further word), or a path that
+  also holds `!` or a control character, is denied. The commit worker and the
   skills are unaffected: they run only script calls with plain flags (C:cli, no subcommand
   reads stdin; free text goes through files written with `Write`, C:worker-input; handback
   `run` strings hold no trigger, C:reply-and-handback).

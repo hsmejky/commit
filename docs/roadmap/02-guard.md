@@ -48,8 +48,9 @@ guard, end silently; under `COMMIT_GUARD_DEBUG=1` one stderr line records it.
 
 **What to build:** G2 for Bash (`\` escapes, literal single quotes, `\"` `\\` `\$` in double
 quotes, `$'…'` with its backslash escapes decoded and a decoded NUL ending its value, quote
-removal, segments on `&&`, `||`, `;`, `|`, `&`, newlines), preceded by the step 2 blanket
-rule for both shells (a command holding a substitution, heredoc, here-string, comment or
+removal, segments on `&&`, `||`, `;`, `|`, `&`, newlines, extglob openers kept in their
+word), preceded by the step 2 script-call exemption and blanket
+rule for both shells (a command that is not one plain script call and holds a substitution, heredoc, here-string, comment or
 Bash typographic quote is denied untokenized), and the thinnest G3, so `git commit -m x` in
 Bash is denied with the routing text.
 
@@ -244,6 +245,7 @@ the fixed list) and S2 `build` emits the one quoted form the allow rules match.
 - [ ] A caller's `plan`, `check`, `commit` and `release` script calls produce no guard output outside the worker (story 38).
 - [ ] Seam 3: an `infer` script call is recognised as a script call, like the other four subcommands.
 - [ ] Seam 3: `node commit.cjs foo` (an unrecognised subcommand) is not recognised as a script call.
+- [ ] Seam 3: `build`'s output is in C:guard's step 2 script-call exemption form; the exemption seed cases (`b-exempt-*`, `p-exempt-*`: a path holding `#`, `@(` or `‘`) are recognised script calls with no output, and the same call with `; git commit -m x` appended is blanket-denied.
 
 
 ## GRD-14: Worker-only rule

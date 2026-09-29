@@ -231,7 +231,8 @@
   fail-closed rule.** Before any tokenizing, a command that passed the early exit is denied
   when its text, with that shell's escaped newlines removed regardless of quotes, holds
   anywhere, inside quotes or not: `$(` (so also `$((`), `${` or `#` in both shells; in Bash
-  a backtick, a `<<` that is not part of `<<<`, or a typographic quote U+2018–U+201E; in
+  a backtick, a run of two or more `<` other than exactly three (a heredoc), or a typographic
+  quote U+2018–U+201E; in
   PowerShell `@(` or an `@` directly followed by a quote character (a here-string opener)
   (C:guard step 2, with its own deny message). Such a command is never tokenized: no
   segments, no script call, no heartbeat, no worker-only rule.
@@ -273,12 +274,37 @@
     `echo "$((n+1))" && git commit --no-edit`, `gh pr create --body "$(cat <<'EOF' …)"` with
     `commit` in the body (Claude Code's default PR form; use `--body-file`),
     `git commit --no-edit # done`, `git log --grep "#12" | grep commit`, PowerShell
-    `Write-Output @'…'@` with `commit` in it. An install path holding `#` or (Bash) a
-    typographic single quote U+2018–U+201B makes every script call denied (the entry point
-    refuses only `$`, a backtick, `"`, `\` and U+201C–U+201E, and the guard denies before it
-    runs). The worker and the skills are unaffected: they run only script calls with plain
+    `Write-Output @'…'@` with `commit` in it. An install path holding a blanket-rule
+    construct the entry point does not refuse leaves the plain script call exempt (round-8
+    review amendment below); only such a call outside the exempt form, or a path that also
+    holds `!` or a control character, is denied. The worker and the skills are unaffected: they run only script calls with plain
     flags (C:cli, no subcommand reads stdin; free text goes through files written with
     `Write`, C:worker-input; handback `run` strings hold no trigger, C:reply-and-handback).
+- **Amended.** By the review of the blanket rule (PRE-03 round 8, 2026-09-29):
+  - **Script-call exemption** (C:guard step 2). A command that is, in full, one script call
+    (optional surrounding spaces; in PowerShell an optional `& `; `node` or `node.exe`; one
+    space; a path in ASCII double quotes ending in `/commit.cjs` or `\commit.cjs` and holding
+    no `"`, U+201C–U+201E, `$`, backtick, `!` or control character; one space and a
+    subcommand; then zero or more space-separated words of `[A-Za-z0-9._:=-]`) skips the
+    blanket rule and is tokenized. **Why:** an install path holding `#` (or `<<`, `@(`, `@'`,
+    a typographic single quote) blanket-denied every script call, the worker's own
+    included, and the deny message then told the worker to spawn the worker, with no
+    diagnosis. Inside ASCII double quotes neither shell reads those characters, and with
+    `$`, backtick, the double-quote characters and `!` (Bash history expansion, off in a
+    non-interactive shell but not relied on) excluded, a Bash `\` can escape only another
+    `\`: the command can run nothing but that one `node` call. Anything more
+    (`; git commit -m x`, a newline, `# note`) is not exempt.
+  - **Extglob.** In Bash a `(` directly after `@`, `!`, `+`, `*` or `?` ends that word with
+    the `(` kept (not literal, step 4) and is also a `(` token: `git @(commit) -m x` with
+    `extglob` on (settable on an earlier line) may run `git commit -m x` when a file
+    `commit` exists, and with `extglob` off `!(git commit -m x)` is a negated subshell that
+    runs the commit, so both readings deny. `@(git) commit -m x` joins the command-position
+    gap.
+  - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
+    pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
+    double quotes or escaped opens nothing); in PowerShell two characters of one quote
+    class in a row inside a string of that class are one escaped quote, and any one closes
+    it (verified with bash 5.3, Windows PowerShell 5.1 and PowerShell 7).
 - **Rejected.**
   - Description tuning alone; the hook alone.
   - Git-native enforcement (a `pre-commit` / `commit-msg` hook, e.g. via `core.hooksPath`).

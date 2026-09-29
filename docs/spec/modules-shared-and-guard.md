@@ -46,15 +46,24 @@ object with the same keys, defining no new ones.
 `runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`; `formatDebugLine(fields)
 → string`. Sources: Q1, Q3, Q23, C:guard.
 
-**G2 Shell tokenizer.** First the blanket rule (C:guard step 2, Q3 as amended): with that
+**G2 Shell tokenizer.** First the script-call exemption (C:guard step 2, Q3 as amended): a
+command that is, in full, one script call in the exempt form (optional surrounding spaces,
+in PowerShell an optional `& `, `node` or `node.exe`, a double-quoted path ending in
+`/commit.cjs` or `\commit.cjs` without `"`, U+201C-U+201E, `$`, backtick, `!` or a control
+character, a subcommand, then words of `[A-Za-z0-9._:=-]` only) skips the blanket rule and
+is tokenized, so an install path holding `#` does not deny the worker's own calls. Then
+the blanket rule: with that
 shell's escaped newlines removed regardless of quotes (Bash `\`, PowerShell backtick, each
 optionally followed by a carriage return, then a newline), a command holding anywhere,
-inside quotes or not, `$(`, `${` or `#` (both shells), a backtick, a `<<` not part of `<<<`
+inside quotes or not, `$(`, `${` or `#` (both shells), a backtick, a run of two or more `<`
+other than exactly three (a heredoc)
 or a typographic quote U+2018-U+201E (Bash), or `@(` or an `@` directly followed by `'`,
 `"` or U+2018-U+201E (PowerShell) is not tokenized: G2 returns the trigger kind instead of
 segments, and G3 maps it to the blanket deny with no segments and no script calls (so no
 heartbeat and no worker-only rule). Otherwise tokenise per `tool_name` with the rules of
-C:guard (Bash: `\` escapes, literal single quotes, `\"` `\` `\$` in double quotes, `$'…'`
+C:guard (Bash: `\` escapes, literal single quotes, `\"` `\\` `\$` in double quotes, `$"…"`
+read as `"…"`, a `(` directly after `@`, `!`, `+`, `*` or `?` kept in that word and also a
+`(` token (extglob), `$'…'`
 with its backslash escapes decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends
 the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
 `$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `` `u{…} `` read as its code point
@@ -62,9 +71,11 @@ the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
 that ends the token's value there, as the native command line is cut at it, and a `cut`
 token follows the cut token, ending git's arguments while the later tokens stay in the
 segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`, typographic quotes as
-quotes (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`; Q3 as amended));
-escaped newlines (Bash `\` plus newline, PowerShell backtick plus newline) removed outside
-single quotes before splitting; quote removal; split into segments on `&&`, `||`, `;`,
+quotes (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`; two of one class in a
+row inside a string of that class are one escaped quote, any one closes it; Q3 as
+amended)); escaped newlines (Bash `\` plus newline, PowerShell backtick plus newline)
+removed outside single quotes and Bash `$'…'` spans as the tokenizer reads them, before
+splitting; quote removal; split into segments on `&&`, `||`, `;`,
 `|`, `&` and newlines outside quotes. An unterminated quote makes the rest of its line one
 quoted token and scanning continues on the next line (Q3 as amended). Redirection
 operators (`>`, `>>`, `<`, `2>&1` and the like) outside quotes become tokens of their own
