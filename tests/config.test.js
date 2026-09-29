@@ -47,6 +47,93 @@ test('loadConfig reports an error naming the repo layer on unparseable JSON', (t
   assert.match(result.error, /\.claude[/\\]commit\.json/);
 });
 
+// review-CFG-02 finding 3: the parser's own message, which carries the position, is appended
+// so a typo is easier to find (story 110).
+test('loadConfig appends the JSON parser error, including its position, to the message', (t) => {
+  const toplevel = tempToplevel(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{"a": 1,}');
+
+  const result = config.loadConfig({ toplevel });
+
+  assert.match(result.error, /position/i);
+});
+
+// review-CFG-02 finding 2, Q6 (amended): a leading UTF-8 BOM is stripped, matching Node's own
+// JSON file parsing, so a file saved by Windows PowerShell 5.1 or Notepad still parses.
+test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
+  const toplevel = tempToplevel(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  fs.writeFileSync(
+    path.join(toplevel, config.REPO_CONFIG_PATH),
+    Buffer.concat([bom, Buffer.from('{ "types": ["feat"] }', 'utf8')]),
+  );
+
+  assert.equal(config.loadConfig({ toplevel }), null);
+});
+
+// review-CFG-02 finding 4, Q6 (amended): invalid UTF-8 is treated as unparseable (a `config`
+// refusal), detected cheaply through a fatal-mode decoder rather than Node's default silent
+// U+FFFD replacement.
+test('loadConfig reports an error naming the repo layer on invalid UTF-8', (t) => {
+  const toplevel = tempToplevel(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  // 0xFF is never valid anywhere in a UTF-8 byte sequence.
+  fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), Buffer.from([0x7b, 0xff, 0x7d]));
+
+  const result = config.loadConfig({ toplevel });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /repo config/);
+  assert.match(result.error, /UTF-8/);
+});
+
+// review-CFG-02 finding 5: CFG-02 is JSON-parseability only; a non-object top level is left
+// to CFG-03's per-key/per-layer validation.
+test('loadConfig accepts a non-object top level (CFG-03 validates types and shape)', (t) => {
+  const toplevel = tempToplevel(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  for (const body of ['[]', 'null', '42', '"x"']) {
+    fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), body);
+    assert.equal(config.loadConfig({ toplevel }), null, body);
+  }
+});
+
+// review-CFG-02 finding 1(a): a read error other than ENOENT/ENOTDIR (here EISDIR, from the
+// repo layer's path being a directory) is a `config` refusal naming the layer, not an
+// uncaught throw that ends as `internal`.
+test('loadConfig reports an error naming the repo layer when the path is a directory', (t) => {
+  const toplevel = tempToplevel(t);
+  fs.mkdirSync(path.join(toplevel, config.REPO_CONFIG_PATH), { recursive: true });
+
+  const result = config.loadConfig({ toplevel });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /repo config/);
+});
+
+// review-CFG-02 finding 10: a regular-file check plus a size cap (same style as the run-lock
+// read) closes a self-DoS where a cloned repo commits an oversized `.claude/commit.json`.
+test('loadConfig reports an error naming the repo layer for an oversized file, never reading it', (t) => {
+  const toplevel = tempToplevel(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  const configPath = path.join(toplevel, config.REPO_CONFIG_PATH);
+  const fd = fs.openSync(configPath, 'w');
+  try {
+    // A sparse file well past the cap: if `loadConfig` ever read it whole, this test would
+    // hang or exhaust memory instead of failing fast.
+    fs.ftruncateSync(fd, 10 * 1024 * 1024);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const result = config.loadConfig({ toplevel });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /repo config/);
+});
+
 test('REPO_CONFIG_PATH is .claude/commit.json (Q6)', () => {
   assert.equal(config.REPO_CONFIG_PATH, '.claude/commit.json');
 });

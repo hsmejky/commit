@@ -248,6 +248,35 @@ test('M15 run policy module stays pure', () => {
   assertPureSource('run-policy');
 });
 
+// review-CFG-02 finding 7: `planRefusal` had no pure unit test at all, so nothing pinned the
+// refusal order (C:plan step 2: `env`, `config`, `state`) on a host where the PATH-shim Seam
+// 1 route is skipped (KD-R21, Windows).
+test('M15 planRefusal orders env before config before state', async () => {
+  const { loadLib } = require('./helpers/load-lib.js');
+  const { planRefusal } = await loadLib('run-policy');
+
+  const oldGit = { status: 'ok', version: { major: 2, minor: 33, text: '2.33.0' } };
+  const okGit = { status: 'ok', version: { major: 2, minor: 40, text: '2.40.0' } };
+  const configError = { error: 'the repo config (.claude/commit.json) is not valid JSON' };
+  const notARepo = { kind: 'not-a-repo' };
+
+  // env beats config and state, even when both would also refuse.
+  assert.equal(
+    planRefusal({ git: oldGit, repo: notARepo, config: configError }).code,
+    'env',
+  );
+  // config beats state, once env is clean.
+  assert.equal(
+    planRefusal({ git: okGit, repo: notARepo, config: configError }).code,
+    'config',
+  );
+  // state is reached only once env and config are both clean.
+  assert.equal(
+    planRefusal({ git: okGit, repo: notARepo, config: null }).code,
+    'not-a-repo',
+  );
+});
+
 // CFG-02 (docs/roadmap/04-config-and-attribution.md): the repo config layer, read from the
 // worktree (M4), checked by `plan` step 2 before any run folder or lock exists (Q6).
 
@@ -258,6 +287,7 @@ test('plan with unparseable repo config JSON exits 1 config, naming the repo lay
   const result = await runCommit(c, ['plan']);
 
   assertRefusal(result, 'config', 1);
+  assert.match(result.json.error.message, /repo/);
   assert.match(result.json.error.message, /\.claude[/\\]commit\.json/);
   assertNoRunFolder(c.repoDir);
 });

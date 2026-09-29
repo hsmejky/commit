@@ -44,6 +44,15 @@
   differs from HEAD's `[]` when it carries patterns, which makes the confirmation
   `humanOnly` (Q10 as amended). The loader exports the repo-config path
   (`REPO_CONFIG_PATH`), so no other module spells it.
+- **Amended.** By the CFG-02 review pass (2026-09-29): reading the repo layer's file strips a
+  leading UTF-8 BOM (U+FEFF) before parsing, the same way Node's own JSON file parsing does,
+  so a file saved with a BOM by Windows PowerShell 5.1 (`Out-File -Encoding utf8`,
+  `Set-Content -Encoding UTF8`) or older Notepad still parses instead of refusing with no hint
+  why (review-CFG-02 finding 2). Invalid UTF-8 in the repo layer is treated as unparseable (a
+  `config` refusal naming the repo layer), detected through a fatal-mode `TextDecoder` instead
+  of Node's default silent U+FFFD replacement, since the check is cheap (review-CFG-02 finding
+  4). Both rules apply wherever a repo-layer file is read as text; CFG-07's HEAD read of
+  `scanIgnore` makes the same calls for consistency (finding 2's forward note).
 - **Rejected.**
   - Repo only; a third local layer (commit style is shared by nature).
   - Unknown key or value as an error: one teammate on a newer plugin would break every commit

@@ -76,6 +76,9 @@ case refuses `plan` with `config` before any run starts, naming layer and key.
       `["Feat"]`, `["1x"]`, `"feat"`; `scope` `3`; `subjectCase` `true` → each exit 1
       `config` naming the key.
 - [ ] Seam 1: `maxSubjectLength` `20` and `200` are accepted.
+- [ ] Seam 1: a repo layer whose top level is not a JSON object (`[]`, `null`, `42`, `"x"`) →
+      exit 1 `config` naming the repo layer; CFG-02's `loadConfig` accepts it as JSON-parseable
+      (review-CFG-02 finding 5).
 - [ ] Seam 1: after each of those `config` refusals no `.commit-plan/` directory and no lock
       exist (story 110).
 - [ ] A static test asserts `validateLayer` is exported, pure (no file reads in its
