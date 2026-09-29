@@ -757,6 +757,54 @@ test('scanUnits: two flagged units of the same path are one skipped entry; an un
   });
 });
 
+test('scanUnits: two unflagged units of the same path, each over the 1 MB byte measure, are one skipped entry', () => {
+  const units = [
+    nonAsciiUnit('assets/big.bin', 1024 * 1024 + 1),
+    nonAsciiUnit('assets/big.bin', 1024 * 1024 + 2),
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [],
+    skipped: [{ path: 'assets/big.bin', reason: 'added content over 1 MB' }],
+  });
+});
+
+test('scanUnits: a flagged unit and an unflagged unit over the byte measure, same path, are one skipped entry', () => {
+  const token = githubToken('x');
+  const units = [
+    { ...textUnit('assets/mixed.bin', [{ line: 1, text: token }]), overScanLimit: true },
+    nonAsciiUnit('assets/mixed.bin', 1024 * 1024 + 1),
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [],
+    skipped: [{ path: 'assets/mixed.bin', reason: 'added content over 1 MB' }],
+  });
+});
+
+// A flagged unit and an unflagged, under-limit unit of the same path: M8 decides each unit on
+// its own (SCN-13b), so it does not notice or reconcile the two units of one path disagreeing
+// on `overScanLimit` — that disagreement is an M10 contract violation M8 does not second-guess.
+// The flagged unit is skipped and the unflagged one is scanned like any other, independently.
+test('scanUnits: a flagged unit and an unflagged, under-limit unit of the same path are decided independently', () => {
+  const token = githubToken('x');
+  const units = [
+    { ...textUnit('assets/disagree.bin', [{ line: 1, text: 'a' }]), overScanLimit: true },
+    textUnit('assets/disagree.bin', [{ line: 2, text: `const token = "${token}";` }]),
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'assets/disagree.bin', line: 2 }],
+    skipped: [{ path: 'assets/disagree.bin', reason: 'added content over 1 MB' }],
+  });
+});
+
 test('scanUnits: a symlink unit whose target is a home path is a hit', () => {
   const units = [
     {

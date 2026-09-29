@@ -457,16 +457,21 @@ export function createScanner(patterns) {
   /**
    * Scan the added lines of units (SCN-13). A pattern hitting a line more than once is one
    * hit, since a hit's location is its path and line. Unit-level rules run before any line is
-   * scanned, in order: a unit whose path a `scanIgnore` matcher (M4's compiled M7 matchers)
-   * matches is dropped outright — no hit, not `skipped` either, since it is exempted, not
-   * scanned-and-rejected; a unit that is over the 1 MB added-content limit — flagged
-   * `overScanLimit: true` by M10 (SCN-13b), or whose added lines total more than 1 MB by
-   * M8's own measure (`addedContentLength`, tracked or untracked alike) — is reported in
-   * `skipped` with the reason `"added content over 1 MB"` (C:plan) and not scanned, the flag
-   * checked before the binary kind so it wins over the silent binary skip, and a path gets
-   * one `skipped` entry however many of its units are over; a binary unit (`kind: "binary"`)
-   * that is not over the limit is skipped silently, the same way. Every other unit, symlinks
-   * included, is scanned line by line like a text unit.
+   * scanned, in order:
+   *
+   * 1. A unit whose path a `scanIgnore` matcher (M4's compiled M7 matchers) matches is
+   *    dropped outright — no hit, not `skipped` either, since it is exempted, not
+   *    scanned-and-rejected.
+   * 2. A unit that is over the 1 MB added-content limit — flagged `overScanLimit: true` by
+   *    M10 (SCN-13b), or whose added lines total more than 1 MB by M8's own measure
+   *    (`addedContentLength`, tracked or untracked alike) — is reported in `skipped` with
+   *    the reason `"added content over 1 MB"` (C:plan) and not scanned, the flag checked
+   *    before the binary kind so it wins over the silent binary skip, and a path gets one
+   *    `skipped` entry however many of its units are over.
+   * 3. A binary unit (`kind: "binary"`) that is not over the limit is skipped silently, the
+   *    same way.
+   *
+   * Every other unit, symlinks included, is scanned line by line like a text unit.
    *
    * @param {readonly Unit[]} units
    * @param {{ scanIgnore?: readonly object[], osUser?: string | null }} [options] `scanIgnore`
