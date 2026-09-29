@@ -109,14 +109,14 @@ the worker's retry can fix a `Note:` paragraph on its own.
 
 **Blocked by:** MSG-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (allowed footer tokens), Q13, stories 119, 120.
 
-- [ ] Seam 3 table: each allowed token passes; `refs: x` (wrong case) fails.
-- [ ] Seam 3 table: `Co-Authored-By: Claude <noreply@anthropic.com>` and `Signed-off-by: A
+- [x] Seam 3 table: each allowed token passes; `refs: x` (wrong case) fails.
+- [x] Seam 3 table: `Co-Authored-By: Claude <noreply@anthropic.com>` and `Signed-off-by: A
       <a@b>` in the message fail lint (story 119).
-- [ ] Seam 3 table: a last paragraph `Note: see #12` fails with exactly "`Note` is not an
+- [x] Seam 3 table: a last paragraph `Note: see #12` fails with exactly "`Note` is not an
       allowed footer token. If this is body text, rephrase it or add a non-footer line to
       the paragraph."
 
