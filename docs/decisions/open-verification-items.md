@@ -94,7 +94,8 @@
   diff options and `-c` config pins: an intent-to-add path (untracked or already staged-new)
   diffs as `A` with its working-tree content; a plain `mv` and a `git mv`, each followed by
   step 1's reset and an intent-to-add of the new path, pair as `R100`; and the staged-new-path
-  query lists only a `git mv`'s new path, both on a normal HEAD and an unborn one. No Q11
+  query lists only a `git mv`'s new path on a normal HEAD, and every staged path on an
+  unborn HEAD. No Q11
   amendment needed. Not yet run on git 2.34: that leg waits on the CI `ubuntu:22.04` container
   job (FND-03), not yet built.
 - How Claude Code ends a Bash/PowerShell tool call (Esc, timeout) on Linux, macOS and

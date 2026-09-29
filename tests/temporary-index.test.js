@@ -39,10 +39,12 @@ const PINNED_DIFF_ARGS = [
 ];
 const PINNED_CONFIG_ARGS = ['-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false'];
 
-// Q9: every git call drops every inherited `GIT_*` environment variable, so a variable set
-// on the host (or by whatever launched this test run) cannot influence the checks here. The
-// env this test needs (fixed identity, git-config isolation) is set explicitly by the
-// caller, not inherited.
+// Deliberately stricter than Q9's production rule (which keeps a small set: GIT_EXEC_PATH,
+// GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, GIT_CONFIG_NOSYSTEM, GIT_SSH, GIT_SSH_COMMAND,
+// GIT_ASKPASS): this test drops every inherited `GIT_*` environment variable with no
+// keep-set, so a variable set on the host (or by whatever launched this test run) cannot
+// influence the checks here. The env this test needs (fixed identity, git-config isolation)
+// is set explicitly by the caller, not inherited.
 function withoutInheritedGitVars(env) {
   const filtered = {};
   for (const [key, value] of Object.entries(env)) {
@@ -127,7 +129,10 @@ test('git diff against an index copy with git add -N entries shows each intent-t
   git(repoDir, env, ['add', 'staged.txt']);
 
   const indexCopy = copyIndexResetToHead(repoDir, env);
-  git(repoDir, env, ['add', '-N', 'new.txt', 'staged.txt'], { GIT_INDEX_FILE: indexCopy });
+  git(
+    repoDir, env, ['add', '-N', 'new.txt', 'staged.txt'],
+    { GIT_INDEX_FILE: indexCopy, GIT_LITERAL_PATHSPECS: '1' },
+  );
 
   const nameStatus = git(
     repoDir, env, [...PINNED_CONFIG_ARGS, 'diff', ...PINNED_DIFF_ARGS, '--name-status'],
@@ -208,9 +213,10 @@ test('git diff --cached --no-renames --diff-filter=A lists only a git mv\'s new 
   git(repoDir, env, ['mv', 'old3.txt', 'renamed3.txt']);
 
   const names = git(repoDir, env, [
-    'diff', '--cached', '--no-renames', '--diff-filter=A', '--name-only',
+    ...PINNED_CONFIG_ARGS, 'diff', '--cached', '--no-renames', '--diff-filter=A',
+    '--name-only', '-z',
   ]);
-  assert.equal(names, 'renamed3.txt\n');
+  assert.deepEqual(names.split('\0').filter(Boolean), ['renamed3.txt']);
 });
 
 test('git diff --cached --no-renames --diff-filter=A works on an unborn HEAD', (t) => {
@@ -227,7 +233,8 @@ test('git diff --cached --no-renames --diff-filter=A works on an unborn HEAD', (
   git(repoDir, env, ['add', 'a.txt', 'b.txt']);
 
   const names = git(repoDir, env, [
-    'diff', '--cached', '--no-renames', '--diff-filter=A', '--name-only',
+    ...PINNED_CONFIG_ARGS, 'diff', '--cached', '--no-renames', '--diff-filter=A',
+    '--name-only', '-z',
   ]);
-  assert.deepEqual(names.split('\n').filter(Boolean).sort(), ['a.txt', 'b.txt']);
+  assert.deepEqual(names.split('\0').filter(Boolean).sort(), ['a.txt', 'b.txt']);
 });
