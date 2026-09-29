@@ -3,14 +3,14 @@
 // M9 path classifier, Seam 3 (in-process, table-driven) against the hidden rules and
 // hidden exceptions of C:untracked-files.
 
-const { test, before } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./helpers/load-lib');
 const { assertPureSource } = require('./helpers/assert-pure-source');
 
 let hideFilter;
 
-before(async () => {
+beforeEach(async () => {
   ({ hideFilter } = await loadLib('path-classifier'));
 });
 

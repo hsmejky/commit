@@ -2,7 +2,7 @@
 
 // M6 message grammar, Seam 3 (in-process, table-driven) against C:message-grammar.
 
-const { test, before } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./helpers/load-lib');
 const { assertPureSource } = require('./helpers/assert-pure-source');
@@ -22,7 +22,7 @@ let parse;
 let lint;
 let passesLowerCase;
 
-before(async () => {
+beforeEach(async () => {
   ({ parse, lint, passesLowerCase } = await loadLib('message-grammar'));
 });
 

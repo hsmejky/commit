@@ -4,7 +4,7 @@
 // C:summary-only-files (reason order, size and line boundaries) and C:plan's `bucket`
 // (hints only, Q11).
 
-const { test, before } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./helpers/load-lib');
 const { assertPureSource } = require('./helpers/assert-pure-source');
@@ -12,7 +12,7 @@ const { assertPureSource } = require('./helpers/assert-pure-source');
 let summaryOnly;
 let bucketOf;
 
-before(async () => {
+beforeEach(async () => {
   ({ summaryOnly, bucketOf } = await loadLib('path-classifier'));
 });
 

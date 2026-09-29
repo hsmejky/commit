@@ -4,7 +4,7 @@
 // must hold no literal hit (Q10): token strings are built at run time or loaded from
 // `tests/fixtures/scan-patterns/`, which the repo's own scan ignores.
 
-const { test, before } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { readdirSync, readFileSync } = require('node:fs');
@@ -16,7 +16,7 @@ let scanUnits;
 let PATTERNS;
 let createScanner;
 
-before(async () => {
+beforeEach(async () => {
   ({ scanText, scanUnits, PATTERNS, createScanner } = await loadLib('scanner'));
 });
 

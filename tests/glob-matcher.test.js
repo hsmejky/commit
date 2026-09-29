@@ -2,7 +2,7 @@
 
 // M7 glob matcher, Seam 3 (in-process, table-driven) against C:scanignore-globs.
 
-const { test, before } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { pathToFileURL } = require('node:url');
 const { Worker } = require('node:worker_threads');
@@ -12,7 +12,7 @@ const { assertPureSource } = require('./helpers/assert-pure-source');
 let compileGlob;
 let matches;
 
-before(async () => {
+beforeEach(async () => {
   ({ compileGlob, matches } = await loadLib('glob-matcher'));
 });
 

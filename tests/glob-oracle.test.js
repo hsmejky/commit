@@ -38,7 +38,7 @@
 // ":(glob)tests/*.json" rather than as a glob pattern. `withoutInheritedGitVars` still drops
 // it if the host happens to export it.
 
-const { test, before, after } = require('node:test');
+const { test, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -49,7 +49,7 @@ const { loadLib } = require('./helpers/load-lib');
 let compileGlob;
 let matches;
 
-before(async () => {
+beforeEach(async () => {
   ({ compileGlob, matches } = await loadLib('glob-matcher'));
 });
 
