@@ -97,28 +97,43 @@ function* followingLines(split, lines, index) {
   for (let next = index + 1; next < lines.length; next += 1) yield lines[next];
 }
 
-// `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value or one holding a
-// placeholder word, compared case-insensitively.
+// `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value, one holding a
+// placeholder word (compared case-insensitively), or an unquoted value that is a call.
 const MIN_SECRET_ENTROPY = 3.5;
 const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|process\.env|os\.environ/i;
 
+// An unquoted `generic-secret` value that is a call, e.g. `fetchAccessToken()`,
+// `get_password_from_env()`, `self._fetch_token(scope)` (C:scan-patterns): a bare identifier
+// (optionally dotted, as a method call) followed by a parenthesised argument list running to
+// the end of the value. The value never carries a trailing `;`, `,`, `#` or its own quotes
+// (the row's regex lookahead stops there), so the call's closing `)` is always the value's
+// last character.
+const UNQUOTED_CALL_VALUE = /^[A-Za-z_$][\w$.]*\(.*\)$/;
+
 /**
- * A `generic-secret` value without its quotes, if it has them.
+ * A `generic-secret` value without its quotes, alongside whether it was quoted: the call rule
+ * only applies to an unquoted value.
  *
  * @param {string} value
  */
 function unquote(value) {
-  return value.startsWith('"') || value.startsWith("'") ? value.slice(1, -1) : value;
+  const quoted = value.startsWith('"') || value.startsWith("'");
+  return { value: quoted ? value.slice(1, -1) : value, quoted };
 }
 
 /**
  * Whether a `generic-secret` value is not a secret: Shannon entropy below 3.5 bits per
- * character, or a placeholder word in it.
+ * character, a placeholder word in it, or (unquoted only) the value is a call.
  *
  * @param {string} value the value without quotes
+ * @param {boolean} quoted whether the value was quoted before `unquote`
  */
-function isPlaceholderSecret(value) {
-  return shannonEntropy(value) < MIN_SECRET_ENTROPY || SECRET_PLACEHOLDER.test(value);
+function isPlaceholderSecret(value, quoted) {
+  return (
+    shannonEntropy(value) < MIN_SECRET_ENTROPY ||
+    SECRET_PLACEHOLDER.test(value) ||
+    (!quoted && UNQUOTED_CALL_VALUE.test(value))
+  );
 }
 
 /**
@@ -193,7 +208,10 @@ export const PATTERNS = Object.freeze([
     id: 'generic-secret',
     regex:
       /(?<![A-Za-z0-9])[A-Za-z0-9_]*?(secret|token|passw(or)?d|api[_-]?key|client[_-]?secret)(?![A-Za-z0-9])(_[A-Za-z0-9_]*)?["']?\s*[:=]\s*(?<value>["'][^"'\s]{12,}["']|[^"'\s,;#]{12,}(?=[\s,;#]|$))/iu,
-    notHit: (match) => isPlaceholderSecret(unquote(match.groups.value)),
+    notHit: (match) => {
+      const { value, quoted } = unquote(match.groups.value);
+      return isPlaceholderSecret(value, quoted);
+    },
     source: 'gitleaks',
   }),
   Object.freeze({

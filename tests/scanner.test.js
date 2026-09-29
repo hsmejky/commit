@@ -331,6 +331,43 @@ for (const [name, value, hit] of ENTROPY_CASES) {
   });
 }
 
+// `generic-secret` call rule (fix for SCN-09): an unquoted value that is a call is not a hit,
+// since it reads a secret rather than holding one; the quoted branch is unaffected. Each case
+// below is a full line, not built at run time, since every one is a negative (no hit either
+// way, so no literal secret shape reaches the source).
+const CALL_CASES = [
+  // [case, line, hit]
+  ['unquoted call with no arguments', 'const token = fetchAccessToken();', false],
+  ['unquoted snake_case call', 'password = get_password_from_env()', false],
+  ['unquoted dotted method call with an argument', 'token = self._fetch_token(scope)', false],
+];
+
+for (const [name, line, hit] of CALL_CASES) {
+  test(`generic-secret call rule: ${name} → ${hit ? 'hit' : 'no hit'}`, () => {
+    const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+    assert.equal(hits.length, hit ? 1 : 0);
+  });
+}
+
+test('generic-secret call rule: an unquoted non-call value with a dotted key still hits', () => {
+  const line = ['config.apiKey', 'FAKE9aQ2xL7mZ4pR'].join('=');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
+test('generic-secret call rule: a quoted call-shaped value still hits', () => {
+  const line = ['token', '"fetchToken(abc123XYZ)"'].join(' = ');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
+test('generic-secret call rule: an unquoted JWT-shaped value still hits', () => {
+  const jwt = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJ0ZXN0In0', 'FAKEsignatureAbC123'].join('.');
+  const line = ['AUTH_TOKEN', jwt].join('=');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
 test('this test source holds no literal hit', () => {
   assert.deepEqual(scanText(readFileSync(__filename, 'utf8'), { osUser: null }), []);
 });
