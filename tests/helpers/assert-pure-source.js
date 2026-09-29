@@ -16,8 +16,21 @@
 // fixed; a false pass is not.
 //
 // This catches accidental impurity, not deliberate evasion: `eval` and `Function` are
-// banned, but code built from strings by other routes (e.g. a function's `.constructor`)
-// is beyond a text check.
+// banned, but code built from strings by other routes are beyond a text check — a function's
+// `.constructor`, a bracket property access that spells a banned word with an escape
+// (`Math['r\x61ndom']()`), or a reflective get of the same
+// (`Reflect.get(Math, 'r\x61ndom')`). A regex for the banned word itself is written around
+// this the same way a pure module's own comments are (a character class, e.g. `rando[m]`).
+//
+// `setTimeout`, `queueMicrotask`, `navigator` and `WeakRef` are banned outright rather than
+// left out of scope: unlike `eval`/`Function`, nothing about them needs more than a text
+// check, and none of the pure modules in `plugin/scripts/lib/` has a legitimate use for
+// scheduling, environment identification or GC-sensitive references, so banning costs
+// nothing. `Date` is banned as the clock; a pure module that needs to show a human-readable
+// time formats it from the injected epoch-ms number (`now`, docs/spec/architectural-decisions.md
+// "Injected environment") with arithmetic, or its effectful caller formats the string (with
+// `Date`, which it is allowed to use) and passes that string down — never a `Date` inside the
+// pure module itself.
 
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
@@ -29,11 +42,20 @@ const AMBIENT_STATE = [
   [/\brequire\b/, 'require'],
   [/\bprocess\b/, 'process'],
   [/\bglobalThis\b/, 'globalThis'],
+  [/\bglobal\b/, "global (Node's alias of globalThis)"],
   [/\bfetch\b/, 'fetch'],
   [/\bDate\b/, 'the clock'],
+  [/\bperformance\b/, 'performance'],
   [/\brandom\b/, 'randomness'],
+  [/\bcrypto\b/, 'crypto'],
   [/\bconsole\b/, 'console'],
+  [/\bIntl\b/, 'Intl'],
+  [/\btoLocale\w*/, 'a toLocale* call'],
   [/\beval\b|\bFunction\b/, 'code built from strings'],
+  [/\bsetTimeout\b/, 'setTimeout'],
+  [/\bqueueMicrotask\b/, 'queueMicrotask'],
+  [/\bnavigator\b/, 'navigator'],
+  [/\bWeakRef\b/, 'WeakRef'],
 ];
 
 // A `\u` escape can spell an identifier (`process` is `process`), which a word match
@@ -54,6 +76,13 @@ const IMPORT_CLAUSE_START = /^\s*[\w${*]/;
 // string with no escapes.
 const SPECIFIER = /^\s*(['"])([^'"\\\r\n]*)\1/;
 
+// 1-based line number of `index` in `source`, for failure messages.
+function lineAt(source, index) {
+  let line = 1;
+  for (let i = 0; i < index; i++) if (source.charCodeAt(i) === 10) line++;
+  return line;
+}
+
 /**
  * Assert that `source` (a pure module's text; `label` names it in failure messages) does no
  * I/O, reads no ambient state, and imports only the pure modules listed in `allowImports`
@@ -65,20 +94,28 @@ const SPECIFIER = /^\s*(['"])([^'"\\\r\n]*)\1/;
  */
 function assertPureSourceText(source, label, { allowImports = [] } = {}) {
   for (const [pattern, what] of AMBIENT_STATE) {
-    assert.doesNotMatch(source, pattern, `${label} must not use ${what}, not even in a comment or literal`);
+    const match = pattern.exec(source);
+    assert.ok(
+      match === null,
+      match && `${label}:${lineAt(source, match.index)}: must not use ${what}, not even in a comment or literal`,
+    );
   }
-  assert.doesNotMatch(source, UNICODE_ESCAPE, `${label} must not use a \\u escape`);
+  {
+    const match = UNICODE_ESCAPE.exec(source);
+    assert.ok(match === null, match && `${label}:${lineAt(source, match.index)}: must not use a \\u escape`);
+  }
 
   const allowed = allowImports.join(', ') || 'none';
   const checkSpecifier = (index, keyword) => {
+    const line = lineAt(source, index);
     const match = SPECIFIER.exec(source.slice(index));
     assert.ok(
       match !== null,
-      `${label}: cannot read the module specifier after '${keyword}' at offset ${index}`,
+      `${label}:${line}: cannot read the module specifier after '${keyword}', even in a comment`,
     );
     assert.ok(
       allowImports.includes(match[2]),
-      `${label} imports '${match[2]}', which is not in allowImports (${allowed})`,
+      `${label}:${line}: imports '${match[2]}', even in a comment, which is not in allowImports (${allowed})`,
     );
   };
 

@@ -64,6 +64,15 @@ for (const [what, source] of [
   ['console', "console.log('x');\n"],
   ['eval', "eval('1');\n"],
   ['the Function constructor', "const p = Function('return pro' + 'cess')();\n"],
+  ['performance', 'const t = performance.now();\n'],
+  ['crypto', "const id = crypto.randomUUID();\n"],
+  ['global', 'const g = global.x;\n'],
+  ['Intl', 'const f = Intl.DateTimeFormat();\n'],
+  ['a toLocale* call', 'const s = (1).toLocaleString();\n'],
+  ['setTimeout', 'setTimeout(() => {}, 0);\n'],
+  ['queueMicrotask', 'queueMicrotask(() => {});\n'],
+  ['navigator', 'const n = navigator.userAgent;\n'],
+  ['WeakRef', 'const w = new WeakRef({});\n'],
   ['a banned word in a comment', '// avoids process\nexport const x = 1;\n'],
   ['a banned word in a string', "const s = 'the process module';\n"],
   ['a banned word in a regex', 'const r = /process\\.env/;\n'],
@@ -125,5 +134,36 @@ test('a failing import names the specifier', () => {
   assert.throws(
     () => assertPureSourceText("import { helper } from './not-allowed.mjs';\n", 'fixture.mjs'),
     /not-allowed\.mjs/,
+  );
+});
+
+// Failure messages name the line the problem is on, and, for specifiers, say so even when
+// the failure came from text that only looks like an import (a comment or a `from` variable).
+
+test('a banned-word failure names the line', () => {
+  assert.throws(
+    () => assertPureSourceText('const a = 1;\nconst b = process.cwd();\n', 'fixture.mjs'),
+    /fixture\.mjs:2: must not use process/,
+  );
+});
+
+test('a \\u escape failure names the line', () => {
+  assert.throws(
+    () => assertPureSourceText("const a = 1;\nconst b = 'proc\\u0065ss';\n", 'fixture.mjs'),
+    /fixture\.mjs:2: must not use a \\u escape/,
+  );
+});
+
+test('an unreadable specifier names the line and says even in a comment', () => {
+  assert.throws(
+    () => assertPureSourceText('const from = 2;\nconst x = from / 2;\n', 'fixture.mjs'),
+    /fixture\.mjs:2:.*even in a comment/,
+  );
+});
+
+test('a disallowed specifier names the line and says even in a comment', () => {
+  assert.throws(
+    () => assertPureSourceText("const a = 1;\nimport { helper } from './not-allowed.mjs';\n", 'fixture.mjs'),
+    /fixture\.mjs:2:.*not-allowed\.mjs.*even in a comment/,
   );
 });
