@@ -13,9 +13,10 @@ every accepted gap named elsewhere in this spec is listed here; story 201, the R
 and the module sections point here, and the README states it in full.
 - The guard is not a security boundary: every allowed form (`--no-edit`, `--amend
   --no-edit`, `--fixup=<commit>`) commits the current index unscanned, and aliases,
-  interpreters (`sh -c '…'`, `pwsh -c`), command substitution and variables anywhere
-  but git's subcommand position (`$(echo git) commit`), Bash brace expansion or a glob in
-  the command position (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`), `GIT_DIR`
+  interpreters (`sh -c '…'`, `pwsh -c`, `eval`, `Invoke-Expression`, `Start-Process`),
+  and expansion in the command position (`$(echo git) commit`, `$GIT commit`,
+  PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
+  `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`), `GIT_DIR`
   redirection and env-prefixed config pass it.
 - A command whose text never spells `commit` (`git $(echo com)mit`, PowerShell
   `git ('com'+'mit')`) passes G1's early exit unparsed (Q3); `sudo -u git git commit` is

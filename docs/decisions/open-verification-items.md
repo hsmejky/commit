@@ -27,14 +27,18 @@
   **Run** on 2026-09-29 (PRE-03; throwaway prototype of C:guard "Parsing" plus a G1/G3-lite
   classifier, not kept; bash 5.3, Windows PowerShell 5.1 and PowerShell 7.6 parser API).
   The 143 cases, with the prototype's segments, decision and per-oracle class, are the
-  GRD-03 fixture seed: `tests/fixtures/guard/segments-seed.json`. Confirmed: the `git`
+  GRD-03 fixture seed: `tests/fixtures/guard/segments-seed.json`, which the amendment's
+  review rounds grew by hand to 184 cases (its schema and oracle classes are checked by
+  `tests/guard-segments-seed.test.js`). Confirmed: the `git`
   basename, the `commit` substring and the subcommand case-insensitively (`GIT`,
   `Git.exe`, `/usr/bin/GIT`, `git COMMIT`, `git-COMMIT.exe`); `(` and `)` as tokens
   (`( git commit )` and `(git commit -m x)` denied, `(git commit --no-edit)` allowed, in
   both shells); heredoc bodies dropped (quoted and unquoted delimiters, `<<-`, two heredocs
   on one line, unterminated body, a heredoc inside `"$(…)"` whose body holds `)`); escaped
   newlines, unterminated quotes and here-strings, redirections, reordered global options.
-  PowerShell 5.1 and 7 agree on every case. Oracle differences outside the listed skip
+  The 5.1 and 7 parsers agree on every case but the PowerShell 7 `` `u{…} `` escape, which
+  5.1 lacks (`p-nul-u00`); at run time 5.1 and 7 also bind a comma-joined argument
+  differently (round 5 below). Oracle differences outside the listed skip
   classes: backtick substitution, brace expansion and globs (Bash expansions like `$`),
   PowerShell assignment and keyword statements, `--%`, a backtick plus newline inside a
   word (PowerShell keeps the newline), and a carriage return (the Cygwin bash used strips
@@ -53,7 +57,21 @@
   - F7: C:guard step 4's example `git $c -m x` exits early (no `commit` in the text); the
     `$` rule applies only in a command that mentions `commit` elsewhere, as story 15 and
     GRD-12 already say.
-  No finding needs a parser beyond the hand-written design (unbash not raised).
+
+  **Settled by the review rounds of the amendment (Q3):**
+  - PowerShell NUL escapes (`` `0 ``, a zero `` `u{…} ``) cut the native command line: a
+    `cut` token ends git's arguments, and every `git` token of a segment is classified.
+  - Brackets: a `(` or PowerShell `{` token among git's arguments is denied (grouping
+    expressions, `@(…)` arrays and script blocks become several arguments).
+  - Round 5, restated as one rule, git's arguments must be literal (C:guard step 4):
+    Windows PowerShell 5.1 comma arrays (`git -C . ,commit -m x`), `--%` stop-parsing
+    (`git --% -c x.y=; commit -m x`, and a here-string opener after `--%` hiding the next
+    line), and `$(…)`, `@s` or an array variable in a value (`--fixup @s`) are denied; and
+    command substitution bodies are classified as segments of their own
+    (`echo $(git commit -m x)`).
+  No finding needs a parser beyond the hand-written design: the fragility is PowerShell
+  native-argument binding, which differs between 5.1 and 7 and which unbash (Bash only)
+  does not cover (unbash not raised).
 - Exec-form hooks (Q3, Q13): the guard is registered in exec form (`node` as the command,
   the guard entry point as the only argument), so no shell quotes the plugin path. Which
   minimum Claude Code version supports exec-form hooks in a plugin's `hooks.json`. Before

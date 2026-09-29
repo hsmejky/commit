@@ -61,7 +61,12 @@ dropped), except inside a `$(…)` substitution, which stays in its word up to i
 Bash process substitution `<(` / `>(` becomes a `(` token (not a redirection), and in
 PowerShell an unquoted `{` or `}` becomes a token too (not inside `${…}` or `$(…)`), so G3
 finds the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell
-`}` token ends git's arguments like `)`. Comments are not recognised: `#` and what
+`}` token ends git's arguments like `)`. A command substitution (Bash `$(…)` and backticks,
+unquoted, in double quotes, in `${…}` and in an unquoted-delimiter heredoc body;
+PowerShell `$(…)` unquoted, in double quotes and in `@"…"@`) stays in its word, and its
+body is also tokenised, recursively, into segments that follow the segment holding it, so
+G3 classifies `echo $(git commit -m x)`. In PowerShell an unquoted `--%` makes the rest of
+its line, up to `|`, `&&` or `||`, words split on whitespace only. Comments are not recognised: `#` and what
 follows, and a PowerShell `<# … #>` block, are ordinary text (documented false positives,
 Q3 as amended).
 A Bash heredoc (`<<` or `<<-` outside quotes) drops its operator and delimiter word like a
@@ -77,11 +82,11 @@ the dashed `git-commit` (with or without `.exe`, in any directory, compared
 case-insensitively), which classifies as `git commit`; skip the
 known global options; remember `-c` and `--config-env`; compare the subcommand with
 `commit` case-insensitively (`git COMMIT` is a commit, fail closed); deny an unknown option before
-`commit`, and a subcommand token that contains `$`, a backtick, `{`, `(` or a glob character
-(`*`, `?`, `[`) or, in PowerShell only, starts with `@` (fail closed); read git's
-arguments up to the segment's end, a `cut` token, a `)` token or (in PowerShell) a `}`
-token, deny a `(` or (in PowerShell) `{` token among them and, in Bash, a `{` in a global
-option's or `--fixup`'s value (fail closed); expand commit arguments and apply
+`commit`; read git's arguments up to the segment's end, a `cut` token, a `)` token or (in
+PowerShell) a `}` token, and deny any of them that is not literal (fail closed, C:guard
+step 4): a `(` or (in PowerShell) `{` token, a token holding `$`, a backtick, `{`, `(` or a
+glob character (`*`, `?`, `[`), and in PowerShell a token holding `,` or `@` or equal to
+`--%`, with the literal-subcommand text in the subcommand position; expand commit arguments and apply
 the Q4 allowlist; a segment is denied when any of its `git` tokens is;
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`

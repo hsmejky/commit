@@ -136,10 +136,9 @@
     arguments (`git -C {.,commit} status` runs `git -C . commit status`) and is denied the
     same way. False positives: such a bracket in a command that mentions `commit`
     (`git -C (Get-Location) status; git commit --no-edit`, Bash
-    `git commit --fixup HEAD@{1}`). A `$(…)` or a variable in a value stays the accepted
-    substitution gap (PowerShell passes an array's elements as separate arguments, as Bash
-    word-splits), and so does a PowerShell expression in the command position
-    (`& ('git') commit -m x`).
+    `git commit --fixup HEAD@{1}`). A PowerShell expression in the command position
+    (`& ('git') commit -m x`) stays the command-position gap. (Round 5 below widens this
+    rule to every non-literal token, among them a `$(…)` or a variable in a value.)
   - PowerShell unquoted `{` and `}` are tokens of their own, like `(` and `)`, and a `}`
     token ends git's arguments like `)`. PowerShell lets a script block glue its
     brace to the first word (`&{git commit -m x}`, `if ($true) {git commit -m x}`), so
@@ -167,6 +166,44 @@
   The case list, with the amended decisions, is GRD-03's fixture seed
   (`tests/fixtures/guard/segments-seed.json`), and the classes of case where the oracle
   deliberately differs from the tokenizer are listed in C:guard.
+- **Amended.** By the fifth review round of the PRE-03 amendment (2026-09-29). Four more
+  PowerShell binding quirks and one Bash rule gap were found one per round, so the rule is
+  restated once instead of patched per quirk:
+  - **Git's arguments must be literal.** Every token steps 4 and 5 read (a global option,
+    its value, the subcommand, `commit`'s arguments and their values) is denied, fail
+    closed, when the shell may turn it into another word or into several arguments: a `(`
+    token or, in PowerShell, a `{` token; a token holding `$`, a backtick, `{`, `(` or a
+    glob character; and in PowerShell a token holding `,` or `@`, or equal to `--%` after
+    quote removal (C:guard step 4). It replaces the per-form rules for the subcommand
+    (pass 4, pass 5), brackets (the spike amendment above) and Bash brace values. The new
+    forms it closes, verified 2026-09-29 with real git under Windows PowerShell 5.1 and
+    PowerShell 7: 5.1 passes a comma-joined array literal as separate arguments
+    (`git -C . ,commit -m x`, `git -C . , commit -m x`, `git commit, -m x` commit there;
+    PowerShell 7 passes the comma on); `--%` passes the rest of the line verbatim with
+    `%NAME%` expanded (`git --% -c x.y=; commit -m x` commits in both), and a quoted
+    `'--%'` is dropped from the native command line; `--fixup $('HEAD','--no-verify')`,
+    `--fixup @s` and an array in `--fixup $s` split into `HEAD --no-verify`, as an unquoted
+    Bash `$s` word-splits. The tokenizer does not record quoting, so a quoted value
+    (`git -C "$dir" commit --no-edit`, `--fixup "$sha"`) is a documented false positive;
+    recording quoting per character would widen the fixture format for a form an agent
+    rarely needs next to the commit worker.
+  - **Stop-parsing.** An unquoted `--%` makes the rest of its line, up to `|`, `&&` or
+    `||`, words split on whitespace only (C:guard step 2). Read as ordinary text, `;` split
+    `git --% -c x.y=; commit -m x` into two segments, and a quote or here-string opener
+    after `--%` (`Write-Output --% @'`) swallowed the next lines that PowerShell runs as
+    commands, a fail open.
+  - **Substitution bodies are classified.** A command substitution stays in its word and
+    its body is also tokenised as a command of its own, recursively, into extra segments
+    (Bash `$(…)` and backticks unquoted, in double quotes, in `${…}` and in an unquoted
+    heredoc body; PowerShell `$(…)` unquoted, in double quotes and in `@"…"@`). Pass 8 kept
+    `$(…)` in its word only so that parentheses in a heredoc message would not produce stray
+    tokens; nothing decided that a commit run inside a substitution passes, and
+    `echo $(git commit -m x)`, `out=$(git commit -m x 2>&1)` and PowerShell
+    `$(git commit -m x)` did. The extra segments only add denies. What a substitution
+    prints stays the command-position gap (`$(echo git) commit`).
+  - Unbash is still not indicated: the Bash finding was a rule gap, not tokenizer
+    fragility; the fragility sits in PowerShell's native-argument binding, which differs
+    between 5.1 and 7 and which a Bash parser does not cover.
 - **Rejected.**
   - Description tuning alone; the hook alone.
   - Git-native enforcement (a `pre-commit` / `commit-msg` hook, e.g. via `core.hooksPath`).
@@ -179,13 +216,13 @@
     scan.
   - Aliases (`git ci`), `git -c alias.x=commit x`.
   - Commands run through another interpreter: `sh -c '…'`, `bash -c '…'`, `cmd /c`, `pwsh -c`,
+    `eval`, PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
     scripts that wrap git (`xargs git commit` is denied: unquoted, it tokenizes to separate
     `git` and `commit` tokens).
-  - Command substitution (`$(…)`, backticks) and variables anywhere but the subcommand
-    position (`$(echo git) commit`), and Bash brace expansion or a glob in the command
-    position (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`), a PowerShell expression
-    there (`& ('git') commit -m x`), and a glob in an option value (it expands only to
-    existing file names); `GIT_DIR` / `GIT_WORK_TREE`
+  - Expansion in the command position: what a substitution prints or a variable holds
+    there (`$(echo git) commit`, Bash `$GIT commit -m x`, PowerShell `& $g commit -m x`),
+    Bash brace expansion or a glob (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`), and a
+    PowerShell expression (`& ('git') commit -m x`); `GIT_DIR` / `GIT_WORK_TREE`
     redirection;
     config injected through env prefixes (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`,
     `GIT_CONFIG_VALUE_<n>`).

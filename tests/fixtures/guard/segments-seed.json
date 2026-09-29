@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype.",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap).",
  "cases": [
   {
    "id": "b-plain",
@@ -603,6 +603,13 @@
      "commit",
      "-m",
      "$(cat <<'EOF'\nfeat(api): add x\n\nbody (with parens)\nEOF\n)"
+    ],
+    [
+     "cat",
+     {
+      "heredoc": "<<",
+      "delim": "EOF"
+     }
     ]
    ],
    "decision": "deny",
@@ -622,6 +629,13 @@
     [
      "git",
      "status"
+    ],
+    [
+     "cat",
+     {
+      "heredoc": "<<",
+      "delim": "EOF"
+     }
     ]
    ],
    "decision": "none",
@@ -640,6 +654,9 @@
      "commit",
      "-m",
      "$(date)"
+    ],
+    [
+     "date"
     ]
    ],
    "decision": "deny",
@@ -650,15 +667,21 @@
   {
    "id": "b-subst-inside",
    "shell": "bash",
-   "topic": "subst gap",
+   "topic": "subst",
    "command": "echo $(git commit -m x)",
    "segments": [
     [
      "echo",
      "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "expansion"
    }
@@ -674,6 +697,10 @@
      "$(echo commit)",
      "-m",
      "x"
+    ],
+    [
+     "echo",
+     "commit"
     ]
    ],
    "decision": "deny",
@@ -690,6 +717,10 @@
     [
      "echo",
      "$(printf '\"')"
+    ],
+    [
+     "printf",
+     "\""
     ],
     [
      "git",
@@ -714,6 +745,10 @@
      "$(echo \")\")"
     ],
     [
+     "echo",
+     ")"
+    ],
+    [
      "git",
      "commit",
      "-m",
@@ -733,6 +768,11 @@
    "segments": [
     [
      "x=$(git rev-parse HEAD)"
+    ],
+    [
+     "git",
+     "rev-parse",
+     "HEAD"
     ],
     [
      "git",
@@ -756,6 +796,10 @@
      "commit",
      "-m",
      "x"
+    ],
+    [
+     "echo",
+     "git"
     ]
    ],
    "decision": "none",
@@ -835,6 +879,9 @@
      "commit",
      "-m",
      "`date`"
+    ],
+    [
+     "date"
     ]
    ],
    "decision": "deny",
@@ -845,18 +892,21 @@
   {
    "id": "b-bt-inside",
    "shell": "bash",
-   "topic": "subst gap",
+   "topic": "backtick",
    "command": "echo `git commit -m x`",
    "segments": [
     [
      "echo",
-     "`git",
+     "`git commit -m x`"
+    ],
+    [
+     "git",
      "commit",
      "-m",
-     "x`"
+     "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "expansion"
    }
@@ -869,10 +919,13 @@
    "segments": [
     [
      "git",
-     "`echo",
-     "commit`",
+     "`echo commit`",
      "-m",
      "x"
+    ],
+    [
+     "echo",
+     "commit"
     ]
    ],
    "decision": "deny",
@@ -892,6 +945,10 @@
      "`echo commit`",
      "-m",
      "x"
+    ],
+    [
+     "echo",
+     "commit"
     ]
    ],
    "decision": "deny",
@@ -2665,6 +2722,9 @@
      "commit",
      "-m",
      "$(Get-Date)"
+    ],
+    [
+     "Get-Date"
     ]
    ],
    "decision": "deny",
@@ -2684,6 +2744,9 @@
      "$('commit')",
      "-m",
      "x"
+    ],
+    [
+     "commit"
     ]
    ],
    "decision": "deny",
@@ -2828,14 +2891,20 @@
   {
    "id": "p-subexpr-stmt",
    "shell": "powershell",
-   "topic": "subst gap",
+   "topic": "subst",
    "command": "$(git commit -m x)",
    "segments": [
     [
      "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "ps51": "expansion",
     "ps7": "expansion"
@@ -3282,6 +3351,607 @@
    "oracle": {
     "ps51": "match",
     "ps7": "match"
+   }
+  },
+  {
+   "id": "b-subst-assign",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "out=$(git commit -m x 2>&1)",
+   "segments": [
+    [
+     "out=$(git commit -m x 2>&1)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x",
+     {
+      "redir": "2>&1",
+      "target": null
+     }
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-subst-dq",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo \"$(git commit -m x)\"",
+   "segments": [
+    [
+     "echo",
+     "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-bt-dq",
+   "shell": "bash",
+   "topic": "backtick",
+   "command": "echo \"`git commit -m x`\"",
+   "segments": [
+    [
+     "echo",
+     "`git commit -m x`"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-subst-nested",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo $(echo $(git commit -m x))",
+   "segments": [
+    [
+     "echo",
+     "$(echo $(git commit -m x))"
+    ],
+    [
+     "echo",
+     "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-subst-sq",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo '$(git commit -m x)'",
+   "segments": [
+    [
+     "echo",
+     "$(git commit -m x)"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-param-subst",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo ${x:-$(git commit -m x)}",
+   "segments": [
+    [
+     "echo",
+     "${x:-$(git commit -m x)}"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-subst-allowed",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo $(git commit --no-edit)",
+   "segments": [
+    [
+     "echo",
+     "$(git commit --no-edit)"
+    ],
+    [
+     "git",
+     "commit",
+     "--no-edit"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-heredoc-subst",
+   "shell": "bash",
+   "topic": "heredoc",
+   "command": "cat <<EOF\n$(git commit -m x)\nEOF",
+   "segments": [
+    [
+     "cat",
+     {
+      "heredoc": "<<",
+      "delim": "EOF"
+     }
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-heredoc-subst-quoted",
+   "shell": "bash",
+   "topic": "heredoc",
+   "command": "cat <<'EOF'\n$(git commit -m x)\nEOF",
+   "segments": [
+    [
+     "cat",
+     {
+      "heredoc": "<<",
+      "delim": "EOF"
+     }
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-fixup-var",
+   "shell": "bash",
+   "topic": "expansion",
+   "command": "git commit --fixup $s",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--fixup",
+     "$s"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-opt-value-var-quoted",
+   "shell": "bash",
+   "topic": "expansion",
+   "command": "git -C \"$dir\" commit --no-edit",
+   "segments": [
+    [
+     "git",
+     "-C",
+     "$dir",
+     "commit",
+     "--no-edit"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "p-subexpr-dq",
+   "shell": "powershell",
+   "topic": "subst",
+   "command": "Write-Output \"$(git commit -m x)\"",
+   "segments": [
+    [
+     "Write-Output",
+     "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "expansion",
+    "ps7": "expansion"
+   }
+  },
+  {
+   "id": "p-subexpr-assign",
+   "shell": "powershell",
+   "topic": "subst",
+   "command": "$out = $(git commit -m x)",
+   "segments": [
+    [
+     "$out",
+     "=",
+     "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": [
+     "ps-expression-statement",
+     "expansion"
+    ],
+    "ps7": [
+     "ps-expression-statement",
+     "expansion"
+    ]
+   }
+  },
+  {
+   "id": "p-hs-subexpr",
+   "shell": "powershell",
+   "topic": "here-string",
+   "command": "Write-Output @\"\n$(git commit -m x)\n\"@ | Out-Null",
+   "segments": [
+    [
+     "Write-Output",
+     "$(git commit -m x)"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "Out-Null"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "expansion",
+    "ps7": "expansion"
+   }
+  },
+  {
+   "id": "p-comma-lone",
+   "shell": "powershell",
+   "topic": "comma",
+   "command": "git -C . , commit -m x",
+   "segments": [
+    [
+     "git",
+     "-C",
+     ".",
+     ",",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-array-comma",
+    "ps7": "ps-array-comma"
+   }
+  },
+  {
+   "id": "p-comma-lead",
+   "shell": "powershell",
+   "topic": "comma",
+   "command": "git -C . ,commit -m x",
+   "segments": [
+    [
+     "git",
+     "-C",
+     ".",
+     ",commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-array-comma",
+    "ps7": "ps-array-comma"
+   }
+  },
+  {
+   "id": "p-comma-trailing",
+   "shell": "powershell",
+   "topic": "comma",
+   "command": "git commit, -m x",
+   "segments": [
+    [
+     "git",
+     "commit,",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-array-comma",
+    "ps7": "ps-array-comma"
+   }
+  },
+  {
+   "id": "p-comma-quoted",
+   "shell": "powershell",
+   "topic": "comma",
+   "command": "git -C \".\" ,\"commit\" -m x",
+   "segments": [
+    [
+     "git",
+     "-C",
+     ".",
+     ",commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-array-comma",
+    "ps7": "ps-array-comma"
+   }
+  },
+  {
+   "id": "p-comma-value",
+   "shell": "powershell",
+   "topic": "comma",
+   "command": "git -C .,commit status",
+   "segments": [
+    [
+     "git",
+     "-C",
+     ".,commit",
+     "status"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-array-comma",
+    "ps7": "ps-array-comma"
+   }
+  },
+  {
+   "id": "p-stop-semi",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "git --% -c x.y=; commit -m x",
+   "segments": [
+    [
+     "git",
+     "--%",
+     "-c",
+     "x.y=;",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-stop-parsing",
+    "ps7": "ps-stop-parsing"
+   }
+  },
+  {
+   "id": "p-stop-paren",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "Write-Output --% (git commit -m x)",
+   "segments": [
+    [
+     "Write-Output",
+     "--%",
+     "(git",
+     "commit",
+     "-m",
+     "x)"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "ps51": "ps-stop-parsing",
+    "ps7": "ps-stop-parsing"
+   }
+  },
+  {
+   "id": "p-stop-env",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "$env:X='commit'; git --% %X% -m x",
+   "segments": [
+    [
+     "$env:X=commit"
+    ],
+    [
+     "git",
+     "--%",
+     "%X%",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": [
+     "ps-expression-statement",
+     "ps-stop-parsing"
+    ],
+    "ps7": [
+     "ps-expression-statement",
+     "ps-stop-parsing"
+    ]
+   }
+  },
+  {
+   "id": "p-stop-quoted",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "git '--%' commit -m x",
+   "segments": [
+    [
+     "git",
+     "--%",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "match",
+    "ps7": "match"
+   }
+  },
+  {
+   "id": "p-stop-herestring",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "Write-Output --% @'\ngit commit -m x\n'@'",
+   "segments": [
+    [
+     "Write-Output",
+     "--%",
+     "@'"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "@"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": [
+     "ps-stop-parsing",
+     "ps-expression-statement"
+    ],
+    "ps7": [
+     "ps-stop-parsing",
+     "ps-expression-statement"
+    ]
+   }
+  },
+  {
+   "id": "p-fixup-subexpr",
+   "shell": "powershell",
+   "topic": "subst",
+   "command": "git commit --fixup $('HEAD','--no-verify')",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--fixup",
+     "$('HEAD','--no-verify')"
+    ],
+    [
+     "HEAD,--no-verify"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "expansion",
+    "ps7": "expansion"
+   }
+  },
+  {
+   "id": "p-fixup-splat",
+   "shell": "powershell",
+   "topic": "subst",
+   "command": "git commit --fixup @s",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--fixup",
+     "@s"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "splat",
+    "ps7": "splat"
+   }
+  },
+  {
+   "id": "p-call-var-gap",
+   "shell": "powershell",
+   "topic": "subst gap",
+   "command": "& $g commit -m x",
+   "segments": [
+    [
+     "$g",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "ps51": "expansion",
+    "ps7": "expansion"
    }
   }
  ]

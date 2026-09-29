@@ -107,7 +107,8 @@ words for each segment (`printf '%s\0'`); PowerShell fixtures by the PowerShell 
 oracle-skipped, as listed in C:guard (Oracle-skip classes, from the tokenizer spike):
 redirections, heredocs, expansions (`$`, `$(…)`, backticks, brace expansion, globs, process
 substitution), unterminated quotes, subshell parentheses, PowerShell script-block braces,
-PowerShell assignment and keyword statements, splats, `--%`, a PowerShell backtick plus
+PowerShell assignment and keyword statements, splats, `--%` stop-parsing, PowerShell comma
+arrays, a PowerShell backtick plus
 newline inside a word, a PowerShell NUL escape (`` `0 ``, a zero `` `u{…} ``), a carriage return
 in Bash, typographic quotes in Bash, and comments (the shell would expand, reject or drop
 them).

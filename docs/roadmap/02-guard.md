@@ -203,8 +203,9 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 
 **What to build:** a subcommand token holding `$`, a backtick, `{`, `(` or a glob
 character, or starting with `@` in PowerShell, is denied; `commit` matches case-insensitively;
-a `(` or PowerShell `{` token among git's arguments, or a Bash `{` in a global option's or
-`--fixup`'s value, is denied.
+every other token among git's arguments that is not literal (a `(` or PowerShell `{` token;
+a token holding `$`, a backtick, `{`, `(` or a glob character; in PowerShell a token holding
+`,` or `@`, or `--%`) is denied.
 
 **Blocked by:** GRD-11.
 
@@ -214,6 +215,7 @@ a `(` or PowerShell `{` token among git's arguments, or a Bash `{` in a global o
 
 - [ ] Denied with `Write the git subcommand literally. <route>`: `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `` git `echo commit` -m x `` and `` git "`echo commit`" -m x ``, each in a command mentioning `commit`.
 - [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")`, `git commit --fixup @("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
+- [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x`, `git commit --fixup $('HEAD','--no-verify')` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
 - [ ] `git COMMIT -m x` → denied as a commit.
 - [ ] The documented gap: `git $(echo com)mit` → no output.
 - [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
