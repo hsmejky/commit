@@ -49,7 +49,10 @@ function isPlaceholderUser(segment) {
  * `local-path`'s three fixed shapes are one regex: its `C:\Users\<name>` shape is
  * case-insensitive (flags `iu` in the contract) while `/Users/` and `/home/` are not, so that
  * alternative spells its letters as `[Uu]…` classes; one regex keeps `C:/Users/<name>` one
- * hit instead of a drive hit plus an overlapping `/Users/` hit.
+ * hit instead of a drive hit plus an overlapping `/Users/` hit. Its OS-user segment is a
+ * second entry with the same ID: it matches every whole path segment and keeps only the
+ * `osUser` name, independently of the fixed shapes, so neither can consume the other's text.
+ * `scanUnits` reports one hit per ID and line either way.
  *
  * @type {readonly PatternRow[]}
  */
@@ -91,7 +94,25 @@ export const PATTERNS = Object.freeze([
     notHit: (match) => isPlaceholderUser(match.groups.drive ?? match.groups.home),
     source: 'this plugin (Q10)',
   }),
+  Object.freeze({
+    id: 'local-path',
+    regex: /[\\/](?<segment>[^\\/]+)(?=[\\/])/,
+    notHit: (match, { osUser }) => !isOsUserSegment(match.groups.segment, osUser),
+    source: 'this plugin (Q10)',
+  }),
 ]);
+
+/**
+ * Whether a whole path segment is the current OS user's name, for `local-path`: only a name
+ * of 4 or more characters that is not a placeholder or service user; `osUser: null` never.
+ *
+ * @param {string} segment
+ * @param {string | null} osUser
+ */
+function isOsUserSegment(segment, osUser) {
+  if (osUser === null || [...osUser].length < 4 || isPlaceholderUser(osUser)) return false;
+  return segment.toLowerCase() === osUser.toLowerCase();
+}
 
 /**
  * @typedef {{ patternId: string, start: number, end: number }} TextHit

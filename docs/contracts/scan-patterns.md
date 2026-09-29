@@ -49,7 +49,9 @@ three or more `*`; `postgres://u:passwords@h` is a hit.
 `local-path` OS-user segment: `osUser` comes from `os.userInfo()`, falling back to `USER` or
 `USERNAME`, else `null`; a container without a passwd entry throws there, so with `osUser:
 null` the OS-user segment check is skipped and the fixed `/home/<name>`, `/Users/<name>` and
-`C:\Users\<name>` regexes still run.
+`C:\Users\<name>` regexes still run. The segment compares with `osUser` case-insensitively,
+needs a `/` or `\` on both sides, and is checked independently of the fixed regexes, so a
+path both match is one hit per line in `scanUnits` (two overlapping spans in `scanText`).
 
 `local-path` placeholders and service users (case-insensitive): `<…>`, `{…}`, `$USER`,
 `%USERNAME%`, `user`, `username`, `you`, `me`, `name`, `example`, `node`, `root`, `ubuntu`,

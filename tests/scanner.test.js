@@ -207,6 +207,54 @@ test('scanUnits of units with no hit reports no hits and no skipped files', () =
   assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
 });
 
+// `local-path` OS-user segment (SCN-11): the OS user name as a whole path segment in any
+// path. Paths the fixed shapes would catch are built at run time, so this file holds no hit.
+function localPathHits(text, osUser) {
+  return scanText(text, { osUser }).filter(({ patternId }) => patternId === 'local-path');
+}
+
+const OS_USER_SEGMENT_CASES = [
+  // [case, osUser, text, hit]
+  ['a name of 4 or more characters in any path', 'jdoe1', '/srv/jdoe1/x', true],
+  ['a Windows path with backslashes', 'jdoe1', 'D:\\work\\jdoe1\\repo', true],
+  ['a name compared case-insensitively', 'jdoe1', '/srv/JDoe1/x', true],
+  ['a name holding a space', 'Jane Fixture', 'D:\\work\\Jane Fixture\\repo', true],
+  ['a longer segment is not the name', 'jdoe1', '/srv/jdoe12/x', false],
+  ['a segment without a trailing separator', 'jdoe1', 'see /srv/jdoe1', false],
+  ['the name inside a word, not a segment', 'jdoe1', 'jdoe1 and x-jdoe1-y', false],
+  ['a service user: dev', 'dev', '/srv/dev/x', false],
+  ['a service user: runner', 'runner', '/srv/runner/x', false],
+  ['a service user compared case-insensitively', 'Runner', '/srv/Runner/x', false],
+  ['a 3-character name that is not a service user', 'bob', '/srv/bob/x', false],
+  ['no OS user', null, '/srv/jdoe1/x', false],
+];
+
+for (const [name, osUser, text, hit] of OS_USER_SEGMENT_CASES) {
+  test(`local-path OS-user segment: ${name} → ${hit ? 'hit' : 'no hit'}`, () => {
+    assert.equal(localPathHits(text, osUser).length, hit ? 1 : 0);
+  });
+}
+
+test('local-path OS-user segment: the hit spans the separator and the name', () => {
+  const text = 'cd /srv/jdoe1/x';
+  assert.deepEqual(localPathHits(text, 'jdoe1'), [
+    { patternId: 'local-path', start: 7, end: 13 },
+  ]);
+});
+
+test('local-path with osUser null: the fixed shapes still hit', () => {
+  const home = '/ho' + 'me/jdoe-fixture/app';
+  const drive = 'C:' + '\\Users\\jdoe-fixture\\src';
+  assert.equal(localPathHits(home, null).length, 1);
+  assert.equal(localPathHits(drive, null).length, 1);
+});
+
+test('scanUnits: a line both a fixed shape and the OS-user segment match is one hit', () => {
+  const units = [textUnit('Dockerfile', [{ line: 4, text: 'WORKDIR /ho' + 'me/jdoe1/app' }])];
+  const { hits } = scanUnits(units, { scanIgnore: [], osUser: 'jdoe1' });
+  assert.deepEqual(hits, [{ patternId: 'local-path', path: 'Dockerfile', line: 4 }]);
+});
+
 test('this test source holds no literal hit', () => {
   assert.deepEqual(scanText(readFileSync(__filename, 'utf8'), { osUser: null }), []);
 });
