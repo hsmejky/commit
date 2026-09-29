@@ -73,7 +73,7 @@ worker handles itself (a first lint failure) carries none.
 | `config` | `plan` | a config layer is invalid: unparseable JSON, a wrong type, an out-of-range number, bad `types`, a `scanIgnore` glob that does not compile (Q6), or a `scanIgnore` pattern with no literal character ([scanIgnore globs](scanignore-globs.md), Q10); checked before the run folder exists. The repo config at HEAD is not a layer here: an invalid `scanIgnore` there is `[]` plus a warning (Q6 as amended by CFG-01) |
 | `env` | any subcommand | git is missing, git is older than 2.34, or Node is older than 22 (Q1, Q15); the commit entry point's install path contains `$`, a backtick, `"`, `\`, or U+201C–U+201E (the typographic double quotes PowerShell reads as `"`), checked before any work on the path with Windows separators converted to `/` ([guard](guard.md)) (Q16, [Reply and handback](reply-and-handback.md)) |
 | `state` | `plan`; `infer` (only the first clause below: not a git repository, or a bare repository) | not a git repository, or a bare repository; refused repo state: merge, cherry-pick, revert, rebase, bisect, or a paused sequence (`sequencer/`) in progress, or a pending `merge --squash` (`SQUASH_MSG`, its own text) (Q21); `unmerged`: unmerged index entries without an in-progress marker, such as a conflicted `stash pop` ("resolve the conflicts first"); `i18n.commitEncoding` other than UTF-8 (compared case-insensitively with `utf-8` and `utf8`); unborn HEAD or merge-commit HEAD with `--reword` (Q20); `run-folder`: `.commit-plan` is tracked, a link or not a directory, or its filesystem does not support hard links ([run folder](run-folder.md)); `killed-leftover`: with `--no-user` and without `--reword`, a takeover found staging beyond the killed group's paths (text names the killed group's paths still staged; index untouched; [run folder](run-folder.md)) |
-| `signing` | `plan` | `signing.ready` is `false`, checked only after the clean-tree and `staged-hit` checks (Q18) |
+| `signing` | `plan` | `signing-locked`: `signing.ready` is `false`, checked only after the clean-tree and `staged-hit` checks (Q18 as amended by PRE-15; text below) |
 | `pushed` | `plan --reword` | HEAD reachable from a remote-tracking ref (Q20) |
 | `staged-hit` | `plan --staged` | the index diff has a pattern hit (Q10), or the index holds a staged-new path the [hidden rule](untracked-files.md) excludes (Q11) |
 | `lint` | `check` | any lint or validation error; details in `errors`; the second failure since the last `plan --hunks`, or the first of `"source": "user"` text, carries a `lintFailed` handback, or with `--no-user` releases the lock |
@@ -99,3 +99,28 @@ that takes no lock (`lock` from `peek` or a lost `acquire`, `staged-empty`, `sta
 `signing`, `git-failed`, `timeout`, a `run-folder` lock link, a clean tree, `modeChoice`)
 deletes the provisional folder before `plan` exits; after a takeover's `acquire` at step 3
 the lock is held, and each of them, `killed-leftover` included, also releases it.
+
+## Recorded texts
+
+The exact texts tests assert, recorded here by the PRE-15 decision pass (2026-09-29) from
+the decisions that set them. A refusal's text is its `message`; a notice's text is one entry
+of the reply's `notices`. States with no recorded text (`bisect` in progress, `encoding`,
+`unborn` HEAD in reword, `not-a-repo`, `bare`) get a message that names the state; tests
+assert the domain code and that the state is named, not an exact text.
+
+| Domain code (kind) | Emitted by | Text | Source |
+| --- | --- | --- | --- |
+| `head-moved` (`head-moved`) | M3 (`plan` after `acquire`, `plan --hunks`), M16 (`commit`) | HEAD moved since plan (commit made elsewhere?), run /commit again | Q18 |
+| `signing-locked` (`signing`) | M11 via M15 (`plan`) | signing key locked — unlock it (e.g. sign once in a terminal), then `/commit` | Q18 |
+| `merge` (`state`), reword only | M3 via M15 (`plan --reword`) | HEAD is a merge commit; reword it by hand | Q20 |
+| `in-progress` (`state`): merge, cherry-pick or revert | M3 via M15 (`plan`) | finish it with `git commit --no-edit`, or abort it | Q21 |
+| `in-progress` (`state`): rebase, `edit` and `reword` stops included | M3 via M15 (`plan`) | continue the rebase by hand | Q21 |
+| `in-progress` (`state`): paused sequence (`sequencer/`) | M3 via M15 (`plan`) | continue or abort it by hand | Q21 |
+| `in-progress` (`state`): pending `merge --squash` (`SQUASH_MSG`) | M3 via M15 (`plan`) | a squashed merge is staged: commit it by hand, or drop it with `git reset --merge` | Q21 |
+| `unmerged` (`state`) | M3 via M15 (`plan`) | resolve the conflicts first | Q21 |
+| guard notice (no kind; `env.guard: "not-seen"`, the run goes on) | M18 (`plan`, stored as a notice) | Guard hook did not run: `node` missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct `git commit` is not blocked. | Q23 |
+| signing prompt notice (no kind; `signing.ready: "prompt"`, the run goes on) | M18 (`plan`, stored as a notice) | signing enabled; a passphrase prompt may appear | Q18 |
+
+Texts already fixed in their own contract stay there: the unreadable-lock message (above),
+the `run-folder` and `killed-leftover` texts ([run folder](run-folder.md)) and the `timeout`
+text of `git commit` ([commit](commit-release.md)).

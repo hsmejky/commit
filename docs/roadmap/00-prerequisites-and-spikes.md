@@ -266,15 +266,25 @@ Gates: REL-05 (0.1.0 release).
 ## PRE-15: Settle story wording and recorded texts
 
 **What to build:** a decision pass (human) over wording left open in [known
-deficiencies](../spec/known-deficiencies.md) (KD-S16, KD-S17, KD-S47, KD-S53 to KD-S76), so
-that slices can assert exact texts. (1) The user stories whose wording disagrees with the
-settled decisions or contracts: stories 34, 40, 42, 44, 46, 51, 52, 53, 54, 57, 58, 61, 62,
-65, 67, 102, 103, 147, 150, 185, 196, 201 and 213, and story 228 against the Q24 budgets
-(200-character agent description, 1.5 kB skill); also the glossary's "never answered without
-a user" line, which disagrees with the same settled decision as story 102 (KD-S74). (2)
-Texts not recorded in Q18 or Q21: the `signing-locked` text and the six refusal texts
-emitted by M3, M11, M15 and M16. Fix each story or record each text; a slice not gated here
-follows the contract.
+deficiencies](../spec/known-deficiencies.md) (KD-S53 to KD-S72, the story-wording rows
+still open), so that slices can assert exact texts. (1) The user stories whose wording
+disagrees with the settled decisions or contracts: stories 34, 40, 42, 44, 46, 51, 52, 53,
+54, 56, 57, 58, 61, 62, 65, 67, 102, 103, 110, 147, 150, 185, 201 and 213, and story 228
+against the Q24 budgets (200-character agent description, 1.5 kB skill); also the
+glossary's "never answered without a user" line, which disagrees with the same settled
+decision as story 102 (KD-S74). (2) Texts not recorded in a contract: the `signing-locked`
+text and the six refusal texts emitted by M3, M11, M15 and M16, and Q23's guard notice. Fix
+each story or record each text; a slice not gated here follows the contract. Story 196's
+run-folder asserts moved to RUN-05.
+
+**Progress:** the PRE-15 decision pass (2026-09-29) recorded the texts in the
+[C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md) recorded-texts table, settled
+the policy items (explicit `model: "sonnet"` on every spawn, Q2, Q12, Q24, Q25;
+`signing-locked`, Q18; the worker's tool-failure fallback and the tree-state exceptions,
+Q25) and fixed stories 34, 42, 46, 56, 102, 201 and 213 and the glossary line (KD-S16,
+KD-S17, KD-S38, KD-S47, KD-S55, KD-S59, KD-S67, KD-S73 to KD-S76). Open: the stories that
+yield to their decision or contract (KD-S53, KD-S54, KD-S56 to KD-S58, KD-S60 to KD-S66,
+KD-S68 to KD-S72).
 
 **Blocked by:** None (can start immediately)
 
@@ -287,8 +297,8 @@ story texts and recorded refusal texts).
 
 - [ ] Every listed story agrees with the decision or contract it cites, or the story is
       amended
-- [ ] The `signing-locked` text and the six refusal texts are recorded verbatim in Q18 or
-      Q21
+- [ ] The `signing-locked` text and the six refusal texts are recorded verbatim in the
+      C:cli-and-exit-codes recorded-texts table
 - [ ] GRD-17, CHG-17, PLN-03, INT-17, WRK-01, REL-03 and GIT-12 cite the settled texts
 
 

@@ -302,7 +302,7 @@ for a fresh, matching heartbeat and `not-seen` with the guard notice otherwise.
 
 **Sources:** Q23, C:guard (Heartbeat), S1, stories 34, 36.
 
-- [ ] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the "Guard hook did not run" notice, and the run goes on.
+- [ ] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the guard notice, verbatim from the C:cli-and-exit-codes recorded-texts table ("Guard hook did not run: `node` missing from the hook's PATH, …"), and the run goes on.
 - [ ] Path matching is realpathed with `\` → `/`, case-folded on Windows and macOS (a case-differing `cwd` matches there).
 - [ ] Seam 1: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, `guardState` reads the heartbeat from the same `<OS home>/.claude` fallback the guard used (GRD-15), confirming guard and `plan` resolve the Claude home the same way (C:guard).
 

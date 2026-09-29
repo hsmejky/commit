@@ -103,7 +103,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `cleanupDeadline`, and EXE-17 agrees with those. Fix: only git calls take the budget;
   amend M15 and both contracts, align EXE-17.
 - **KD-R35.** RUN-12's "the reply still comes" past `cleanupDeadline` has no reply shape
-  for a skipped tree-state read (KD-S67). Add the omission rule to C:reply-and-handback.
+  for a skipped tree-state read (PRE-15's Q25 tree-state exceptions do not cover it). Add the omission rule to C:reply-and-handback.
 - **KD-R36.** Same as KD-R9's item 11: add late `ENOENT` to both error tables (KD-S15).
 - **KD-R37.** M12's `provisional` has no write, yet CHG-03b requires `state.json` written
   before `acquire`. Add `provisional.write`.
@@ -127,10 +127,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `parentOf(sha)` or a `firstParent` field; root commit → `null`.
 - **KD-R47.** The `infer` state refusal is only in C:infer and C:cli-and-exit-codes: M18's
   `infer` steps lack it, the table sources it to M15, no Q7/Q21 amendment (KD-S20).
-- **KD-R48. README dispositions contradict slices** (README, PRE-15, RUN-20). Stories 185,
-  147 and 196 (KD-S64, KD-S66, KD-S38) are "settled" or "accepted" yet on PRE-15's list;
-  the fallback reply's tree-state exemption (KD-S67) has no Q25 amendment. Pick one
-  disposition each and amend Q25.
 - **KD-R49.** The Q4 and Q18 amendments say "By spec pass 9"; they came later. Relabel.
 - **KD-R50.** C:guard precedence is not in Q4's amendment; the `-c` text also serves
   `--config-env`; GRD criteria cite an undefined "(D2)". Amend Q4, cite "C:guard
@@ -162,7 +158,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 4. The CHG-03b area: KD-R24, KD-R40, KD-R60.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
-   KD-R9, KD-R48 and KD-R36 with the Q25 amendment; KD-R49, KD-R50, KD-R45.
+   KD-R9 and KD-R36; KD-R49, KD-R50, KD-R45.
 7. Edges: KD-R54, KD-R9, KD-R7, KD-R30, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26, KD-R27.
 9. The rest of the text and bookkeeping items.

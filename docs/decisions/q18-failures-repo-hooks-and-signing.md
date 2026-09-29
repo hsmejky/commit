@@ -237,6 +237,12 @@
     before the throw) is tested at Seam 1 through the test-tree fault-injection preload, not
     a shipped switch: a `state.json` rename failing with `EIO` after `git commit` → exit 1
     `internal` with `sha` set. It is no longer an accepted gap.
+- **Amended.** By the PRE-15 decision pass (2026-09-29), settling KD-S16 and KD-S17: the
+  locked-key refusal keeps its own domain code, `signing-locked` (kind `signing`, exit 6),
+  so tests tell it apart from other `signing` causes; it is the only `signing` code in
+  0.1.0. Its text ("signing key locked — …"), the `head-moved` text and the openpgp note
+  above are recorded verbatim, with Q20's merge-commit text and Q21's repo-state texts, in
+  the recorded-texts table of [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md#recorded-texts), which tests assert.
 - **Rejected.**
   - Rolling back committed groups (destroys work the user may want); retrying on a repo hook
     failure (the hook's rules are not the plugin's to guess); `-c commit.gpgsign=false`.

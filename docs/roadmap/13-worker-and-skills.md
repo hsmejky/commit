@@ -29,6 +29,11 @@ surface (agent name), stories 6, 42, 228.
       from the bottom (story 6)
 - [ ] The agent resolves as `commit:commit-worker` from the plugin layout (static check of
       the agent file name against the public-surface name)
+- [ ] A static test asserts that the frontmatter model equals the model named in every
+      spawn instruction the plugin ships: the respawn text of the base `callerRule`
+      (C:reply-and-handback) and the guard's deny route (C:guard) now, the `/commit`
+      skill (WRK-05) and the README spawn line (REL-03) as those slices add them (story 42
+      as settled by PRE-15; Q24 as amended)
 
 
 ## WRK-02: Worker prompt: one run from `plan` to `check`, and the resume path
@@ -145,6 +150,8 @@ arguments per Q2, and tells the caller to edit no files until the reply arrives.
       `callerRule`
 - [ ] CI size tests: SKILL.md ≤ 1.5 kB, description ≤ 200 characters (story 228's budgets
       as held by Q24)
+- [ ] The spawn names `model: "sonnet"`, and the SKILL.md joins WRK-01's model-equality
+      test (Q24 as amended by PRE-15)
 
 
 ## WRK-06: Hand-test: triggering, `/commit` arguments and one-group runs

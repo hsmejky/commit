@@ -89,7 +89,7 @@ handles it the same way.
     the options, and the user's own words under Other pick the needsText answer ({text} =
     those words). Run a run verbatim with its timeoutMs; its output holds a new reply:
     handle it the same way; if it holds no reply, show it and run nothing more. For a
-    respawn, spawn commit:commit-worker with it as the prompt, plus the intent and reword
+    respawn, spawn commit:commit-worker with it as the prompt, model sonnet, plus the intent and reword
     lines of your first spawn, and interactive: false if you cannot ask. An answer with
     neither ends the run. Without a user: take ifNoUser.answer if set; if returnToParent,
     return text verbatim to your parent. Edit no files until the final reply." A `run`
@@ -163,4 +163,6 @@ handles it the same way.
   and handbacks included, read after the subcommand's last git call, so the
   caller needs no `git log` / `git status` call and does not add a trailer by hand (Q25).
   In `release`, this read is bounded by the 45 s budget above; a reply that misses it omits
-  the tree state.
+  the tree state. A `state` refusal for `not-a-repo` or a bare repository omits it too:
+  there is no working tree to read. The worker-built fallback reply ([worker
+  input](worker-input.md)) has none either (Q25 as amended by the PRE-15 decision pass).

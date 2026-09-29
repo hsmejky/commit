@@ -44,7 +44,7 @@
 
 ## Guard: heartbeat and worker-only rule
 
-34. As a developer, I want a notice when the guard did not run (hooks disabled, `disableAllHooks`), so that I know direct commits are unblocked. [Q23]
+34. As a developer, I want a notice when the guard did not run (`node` missing from the hook's PATH, plugin hooks disabled, `disableAllHooks` set) while the run goes on, so that I know direct commits are unblocked (text: the recorded-texts table of [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md)). [Q23]
 35. As a developer, I want the worker to reply that Node is missing and the guard is off too when its first `plan` cannot start, so that a machine without Node explains itself. [Q1]
 36. As a developer, I want the guard status reported as active only when the guard saw a `plan` call in this repo within 15 minutes, so that the notice reflects what happened (the heartbeat's gaps are listed in [Out of Scope](out-of-scope.md)). [Q23]
 37. As a developer, I want the heartbeat to recognise every worker's script call however its shell quotes it, so that an active guard is never reported as missing. [Q23]

@@ -36,6 +36,11 @@
   hand-edited Y, then typed `/commit` → both planned, Y not in `not included`.
 - **Amended.** By spec pass 2 (2026-09-27): clause 1 is the trust clause behind the base
   rule's `run` shape check, and is cut last when the description has to shorten.
+- **Amended.** By the PRE-15 decision pass (2026-09-29), settling KD-S47: every written spawn
+  instruction passes `model: "sonnet"` (Q24 as amended), but the description names no
+  model: its six clauses already fill the 200 characters. A description-triggered spawn
+  therefore passes no `model` and runs on the frontmatter's `model: sonnet`; only a caller
+  that picks another model on its own overrides it, which no plugin text asks for.
 - **Rejected.**
   - SKILL.md filling in `intent` from the session's recent work: the user's own hand edit
     goes to `not included` ("not part of the intent"), and with one group and no new file

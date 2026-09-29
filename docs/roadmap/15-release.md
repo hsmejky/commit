@@ -61,7 +61,7 @@ verification (install, README and opt-out), stories 197, 199, 200, 202, 203, 223
 ## REL-03: README public surface, opt-out and accepted gaps
 
 **What to build:** the README's remaining blocks: the one-line public worker spawn with
-`intent`, `interactive` and `reword` and the `callerRule` rule, the per-repo opt-out line,
+`model: "sonnet"`, `intent`, `interactive` and `reword` and the `callerRule` rule, the per-repo opt-out line,
 and the accepted gaps as one list taken from Out of Scope, including the managed-settings
 gap.
 
@@ -72,12 +72,13 @@ gap.
 **Sources:** Q5, Q14, Q25, public surface, Out of Scope (accepted gaps), stories 8, 116,
 198, 201.
 
-- [ ] One line: spawn `commit:commit-worker` with `intent: …` (and `interactive`,
-      `reword`), and a caller follows the reply's `callerRule` (story 8)
+- [ ] One line: spawn `commit:commit-worker` with `model: "sonnet"` and `intent: …` (and
+      `interactive`, `reword`), and a caller follows the reply's `callerRule` (story 8); the
+      README joins WRK-01's model-equality test (Q24 as amended by PRE-15)
 - [ ] The opt-out line: `"commit@commit": false` under `enabledPlugins` in the repo's
       `.claude/settings.local.json` (story 198)
 - [ ] One accepted-gaps list, the same entries as Out of Scope, including the Q25 gaps
-      the story 201 wording omits (story 201)
+      (story 201, tagged Q25 by PRE-15)
 - [ ] `managed-settings.json` honoured; the policy sources the script does not read
       (managed drop-in directory, MDM profile, registry, server-managed) named (story 116)
 - [ ] A static test: every accepted gap in Out of Scope has a README entry, matched by its

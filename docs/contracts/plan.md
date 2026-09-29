@@ -293,7 +293,8 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   timeout; a timeout gives `"unknown"`. `ready: false` never appears in a success output:
   `plan` refuses with exit 6 `signing` instead, at step 6.
 - `env.guard`: `active` (a matching heartbeat under 15 minutes old), `not-seen` (Q23).
-- Notices stored for the reply: `env.guard: "not-seen"` (Q23), `signing.ready: "prompt"`
+- Notices stored for the reply: `env.guard: "not-seen"` (Q23; text in the recorded-texts
+  table of [CLI and exit codes](cli-and-exit-codes.md#recorded-texts)), `signing.ready: "prompt"`
   ("signing enabled; a passphrase prompt may appear", Q18), the detached-HEAD
   warning (Q21) and every entry of `warnings`. The reply of whatever output ends the
   worker's part carries them in `notices`.

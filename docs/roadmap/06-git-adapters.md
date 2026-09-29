@@ -241,5 +241,5 @@ a timeout as "not run", and the last table row turning an untrusted `false` into
 - [ ] Seam 1: no `ssh-add` next to git's `ssh-keygen` (git shim directory without one) → a passphrase key or a literal key → `"unknown"`, an unencrypted key file → `true`.
 - [ ] Seam 1: an `ssh-add` stub that sleeps past the fixed timeout → `"unknown"`, `plan` not stalled.
 - [ ] Seam 1: an `ssh-add` stub exiting 2 (no agent) with a passphrase key → exit 6 `signing` (empty list is trusted).
-- [ ] Seam 1: a passphrase-protected key file not in any agent → exit 6 `signing` (domain code `signing-locked`).
+- [ ] Seam 1: a passphrase-protected key file not in any agent → exit 6 `signing` (domain code `signing-locked`, Q18 as amended by PRE-15) with the `signing-locked` text verbatim from the C:cli-and-exit-codes recorded-texts table.
 - [ ] Seam 1: a locked key on a clean tree → "nothing to commit", not `signing` (probe after clean-tree detection).

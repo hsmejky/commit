@@ -86,7 +86,8 @@
       never "run /commit": the reason goes to the model, which cannot invoke `/commit`.
     - The worker's model: frontmatter `model: sonnet`, no config key (Q6). The Agent call's
       `model` parameter overrides it (docs and spike), so a caller that passes one wins;
-      nothing on the spawn path passes one. Also in the frontmatter: `omitClaudeMd: true`
+      nothing on the spawn path passes one (superseded by the PRE-15 decision pass, below:
+      every spawn instruction passes `model: "sonnet"`). Also in the frontmatter: `omitClaudeMd: true`
       (the worker needs none of the user's CLAUDE.md; listed as a supported plugin-agent
       field in the plugin docs, and verified: it drops both the project's and the user's
       CLAUDE.md, open verification items),
@@ -201,6 +202,16 @@
   presents the last reply before the next user prompt that is not an answer to a handback
   question; each episode records its delivery shape and episode class. The tools are built for the
   1.0.0 gate, after 0.1.0 ships; no 0.1.0 slice depends on them.
+- **Amended.** By the PRE-15 decision pass (2026-09-29), settling KD-S47: supersedes
+  "nothing on the spawn path passes one". Every spawn instruction the plugin writes passes
+  `model: "sonnet"` explicitly, equal to the frontmatter: the `/commit` skill's spawn, the
+  README's spawn line, the handback rule's respawn text (C:reply-and-handback), the caller
+  rule of C:worker-input and the guard's deny route (C:guard). A caller that follows them
+  can no longer override the model by passing another, so "the worker runs on sonnet"
+  (story 42) is testable: a static test (WRK-01) asserts that the frontmatter model equals
+  the model named in every spawn instruction. A description-triggered spawn (Q2) names no
+  model, since the 200-character description has no room; the Agent call then carries no
+  `model` and the frontmatter's sonnet applies.
 - **Rejected.**
   - Treating diff size as the cost driver: git output read in the baseline is about 0.07%
     of cache reads. The Q19 caps stay for the worker's context and the tool output limits,

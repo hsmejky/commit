@@ -8,7 +8,8 @@
   `/commit`; the caller no longer runs `plan`, `check` or `commit` except the `run` command
   of a handback answer (Q25); lint retries loop inside the worker, a user's `edit` or `one`
   respawns it; the frontmatter is `model: sonnet`, and the model key is dropped (Q6, after
-  the commit-worker spike). What stands: the single-author rule, the diff never entering
+  the commit-worker spike); every spawn instruction also names `model: "sonnet"` (Q24 as
+  amended by the PRE-15 decision pass, below). What stands: the single-author rule, the diff never entering
   the main context, the choice of Sonnet over Haiku by default, and the Haiku eval. The
   failure reply below was replaced by Q25's script-built `reply` (`status: "failed"`) and
   its no-guess rule. The rest of this entry records the design as of the seventh review;
@@ -89,3 +90,7 @@
   is itself a 1.0.0 gate (30+ episodes, Q24), not a 0.1.0 check standing in for the eval —
   Q24's tooling for it is built only after 0.1.0 ships. In 0.1.0 only the manual hand-test
   verifies grouping quality; nothing measures Haiku against Sonnet until 1.0.0.
+- **Amended.** By the PRE-15 decision pass (2026-09-29), settling KD-S47: the worker's model
+  is fixed by the frontmatter and by an explicit `model: "sonnet"` in every spawn
+  instruction (the `/commit` skill, the README, the respawn text, the guard's route), since
+  an Agent call's `model` parameter overrides the frontmatter (Q24 as amended).

@@ -30,7 +30,8 @@ Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
   detection (hidden-only, collapsed-only, `stagedExcluded`-only or `dirtySubmodules`-only
   counts as clean, and the `nothing` reply's `text` names their counts and paths,
   C:plan; skipped in `reword`, which
-  usually runs on a clean tree, Q9), then `signing`.
+  usually runs on a clean tree, Q9), then `signing`. Each refusal's `message` for a
+  domain code with a recorded text is the recorded-texts table of C:cli-and-exit-codes, verbatim.
 - `checkGate(runState)`: refuse `check` after any committed group (`already-committed`).
 - `onLintFailure(runState, source, kind)` → `fix` | `lintFailed`: the second failure since
   the last `plan --hunks`, or the first with `source: user`, ends the worker's retries. When
@@ -79,7 +80,8 @@ created between groups are both caught:
   call, before the first group; `run.touch()` before each group), `unconfirmed`
 
   (first group of the call only), `no-groups` (no stored groups, or all committed), `head-moved` (M3 `head()` against the current expected
-  HEAD: the one `plan` recorded, then the SHA of each group this run committed),
+  HEAD: the one `plan` recorded, then the SHA of each group this run committed; text per
+  the recorded-texts table of C:cli-and-exit-codes),
   `index-changed` (M10 `indexFingerprint` against the fingerprint in the run state: staging
   made between `plan` and `commit` is refused, never folded into a group or lost from the
   report; after each of the run's own commits and unstages the stored fingerprint is

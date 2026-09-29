@@ -25,7 +25,8 @@ Handback `respawn` values are prompts built by the script. Each holds the answer
 fields plus the `mode` flag of the `plan` call that built it, and `takeOver` in a `lock`
 handback's `take over` only (Q9). The caller
 passes them verbatim, inserting the user's text for `edit` where the handback says, and adds
-the `intent` and `reword` lines of its first spawn (the script never sees them), plus
+the `intent` and `reword` lines of its first spawn (the script never sees them) and
+`model: "sonnet"` (Q24 as amended by the PRE-15 decision pass), plus
 `interactive: false` when it cannot ask ([Reply and handback](reply-and-handback.md)). The
 agent type is
 `commit:commit-worker` (namespaced by the plugin). The worker's prompt names the script as
@@ -64,7 +65,9 @@ The worker's steps:
 The worker's final report is the `reply` JSON, verbatim and nothing else: its last message
 in the notification delivery shape, the `message` of its `SubagentHandback` call in the
 other (Q25). When a script
-call fails without output it can parse, it returns the fallback reply (story 46)
+call fails without output it can parse, or a `Write` or `Read` the worker needs fails (the
+worker plan or a message file cannot be written, `hunks.txt` or `hunks.json` cannot be
+read), it returns the fallback reply (story 46) without a retry
 `{ "version": 1, "status": "failed", "planId": <the planId if known, else null>, "text":
 "<what happened>", "commits": [], "notices": [], "callerRule": "<the base rule>",
 "handback": null }`. Like every reply it carries `version` and `callerRule` (story 50), so

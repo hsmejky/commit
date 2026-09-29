@@ -33,8 +33,9 @@
     the language of recent subjects; add `scanIgnore` entries only when asked.
   Sources: Q2, Q9, Q10, Q11, Q12, Q13, Q18, Q24, Q25.
 - **`/commit` skill.** User-only (`disable-model-invocation: true`); spawns the worker only,
-  mapping its arguments per Q2 (bare → no `intent`; text → `intent`; `reword [<text>]`), and
-  tells the caller to edit no files until the worker's reply arrives (Q25); ≤ 1.5 kB, description ≤ 200 characters (Q24).
+  mapping its arguments per Q2 (bare → no `intent`; text → `intent`; `reword [<text>]`),
+  always with `model: "sonnet"` (Q24 as amended by the PRE-15 decision pass), and tells
+  the caller to edit no files until the worker's reply arrives (Q25); ≤ 1.5 kB, description ≤ 200 characters (Q24).
   Sources: Q2, Q24, Q25.
 - **`/commit-config` skill.** User-only. Runs `infer`, shows the proposal with its numbers,
   asks for repo or user level, and after confirmation writes that layer's `configJson` text
@@ -51,7 +52,7 @@
   solution in a few sentences (Problem Statement, Solution), one table of the packaged
   components (role, what fails without it, the deciding Q) and the flow of one `/commit`
   run. One line saying the plugin spawns the public worker `commit:commit-worker` with
-  `intent`, `interactive` and `reword`, and that a caller follows the reply's `callerRule`;
+  `model: "sonnet"`, `intent`, `interactive` and `reword`, and that a caller follows the reply's `callerRule`;
   the allow rules of Q16 (anchored node rule for both shells, run-folder `Edit` rule; no
   bare rule), the personal-skill removal, the opt-out line, worktree isolation, Node as a
   hard requirement (the native installer ships none, Q1), `.commit-plan/` for the ignore

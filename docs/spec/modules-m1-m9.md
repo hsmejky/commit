@@ -52,7 +52,7 @@ compared case-insensitively with `utf-8` and `utf8` (story 186); git and Node ve
 `reword`, unborn, merge commit, root commit and pushed (one `for-each-ref --contains` over
 remote-tracking refs, skipped when unborn); `head()`; `headTree()` (the tree ID of
 `HEAD^{tree}`, which M16 compares with the tree its backstop scanned); history reads (`recentSubjects`,
-`oldMessage`, and the last 200 non-merge messages for `infer`). Sources: Q18, Q20, Q21, C:plan, C:commit-release.
+`oldMessage`, and the last 200 non-merge messages for `infer`). Its refusal texts (`head-moved`, the merge-commit reword, the in-progress states, `unmerged`) are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, Q20, Q21, C:plan, C:commit-release, C:cli-and-exit-codes.
 
 **M4 Config loader.** Read the user layer from the Claude home and the repo layer from the
 worktree, plus `scanIgnore` from the repo layer at HEAD (none when unborn); validate types

@@ -299,8 +299,10 @@ deliberately differs from the shell and the check is skipped:
 | `typographic-quotes-bash` | Bash | typographic quotes are quotes, as PowerShell reads them; bash keeps them as characters |
 | `comment` | both | a comment is read as words (the documented false positives); the shell drops it |
 
-**Deny messages:** `<route>` stands for `Spawn the commit:commit-worker agent (pass intent:
-<what you changed and why>). Edit no files until it replies.` It never names `/commit`: the
+**Deny messages:** `<route>` stands for `Spawn the commit:commit-worker agent (model:
+sonnet; pass intent: <what you changed and why>). Edit no files until it replies.` It names
+the model like every spawn instruction (Q24 as amended by the PRE-15 decision pass). It
+never names `/commit`: the
 reason goes to the model, which cannot invoke `/commit` (`disable-model-invocation`, Q2), and
 a `Skill("commit")` call could resolve to a personal commit skill (Q8). Every message
 that contains `<route>` ends with the fixed line `If a personal commit skill sent you here,

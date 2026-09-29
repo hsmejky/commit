@@ -136,7 +136,9 @@ check), M12 `create`/`discard`, M18 `plan` step 3, stories 196, 207.
       "`.commit-plan` is tracked or not a plain directory; remove it by hand" text, and
       nothing is written through the link or junction.
 - [ ] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan/` line, also
-      after a second `plan`, and `git status` does not show the run folder.
+      after a second `plan` (no duplicate line), `git status --porcelain -uall` shows no
+      `.commit-plan` path, and `.gitignore` is unchanged (absent stays absent); the same
+      holds in a linked worktree, whose exclude line goes to the common dir (story 196).
 - [ ] Seam 1: `runDir` in `plan`'s output is absolute, `path.resolve`d from the toplevel,
       and uses forward slashes even on Windows (C:run-folder).
 - [ ] Seam 1: `plan` on a clean tree → no `<planId>/` folder and no lock remain.

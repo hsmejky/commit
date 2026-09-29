@@ -53,8 +53,8 @@
   `hunks.txt` blocks the entries point to, read by line range (M13).
 - **worker plan**: `plan.groups.json` (groups plus `notIncluded`, `source: worker|user`).
 - **lint**: grammar, config rules, message scan and placement validation, all run by `check`.
-- **confirm / humanOnly**: the computed confirmation; a `humanOnly` one is never answered
-  without a user. **resumed**: set by a separate `plan --hunks`; forces confirmation in an
+- **confirm / humanOnly**: the computed confirmation; an honest worker never answers a
+  `humanOnly` one without a user (a forged `ifNoUser` answer is an accepted Q25 gap). **resumed**: set by a separate `plan --hunks`; forces confirmation in an
   interactive run (Q16).
 - **reply**: the script-built final JSON (`version`, `status`, `planId`, `text`, `commits`,
   `notices`, `callerRule`, `handback`, C:reply-and-handback). **tree state**: the last line of

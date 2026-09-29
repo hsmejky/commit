@@ -228,6 +228,22 @@
     hands a `humanOnly` run back and releases it. Refusing `--confirmed` on a `humanOnly`
     run without a user, or allowing it only on a picked `yes`, was considered; the gap is
     documented instead (spec [Out of Scope](../spec/out-of-scope.md)).
+- **Amended.** By the PRE-15 decision pass (2026-09-29), settling KD-S47, KD-S59, KD-S67
+  and KD-S74:
+  - Respawn model. The handback rule's respawn text and the caller rule of C:worker-input
+    name `model: "sonnet"` explicitly (Q24 as amended), like the `/commit` skill's spawn.
+  - Tool failure in the worker. When a `Write` or `Read` the worker needs fails (the worker
+    plan or a message file cannot be written, `hunks.txt` or `hunks.json` cannot be read),
+    the worker returns the fallback reply with the `planId` (or `null` before `plan` minted
+    one), as when a script call prints no output it can parse; it does not retry. The lock
+    is left to Q22's takeover question (C:worker-input).
+  - Tree state. The rule that every reply ends with the tree state has three exceptions: the
+    worker-built fallback reply (the worker has no tree read of its own), a `release` reply
+    whose status read ran past its 45 s budget (pass 7), and a `state` refusal for
+    `not-a-repo` or a bare repository (there is no working tree to read)
+    (C:reply-and-handback).
+  - `humanOnly` without a user holds for an honest worker only; a forged `ifNoUser` answer
+    stays the accepted gap of pass 9 (story 102, glossary).
 - **Rejected.**
   - The protocol in the agent description: it does not fit in 200 characters and would be
     resident in every session.

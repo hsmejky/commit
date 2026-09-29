@@ -61,7 +61,7 @@
 198. As a developer, I want a per-repo opt-out via `enabledPlugins`, so that repos with other conventions are untouched. [Q14]
 199. As a developer, I want the README to require the anchored node allow rule for both shells and the run-folder `Edit` rule, and to explain why a bare `node *commit.cjs*` rule is unsafe, so that a run asks no permission and no lookalike script is allowed. [Q16]
 200. As a developer, I want the README to require removing a personal commit skill, so that it does not capture "commit this" before the worker. [Q8]
-201. As a developer, I want the README to state the gaps it cannot close, as one list ([Out of Scope](out-of-scope.md), accepted gaps), so that I know the limits. [Q3, Q5, Q9, Q10, Q11, Q16, Q17, Q18, Q19, Q20, Q22, Q23]
+201. As a developer, I want the README to state the gaps it cannot close, as one list ([Out of Scope](out-of-scope.md), accepted gaps), so that I know the limits. [Q3, Q5, Q9, Q10, Q11, Q16, Q17, Q18, Q19, Q20, Q22, Q23, Q25]
 223. As a developer installing the plugin, I want the README to present its allow rules as a required install step and say what goes wrong without them (the worker's calls stall on permission prompts), so that I set them up before my first run. [Q16, Q24]
 202. As a developer, I want Node 22+ and git 2.34+ required, and an older git, older Node or missing git reported as such, so that support is predictable and failures are loud. [Q1, Q15]
 203. As a developer, I want a plugin with no npm dependencies, so that the guard works from the first shell call, offline, with no install step and no third-party code watching my commands. [Q1]
@@ -74,6 +74,9 @@
 
 ## Run integrity
 
+Story numbers are stable IDs, not a sequence: number 216 was never assigned (story 215
+is under Time budget, story 217 below), and no story is missing.
+
 206. As a developer, I want a run ID accepted only in the exact form the script mints, and every deletion kept inside the run-folder directory, so that a forged lock, flag or reply cannot make the plugin delete anything else. [Q22, Q25]
 207. As a developer, I want a `.commit-plan` that is tracked, a link or not a directory refused, so that a cloned repo cannot redirect the plugin's writes. [Q9, Q22]
 208. As a developer, I want `commit` refused without `--confirmed` while a confirmation is pending, and only the `yes` answer's `run` to carry `--confirmed`, so that a steered worker cannot skip the question with a plain `commit --all` or a forged `continue` (a forged no-user answer and a rewritten run state remain gaps, see [Out of Scope](out-of-scope.md)). [Q16, Q25]
@@ -83,6 +86,6 @@
 224. As a developer who updated the plugin mid-run, I want a run started by another plugin build refused as `ended`, so that no call acts on state it cannot read. [Q16]
 211. As a developer, I want unresolved conflict entries in my index refused, so that conflict markers are never committed. [Q21]
 212. As a developer, I want a file whose attributes call it binary but whose content is text scanned as text, so that a `-diff` or `binary` rule cannot hide a secret. [Q10]
-213. As the Claude main session, I want a worker whose script call prints output that is not JSON (a Node too old to parse the entry point, before 12; a removed plugin version) to return the fallback reply quoting that output escaped and capped like relayed git or hook output (story 218), so that nobody guesses what happened. [Q1, Q25, C:worker-input]
+213. As the Claude main session, I want a worker whose script call prints output that is not JSON (a Node too old to parse the entry point, before 12; a removed plugin version) to return the fallback reply quoting that output escaped and capped like relayed git or hook output (story 163), so that nobody guesses what happened. [Q1, Q25, C:worker-input]
 229. As the Claude main session, I want to show the user the output of a handback `run` that holds no reply and to run nothing more, leaving the lock to the takeover question (story 59), so that a broken script call stops the handback visibly and nobody guesses what happened. [Q22, Q25, C:reply-and-handback]
 227. As a developer, I want a takeover that finds only the killed group's paths staged to reset the index, and one that finds more than that never to commit the extra staging unasked (an interactive run asks `modeChoice`, a `--no-user` run refuses with `killed-leftover` naming the killed group's paths still staged, a `--reword` run goes on with a notice naming them), and the killed run's folder kept until that repair is done, so that a killed run's leftover staging is handled safely even when the takeover itself is killed. [Q17, Q18, Q22]

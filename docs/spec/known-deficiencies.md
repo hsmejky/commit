@@ -101,14 +101,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md). Impact: the tables are not
   a complete cause list for tests. Fix: add both causes to both tables. Slice: RUN-20 (11),
   which wrongly records this as settled (roadmap KD-R9).
-- **KD-S16. `signing-locked` exists only in the spec.** Used by story 170, M11, the
-  domain-code table and tests; no decision or contract defines it. Fix: record it in Q18
-  and the `signing` row of C:cli-and-exit-codes, or use plain `signing`. Slice: PRE-15.
-- **KD-S17. Six refusal texts only in decisions.** `head-moved` and signing-key-locked
-  (Q18), merge-commit reword (Q20) and three repo-state texts (Q21) appear in no module and
-  no contract table. Where: M3, M11, M15, M16,
-  [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md). Impact: tests cannot pin
-  exact texts. Fix: record them verbatim in the modules or the error table. Slice: PRE-15.
 - **KD-S18. No field for domain sub-codes.** The failure JSON has `kind` and `message`
   only, so `held`, `busy`, `taken-over`, `index-changed` … differ only by text; the spec
   table uses codes the contracts never define. Fix: add `error.code` and list every code
@@ -166,9 +158,6 @@ Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](te
 - **KD-S37. Hook registration check ignores the `if` condition** (Q13); a mismatch
   silently disables the heartbeat. Fix: assert `if` matches every S2 `build` output.
   Disposition: accepted for 0.1.0.
-- **KD-S38. Run-folder exclusion from `git status` never asserted** (story 196). Fix:
-  assert no `.commit-plan` in `git status --porcelain -uall`, `.gitignore` unchanged, no
-  duplicate exclude line, also in a linked worktree. Disposition: accepted for 0.1.0.
 - **KD-S39. Heartbeat and stderr redaction untested** (story 21). Fix: canary text absent
   from both outputs; a 300-character command cut to 200. Disposition: accepted for 0.1.0.
 - **KD-S40. git-2.34 container job prerequisites unstated**: Node install, `openssh-client`
@@ -200,9 +189,6 @@ Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](te
 - **KD-S46. Dogfood gate lacks Q24's diff-size formula** (`git diff HEAD --numstat` plus
   `hunks.txt` tokens) and "the price-weighted ratio is a proxy only". Where:
   [story-verification.md](story-verification.md). Disposition: accepted for 0.1.0.
-- **KD-S47. "Fixed model" (story 42) is untestable**: an Agent `model` parameter overrides
-  the frontmatter, and "never pass `model`" (Q24) is stated nowhere. Fix: add that rule to
-  the skill, README and respawn text; reword story 42. Slice: PRE-15.
 - **KD-S48. Heartbeat relocation drops Q23's constraints**: writer and reader both reach
   it, and not `os.tmpdir()`. Where: [further-notes.md](further-notes.md),
   [open verification items](../decisions/open-verification-items.md). Slices: GRD-15,
@@ -231,11 +217,9 @@ settles them. Files: [entry and guard](stories-entry-and-guard.md),
 | --- | --- | --- | --- |
 | KD-S53 | 65 | every unit "with ID, path, kind and range"; summary-only entries have no kind or range (C:plan-hunks) | except summary-only entries |
 | KD-S54 | 110 | misses a non-integer `maxSubjectLength` and an empty `types` (Q6); M4 test row too | add both |
-| KD-S55 | 34 | omits the cause "`node` missing from the hook's PATH"; Q23's notice text and "the run goes on" are in no module or contract | add the cause; record the text |
 | KD-S56 | 52 | omits that every respawn repeats `mode` (and `takeOver` only from `lock`); says "resumed run" | name both; "respawned run" |
 | KD-S57 | 51, 53 | no story says a handback `run` output holds a new reply handled the same way | state it |
 | KD-S58 | 57 | every notice repeated in `text`; lists cap at 10 plus "+N more" | add the cap |
-| KD-S59 | 46 | fallback trigger vague; contract: only no parseable script output, `planId` or `null`; `Write`/`Read` failures undecided | align; decide in C:worker-input |
 | KD-S60 | 62 | "run nothing"; contract adds "show the whole message" | append it |
 | KD-S61 | 40 | single planning call only for "a one-group run"; it applies to every first spawn | reword |
 | KD-S62 | 103 | treats `--no-user` as a caller option; it is the worker's flag under `interactive: false` | reword |
@@ -243,13 +227,8 @@ settles them. Files: [entry and guard](stories-entry-and-guard.md),
 | KD-S64 | 185 | not-a-repo or bare "reported as an error"; it is a `state` refusal (exit 6) | reword |
 | KD-S65 | 67 | identical hunks only "in the same group"; also all in `notIncluded` (Q11, C:check); M14 too | "same placement" |
 | KD-S66 | 147 | all `GIT_*` ignored; Q9 keeps a keep-set for script calls and strips only redirecting variables for `git commit` | name the keep-set |
-| KD-S67 | 56 | tree state always last; the fallback reply, `release` past budget and `not-a-repo` omit it | name the exceptions or add "tree state unknown" |
 | KD-S68 | 58 | "until the reply"; a handback is a reply, callerRule says "final reply" | "final reply" |
 | KD-S69 | 54 | "with no extra logic"; `edit` goes under Other, `question: null` is never asked | "the callerRule alone tells me how" |
 | KD-S70 | 44 | final report always the script's reply; the fallback reply is worker-built | add the fallback |
 | KD-S71 | 61 | lists three separators; the contract refuses six, redirection included | list all six |
 | KD-S72 | 228 | omits the 200-character description and 1.5 kB `SKILL.md` budgets (Q24) | add both |
-| KD-S73 | 213 | cites story 218; the escaping and 2000-character cap is story 163 | cite 163 |
-| KD-S74 | 102, glossary | `humanOnly` "never answered without a user"; a forged `ifNoUser` answer is an accepted gap | limit to an honest worker |
-| KD-S75 | 201 | tag omits Q25, source of the forged-answer gap | add Q25 |
-| KD-S76 | numbering | stories skip 216 without a note | record the gap (accepted) |

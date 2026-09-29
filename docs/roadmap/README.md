@@ -85,7 +85,7 @@ only through another gated slice, named in parentheses.
 
 | Slice | Open item | Gates |
 | --- | --- | --- |
-| PRE-15 | story wording that disagrees with decisions or contracts; `signing-locked` and six refusal texts not recorded | GRD-17, GIT-12, CHG-17, PLN-03, INT-17, WRK-01, REL-03 |
+| PRE-15 | story wording that disagrees with decisions or contracts (the texts and policy items are settled; the stories that yield to their decision remain) | GRD-17, GIT-12, CHG-17, PLN-03, INT-17, WRK-01, REL-03 |
 | CFG-01 | `scanIgnore`: HEAD vs stored patterns in the backstop, which units are flagged, repo-config path for `snapshotBlob`, `scanIgnoreChanged` wording, repo config invalid at HEAD but fixed in the worktree | CFG-07, SCN-14, EXE-13, INT-16 |
 | EXE-01 | `osUser` missing from M14/M16 interfaces, cleanup past `cleanupDeadline`, M16 `internal` path trigger, failure JSON examples without `reply` | PLN-06, EXE-13, EXE-17, INT-07, INT-15, INT-31 |
 | RUN-20 | run-lock basics: item 6 (a `modeChoice` answer that conflicts with the mode flag); items 10 and 11 (who removes `call.lock`; the `lock` error-table row, KD-S15) are documentation syncs; item 12 (the step-7 rechecks between the inventory and taking the lock on the takeover path, KD-S10) | GIT-08, INT-13, RPL-09, RUN-21; EXE-24 *(transitive, via GIT-08)*; RUN-22, RUN-23, RUN-24, RUN-25, RUN-26 *(transitive, via RUN-21)* |
@@ -111,18 +111,15 @@ Minor and nit items of the spec's [known deficiencies](../spec/known-deficiencie
 no decision slice settles. Their disposition for 0.1.0:
 
 - Accepted as written (the slices follow the contract as it stands; no further decision):
-  KD-S11, KD-S13, KD-S14, KD-S21 to KD-S23, KD-S35 to KD-S40, KD-S42 to KD-S44, KD-S46,
-  KD-S49 to KD-S51 and KD-S66.
+  KD-S11, KD-S13, KD-S14, KD-S21 to KD-S23, KD-S35 to KD-S37, KD-S39, KD-S40, KD-S42 to
+  KD-S44, KD-S46 and KD-S49 to KD-S51.
 - Covered at slice level: KD-S54 (Q6 value domains, CFG-03), KD-S45 (changes read only
   through `hunks.txt`, WRK-02) and KD-S48 (heartbeat location, GRD-15 and GRD-17).
 - Folded into RUN-20: KD-S15 (item 11) and KD-S10 (item 12).
-- Settled in the contracts, the story wording follows: KD-S64 (C:infer) and KD-S67
-  (C:reply-and-handback).
-- Folded into PRE-15: KD-S74, which is story 102 plus the glossary's "never answered without
-  a user" line.
+- Folded into PRE-15: KD-S64 (story 185 yields to C:infer) and KD-S66 (story 147 yields to
+  Q9's keep-set), with the other story-wording rows.
 - KD-S20 (`infer` rows missing from the error table): INF-01 follows C:infer; the table rows
   and the unborn-HEAD outcome are a documentation sync.
-- KD-S76 (story numbering skips 216): accepted; see Story coverage.
 - KD-S41 (kill-timeout cases): EXE-17 asserts no commit for a killed `pre-commit` hook and a
   reported `sha` for a sleeping `post-commit` hook, as testing-seams Seam 1 now states.
 - KD-S52 could not be confirmed (no stale text was pinned down); no slice action.
