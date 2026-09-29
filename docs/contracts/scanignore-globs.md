@@ -20,3 +20,21 @@ are applied: `/`, `//`, `a//b`), or a pattern with no literal character (Q10): o
 of `*`, `?`, `**` and `/` (`**`, `**/*`, `**/?*`, `*/**`, `/**`), so one amended line cannot
 switch the scan off. A broad pattern with a literal character (`src/**`) stays legal.
 Every row, and every error, has a fixture.
+
+## Differences from git pathspecs (SCN-04)
+
+A CI oracle (testing-modules.md, "Platform oracles in CI only") cross-checks the supported
+subset above against git's `:(glob)` pathspec, excluding these rows where they deliberately
+differ:
+
+- `?` against a non-ASCII character: git's wildmatch counts UTF-8 bytes, we count UTF-16 code
+  units, so a BMP or astral character needs a different `?` count in each.
+- A pattern ending in `/` combined with a wildcard elsewhere (e.g. `src/*/`): git's wildmatch
+  never matches a trailing literal `/` against a file path, so it matches nothing, while ours
+  expands it to everything under the directory. A purely literal trailing-`/` pattern happens
+  to reach the same set in git, but only via its separate directory-prefix fallback below, not
+  glob expansion, so trailing `/` is excluded as a whole category.
+- A leading `/`: git reads it as an attempt at an absolute filesystem path and fails the
+  command, rather than rooting the pattern at the repo top the way we do.
+- A literal (wildcard-free) pattern naming an existing directory: git falls back to matching
+  everything under that directory; our literal row matches only that exact whole path.
