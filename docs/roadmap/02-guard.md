@@ -102,7 +102,7 @@ text.
 - [ ] `-n`, `--no-verify`, `--no-gpg-sign` → `<flag> is not allowed. Fix the hook or signing setup instead.`
 - [ ] `--fixup=amend:<sha>`, `--fixup=reword:<sha>` → the fixup-kind text; `-C`, `--reuse-message`, `-c <commit>`, `--reedit-message` → the generic row.
 - [ ] Every message containing `<route>` ends with the personal-skill line; the others do not.
-- [ ] Precedence per C:guard (D2), the full row order (`-c`/`--config-env` before `commit`; literal-subcommand; unknown global option; `--amend`; `--squash`; `-n`/`--no-verify`/`--no-gpg-sign`; `--fixup=amend:`/`--fixup=reword:`; the generic row; the bare/`-m`/`-F`/`--message`/`--file` row last, ties broken by argv order): `--amend -m x` → the amend text, not the bare/`-m` text.
+- [ ] Precedence per C:guard (D2), the full row order (`-c`/`--config-env` before `commit`; literal-subcommand; literal-arguments; unknown global option; `--amend`; `--squash`; `-n`/`--no-verify`/`--no-gpg-sign`; `--fixup=amend:`/`--fixup=reword:`; the generic row; the bare/`-m`/`-F`/`--message`/`--file` row last, ties broken by argv order): `--amend -m x` → the amend text, not the bare/`-m` text.
 - [ ] `-n -m x` → the `-n` text, not the bare/`-m` text.
 - [ ] `--squash -m x` → the squash text, not the bare/`-m` text.
 
@@ -110,7 +110,7 @@ text.
 ## GRD-06: PowerShell tokenizer
 
 **What to build:** G2 for PowerShell (backtick escapes, among them the NUL escape `` `0 ``
-/ `` `u{0} ``, `''` and `""`, here-strings closing at column 0, the `&` call operator), so
+/ a zero `` `u{…} ``, `''` and `""`, here-strings closing at column 0, the `&` call operator), so
 the same denies hold for PowerShell commands.
 
 **Blocked by:** GRD-03, GRD-04.
@@ -122,8 +122,8 @@ stories 13, 14.
 
 - [ ] Seam 3: ``git commit -m "a`"b"``, `& git commit -m x`, a compound PowerShell command → denied; a here-string holding `git commit` piped into another command → no output.
 - [ ] Seam 3: PowerShell `git commit --no-edit # done` (the generic row, after GRD-04's allowlist) and `<# git commit -m x #> git status` → denied (the documented comment false positive).
-- [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` and `` git commit`0 --no-edit `` → denied: a PowerShell NUL ends the token's value and the git command's arguments, as the native command line is cut there.
-- [ ] Seam 3: `` Write-Output x`0 (git commit -m x) `` and `` if ("x`0") {git commit -m x} `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
+- [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` `` git commit`0 --no-edit `` and `` git commit`u{00} --no-edit `` → denied: a PowerShell NUL ends the token's value and git's arguments (a `cut` token), as the native command line is cut there.
+- [ ] Seam 3: `` Write-Output x`0 (git commit -m x) `` `` if ("x`0") {git commit -m x} `` and `` git commit --no-edit`0 (git commit -m x) `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
 - [ ] Seam 2: one PowerShell deny case end to end.
 - [ ] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
 
@@ -149,7 +149,7 @@ or here-string turns the rest of its line into one quoted token while scanning c
 
 **What to build:** redirections are dropped with their target, `(` and `)` are tokens
 (a `$(…)` stays in its word), as are Bash `<(` / `>(` (read as `(`) and PowerShell `{` /
-`}` (a `}` ends `commit`'s arguments like `)`), Bash heredoc bodies are dropped, and typographic quotes
+`}` (a `)` or `}` ends git's arguments, and every `git` token of a segment is classified), Bash heredoc bodies are dropped, and typographic quotes
 (U+201C-U+201E read as double quotes and U+2018-U+201B as single quotes in both shells) are
 removed for the early-exit check.
 
@@ -160,7 +160,7 @@ removed for the early-exit check.
 **Sources:** Q3 (pass 5, pass 8, PRE-03 amendment), C:guard (Parsing step 2, heredoc row, typographic quotes row), stories 13, 15, 22.
 
 - [ ] `git commit -m x 2>&1` and `git commit -m x > log.txt` → denied, one segment, the target not read as an argument; the `&` in `2>&1` does not split.
-- [ ] `(git commit -m x)` in both shells → denied; `(git commit --no-edit)` → no output.
+- [ ] `(git commit -m x)` in both shells → denied; `(git commit --no-edit)` → no output; PowerShell `git status (git commit -m x)` → denied (the inner `git` token is classified too).
 - [ ] Bash `diff <(git commit -m x) f` → denied; PowerShell `&{git commit -m x}`, `. {git commit -m x}` and `if ($true) {git commit -m x}` → denied; `&{git commit --no-edit}` → no output.
 - [ ] `cat <<'EOF' > f`, body line `git commit -m x`, `EOF` → no output; `<<-` with tab-indented delimiter, two heredocs on one line, an unterminated body; `<<<` treated as a plain redirection.
 - [ ] `git “commit” -m x` (Bash) and PowerShell `git co‘’mmit -m x` → denied.
@@ -199,10 +199,12 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 - [ ] `git --unknown commit` → the "Could not parse git options" row.
 
 
-## GRD-12: Fail closed on an unreadable subcommand
+## GRD-12: Fail closed on an unreadable subcommand or argument
 
 **What to build:** a subcommand token holding `$`, a backtick, `{`, `(` or a glob
-character, or starting with `@` in PowerShell, is denied; `commit` matches case-insensitively.
+character, or starting with `@` in PowerShell, is denied; `commit` matches case-insensitively;
+a `(` or PowerShell `{` token among git's arguments, or a Bash `{` in a global option's or
+`--fixup`'s value, is denied.
 
 **Blocked by:** GRD-11.
 
@@ -211,10 +213,11 @@ character, or starting with `@` in PowerShell, is denied; `commit` matches case-
 **Sources:** Q3, C:guard (Parsing step 4, Deny messages), story 15.
 
 - [ ] Denied with `Write the git subcommand literally. <route>`: `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `` git `echo commit` -m x `` and `` git "`echo commit`" -m x ``, each in a command mentioning `commit`.
+- [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")`, `git commit --fixup @("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
 - [ ] `git COMMIT -m x` → denied as a commit.
 - [ ] The documented gap: `git $(echo com)mit` → no output.
 - [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
-- [ ] The documented command-position gap: `$(echo git) commit -m x`, `{git,commit,-m,x}` and `/usr/bin/gi? commit -m x` (Bash) → no output.
+- [ ] The documented command-position gap: `$(echo git) commit -m x`, `{git,commit,-m,x}` and `/usr/bin/gi? commit -m x` (Bash) and `& ('git') commit -m x` (PowerShell) → no output.
 
 
 ## GRD-13: S2 script calls: recognise and build

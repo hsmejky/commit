@@ -42,10 +42,10 @@ line under debug, with the fields known so far, and still no stdout.
 literal single quotes, `\"` `\\` `\$` in double quotes, `$'…'` with its backslash escapes
 decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value
 there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`);
-PowerShell: backtick escapes, where `` `0 `` (and `` `u{0} `` in PowerShell 7) is a NUL
-that ends the token's value there, as the native command line is cut at it, and a `)` token
-follows the cut token, ending the git command's arguments while the later tokens stay in
-the segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`,
+PowerShell: backtick escapes, `` `u{…} `` read as its code point (PowerShell 7), where
+`` `0 `` and a zero `` `u{…} `` (`` `u{0} ``, `` `u{00} ``) are a NUL that ends the
+token's value there, as the native command line is cut at it, and a `cut` token follows
+the cut token, ending git's arguments while the later tokens stay in the segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`,
 here-strings closing at column 0); in both shells typographic quotes as quotes,
 as PowerShell reads them (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`;
 Q3 as amended); escaped newlines (Bash `\` plus newline,
@@ -57,11 +57,11 @@ amended). Redirection operators (`>`, `>>`, `<`, `2>&1` and the like) outside qu
 tokens of their own that G3 and S2 drop together with their target, so they are never read
 as commit arguments or options. An unquoted `(` or `)` becomes a token of its own too (not
 dropped), except inside a `$(…)` substitution, which stays in its word up to its matching
-`)`; so G3 finds the `git` of `(git commit -m x)`, and a `)` token ends `commit`'s arguments.
+`)`; so G3 finds the `git` of `(git commit -m x)`, and a `)` token ends git's arguments.
 Bash process substitution `<(` / `>(` becomes a `(` token (not a redirection), and in
 PowerShell an unquoted `{` or `}` becomes a token too (not inside `${…}` or `$(…)`), so G3
 finds the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell
-`}` token ends `commit`'s arguments like `)`. Comments are not recognised: `#` and what
+`}` token ends git's arguments like `)`. Comments are not recognised: `#` and what
 follows, and a PowerShell `<# … #>` block, are ordinary text (documented false positives,
 Q3 as amended).
 A Bash heredoc (`<<` or `<<-` outside quotes) drops its operator and delimiter word like a
@@ -70,7 +70,7 @@ delimiter after quote removal (leading tabs stripped with `<<-`; bodies of sever
 on one line in order; an unterminated body runs to the end of the command), so no body
 line is read as a command. `segments(command, shell) → Token[][]`. Sources: Q3, C:guard.
 
-**G3 Command classifier and deny catalogue.** Per segment: find a token whose basename (the
+**G3 Command classifier and deny catalogue.** Per segment: find every token whose basename (the
 part after the last `/` or `\`, in both shells) is `git` or `git.exe`, compared
 case-insensitively (optionally after `&`), or whose basename is
 the dashed `git-commit` (with or without `.exe`, in any directory, compared
@@ -78,9 +78,11 @@ case-insensitively), which classifies as `git commit`; skip the
 known global options; remember `-c` and `--config-env`; compare the subcommand with
 `commit` case-insensitively (`git COMMIT` is a commit, fail closed); deny an unknown option before
 `commit`, and a subcommand token that contains `$`, a backtick, `{`, `(` or a glob character
-(`*`, `?`, `[`) or, in PowerShell only, starts with `@` (fail closed); expand commit
-arguments up to the segment's end or a `)` token (in PowerShell also a `}` token) and apply
-the Q4 allowlist;
+(`*`, `?`, `[`) or, in PowerShell only, starts with `@` (fail closed); read git's
+arguments up to the segment's end, a `cut` token, a `)` token or (in PowerShell) a `}`
+token, deny a `(` or (in PowerShell) `{` token among them and, in Bash, a `{` in a global
+option's or `--fixup`'s value (fail closed); expand commit arguments and apply
+the Q4 allowlist; a segment is denied when any of its `git` tokens is;
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
 expansion and the trailing personal-skill line are data here; no text names `/commit`.

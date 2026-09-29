@@ -12,10 +12,10 @@
     of the shell named in `tool_name` (Bash: `\` escapes, `'…'` literal, `$'…'` read with
     its backslash escapes, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the
     `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
-    `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, where `` `0 `` (and `` `u{0} `` in
-    PowerShell 7) is a NUL that ends the token's value there, as the native command line is
-    cut at it, and then ends the git command's arguments like a `)` token while the later
-    tokens stay in the segment (`` git commit`0x -m x `` is `git commit`), `''` inside
+    `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, where `` `0 `` (and a zero
+    `` `u{…} `` in PowerShell 7, `` `u{0} ``, `` `u{00} ``) is a NUL that ends the token's
+    value there, as the native command line is cut at it, and then ends git's arguments
+    while the later tokens stay in the segment (`` git commit`0x -m x `` is `git commit`), `''` inside
     `'…'`, here-strings),
     segments split on `&&`, `||`, `;`, `|`, `&` and newlines. Unquoted `(` and `)` are
     tokens of their own, and so are Bash `<(` / `>(` (read as `(`) and PowerShell `{` / `}`,
@@ -75,7 +75,8 @@
 - **Amended.** By spec pass 8 (2026-09-27): unquoted `(` and `)` become tokens of their own
   (like redirection operators, but kept; a `$(…)` substitution stays in its word), so
   `(git commit -m x)` is denied instead of passing as the token `(git`; a `(` in the
-  subcommand position stays denied, and a `)` token ends `commit`'s arguments, so
+  subcommand position stays denied, and a `)` token ends `commit`'s arguments (all of git's
+  arguments, and a `(` among them is denied, since the PRE-03 amendment below), so
   `(git commit --no-edit)` stays allowed. The subcommand is compared with `commit`
   case-insensitively (fail closed), so `git COMMIT -m x` is denied like `git commit -m x`.
   A Bash heredoc body is dropped, never read as a command (the body ends at the line equal
@@ -85,8 +86,9 @@
 - **Amended.** By the tokenizer spike (PRE-03, 2026-09-29), which ran a prototype of the
   contract's parsing against 143 cases cross-checked with bash's own words and the
   PowerShell 5.1 and 7 parser API. The decided rules held (case-insensitive `git`, `commit`
-  and subcommand; `(` and `)` as tokens; heredoc bodies dropped); its seven findings are
-  settled, each with a wider fail-closed rule, a documented false positive or an accepted
+  and subcommand; `(` and `)` as tokens; heredoc bodies dropped); its seven findings, and
+  the PowerShell NUL escape and brackets among git's arguments found by the reviews of this
+  amendment, are settled, each with a wider fail-closed rule, a documented false positive or an accepted
   gap, none needing a parser beyond the hand-written design (unbash stays unvendored):
   - A subcommand token holding a backtick is denied (fail closed). An unquoted Bash
     backtick substitution splits into several tokens (`` git `echo commit` -m x `` gives
@@ -101,19 +103,45 @@
     `$'…'` span's value there (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is
     `abef`): Bash cuts the decoded string at the NUL, so reading on past it would hide
     `commit`.
-  - A PowerShell NUL escape outside `'…'` (`` `0 ``, and `` `u{0} `` in PowerShell 7) ends
-    the token's value there, and the cut token then acts like a `)` token: it ends the git
-    command's arguments for steps 4 and 5 (global options, subcommand, `commit`'s args),
-    but the later tokens stay in the segment for step 3. Windows PowerShell 5.1 and
+  - A PowerShell NUL escape outside `'…'` (`` `0 ``, and in PowerShell 7 a `` `u{…} `` of
+    value 0 with any leading zeros, `` `u{0} ``, `` `u{00} ``; other `` `u{…} `` values are
+    read as their character) ends the token's value there, and a `cut` token of its own
+    follows it: it ends git's arguments for steps 4 and 5 (global options, subcommand,
+    `commit`'s args), but the later tokens stay in the segment for step 3. It is not a
+    synthetic `)`, which would unbalance the brackets the next item relies on. Windows
+    PowerShell 5.1 has no `` `u{…} `` escape (it passes `u` and a script block, which git
+    rejects as `-encodedCommand …`). Windows PowerShell 5.1 and
     PowerShell 7 both pass the native command line cut at the NUL (verified 2026-09-29), so
     `` git commit`0x -m x `` and `` git commit`0 --no-edit `` both run a bare `git commit`.
     Reading on past the NUL would hide `commit` in the first and keep an allowlisted
     `--no-edit` that git never sees in the second: two fail opens. The shell cuts only that
     one native command's line, though, and a nested command still runs
     (`` Write-Output x`0 (git commit -m x) ``, `` if ("x`0") {git commit -m x} ``):
-    dropping the later tokens from the segment would lose it, a third fail open.
+    dropping the later tokens from the segment would lose it, a third fail open. So every
+    `git` token of a segment is classified, not only the first
+    (`` git commit --no-edit`0 (git commit -m x) ``, `git status (git commit -m x)`).
+  - A `(` or, in PowerShell, a `{` token among git's own arguments (a global option, its
+    value, the subcommand, `commit`'s arguments and their values) is denied, fail closed
+    (`Write git's arguments literally.`), and only a `)` or `}` token ends git's arguments.
+    In PowerShell a grouping expression, an `@(…)` array or a script block is an argument
+    of the native command and may turn into several: `git -C (Get-Location) commit -m x`
+    runs `git -C <dir> commit -m x`, and `git commit -m ("-q") --no-verify` and
+    `git commit --fixup ("HEAD","--no-verify")` pass `--no-verify` (verified 2026-09-29
+    with PowerShell 5.1 and 7). Reading `(` as an option value and stopping at its `)` hid
+    `commit` in the first and the flags in the others. With every inner bracket denied, a
+    `)` or `}` that ends git's arguments closes one opened before `git`
+    (`(git commit --no-edit)` stays allowed) or is a stray one the shell rejects, so no
+    bracket depth is tracked. In Bash a `(` after a command word is a syntax error, but a
+    `{` in a global option's or `--fixup`'s value is brace expansion into several
+    arguments (`git -C {.,commit} status` runs `git -C . commit status`) and is denied the
+    same way. False positives: such a bracket in a command that mentions `commit`
+    (`git -C (Get-Location) status; git commit --no-edit`, Bash
+    `git commit --fixup HEAD@{1}`). A `$(…)` or a variable in a value stays the accepted
+    substitution gap (PowerShell passes an array's elements as separate arguments, as Bash
+    word-splits), and so does a PowerShell expression in the command position
+    (`& ('git') commit -m x`).
   - PowerShell unquoted `{` and `}` are tokens of their own, like `(` and `)`, and a `}`
-    token ends `commit`'s arguments like `)`. PowerShell lets a script block glue its
+    token ends git's arguments like `)`. PowerShell lets a script block glue its
     brace to the first word (`&{git commit -m x}`, `if ($true) {git commit -m x}`), so
     `git` was hidden in the token `{git`. Bash keeps braces in the word: there `{a,b}` is
     brace expansion (pass 5's subcommand rule relies on it) and a `{ …; }` group needs
@@ -155,7 +183,9 @@
     `git` and `commit` tokens).
   - Command substitution (`$(…)`, backticks) and variables anywhere but the subcommand
     position (`$(echo git) commit`), and Bash brace expansion or a glob in the command
-    position (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`); `GIT_DIR` / `GIT_WORK_TREE`
+    position (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`), a PowerShell expression
+    there (`& ('git') commit -m x`), and a glob in an option value (it expands only to
+    existing file names); `GIT_DIR` / `GIT_WORK_TREE`
     redirection;
     config injected through env prefixes (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`,
     `GIT_CONFIG_VALUE_<n>`).
