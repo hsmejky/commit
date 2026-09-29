@@ -145,7 +145,7 @@ Sources: Q9, Q11, Q18, Q20, Q22, C:commit-release.
 (base plus handback rule, fixed text); the handback kinds with their answers; `run` via S2
 `build` from the injected `scriptPath`, with `timeoutMs` 600 000 for `commit` and 60 000
 otherwise; `respawn` (answer fields plus the `mode` flag of the `plan` call that produced
-the handback; `takeOver` only in a `lock` handback's `take over`, never in a `modeChoice`,
+the handback, which a `modeChoice` answer's own `mode` replaces; `takeOver` only in a `lock` handback's `take over`, never in a `modeChoice`,
 whose takeover already finished at `plan` step 3); `ifNoUser`. M17 owns the `--no-user` lock rule: it reads
 `interactive` from `plan`'s argv, and a `lock` refusal under `--no-user` is a plain reply
 with no takeover answer (C:cli-and-exit-codes). A `lock` refusal whose holder has no `planId`
@@ -213,8 +213,8 @@ the reply with M17.
      (`signing` → discard).
   7. Store the stored-facts rows except notices; on the path with no takeover M12 `acquire`
      (a race lost after `peek` → `lock`, discard), skipped after a step-3 takeover; then
-     re-read HEAD and the index fingerprint: a moved HEAD (another run
-     committed in the window between inventory and lock) releases and refuses `head-moved`;
+     re-read HEAD and the index fingerprint, on both paths: a moved HEAD (another run
+     committed since the inventory) releases and refuses `head-moved`;
      a changed index fingerprint with an unchanged HEAD releases and refuses
      `index-changed` (CLI kind `diff-changed`, not checked in `reword`, which `--amend --only`
      never touches); otherwise that fingerprint is stored for M16; M12 `sweep`.
@@ -235,7 +235,8 @@ the reply with M17.
   fields of the state it read (in-process too), so `notices` and every other stored fact
   survive; a refusal's reply carries M10 `treeState`.
 - **Every call with `--plan`** holds the run's `call.lock` for its whole duration (M12
-  `open`), so two calls on one run never overlap (`busy`).
+  `open`, removed by M12 `run.close()` in M18's `finally`), so two calls on one run never
+  overlap (`busy`).
 - **`check`.** M12 `open`; M15 `checkGate`; clear stored groups and `awaitingConfirm`; M14 `validatePlan(planBytes,
   runState, { osUser })`; on lint errors M15
   `onLintFailure` and `runEnd` (an interactive `lintFailed` keeps the run for its `resume`;

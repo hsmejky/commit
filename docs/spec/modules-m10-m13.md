@@ -140,7 +140,7 @@ folder's filesystem does not support hard links"); `ENOTSUP` or `ENOSYS` is `run
 once, without a probe; the errno mapping is in C:run-folder) or `discard`; a read-only `peek()` reports a live lock without
 acquiring anything (M18 skips it under `--take-over`);
 verify-and-touch on `open` and before each group (`touch()`); the per-call `call.lock`
-(`{ pid, host }`) on `open`, removed when the call ends, stale at once when its owner pid is dead
+(`{ pid, host }`) on `open`, removed when the call ends by `run.close()`, stale at once when its owner pid is dead
 on this host, else like the lock at 15 minutes, and replaced with the same atomic takeover; staleness at 15 minutes by mtime against the injected
 clock, including for an unparseable lock or one whose `planId` is not in the minted form,
 which is never taken over by `--take-over`; atomic takeover by renaming to a private name, verifying bytes plus mtime
@@ -176,6 +176,9 @@ forward slashes.
 - `run.finishTakeover()`: after M18's repair, deletes the taken-over folder(s) and the
   renamed lock file; a no-op without a takeover.
 - `Run.open(planId, { now })` (typed: `taken-over`, `ended`, `busy`).
+- `run.close()`: removes the call's own `call.lock`; idempotent and `ENOENT`-tolerant (a
+  folder already deleted by `release` or a takeover is not an error). Called from M18's
+  `finally` for every call with `--plan` and from the entry point's signal handler.
 - `run.state`, `run.write(name, data)`, `run.readWorkerPlan()`, `run.touch()`,
   `run.release()`, `Run.releaseById(planId)` (typed: `busy`, or ok with `released: false`
   when the lock does not hold `planId`), `Run.sweep(now)`.

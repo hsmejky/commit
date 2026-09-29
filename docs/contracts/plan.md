@@ -53,7 +53,8 @@ the same rule [`commit`](commit-release.md) follows.
    on the path with no takeover, take the lock here (a race lost after the `peek` →
    `lock`, delete the folder); after a takeover the lock is already held from step 3 and
    no `acquire` runs; then re-read HEAD and the index
-   fingerprint. A moved HEAD (another run committed between the inventory and the lock)
+   fingerprint, on both paths, against what step 4's inventory recorded (Q22 as amended by
+   the RUN-20 decision pass). A moved HEAD (another run committed since the inventory)
    releases the lock, deletes the folder and refuses with exit 6 `head-moved`; a changed
    fingerprint with an unchanged HEAD does the same with exit 6 `diff-changed` (domain code
    `index-changed`, not checked in `reword` mode, which `--amend --only` never touches;
@@ -163,7 +164,10 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   ones, or group all changes within the task?", answers `staged` / `split`, each a
   `respawn`). The handback carries counts only, never file lists. Every `respawn` `plan` builds carries its own answer
   plus the `mode` flag of the call that produced it (`--reword` is the caller's own
-  `reword` line). `takeOver` appears only in a `lock` handback's `take over` answer: a
+  `reword` line), except that a `modeChoice` answer replaces that flag: its respawn
+  carries the answer's `mode` alone, so a forced `modeChoice` (below) from
+  `plan --take-over <planId> --staged` answered `split` respawns with `mode: split` only
+  (Q9 as amended by the RUN-20 decision pass). `takeOver` appears only in a `lock` handback's `take over` answer: a
   `modeChoice` never carries it, also under `--take-over <planId>`, because a takeover
   finishes at step 3, before the mode decision, and the `modeChoice` releases the lock it
   took, so the respawned `plan --staged` / `plan --split` meets no lock of the taken-over

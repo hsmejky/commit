@@ -115,7 +115,8 @@ no decision slice settles. Their disposition for 0.1.0:
   KD-S44, KD-S46 and KD-S49 to KD-S51.
 - Covered at slice level: KD-S54 (Q6 value domains, CFG-03), KD-S45 (changes read only
   through `hunks.txt`, WRK-02) and KD-S48 (heartbeat location, GRD-15 and GRD-17).
-- Folded into RUN-20: KD-S15 (item 11) and KD-S10 (item 12).
+- Settled by RUN-20: KD-S15 (item 11) and KD-S10 (item 12), with KD-S6 (item 6) and
+  KD-S25 (item 10).
 - Folded into PRE-15: KD-S64 (story 185 yields to C:infer) and KD-S66 (story 147 yields to
   Q9's keep-set), with the other story-wording rows.
 - KD-S20 (`infer` rows missing from the error table): INF-01 follows C:infer; the table rows

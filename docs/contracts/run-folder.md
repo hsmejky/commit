@@ -90,7 +90,8 @@ failed call whose unstage did not happen keeps its run, below):
     The new run's own mode-decision step (step 4) then decides by the run's flags:
     - interactive (`split` or `staged`) → an ordinary `modeChoice` handback (index plus
       other changes), whose notice/question additionally names the killed group's paths
-      still staged;
+      still staged, and whose answer's `mode` replaces the run's mode flag in the respawn
+      ([`mode`](plan.md));
     - `--no-user` without `--reword` (no user can answer a `modeChoice`) → exit 6 `state`,
       domain code `killed-leftover`: "a killed /commit run left staging behind, and more
       was staged since: <the killed group's paths still staged>; unstage them or commit by

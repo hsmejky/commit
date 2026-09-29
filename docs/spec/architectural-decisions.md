@@ -19,7 +19,7 @@
   (`git --version` and `git rev-parse --show-toplevel` at start-up); the guard loads only
   G1-G3, S1 and S2 and spawns nothing. While a child
   runs, the commit entry point handles `SIGINT`, `SIGTERM` and `SIGHUP` by killing the
-  active child's tree (M2) and removing the call's `call.lock` (M12) before it exits; it neither unstages nor releases
+  active child's tree (M2) and removing the call's `call.lock` (M12 `run.close()`) before it exits; it neither unstages nor releases
   (a takeover reports the unstaging through `indexReset`, below), so an
   Esc or a session end cannot leave `git commit` running as an orphan that lands a commit
   after the call ended.

@@ -274,6 +274,18 @@
   `Read`'s limit is a whole-call token budget (~25 000 tokens, roughly 50 000 characters),
   not a per-line cut. Both leave the 20 000-character budget unchanged (see Q19 amendment
   for the `hunks.txt` paging correction).
+- **Amended.** By the RUN-20 decision pass (2026-09-29), settling KD-S6: qualifies "a
+  `respawn` that `plan` builds repeats the `mode` flag of the `plan` call that produced it,
+  besides its own answer". A `modeChoice` answer is itself a mode, so it replaces the
+  producing call's mode flag instead of joining it: the respawn carries the answer's
+  `mode` alone. The conflict is reachable only through the forced `modeChoice` of a
+  takeover with `killedLeftover` (Q22 pass 6, Q17 pass 9), which is asked whatever the mode
+  flags: a `plan --take-over <planId> --staged` answered `split` respawns with `mode: split`
+  (and no `takeOver`), never with both modes, so the user's `split` never runs as `staged`.
+  Only a `lock` handback's `take over`, whose answer holds no mode, repeats the refused
+  call's flag. The `modeChoice` source is therefore "`plan` without a mode flag, or a
+  forced `modeChoice` under any flag", also for Q25's handback table. Fixture: that
+  `split` answer ([contracts](../contracts/reply-and-handback.md)).
 - **Rejected.**
   - `--take-over` of an absent lock as a plain `acquire` (spec pass 10): it keeps a flag
     that no longer names anything and adds a lock case the contracts must define; the

@@ -212,7 +212,9 @@ with counts only and releases its lock; an index holding every change plans `spl
 81, 82.
 
 - [ ] Seam 1: some files staged, others not → `modeChoice` with the counts question, answers
-      `staged` and `split` as respawns with `mode`, `ifNoUser` `split`; no lock or folder left
+      `staged` and `split` as respawns with `mode`, `ifNoUser` `split`; no lock or folder left;
+      each respawn holds the answer's `mode` only (RUN-20 item 6: the answer replaces the
+      call's mode flag)
 - [ ] Hidden files are not counted (story 81)
 - [ ] Every change staged (as after `git add -A`) → plans `split` with no question (story 82)
 

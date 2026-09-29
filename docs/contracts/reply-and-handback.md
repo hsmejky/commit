@@ -109,7 +109,7 @@ handles it the same way.
   | Kind | From | `question` | Options | `needsText` (Other) | `ifNoUser` |
   | --- | --- | --- | --- | --- | --- |
   | `confirm` | `check`, interactive | "Commit as proposed? To change it, type your changes under Other." | `yes` → `run commit --all`; `one` → `respawn` (`resume`), only in `split` with more than one group; `no` → `run release` | `edit` → `respawn` (`resume`) | `humanOnly`: `answer: "no"`, `returnToParent: true`; else `answer: "yes"`, `returnToParent: false` |
-  | `modeChoice` | `plan` without a mode flag | the counts question (Q9) | `staged`, `split` → `respawn` (`mode`) | — | `answer: "split"` |
+  | `modeChoice` | `plan` without a mode flag, or a forced `modeChoice` (a takeover's `killedLeftover`, [run folder](run-folder.md)) under any mode flag | the counts question (Q9) | `staged`, `split` → `respawn` (`mode`: the answer, which replaces the call's mode flag) | — | `answer: "split"` |
   | `lock` | `plan` (live lock with a `planId`), interactive | the takeover question (Q22) | `take over` → `respawn` (`takeOver: <planId>`); `wait` → neither | — | `answer: "wait"`, `returnToParent: true` |
   | `lintFailed` | the lint failure that ends the worker's retries, interactive (Q18) | "Lint failed. Let a new worker fix it, or stop? To dictate the message, type it under Other." | `retry` → `respawn` (`resume`, `edit: fix these lint errors: <errors>`, at most 500 characters); `no` → `run release` | `edit` → `respawn` (`resume`); none when every error is a shape error (the worker plan is not valid JSON or not the [worker plan](worker-plan.md) shape): dictated text cannot fix a shape | `answer: "no"`, `returnToParent: true` |
   | `handedBack` | `check`, `interactive: false`, `humanOnly` | `null` | none; `text` says "nothing committed — run /commit to plan again" | — | `returnToParent: true` |
@@ -142,7 +142,10 @@ handles it the same way.
   command run.
 - `respawn`: a [worker input](worker-input.md) prompt; `{text}` marks where the user's words
   go (`needsText: true`). The script puts in it the answer's own fields and repeats the
-  `mode` flag of the `plan` call that built it (Q9); `takeOver` appears only in a `lock`
+  `mode` flag of the `plan` call that built it (Q9), except that a `modeChoice` answer
+  replaces that flag (Q9 as amended by the RUN-20 decision pass): a forced `modeChoice`
+  from `plan --take-over <planId> --staged` answered `split` respawns with `mode: split`
+  alone. `takeOver` appears only in a `lock`
   handback's `take over`. A `lock` handback from `plan --staged` answers `take over` with
   `mode: staged` and `takeOver: <planId>`; a `modeChoice` from `plan --take-over <planId>`
   answers `staged` with `mode: staged` and no `takeOver`, since that takeover finished at
@@ -153,7 +156,9 @@ handles it the same way.
   line only tells it that the run is a reword. Tests (Seam 1 fixtures, not in-process):
   each of the two respawns above, built from the `plan` call's `argv` (a live lock plus
   `plan --staged`; `plan --take-over <planId>` on a mixed index), and the second one run:
-  the respawned `plan --staged` finds no lock and plans `staged`.
+  the respawned `plan --staged` finds no lock and plans `staged`; and the `split` answer of
+  a forced `modeChoice` from `plan --take-over <planId> --staged` (`killedLeftover`) →
+  the respawn holds `mode: split`, no second `mode` and no `takeOver`.
 - The worker never acts on a handback, `continue` included: the guard denies a script call
   to `commit` or `release` when `agent_type` is `commit:commit-worker` (Q25,
   [Guard](guard.md)). The caller follows `callerRule` for every kind.

@@ -16,13 +16,14 @@ interactive: false
 | `intent` | public | one to three sentences | what was changed and why; absent when the caller does not know it or the user asked for every change (a bare `/commit`, Q2), the worker then infers it from the diff. `/commit <text>` passes the text as the intent. Also scopes a `split` run (Q16): a unit the intent clearly does not cover goes to `notIncluded` with the reason "not part of the intent"; without `intent` every change is planned. A caller whose user wants every change committed says so here, or omits the field |
 | `interactive` | public | `true` (default), `false` | `false`: the caller cannot ask a user (Q17); the worker runs `plan --split --no-user` or `plan --reword --no-user` |
 | `reword` | public | `true`, or the dictated text | reword the last commit (Q20); with text, the worker runs `plan --reword --dictated` (no hunk index) and writes the text as `"source": "user"` worker plan. Ignored with `resume` (the mode comes from the state file) |
-| `mode` | respawn-only | `staged`, `split` | from a `modeChoice` answer, or repeated from the refused call in a `lock` handback's `respawn` |
+| `mode` | respawn-only | `staged`, `split` | from a `modeChoice` answer (which replaces the refused call's mode flag, Q9), or repeated from the refused call in a `lock` handback's `respawn` |
 | `takeOver` | respawn-only | a `planId` | from a `lock` handback's `take over` only (a `modeChoice` never repeats it: the takeover has already finished at `plan` step 3, [mode](plan.md)); the worker runs `plan --take-over <planId>` with the `mode` flag if one is given |
 | `resume` | respawn-only | a `planId` | from a `confirm` or `lintFailed` handback's `respawn`; the worker skips `plan` and starts at `plan --hunks --plan <planId>`, which marks the run `resumed`, so its next `check` always asks (Q16) |
 | `edit` | respawn-only | free text, or `one` | with `resume`: the user's instruction; `one` means "single group, all included files" (Q16). Applies to the plan in `plan.groups.json` |
 
 Handback `respawn` values are prompts built by the script. Each holds the answer's own
-fields plus the `mode` flag of the `plan` call that built it, and `takeOver` in a `lock`
+fields plus the `mode` flag of the `plan` call that built it (a `modeChoice` answer's own
+`mode` replaces that flag), and `takeOver` in a `lock`
 handback's `take over` only (Q9). The caller
 passes them verbatim, inserting the user's text for `edit` where the handback says, and adds
 the `intent` and `reword` lines of its first spawn (the script never sees them) and

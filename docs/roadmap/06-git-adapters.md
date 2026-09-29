@@ -145,8 +145,9 @@ pins, and keeps every other variable for the user's hooks.
 ## GIT-08: Signal handler: Esc or session end kills the active git tree
 
 **What to build:** M2 tracks its active child and exposes `killActive()`; the commit entry
-point's `SIGINT`/`SIGTERM`/`SIGHUP` handler calls it and removes the call's `call.lock`,
-without unstaging or releasing.
+point's `SIGINT`/`SIGTERM`/`SIGHUP` handler calls it and removes the call's `call.lock`
+through M12 `run.close()` (idempotent, `ENOENT`-tolerant; RUN-20 item 10), without
+unstaging or releasing.
 
 **Blocked by:** GIT-07, PRE-13, RUN-04, RUN-20, INT-02.
 

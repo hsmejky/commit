@@ -584,10 +584,11 @@ the order RUN-20b settled. A notice names the stale `planId` and goes into every
       takeover notice, and no lock is left.
 - [ ] Seam 1: a stale unparseable lock → taken over automatically.
 - [ ] Seam 1: the taken-over run's next `commit --plan <old> --all` → `taken-over`.
-- [ ] `call.lock`'s disposition when a call exits follows RUN-04's settled behaviour
-      (former RUN-20 item 10).
-- [ ] Seam 1 (RUN-20 item 12, takeover path): after a takeover, HEAD moved since the old
-      run's inventory → `head-moved` carrying the takeover notice.
+- [ ] `call.lock`'s disposition when a call exits follows RUN-04's settled behaviour: M12
+      `run.close()` removes it (RUN-20 item 10).
+- [ ] Seam 1 (RUN-20 item 12, takeover path): after a takeover, HEAD moved since step 4's
+      inventory → step 7's re-read (which runs on both paths; RUN-06 covers the path with
+      no takeover) refuses `head-moved` carrying the takeover notice.
 - [ ] Seam 1: the takeover notice survives a later refusal of the same `plan`
       (`staged-empty`, `timeout`), and, on a modified tree needing confirmation, reaches
       the `committed` reply and the text of a `confirm` handback.

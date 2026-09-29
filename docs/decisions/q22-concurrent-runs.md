@@ -206,6 +206,16 @@
   learned that a run was taken over or its staging reset. Seam 1 cases: an automatic stale
   takeover on a clean tree → "nothing to commit" with the takeover notice; a reset plus a
   mixed index → `modeChoice` with the takeover, reset and `unstaged` notices.
+- **Amended.** By the RUN-20 decision pass (2026-09-29), settling KD-S10: step 7's re-read
+  of HEAD and the index fingerprint runs on both paths, the one with no takeover (after
+  step 7's `acquire`) and after a step-3 takeover (no `acquire` at step 7, the lock already
+  held), and it compares against what step 4's inventory recorded. So the window it
+  guards is "since the inventory", not "between the inventory and taking the lock": after
+  a takeover the lock is taken before the inventory. The contracts and M18 say "since the
+  inventory"; after a takeover a `head-moved` or `index-changed` there carries the
+  takeover's notices like every other ending (pass 10). A `modeChoice` answer under the
+  forced `modeChoice` of pass 6 replaces the refused call's mode flag (Q9 as amended by
+  the same pass).
 - **Rejected.**
   - Documenting the risk only: the damage (a reset index mid-run) is silent.
   - A `pid` in the lock: every subcommand is a separate short-lived process, so the pid says

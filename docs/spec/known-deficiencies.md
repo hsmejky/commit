@@ -49,14 +49,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   ([modules-m10-m13.md](modules-m10-m13.md)), [C:run-folder](../contracts/run-folder.md).
   Fix: delete folders first, the renamed lock last; a renamed lock without its folder is
   removed. Slice: RUN-20b (2).
-- **KD-S6. `modeChoice` answer vs the call's mode flag.** A respawn carries its answer plus
-  the producing call's mode flag, so a forced `modeChoice` from `plan --take-over X
-  --staged` answered `split` carries both; no rule says which wins, and the handback table
-  still gives the `modeChoice` source as "`plan` without a mode flag". Where:
-  [C:plan](../contracts/plan.md), [C:reply-and-handback](../contracts/reply-and-handback.md),
-  Q9, [testing-modules.md](testing-modules.md). Impact: a `split` choice may run as
-  `staged`. Fix: the answer replaces the flag; fix the table row; add a `split`-answer
-  fixture. Slice: RUN-20 (6).
 - **KD-S7. "A `--take-over` respawn cannot fall back to a `modeChoice`" overstated.** False
   when the refused call was a bare first-spawn `plan`. Where: [C:plan](../contracts/plan.md),
   [C:reply-and-handback](../contracts/reply-and-handback.md). Fix: qualify it with "when
@@ -69,10 +61,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
 - **KD-S9. Q9 body rewritten in place.** Its amendment quotes a sentence no longer in the
   body, unlike other decisions. Fix: restore the original sentence and let the amendment
   supersede it. Slice: RUN-20b (9).
-- **KD-S10. "Between the inventory and taking the lock" wrong on the takeover path.** After
-  a step-3 takeover the lock is taken before the inventory. Where: `head-moved` and
-  `diff-changed` rows of [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md),
-  [C:plan](../contracts/plan.md) step 7. Fix: say "since the inventory". Slice: RUN-20 (12).
 
 ## Error handling and cleanup
 
@@ -94,13 +82,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
 
 ## Error tables and API contract
 
-- **KD-S15. `lock` error row incomplete.** Missing: a persisting link error whose hard-link
-  probe succeeds → `busy`, and a late `ENOENT` on `call.lock` or the folder →
-  `taken-over` (only C:run-folder and architectural-decisions prose have it). Where:
-  [domain-code-cli-kind.md](domain-code-cli-kind.md),
-  [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md). Impact: the tables are not
-  a complete cause list for tests. Fix: add both causes to both tables. Slice: RUN-20 (11),
-  which wrongly records this as settled (roadmap KD-R9).
 - **KD-S18. No field for domain sub-codes.** The failure JSON has `kind` and `message`
   only, so `held`, `busy`, `taken-over`, `index-changed` … differ only by text; the spec
   table uses codes the contracts never define. Fix: add `error.code` and list every code
@@ -118,13 +99,6 @@ Settle these before the takeover slices; most belong to [RUN-20b](../roadmap/09-
   multi-paragraph dictated reword or `edit`; `reword: true` is ambiguous. Where:
   [C:worker-input](../contracts/worker-input.md). Fix: make `reword`/`edit` run to the end
   of the prompt, or define a block form; add a two-paragraph fixture.
-
-## Module interfaces
-
-- **KD-S25. No M12 operation removes `call.lock`.** M12 says it is removed at call end and
-  by the signal handler; no function owns it. Where: [modules-m10-m13.md](modules-m10-m13.md),
-  [C:run-folder](../contracts/run-folder.md). Fix: an idempotent, `ENOENT`-tolerant
-  `run.close()` called from M18's `finally` and the signal handler. Slice: RUN-20 (10).
 
 ## Testing
 

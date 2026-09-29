@@ -15,7 +15,7 @@
 | `signing-locked` | M11 via M15 | `signing` | 6 |
 | `pushed` | M3 via M15 | `pushed` | 6 |
 | `staged-hit` | M15 | `staged-hit` | 6 |
-| `held` (also from `peek` at `plan` step 3), `taken-over`, `ended` (also a state `version` mismatch), `busy` (also a live `call.lock`, or a lock operation that failed with `EPERM`, `EBUSY` or `EACCES`) | M12 | `lock` | 6 |
+| `held` (also from `peek` at `plan` step 3), `taken-over` (also a late `ENOENT` on the call's `call.lock` or run folder), `ended` (also a state `version` mismatch), `busy` (also a live `call.lock`, a lock operation that failed with `EPERM`, `EBUSY` or `EACCES`, or a lock link whose `EPERM`/`EBUSY` persists after retries while the hard-link probe succeeds) | M12 | `lock` | 6 |
 | `index-locked` | M10 via M16 | `index-lock` | 6 |
 | `unmatched` (hash set differs), `mismatch` (staged ≠ group) | M10 via `plan --hunks` and M16 | `diff-changed` | 6 |
 | `index-changed` (index fingerprint changed, HEAD unchanged) | M18 `plan` step 7; M16 before each group | `diff-changed` | 6 |

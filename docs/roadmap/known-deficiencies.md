@@ -30,10 +30,6 @@ fixed, delete it here; IDs are never reused.
 - **KD-R6.** CHG-11's scan criteria (secret found, `scan.skipped` over 1 MB) need CHG-16 and
   SCN-13, which it does not reach. Move them to SCN-16 or add the blockers.
 - **KD-R7.** SCN-12's symlink-target case needs SCN-13. Add the edge or drop the case.
-- **KD-R9. RUN-20 over-gates GIT-08 and misfiles items** (09, 06). GIT-08 waits on item 6,
-  which it does not use; item 12 is takeover-only but sits in the basics pass; item 11 is
-  marked settled though the error tables lack late `ENOENT` → `taken-over` (KD-S15, KD-S10).
-  Fix: drop RUN-20 from GIT-08, move item 12 to RUN-20b, reopen item 11 as a doc sync.
 - **KD-R10.** RUN-23, RUN-24, RUN-25 list RUN-20b directly although RUN-21 already carries
   it. Drop the edges or note they are kept for reading.
 
@@ -76,8 +72,7 @@ fixed, delete it here; IDs are never reused.
   fingerprint, so no `diff-changed` fires. Fire it during the step-5 snapshot diff, or fix
   the step order in C:plan.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
-  at once) and cites a row that lacks it (KD-S15). Move it after EXE-02 or add an FND-10
-  fault mode.
+  at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R27.** RUN-06's HEAD-moving shim cannot tell step 7's HEAD read from step 1's. Key it
   to the first HEAD read after `.commit-plan/lock` exists.
 - **KD-R28.** CFG-07's direct `validateLayer` call is an in-process test Seam 3 does not
@@ -106,7 +101,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   amend M15 and both contracts, align EXE-17.
 - **KD-R35.** RUN-12's "the reply still comes" past `cleanupDeadline` has no reply shape
   for a skipped tree-state read (PRE-15's Q25 tree-state exceptions do not cover it). Add the omission rule to C:reply-and-handback.
-- **KD-R36.** Same as KD-R9's item 11: add late `ENOENT` to both error tables (KD-S15).
 - **KD-R37.** M12's `provisional` has no write, yet CHG-03b requires `state.json` written
   before `acquire`. Add `provisional.write`.
 - **KD-R38.** C:plan and C:run-folder say `plan.json` holds `hunks`; M18 writes it at step 8,
@@ -156,11 +150,11 @@ Plan text that depends on a design fix; fix the design and the slice together.
 
 1. KD-R1 (on both critical paths).
 2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35 and KD-R33.
-3. KD-R28, KD-R36, KD-R37, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
+3. KD-R28, KD-R37, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
 4. The CHG-03b area: KD-R24, KD-R40, KD-R60.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
-   KD-R9 and KD-R36; KD-R49, KD-R50, KD-R45.
-7. Edges: KD-R54, KD-R9, KD-R7, KD-R30, KD-R10.
+   KD-R49, KD-R50, KD-R45.
+7. Edges: KD-R54, KD-R7, KD-R30, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26, KD-R27.
 9. The rest of the text and bookkeeping items.
