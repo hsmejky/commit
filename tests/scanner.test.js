@@ -335,8 +335,10 @@ test('scanText: a message line one character past the cut → missed', () => {
 // line, unlike a wall-clock bound, which only proves something is fast today (SCN-12 review).
 test('scanUnits: a multi-megabyte line is cut to 4096 characters before any rule runs', () => {
   // Kept under the SCN-13 1 MB added-content skip (else the unit would be skipped, and the
-  // probe would never run at all), while staying 256x the 4096-character cut it tests.
-  const hugeLine = ' '.repeat(1024 * 1024);
+  // probe would never run at all), while staying 256x the 4096-character cut it tests. One
+  // short of 1024 * 1024 ASCII bytes so the line's own added '\n' byte (SCN-13 fix) still
+  // lands the unit's total at exactly the 1 MB limit, not one over it.
+  const hugeLine = ' '.repeat(1024 * 1024 - 1);
   const seen = [];
   const probe = createScanner([
     {
@@ -633,8 +635,9 @@ test('scanUnits: a unit with exactly 1 MB added is scanned, not skipped', () => 
   const token = githubToken('x');
   // Split across two added lines, so the token's own line stays well under the per-line
   // 4096-character cut (SCN-12) while the unit's total added length sits exactly at the 1 MB
-  // boundary.
-  const filler = 'x'.repeat(1024 * 1024 - token.length);
+  // boundary. Each line's own '\n' counts as one byte (SCN-13 fix), so the filler is two
+  // bytes shorter than the naive `1024 * 1024 - token.length` to leave room for both.
+  const filler = 'x'.repeat(1024 * 1024 - token.length - 2);
   const units = [
     textUnit('assets/exact.json', [
       { line: 1, text: filler },
@@ -647,6 +650,65 @@ test('scanUnits: a unit with exactly 1 MB added is scanned, not skipped', () => 
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'assets/exact.json', line: 2 }],
     skipped: [],
+  });
+});
+
+// A 3-byte-UTF-8, 1-UTF-16-code-unit character, used to prove the 1 MB skip limit counts
+// UTF-8 bytes, not `.length` (UTF-16 code units) — the bug SCN-13's fix corrects.
+const EURO = '€'; // '€'
+
+// `byteLength` UTF-8 bytes of EURO characters, topped up with ASCII 'a' characters to reach
+// an exact byte count (EURO's 3-byte width alone cannot land on every target). The result's
+// `.length` (UTF-16 code units) is roughly a third of `byteLength`: measuring code units
+// instead of bytes here would badly undercount it.
+function nonAsciiOfByteLength(byteLength) {
+  const euroCount = Math.floor(byteLength / 3);
+  const remainder = byteLength - euroCount * 3;
+  return EURO.repeat(euroCount) + 'a'.repeat(remainder);
+}
+
+// A unit with a non-ASCII filler line and a `github-token` line, each carrying its own '\n'
+// byte, sized so the unit's total added content is exactly `totalBytes` UTF-8 bytes.
+function nonAsciiUnit(unitPath, totalBytes) {
+  const token = githubToken('x');
+  const fillerBytes = totalBytes - token.length - 2; // both lines' own '\n', one byte each
+  const filler = nonAsciiOfByteLength(fillerBytes);
+  return textUnit(unitPath, [
+    { line: 1, text: filler },
+    { line: 2, text: token },
+  ]);
+}
+
+test('scanUnits: non-ASCII content one byte under the 1 MB limit is scanned, not skipped', () => {
+  const units = [nonAsciiUnit('assets/under.json', 1024 * 1024 - 1)];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'assets/under.json', line: 2 }],
+    skipped: [],
+  });
+});
+
+test('scanUnits: non-ASCII content exactly at the 1 MB limit is scanned, not skipped', () => {
+  const units = [nonAsciiUnit('assets/boundary.json', 1024 * 1024)];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'assets/boundary.json', line: 2 }],
+    skipped: [],
+  });
+});
+
+test('scanUnits: non-ASCII content one byte over the 1 MB limit is skipped, no hits', () => {
+  const units = [nonAsciiUnit('assets/over.json', 1024 * 1024 + 1)];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [],
+    skipped: [{ path: 'assets/over.json', reason: 'added content over 1 MB' }],
   });
 });
 
@@ -683,6 +745,26 @@ test('scanUnits: a scanIgnore glob that does not match the unit path still scans
 
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'src/config.js', line: 1 }],
+    skipped: [],
+  });
+});
+
+test('scanUnits: a rename is matched against its new path, not its old path (C:scanignore-globs)', () => {
+  const token = githubToken('x');
+  const units = [
+    {
+      path: 'src/a.js',
+      oldPath: 'tests/fixtures/a.js',
+      status: 'R',
+      kind: 'text',
+      addedLines: [{ line: 1, text: token }],
+    },
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [ignoreGlob('tests/fixtures/**')], osUser: null });
+
+  assert.deepEqual(result, {
+    hits: [{ patternId: 'github-token', path: 'src/a.js', line: 1 }],
     skipped: [],
   });
 });

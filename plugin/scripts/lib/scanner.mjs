@@ -338,21 +338,45 @@ function isOsUserSegment(segment, osUserSegment) {
  *   target reaches `scanUnits` as its unit's one added line
  */
 
-// SCN-13, Q19, C:plan: a unit whose added lines total more than this many UTF-16 code units
-// is reported skipped instead of scanned (the same code-unit measure SCN-12 cuts a single
-// line at, not a raw byte count, since a unit's `addedLines` text is already a decoded JS
-// string by the time it reaches M8).
+// SCN-13, Q19, C:plan, M10 (docs/spec/modules-m10-m13.md): a unit whose added lines total
+// more than this many UTF-8 bytes is reported skipped instead of scanned — the same 1 MB
+// content-size measure M10's own 1 MB scan limit uses, counted here even though a unit's
+// `addedLines` text has already been lossily decoded to a JS string by the time it reaches
+// M8, since the boundary this module sees is close enough to M10's byte count for the cap to
+// mean the same thing at both ends.
 const MAX_ADDED_LENGTH = 1024 * 1024;
 const OVER_SIZE_LIMIT_REASON = 'added content over 1 MB';
 
 /**
- * The total length, in UTF-16 code units, of a unit's added lines — the measure
- * `MAX_ADDED_LENGTH` bounds (SCN-13).
+ * The UTF-8 byte length of one code point.
+ *
+ * @param {number} codePoint
+ */
+function utf8CodePointLength(codePoint) {
+  if (codePoint <= 0x7f) return 1;
+  if (codePoint <= 0x7ff) return 2;
+  if (codePoint <= 0xffff) return 3;
+  return 4;
+}
+
+/**
+ * The total length, in UTF-8 bytes, of a unit's added lines — the measure `MAX_ADDED_LENGTH`
+ * bounds (SCN-13) — plus one byte per line for the `\n` git's diff carries after it but
+ * `addedLines` strips (M10). Counted with a pure code-point loop, not `Buffer` or
+ * `TextEncoder`, since this module is pure (no ambient state, no globals beyond the
+ * language, docs/spec module map).
  *
  * @param {Unit} unit
  */
 function addedContentLength(unit) {
-  return unit.addedLines.reduce((total, { text }) => total + text.length, 0);
+  let total = 0;
+  for (const { text } of unit.addedLines) {
+    total += 1; // the added line's own '\n', stripped from `text` but still counted (M10)
+    for (const char of text) {
+      total += utf8CodePointLength(char.codePointAt(0));
+    }
+  }
+  return total;
 }
 
 /**
@@ -450,6 +474,9 @@ export function createScanner(patterns) {
     const skipped = [];
     for (const unit of units) {
       if (scanIgnore.some((matcher) => matches(matcher, unit.path))) continue;
+      // Binary before size is harmless either way round: a binary unit's `addedLines` is
+      // always empty, so `addedContentLength` would be 0 and never trip the size check
+      // regardless of order (Q10: the size check runs "before any content decision").
       if (unit.kind === 'binary') continue;
       if (addedContentLength(unit) > MAX_ADDED_LENGTH) {
         skipped.push({ path: unit.path, reason: OVER_SIZE_LIMIT_REASON });
