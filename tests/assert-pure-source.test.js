@@ -55,3 +55,50 @@ test('a dynamic import is always banned, even when the specifier is in allowImpo
     );
   }, assert.AssertionError);
 });
+
+test('a "//" inside a string literal does not hide a banned use later on the line', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "const u = 'http://x'; const y = process.env;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('a "//" inside a regex literal does not hide a banned use later on the line', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "const r = /\\//; const y = process.env;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('`export ... from` is checked against allowImports like a static import', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "export * from 'node:fs';\n",
+      'fixture.mjs',
+      { allowImports: [] },
+    );
+  }, assert.AssertionError);
+});
+
+test('`export ... from` listed in allowImports passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText(
+      "export { helper } from './allowed.mjs';\n",
+      'fixture.mjs',
+      { allowImports: ['./allowed.mjs'] },
+    );
+  });
+});
+
+test('`import.meta` is banned', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "const url = import.meta.url;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});

@@ -2,25 +2,111 @@
 
 // Shared purity check for the pure modules in `plugin/scripts/lib/` (module map:
 // docs/spec/modules*.md marks each module pure or effectful). A pure module may still
-// import other pure modules (e.g. M8 imports M7, M14 imports M6, M19 imports M6 and M4's
-// pure `validateLayer`); every other import, `require`, or ambient-state access fails.
-// Comments are stripped before matching, so a comment that merely mentions a banned word
-// (e.g. documenting why `process` is not used) does not fail the check.
+// import specific pure exports named in `allowImports` (e.g. M8 imports M7, M14 imports M6
+// and M8, M19 imports M6 and M4's pure `validateLayer` even though M4 itself is effectful);
+// every other import, `require`, or ambient-state access fails. Comments are stripped
+// before matching, so a comment that merely mentions a banned word (e.g. documenting why
+// `process` is not used) does not fail the check.
 
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { libPath } = require('./load-lib');
 
+// Strips `//` and `/* */` comments in a single pass, leaving string and regex literals
+// (which may themselves contain `//`, e.g. `'http://x'` or `/\//`) untouched, so a comment
+// stripped from inside one of those doesn't swallow the rest of the line with it.
 function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  let out = '';
+  let i = 0;
+  const n = source.length;
+  // The last non-whitespace character copied to `out`, used to tell a regex literal
+  // (starts where a value is expected) from division (follows an identifier, number, `)`,
+  // or `]`).
+  let lastChar = '';
+
+  while (i < n) {
+    const c = source[i];
+    const next = source[i + 1];
+
+    if (c === '/' && next === '/') {
+      while (i < n && source[i] !== '\n') i += 1;
+      continue;
+    }
+
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < n && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i = Math.min(i + 2, n);
+      continue;
+    }
+
+    if (c === '"' || c === "'" || c === '`') {
+      const quote = c;
+      out += c;
+      i += 1;
+      while (i < n && source[i] !== quote) {
+        if (source[i] === '\\' && i + 1 < n) {
+          out += source[i] + source[i + 1];
+          i += 2;
+          continue;
+        }
+        out += source[i];
+        i += 1;
+      }
+      if (i < n) {
+        out += source[i];
+        i += 1;
+      }
+      lastChar = quote;
+      continue;
+    }
+
+    if (c === '/' && !/[\w$)\]]/.test(lastChar)) {
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < n && source[j] !== '\n') {
+        if (source[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (source[j] === '[') {
+          inClass = true;
+        } else if (source[j] === ']') {
+          inClass = false;
+        } else if (source[j] === '/' && !inClass) {
+          closed = true;
+          break;
+        }
+        j += 1;
+      }
+      if (closed) {
+        out += source.slice(i, j + 1);
+        i = j + 1;
+        lastChar = '/';
+        continue;
+      }
+      // No closing `/` before end of line: not a regex literal, treat `/` as division.
+    }
+
+    out += c;
+    if (!/\s/.test(c)) lastChar = c;
+    i += 1;
+  }
+
+  return out;
 }
 
 // Matches a static import's specifier, with or without a `from` clause (side-effect-only
-// imports). Does not match dynamic `import(...)`, which is banned unconditionally below.
-const STATIC_IMPORT = /^[ \t]*import\s+(?:[^'";]*?from\s*)?['"]([^'"]+)['"]/gm;
+// imports), and an `export ... from` re-export, which reaches into another module just
+// like an import does. Does not match dynamic `import(...)`, which is banned
+// unconditionally below.
+const STATIC_IMPORT =
+  /^[ \t]*(?:import\s+(?:[^'";]*?from\s*)?|export\s+[^'";]*?from\s*)['"]([^'"]+)['"]/gm;
 
 const AMBIENT_STATE = [
   [/\bimport\s*\(/, 'a dynamic import'],
+  [/\bimport\.meta\b/, 'import.meta'],
   [/\brequire\s*\(/, 'require'],
   [/\bprocess\b/, 'process'],
   [/\bglobalThis\b/, 'globalThis'],
