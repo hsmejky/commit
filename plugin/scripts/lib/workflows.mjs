@@ -13,7 +13,7 @@
 // 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
-// `nothing` reply ending with the tree state. RUN-02 adds the `call.lock` and `busy`,
+// `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
 // RUN-03 the 45 s `releaseDeadline` on the tree-state read.
 
 import { probe } from './repo-probe.mjs';
@@ -84,8 +84,10 @@ async function releaseRefusals(ctx) {
 
 /** `release` step 3: M12 `releaseById`, a no-op unless the lock holds this `planId`. */
 async function releaseRun(ctx) {
-  const { released } = releaseById({ toplevel: ctx.toplevel, planId: ctx.values.plan });
-  return { status: 'nothing', reason: released ? 'released' : 'already-ended' };
+  const result = releaseById({ toplevel: ctx.toplevel, planId: ctx.values.plan, now: ctx.injected.now });
+  // A live `call.lock` on the run (RUN-02): `busy`, the only `lock` refusal `release` raises.
+  if (!result.ok) return { refusal: { code: result.code, message: result.message } };
+  return { status: 'nothing', reason: result.released ? 'released' : 'already-ended' };
 }
 
 const RELEASE_STEPS = Object.freeze([probeRepo, releaseRefusals, releaseRun]);

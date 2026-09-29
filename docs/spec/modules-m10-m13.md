@@ -201,8 +201,8 @@ forward slashes.
   `finally` for every call with `--plan` and from the entry point's signal handler.
 - `run.state`, `run.write(name, data)`, `run.readWorkerPlan()`, `run.touch()`,
   `run.release()`, `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
-  false` for the no-op when the lock does not hold `planId`; a future `busy` once RUN-02 adds
-  the `call.lock` check), `Run.sweep(now)`. Every M12 static entry that has no open run to read
+  false` for the no-op when the lock does not hold `planId`; `{ ok: false, code: 'busy' }`
+  on a live `call.lock`, RUN-02), `Run.sweep(now)`. Every M12 static entry that has no open run to read
   `toplevel` from (`create`, `open`, `releaseById`) takes it explicitly, alongside its own
   arguments, since M18 already holds it from the probe (Q9); `Run.create({ now })` and
   `Run.open(planId, { now })` above will take `toplevel` the same way once built.

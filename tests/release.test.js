@@ -6,9 +6,12 @@
 // Seam 1 only: the shipped entry point as a subprocess through the FND-04 harness; each
 // fixture writes the lock and folders in the C:run-folder shape, as `plan` would.
 
+const { spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -17,6 +20,7 @@ const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
 
 const NOTHING_TO_RELEASE = 'nothing to release: the run has already ended or was taken over';
 const CREATED = '2026-01-01T00:00:00.000Z';
+const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 
 function seedCommit(c) {
   c.writeFile('README.md', 'hello\n');
@@ -321,6 +325,175 @@ test('release run from a subdirectory releases the run of the toplevel', async (
   assertNothingReply(result, 'nothing committed');
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
   assert.equal(fs.existsSync(path.join(runDir, planId)), false);
+});
+
+// RUN-02: the per-call `call.lock` (`{ pid, host }`, C:run-folder, Q22, story 209). A
+// matching `release` takes it before it deletes anything; a live one refuses with exit 6
+// `lock` (`busy`) and keeps the run; a stale one is replaced. Ageing is done on the file's
+// mtime (`fs.utimesSync`), never by waiting.
+
+const STALE_AGE_MS = 16 * 60 * 1000;
+
+function writeCallLock(runDir, planId, content, { ageMs = 0 } = {}) {
+  const file = path.join(runDir, planId, 'call.lock');
+  fs.writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content));
+  if (ageMs > 0) {
+    const then = new Date(Date.now() - ageMs);
+    fs.utimesSync(file, then, then);
+  }
+  return file;
+}
+
+// A pid that answered once and has exited since: this host's `process.kill(pid, 0)` fails
+// with `ESRCH`, the trace of a killed call.
+function exitedPid() {
+  const result = spawnSync(process.execPath, ['-e', '']);
+  assert.equal(result.status, 0);
+  return result.pid;
+}
+
+function matchingRun(c) {
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  writeRunFolder(runDir, planId);
+  return { runDir, planId };
+}
+
+function assertBusy(result) {
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 6, detail);
+  assert.equal(result.json.ok, false, detail);
+  assert.equal(result.json.error.kind, 'lock', detail);
+  assert.match(result.json.error.message, /another \/commit call on this run is still running/);
+}
+
+function assertReleased(result, runDir, planId) {
+  assertNothingReply(result, 'nothing committed');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false, 'the lock is removed');
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false, 'the run folder is deleted');
+  assert.deepEqual(fs.readdirSync(runDir), [], 'no private copy of the lock or call.lock is left');
+}
+
+test('release on a run whose call.lock names this test process (live, this host) exits 6 lock busy and keeps the run', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  writeCallLock(runDir, planId, { pid: process.pid, host: os.hostname() });
+  const before = snapshot(runDir);
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertBusy(result);
+  assert.deepEqual(snapshot(runDir), before, 'the lock, the folder and the live call.lock are kept');
+});
+
+test('release on a run whose call.lock names a dead pid on this host replaces it at once and releases', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  writeCallLock(runDir, planId, { pid: exitedPid(), host: os.hostname() });
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertReleased(result, runDir, planId);
+});
+
+test('release on a run whose call.lock names a live pid on this host but is 15+ minutes old replaces it and releases', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  writeCallLock(runDir, planId, { pid: process.pid, host: os.hostname() }, { ageMs: STALE_AGE_MS });
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertReleased(result, runDir, planId);
+});
+
+const JUDGED_BY_MTIME = [
+  ['another host', () => ({ pid: exitedPid(), host: `not-${os.hostname()}` })],
+  ['unreadable content', () => '{"pid":'],
+  ['an empty file', () => ''],
+];
+
+for (const [label, content] of JUDGED_BY_MTIME) {
+  test(`release on a fresh call.lock with ${label} exits 6 lock busy and keeps the run`, async (t) => {
+    const c = createRepo(t);
+    const { runDir, planId } = matchingRun(c);
+    writeCallLock(runDir, planId, content());
+    const before = snapshot(runDir);
+
+    const result = await runCommit(c, ['release', '--plan', planId]);
+
+    assertBusy(result);
+    assert.deepEqual(snapshot(runDir), before);
+  });
+
+  test(`release on a call.lock with ${label} aged past 15 minutes replaces it and releases`, async (t) => {
+    const c = createRepo(t);
+    const { runDir, planId } = matchingRun(c);
+    writeCallLock(runDir, planId, content(), { ageMs: STALE_AGE_MS });
+
+    const result = await runCommit(c, ['release', '--plan', planId]);
+
+    assertReleased(result, runDir, planId);
+  });
+}
+
+test('release on a lock that does not match never creates a call.lock', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  const holder = crypto.randomUUID();
+  writeLock(runDir, { planId: holder, created: CREATED });
+  writeRunFolder(runDir, holder);
+  writeRunFolder(runDir, planId);
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertNothingReply(result, NOTHING_TO_RELEASE);
+  assert.equal(fs.existsSync(path.join(runDir, planId, 'call.lock')), false);
+  assert.equal(fs.existsSync(path.join(runDir, holder, 'call.lock')), false);
+});
+
+// review-RUN-01 finding 1: the lock is removed by renaming it to a private name in
+// `.commit-plan/` (then verified and unlinked), never by a bare unlink by name. The
+// fault-preload's log records every rename target without failing any.
+test('release removes the lock by renaming it to a private name first, then leaves nothing behind', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  const log = path.join(c.root, 'renames.log');
+
+  const result = await runCommit(c, ['release', '--plan', planId], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_LOG: log },
+  });
+
+  assertReleased(result, runDir, planId);
+  const targets = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  const lockRenames = targets.filter((target) => path.dirname(target) === runDir
+    && /^lock\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(path.basename(target)));
+  assert.equal(lockRenames.length, 1, targets.join('\n'));
+});
+
+// review-RUN-01 finding 1: a `<planId>` that is a link is never followed to write the
+// `call.lock` (a junction swapped in after the lock check must not redirect the write).
+test('release on a <planId> junction writes no call.lock into its target', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  const target = path.join(c.root, 'elsewhere');
+  fs.mkdirSync(target, { recursive: true });
+  fs.symlinkSync(target, path.join(runDir, planId), 'junction');
+  const log = path.join(c.root, 'renames.log');
+
+  const result = await runCommit(c, ['release', '--plan', planId], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_LOG: log },
+  });
+
+  assertNothingReply(result, 'nothing committed');
+  assert.deepEqual(fs.readdirSync(target), [], 'nothing was written through the junction');
+  const targets = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+  assert.equal(targets.some((p) => p.startsWith(target)), false, targets.join('\n'));
 });
 
 test('release with no git binary on PATH exits 1 env and deletes nothing', async (t) => {
