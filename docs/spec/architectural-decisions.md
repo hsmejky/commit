@@ -10,7 +10,8 @@
 - **Injected environment.** Each entry point resolves once and passes down: the clock
   (`now()`), the OS home, the Claude home, the managed directory (derived from the platform,
   never from `env`), `osUser` (from `os.userInfo()`, falling back to `USER` or `USERNAME`,
-  else `null`, which skips the OS-user rule, story 139), the script's own path and `env`. Modules never read these ambiently. The shipped CLI has **no test-only switch**
+  else `null`, which skips the OS-user rule, story 139), the script's own path, `cwd`
+  (`process.cwd()`) and `env`. Modules never read these ambiently. The shipped CLI has **no test-only switch**
   (no env knob, no flag): anything reachable from the CLI is reachable by an agent.
 - **Asynchronous process adapter.** Every git call, read-only ones included, is spawned
   asynchronously by M2 with a timer from the call's `deadline`, so that a timeout can kill

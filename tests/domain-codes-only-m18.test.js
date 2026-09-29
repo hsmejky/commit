@@ -2,9 +2,9 @@
 
 // RPL-03 AC 2: "Only M18 maps domain codes; modules below it return typed results with
 // domain codes." Static check over `plugin/scripts/lib/*.mjs`: no module other than the M18
-// workflow module imports `domain-codes.mjs` or names `kindForDomainCode`. The M18 workflow
-// module does not exist yet (roadmap INT-3x builds it), so today's allowlist is empty; once
-// it lands, its file name is added here.
+// workflow module imports `domain-codes.mjs` or names `kindForDomainCode`. `workflows.mjs`
+// is the M18 workflow module (INT-01); it maps no domain code yet, so it names neither today,
+// but it is the only file this allowlist ever needs to hold.
 //
 // Like tests/guard-static.test.js, this reads raw source text (a banned word fails even
 // inside a comment, which is an acceptable false failure, not a false pass) and the checker
@@ -17,8 +17,8 @@ const path = require('node:path');
 
 const LIB_DIR = path.join(__dirname, '..', 'plugin', 'scripts', 'lib');
 
-// The M18 workflow module: none exists yet.
-const ALLOWED_CALLERS = new Set();
+// The M18 workflow module.
+const ALLOWED_CALLERS = new Set(['workflows.mjs']);
 
 // An actual `import`/`require` of the module, not just its name mentioned in a comment (every
 // other lib module's header comment cites `domain-codes.mjs` by name, e.g. `lib/cli.mjs`'s
@@ -47,8 +47,9 @@ test('no lib module but the (future) M18 workflow imports domain-codes.mjs or ca
   assert.deepEqual(violations, []);
 });
 
-test('today no lib module is allowlisted as the M18 workflow (it does not exist yet)', () => {
-  assert.deepEqual(Array.from(ALLOWED_CALLERS), []);
+test('the allowlist is exactly the M18 workflow module, and that file exists', () => {
+  assert.deepEqual(Array.from(ALLOWED_CALLERS), ['workflows.mjs']);
+  assert.ok(libModules().includes('workflows.mjs'));
 });
 
 test('the check is not vacuous: it flags an import and a bare call, but not a comment mention', () => {

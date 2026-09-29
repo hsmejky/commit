@@ -48,6 +48,7 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
     osHome: osHome,
     claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(osHome, '.claude'),
     osUser: osUser,
+    cwd: process.cwd(),
     // The reply contract (docs/contracts/reply-and-handback.md "run") names
     // `process.argv[1]`, not `__filename`: they can differ through a symlink (e.g. a
     // plugin cache linked into place), and the `run` command must match the path the

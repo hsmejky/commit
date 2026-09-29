@@ -188,7 +188,7 @@ test('M1 receives argv after the script path and the injected environment', asyn
   ].join('\n'));
   const result = await runCommit(c, ['plan', '--split'], { script: entry });
   assert.deepEqual(result.json.argv, ['plan', '--split']);
-  assert.deepEqual(result.json.keys, ['claudeHome', 'env', 'now', 'osHome', 'osUser', 'scriptPath']);
+  assert.deepEqual(result.json.keys, ['claudeHome', 'cwd', 'env', 'now', 'osHome', 'osUser', 'scriptPath']);
   assert.equal(result.json.claudeHome, c.claudeHome);
   assert.equal(result.json.osHome, c.osHome);
   assert.equal(result.json.scriptPath, entry);

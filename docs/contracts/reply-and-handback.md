@@ -37,6 +37,10 @@ handles it the same way.
 - `status`: `committed` (at least one commit, no failure), `nothing` (clean tree, zero
   groups, `no`), `handback`, `failed` (a failure, possibly after some commits: `commits`
   lists them).
+- `planId`: the run's `planId`, which every `run` answer passes as `--plan`; `null` when no
+  run folder is kept (clean tree, `modeChoice`, a refusal).
+- `commits`: the commits this call made, entries as in the `commit` output (`n`, `sha`,
+  `header`); `[]` when none.
 - `text`: what the user reads, and the only field a caller relays. For `committed` the
   `sha subject` lines, not included, `unstaged` (Q18); for `failed` the failed group, its
   reason and the groups not committed; for `confirm` the confirmation block (Q16: per group the header, body and files, each file
@@ -54,12 +58,14 @@ handles it the same way.
   through `text` (a `git commit` failure, a repo hook's stderr) gets the same escaping (C0
   and C1 controls, ESC included, written as `\xNN`; `\n` and `\t` kept) and is capped at the
   last 2000 characters, prefixed with a "[… N characters cut]" marker when cut; the full,
-  unescaped output stays in `gitOutput` (below). Accepted gap: hook output can still hold
+  unescaped output stays in the `commit` output's `gitOutput` ([commit,
+  release](commit-release.md)), never in `reply`. Accepted gap: hook output can still hold
   forged plain-text lines or echo a secret — the cap and escape only bound size and
   terminal/rendering damage. Then a
   `Notices:` block with every entry of `notices`, then
-  the trailer line and the tree state (below). So a notice reaches the user on every
-  status, also through a subagent that relays only `text`. Exempt from the trailer line and
+  the trailer line (when `commits` is non-empty) and the tree state (below). So a notice
+  reaches the user on every status, also through a subagent that relays only `text`. Exempt
+  from the trailer line and
   tree state: the worker's own fallback reply, built when a script call's output cannot be
   parsed ([worker input](worker-input.md)) — the worker made no git call, so it has neither
   to report. Every list in `text` holds at
@@ -164,11 +170,12 @@ handles it the same way.
 - The worker never acts on a handback, `continue` included: the guard denies a script call
   to `commit` or `release` when `agent_type` is `commit:commit-worker` (Q25,
   [Guard](guard.md)). The caller follows `callerRule` for every kind.
-- `text` names the trailer the script appended (or "no trailer", with the attribution
-  source) and ends with the tree state ("working tree clean", or "N files left: …" with at
-  most 10 paths, then "+N more"). Every script-built reply carries it, whatever its status
-  and handbacks included, read after the subcommand's last git call, so the
-  caller needs no `git log` / `git status` call and does not add a trailer by hand (Q25).
+- When `commits` is non-empty, `text` names the trailer the script appended (or "no
+  trailer", with the attribution source); a reply with no commits has no trailer line.
+  Every script-built reply ends with the tree state ("working tree clean", or "N files
+  left: …" with at most 10 paths, then "+N more"), whatever its status and handbacks
+  included, read after the subcommand's last git call, so the caller needs no `git log` /
+  `git status` call and does not add a trailer by hand (Q25).
   In `release`, this read is bounded by the 45 s budget above; a reply that misses it omits
   the tree state. A `state` refusal for `not-a-repo` or a bare repository omits it too:
   there is no working tree to read. The worker-built fallback reply ([worker

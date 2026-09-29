@@ -52,8 +52,7 @@ async function runSteps(steps, ctx) {
  * @param {object} injected the injected environment (docs/spec/architectural-decisions.md
  *   "Injected environment").
  * @param {{ cwd: string }} call the call's working directory.
- * @returns {Promise<{ ok: true, output: object }>} the success fields M1 wraps in the
- *   envelope.
+ * @returns {Promise<{ output: object }>} the success fields M1 wraps in the envelope.
  */
 export async function plan(values, injected, { cwd }) {
   // Only bare `plan` and `plan --split` are built: every other flag changes the mode or the
@@ -67,7 +66,6 @@ export async function plan(values, injected, { cwd }) {
   // Every reply ends with the tree state, read after the call's last git call (M10).
   const finalTree = await treeState({ toplevel: ctx.toplevel, env: injected.env });
   return {
-    ok: true,
     output: {
       planId: null,
       runDir: null,

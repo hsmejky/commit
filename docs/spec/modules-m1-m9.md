@@ -35,8 +35,9 @@ as it arrives and nothing is buffered. M2 tracks the child it is running; `killA
 kills that child's tree the same way, for the entry point's `SIGINT`/`SIGTERM`/`SIGHUP`
 handler.
 
-`run(cmd, args, { index?, input?, timeoutMs, readOnly?, commit?, onStdout? }) → { code,
-stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`); `toplevel(fromCwd)`; `gitVersion()`; `gitPath(names)` (one
+`run(cmd, args, { cwd, env, index?, input?, timeoutMs, readOnly?, commit?, onStdout? }) →
+{ code, stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`);
+`toplevel(fromCwd, { env })`; `gitVersion()`; `gitPath(names)` (one
 `rev-parse --git-path` call); `killActive()`. Sources: Q9, Q18.
 
 **M3 Repo-state probe.** Every question about repository state, as typed results: not a

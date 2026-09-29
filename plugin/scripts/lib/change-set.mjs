@@ -18,6 +18,7 @@ export async function treeState({ toplevel, env }) {
   const result = await run('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
     cwd: toplevel,
     env,
+    readOnly: true,
   });
   if (result.code !== 0) {
     throw new Error(`git status failed (${result.code}): ${result.stderr}`);

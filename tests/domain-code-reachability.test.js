@@ -6,9 +6,9 @@
 //
 // This slice's only blocker is RPL-01, which built M1's own argv-level `usage` refusals (no
 // or an unknown subcommand). Every other row of docs/spec/domain-code-cli-kind.md is
-// produced by a module (M2-M19) or workflow (M18) that does not exist yet, so it cannot be
-// reached through the shipped CLI at all; INT-31 extends this manifest once the roadmap
-// builds them. The manifest is data so a later slice adds a row (and, once reachable, a Seam
+// produced by a module (M2-M19) that does not exist yet, so it cannot be reached through the
+// shipped CLI at all; M18 exists (INT-01) but maps no domain code yet. INT-31 extends this
+// manifest once the roadmap builds them. The manifest is data so a later slice adds a row (and, once reachable, a Seam
 // 1 case) instead of writing a new test file.
 
 const { test } = require('node:test');

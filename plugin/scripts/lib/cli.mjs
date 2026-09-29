@@ -223,7 +223,7 @@ export function parseArgv(subcommand, args) {
  * @param {string[]} argv the arguments after the script path.
  * @param {object} env the injected environment the entry point resolved once
  *   (docs/spec/architectural-decisions.md "Injected environment"): `now`, `osHome`,
- *   `claudeHome`, `osUser`, `scriptPath`, `env`.
+ *   `claudeHome`, `osUser`, `scriptPath`, `env`, `cwd`.
  * @returns {Promise<{ stdoutJson: object, exitCode: number }>} the single JSON object to
  *   print on stdout and the exit code.
  */
@@ -248,6 +248,6 @@ export async function main(argv, env) {
     // validated here already.
     return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
   }
-  const result = await workflow(parsed.values, env, { cwd: process.cwd() });
+  const result = await workflow(parsed.values, env, { cwd: env.cwd });
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }
