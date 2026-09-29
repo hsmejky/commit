@@ -17,13 +17,13 @@ every OS.
 
 **Blocked by:** FND-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, Q11, Q16, C:untracked-files, testing-seams Seam 3, M9.
 
-- [ ] Seam 3: one row per hidden rule and per listed exception (`.github/**`, `.env.example`, `.claude/commit.json`, `.husky/**`, `.eslintrc.json`, `.gitlab-ci.yml`, …) with its expected category.
-- [ ] Seam 3: `.claude/settings.local.json` and `.env.local` hidden; `.ENV` treated case-sensitively (not the `.env` rule, still hidden by the dot rule).
-- [ ] Seam 3: a path with a hidden directory segment deeper in the path (`src/.cache/x`) is hidden.
+- [x] Seam 3: one row per hidden rule and per listed exception (`.github/**`, `.env.example`, `.claude/commit.json`, `.husky/**`, `.eslintrc.json`, `.gitlab-ci.yml`, …) with its expected category.
+- [x] Seam 3: `.claude/settings.local.json` and `.env.local` hidden; `.ENV` treated case-sensitively (not the `.env` rule, still hidden by the dot rule).
+- [x] Seam 3: a path with a hidden directory segment deeper in the path (`src/.cache/x`) is hidden.
 
 
 ## CHG-02: M9 summary-only reasons and buckets
