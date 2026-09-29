@@ -41,15 +41,15 @@ the scope).
 
 **Blocked by:** MSG-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar, Q6 (`scope`), Q13 (`!` allowed), story 106.
 
-- [ ] Seam 3 table: `feat(api): x` fails under `forbidden`, passes under `optional` and
+- [x] Seam 3 table: `feat(api): x` fails under `forbidden`, passes under `optional` and
       `required`; `feat: x` fails under `required` only.
-- [ ] Seam 3 table: `feat!: x` and `feat(api)!: x` parse with the breaking flag set and
+- [x] Seam 3 table: `feat!: x` and `feat(api)!: x` parse with the breaking flag set and
       lint clean where the scope rule allows.
-- [ ] Seam 3 table: `feat(a b): x`, `feat(): x` and `feat((a)): x` are header-shape
+- [x] Seam 3 table: `feat(a b): x`, `feat(): x` and `feat((a)): x` are header-shape
       failures.
 
 
@@ -61,19 +61,19 @@ separately exported function that M19 reuses.
 
 **Blocked by:** MSG-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (`maxSubjectLength`, `subjectCase`), Q6, Q7 (shared
 function), stories 106, 123.
 
-- [ ] Seam 3 table: a header of exactly `maxSubjectLength` code points passes, one more
+- [x] Seam 3 table: a header of exactly `maxSubjectLength` code points passes, one more
       fails; a header with astral characters (emoji) is counted in code points, not UTF-16
       units, so it passes where a `.length` count would fail.
-- [ ] Seam 3 table under `lower`: `feat: Add x` fails; `feat: API change`, `feat: CI
+- [x] Seam 3 table under `lower`: `feat: Add x` fails; `feat: API change`, `feat: CI
       matrix`, `feat: 2fa`, a description starting with a backtick, a quote or a symbol
       all pass; `feat: A thing` fails (a one-letter uppercase word is not an acronym).
-- [ ] Seam 3 table under `any`: `feat: Add x` passes.
-- [ ] A static test asserts the case-check function is exported separately from `lint`.
+- [x] Seam 3 table under `any`: `feat: Add x` passes.
+- [x] A static test asserts the case-check function is exported separately from `lint`.
 
 
 ## MSG-04: Paragraphs, footer grammar and the body rule
@@ -86,17 +86,17 @@ where a footer-only last paragraph is not a body.
 
 **Blocked by:** MSG-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (footer paragraph, `body: forbidden`), Q13, stories 106, 121.
 
-- [ ] Seam 3 table: `Closes #12`, `Refs: abc`, `BREAKING CHANGE: x` with an indented
+- [x] Seam 3 table: `Closes #12`, `Refs: abc`, `BREAKING CHANGE: x` with an indented
       continuation line each parse as a footer paragraph with the right tokens and values.
-- [ ] Seam 3 table: a last paragraph mixing `Refs: x` with a plain sentence parses as body;
+- [x] Seam 3 table: a last paragraph mixing `Refs: x` with a plain sentence parses as body;
       a `Note: x` line in an earlier paragraph is body.
-- [ ] Seam 3 table under `body: forbidden`: header plus `Closes #12` passes (story 121);
+- [x] Seam 3 table under `body: forbidden`: header plus `Closes #12` passes (story 121);
       header plus a prose paragraph fails; header plus prose plus footers fails.
-- [ ] `parse` exposes the footer paragraph's entries in order, for M5 (trailer-shaped
+- [x] `parse` exposes the footer paragraph's entries in order, for M5 (trailer-shaped
       lines), M19 (footer is not a body) and the append (MSG-07).
 
 
