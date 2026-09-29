@@ -25,7 +25,13 @@ and of the real index.
   pathspecs (a path list would go on argv, and a pathspec narrows rename detection, Q11),
   read as a stream (M2 `onStdout`) keeping only what a later step needs: hunks of
   body-carrying units and, for M8, added lines up to the 1 MB scan limit (then the file is
-  skipped, Q10), so memory stays bounded by the Q19 and Q10 caps. Section *i* belongs to raw
+  skipped, Q10), so memory stays bounded by the Q19 and Q10 caps. The limit is per file: its
+  added content is the raw bytes of its added lines, without the `+`, plus one byte per line
+  for the `\n`, summed over all its hunks, and over 1 MB (1,048,576 bytes) it stops
+  collecting that file's added lines. **Over the scan limit**: every unit of such a file
+  carries `overScanLimit: true` (absent otherwise), with `addedLines` cut short or empty, so
+  M8 reports the file skipped even when what was collected, or one hunk alone, stays under
+  its own measure. Section *i* belongs to raw
   record *i* and takes its path, except that a type-change (`T`) record (file↔symlink,
   file↔submodule) owns two consecutive sections with its path (git prints a delete, then a
   new file) and is one whole-file unit; a section count or path that does not match the raw
@@ -43,7 +49,8 @@ and of the real index.
   reports as binary (`-\t-` in `--numstat`), the same `check-attr` call also queries `diff`
   and `binary`; only a path whose attributes hide its diff (`-diff`, `binary`, or a `diff`
   driver) gets the content check: its size is checked against the 1 MB scan limit first
-  (over it, the file is skipped, Q10), then it is binary when its new content has a NUL byte
+  (over it, the file is skipped, Q10: its unit carries `overScanLimit: true` and no added
+  lines), then it is binary when its new content has a NUL byte
   in git's first-8000-bytes window. A path git reports binary without such an attribute
   (NUL content, or over `core.bigFileThreshold`) stays binary with no check (Q10 as
   amended). An attribute-hidden file without a NUL is text: the unit has `kind: "text"`, is one whole-file unit (staged with
@@ -65,7 +72,7 @@ and of the real index.
   expected HEAD, or `null` for the empty tree when unborn) with the same pinned options,
   the same `--raw -z` pass, streamed patch pass and section-to-record pairing, the same
   `check-attr` call and attribute-hidden `--text` pass (story 212), and the same 1 MB
-  streaming scan limit as `snapshot`, keeping only what the scan reads. So the backstop
+  streaming scan limit and `overScanLimit` flag as `snapshot`, keeping only what the scan reads. So the backstop
   scans the tree it recorded exactly as `plan` scanned the snapshot, and no other module
   holds a diff option.
 - Path lists never go on argv: staging, attribute and index calls pass them on stdin,

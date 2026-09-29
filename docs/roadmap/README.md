@@ -27,7 +27,7 @@ starting a slice it names.
 | 02-guard.md | GRD | 20 | 1 | S1 heartbeat, S2 ScriptCall, G1-G3, deny catalogue, hook registration; GRD-08 also covers the former GRD-09 |
 | 03-message-grammar.md | MSG | 8 | 0 | M6 message grammar, lint, trailers, reword carry-over |
 | 04-config-and-attribution.md | CFG | 11 | 1 | M4 config loader, M5 attribution resolver |
-| 05-scanner.md | SCN | 14 | 0 | M7 glob matcher, M8 scanner; the prefixed, connection and generic pattern rows are one slice (SCN-06) |
+| 05-scanner.md | SCN | 15 | 0 | M7 glob matcher, M8 scanner; the prefixed, connection and generic pattern rows are one slice (SCN-06) |
 | 06-git-adapters.md | GIT | 12 | 0 | M2 process adapter (missing git at Seam 1 in GIT-01), M3 repo-state probe, M11 signing probe |
 | 07-change-set.md | CHG | 24 | 0 | M9 path classifier, M10 change-set engine, M13 hunk index; step 7's run lock and ordered state writes (CHG-03b) |
 | 08-plan-validation.md | PLN | 7 | 0 | M14 plan validator |
@@ -38,7 +38,7 @@ starting a slice it names.
 | 13-worker-and-skills.md | WRK | 8 | 3 | commit-worker agent, `/commit` skill, worker protocol, hand-tests |
 | 14-infer-and-commit-config.md | INF | 9 | 1 | M19 inference, `infer`, `/commit-config` skill |
 | 15-release.md | REL | 6 | 2 | manifests, README (with the first-time-reader overview, REL-03b), 0.1.0 release checks |
-| **Total** | | **227** | **28** | |
+| **Total** | | **228** | **28** | |
 
 Not a group: [known-deficiencies.md](known-deficiencies.md) lists open defects of the plan
 (KD-R IDs) with the slices they affect and a suggested fix order.

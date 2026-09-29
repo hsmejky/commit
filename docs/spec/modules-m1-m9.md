@@ -120,7 +120,11 @@ character (only `*`, `?`, `**` and `/`, such as `**`, `**/*`, `**/?*` or `*/**`)
 **M8 Scanner.** The pattern table of C:scan-patterns as data (ID, regex with whole-regex
 flags only, false-positive rule, source) with its false-positive rules; added lines only;
 binaries not scanned; files with more than 1 MB added, tracked or untracked, skipped and
-reported; honours `scanIgnore` matchers; when passed `scanIgnoreChanged: true` (M4's
+reported: a unit is over the limit when M10 set `overScanLimit: true` on it (M10 stops
+collecting a file's added lines at the limit, so a cut-short `addedLines` alone may not
+show it) or when M8's own measure of its `addedLines` (UTF-8 bytes plus one byte per line
+for the `\n`) exceeds 1 MB; the flag is checked before the binary kind, and a path gets one
+`skipped` entry however many of its units are over; honours `scanIgnore` matchers; when passed `scanIgnoreChanged: true` (M4's
 pure test, run by M18), flags every unit whose path or old path is the repo config
 (`isRepoConfigPath`), since a whole-file comparison cannot tell which hunk carries the
 change; with `false`, as when only another repo-config key was edited, it flags none, and

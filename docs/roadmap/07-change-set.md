@@ -242,8 +242,8 @@ and scanned in its cleaned form (`body: "none"` when the cleaned diff is binary)
 ## CHG-11: Attribute-hidden text files and size limits
 
 **What to build:** for a path git reports as binary, query `diff` and `binary` in the same
-`check-attr` call; only an attribute-hidden path gets the 1 MB size check (over → skipped)
-then the NUL check in the first 8000 bytes; a NUL-free one is a `kind: "text"` whole-file unit
+`check-attr` call; only an attribute-hidden path gets the 1 MB size check (over →
+`overScanLimit: true`, skipped) then the NUL check in the first 8000 bytes; a NUL-free one is a `kind: "text"` whole-file unit
 with no block whose added lines come from a second streamed `git diff -z --raw -p --text`
 pass, run only when such a file exists; a file over `core.bigFileThreshold` without a hiding
 attribute stays binary.
@@ -334,11 +334,11 @@ empty tree for a root commit, with the same pinned options; IDs are never staged
 ## CHG-16: Scan map wiring and withheld bodies
 
 **What to build:** M8 `scanUnits` over the snapshot units (added lines up to 1 MB per file from
-the stream, then skipped), the scan map (`scanned` per unit) stored, per entry `scan` in the
-hunk index, `body: "none"` and no `hunks.txt` block for any unit with a hit. (`scanIgnoreUnits`,
+the stream, then every unit of the file flagged `overScanLimit: true` and skipped), the scan
+map (`scanned` per unit) stored, per entry `scan` in the hunk index, `body: "none"` and no `hunks.txt` block for any unit with a hit. (`scanIgnoreUnits`,
 `snapshotBlob` and the `scanIgnoreChanged` wiring move to SCN-14.)
 
-**Blocked by:** CHG-05, CHG-06, SCN-05.
+**Blocked by:** CHG-05, CHG-06, SCN-13b.
 
 **Status:** ready-for-agent
 
@@ -346,6 +346,12 @@ hunk index, `body: "none"` and no `hunks.txt` block for any unit with a hit. (`s
 
 - [ ] Seam 1: a hunk with a `github-token` → entry `scan: ["github-token"]`, `body: "none"`, the token absent from `hunks.txt` and stdout; the file's other hunks keep their blocks.
 - [ ] Seam 1: a new file with a hit loses its whole body. (The 1 MB skip rule is SCN-13's; SCN-15 asserts `scan.skipped` at Seam 1.)
+- [ ] Seam 1: a tracked file with two hunks of about 600 KB added each (over 1 MB together,
+      each under it) → M10 stops collecting at the limit and flags both units
+      `overScanLimit: true`; `scan.skipped` has one entry for the path with the reason
+      `"added content over 1 MB"`, and a token in either hunk gives no hit. A file whose added
+      content is exactly 1,048,576 bytes (raw bytes plus one per `\n`) → no flag, scanned;
+      one byte more → flagged and skipped.
 
 
 ## CHG-17: Summary-only entries and the 3000-line body cap

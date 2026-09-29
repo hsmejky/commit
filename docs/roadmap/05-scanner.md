@@ -216,6 +216,28 @@ added line, and drops units whose path a `scanIgnore` matcher matches.
 - [x] Seam 3: a secret in a unit matched by `tests/fixtures/**` → no hit.
 
 
+## SCN-13b: M10's `overScanLimit` flag skips a unit
+
+**What to build:** `scanUnits` also treats a unit as over the 1 MB limit when M10 set
+`overScanLimit: true` on it, since M10 stops collecting a file's added lines at the limit
+and a cut-short `addedLines` may stay under M8's own measure (UTF-8 bytes plus one per line
+for the `\n`, which stays); the flag is checked before the binary kind, and a path gets one
+`skipped` entry however many of its units are over.
+
+**Blocked by:** SCN-13.
+
+**Status:** ready-for-agent
+
+**Sources:** M8, M10 (over the scan limit), Q10, Q19, C:plan (`scan.skipped`).
+
+- [ ] Seam 3: a unit with `overScanLimit: true` and a few short added lines holding a token →
+      `skipped` with the exact reason `"added content over 1 MB"`, no hit.
+- [ ] Seam 3: a flagged unit with empty `addedLines` and `kind: "binary"` → `skipped` with
+      the same reason (the flag wins over the silent binary skip).
+- [ ] Seam 3: two flagged units of the same path → one `skipped` entry for it; a unit
+      without the flag and under 1 MB is still scanned.
+
+
 ## SCN-14: `scanIgnore` change flags the repo config's units
 
 **What to build:** M4 pure `scanIgnoreChanged(headPatterns, snapshotBlob)`, M10
