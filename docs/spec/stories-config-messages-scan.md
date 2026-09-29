@@ -7,7 +7,7 @@
 107. As a developer, I want `scanIgnore` accepted only in the repo layer, so that a personal file cannot silence a team's scan. [Q6, Q10]
 108. As a developer, I want defaults of 11 standard types, no scope, no body, 72 and lowercase, so that repos without config work. [Q6]
 109. As a teammate on an older plugin, I want unknown keys, unknown values and wrong-layer keys to warn and fall back, so that newer configs do not break me. [Q6]
-110. As a developer, I want wrong types, out-of-range numbers, bad `types` or unparseable JSON to stop `plan` before any run starts, so that typos surface. [Q6]
+110. As a developer, I want wrong types, out-of-range or non-integer numbers, a bad or empty `types` array, or unparseable JSON to stop `plan` before any run starts, so that typos surface. [Q6]
 111. As a developer, I want effective values and their sources reported, so that I see where a rule came from. [Q6]
 112. As a developer with `CLAUDE_CONFIG_DIR` set, I want the user layer, the Claude settings and the heartbeat read from that directory, so that the plugin follows my Claude home. [Q5]
 113. As a developer, I want no worker-model key, so that a repo config cannot move the worker to a model the plugin was not tuned and measured for. [Q6, Q24]
@@ -58,14 +58,14 @@
 144. As a developer, I want filtered files scanned in cleaned form, so that the scan sees what is committed. [Q10]
 145. As a developer, I want binaries not scanned, and additions over 1 MB skipped and reported in `scan.skipped`, so that the scan is bounded. [Q10, C:scan-patterns]
 146. As a developer, I want no override flag, env or marker, so that an agent cannot silence the scan. [Q10]
-147. As a developer, I want my shell's exported `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_ATTR_SOURCE` or other `GIT_*` variables ignored by the script's own git calls, while my hooks still see my environment, so that no inherited variable redirects what the scan reads. [Q9, Q10]
+147. As a developer, I want my shell's exported `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_ATTR_SOURCE` or other `GIT_*` variable ignored by the script's own git calls except a keep-set (`GIT_EXEC_PATH`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`), with `git commit` itself stripping only the redirecting variables among them, while my hooks still see my environment, so that no inherited variable redirects what the scan reads. [Q9, Q10]
 226. As a developer, I want the worker's rule to never `Read` a file with a scan hit, and to read a working-tree file only at a line range, understood as prompt-only and not enforced by the script (an accepted gap, see [Out of Scope](out-of-scope.md)), so that a secret I am adding does not enter the worker's context. [Q10, Q11]
 
 ## scanIgnore
 
 148. As a developer, I want `scanIgnore` read from the repo config at HEAD, and an invalid value there treated as no patterns with a warning rather than a refusal, so that an agent cannot add an exception mid-run and a broken exception list stays fixable through the plugin. [Q6, Q10]
 149. As a developer, I want a `scanIgnore` change to apply only from the next commit (the human confirmation is story 89), so that exceptions are deliberate. [Q10]
-150. As a developer, I want a small case-sensitive glob dialect in which braces, classes, a leading `!` and a pattern with no literal character (such as `**`, `**/?*` or `*/**`) are config errors, so that matching is predictable on every OS and one line cannot switch the scan off. [C:scanignore-globs, Q10]
+150. As a developer, I want a small case-sensitive glob dialect in which braces, classes, a leading `!`, a `\`, an empty pattern, a `..` segment, `**` inside a segment, and a pattern with no literal character (such as `**`, `**/?*` or `*/**`) are config errors, so that matching is predictable on every OS and one line cannot switch the scan off. [C:scanignore-globs, Q6, Q10]
 151. As a developer, I want the worker to add `scanIgnore` entries only when I ask, so that exceptions never widen on their own. [Q10]
 
 ## Untracked and summary-only files

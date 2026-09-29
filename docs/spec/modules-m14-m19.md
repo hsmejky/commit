@@ -3,7 +3,8 @@
 **M14 Plan validator.** Pure over the worker plan and the run state. Shape errors become lint
 errors with `group: null`; resolve file-level paths to units via the unit table (a rename by
 its new path only); IDs exist, are used once and are not mixed with `files`; completeness in
-`split`; identical hunks together (identity key); no hit, collapsed-directory or
+`split`; identical hunks placed the same way (identity key): all in one group or all in
+`notIncluded`; no hit, collapsed-directory or
 `dirtySubmodules` path in a group; exactly one group in `staged` and `reword`; lint (M6) and
 scan (M8) each message; add the `notIncluded` extras and notices; derive new files, file lists and the
 attribution flag per group. `validatePlan(planBytes, runState, { osUser })` (typed: `{ groups,

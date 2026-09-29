@@ -37,7 +37,7 @@
 182. As a developer, I want an unborn HEAD planned against the empty tree, without `scanIgnore` and without a pushed check, so that the first commit works. [Q21]
 183. As a developer, I want a detached HEAD warned about, so that I know where commits land. [Q21]
 184. As a developer, I want an in-progress merge (including a pending `merge --squash`), cherry-pick, revert, rebase, bisect or paused sequence refused, so that those operations are never hijacked. [Q21]
-185. As a developer, I want a non-repository or bare repository reported as an error, so that I know why nothing ran. [Q21]
+185. As a developer, I want a non-repository or bare repository refused with a `state` error (exit 6), so that I know why nothing ran. [Q21]
 186. As a developer, I want a repo whose `i18n.commitEncoding` is not UTF-8 (any spelling of `utf8` or `UTF-8`, case-insensitive, counts as UTF-8) refused, so that no commit is mislabelled. [Q21]
 
 ## Concurrent runs
@@ -70,7 +70,7 @@
 ## Budget and release
 
 205. As a developer, I want a plugin commit to cost my main session, as a median per episode class, no more calls than the harness floor of the delivery shape in use, and, as a median per episode, no more than 2k main-context tokens (cache writes plus output) above a direct commit, so that my usage limits last (a 1.0.0 dogfood gate only, not a 0.1.0 check; limits: [Dogfood gate](story-verification.md)). [Q24]
-228. As a developer, I want CI to hold the plugin's texts and outputs to fixed size budgets (a reply without its `text` ≤ 2 kB; `text` ≤ 4 kB with every list capped at 10 entries; `plan`'s own fields ≤ 1 kB; `plan --hunks` stdout ≤ 20 000 characters; the worker prompt ≤ 6 kB), so that a run cannot grow the context it costs without a failing test. [Q24, C:reply-and-handback]
+228. As a developer, I want CI to hold the plugin's texts and outputs to fixed size budgets (agent and skill descriptions ≤ 200 characters; `/commit`'s `SKILL.md` ≤ 1.5 kB; a reply without its `text` ≤ 2 kB; `text` ≤ 4 kB with every list capped at 10 entries; `plan`'s own fields ≤ 1 kB; `plan --hunks` stdout ≤ 20 000 characters; the worker prompt ≤ 6 kB), so that a run cannot grow the context it costs without a failing test. [Q24, C:reply-and-handback]
 
 ## Run integrity
 
