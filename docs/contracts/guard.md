@@ -79,9 +79,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 2. **Script-call exemption.** A command that is, in full, one script call of this form
    skips the blanket rule below and is tokenized: optional leading and trailing spaces
    (U+0020 only); in PowerShell an optional `&` and one space; `node` or `node.exe`; one
-   space; a path in ASCII double quotes that ends in `/commit.cjs` or `\commit.cjs` and
-   holds no `"`, U+201C–U+201E, `$`, backtick, `!` or control character (U+0000–U+001F,
-   U+007F, so no CR or LF); one space and a subcommand (`plan`, `check`, `commit`,
+   space; a path in ASCII double quotes that ends in `/commit.cjs` or `\commit.cjs`, does not
+   start with `-` (so `node "--eval=…//commit.cjs" plan` does not qualify: node would read
+   the quoted argument as a flag, not the script path) and holds no `"`, U+201C–U+201E, `$`,
+   backtick, `!` or control character (U+0000–U+001F, U+007F, so no CR or LF); one space and
+   a subcommand (`plan`, `check`, `commit`,
    `release`, `infer`); then zero or more words, each one space and then one or more
    characters from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_`, `:`, `=` and `-` (the flags and
    `planId`s of [CLI](cli-and-exit-codes.md), and the form S2 `build` emits). Such a
@@ -91,8 +93,10 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    U+201C–U+201E; with all of them but `\` excluded, a Bash `\` can escape only another `\`
    or stand for itself, and the path cannot end in `\` (it ends in `commit.cjs`), so the
    quoted path is one argument and the quote that ends it is the one before the
-   subcommand. The words outside the quotes hold no character either shell reads
-   specially. Inside the quoted path `#`, `<<`, `@(`, `@'` and typographic single quotes
+   subcommand. The words outside the quotes hold no character that ends the call or starts
+   another (PowerShell may split a single-dash word at `.`/`:`, e.g. `-Dx.y=z` into `-Dx`
+   and `.y=z`, or `-EncodedCommand:x` into `-EncodedCommand:` and `x`; nothing extra runs,
+   and the [CLI](cli-and-exit-codes.md) flags start with `--`). Inside the quoted path `#`, `<<`, `@(`, `@'` and typographic single quotes
    U+2018–U+201B are plain characters in both shells, and the tokenizer reads them the same
    way (verified 2026-09-29 with bash 5.3, Windows PowerShell 5.1 and PowerShell 7). The
    exempt command is tokenized and classified like any other: script call, heartbeat and
@@ -141,9 +145,10 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    is denied. In PowerShell an unquoted `{` or `}` becomes a token of its own the same way
    (not dropped), so a script block glued to its first word (`&{git commit -m x}`,
    `if ($true) {git commit -m x}`) is denied and a `}` token ends git's arguments like `)`.
-   In Bash `{` and `}` stay in their word (brace expansion, step 4). In Bash a `(` directly
-   after `@`, `!`, `+`, `*` or `?` (an extglob opener) ends that word with the `(` kept in
-   it, and is also a `(` token of its own: with `extglob` on (which an earlier line can set,
+   In Bash `{` and `}` stay in their word (brace expansion, step 4). In Bash an unquoted `(`
+   directly after an unquoted `@`, `!`, `+`, `*` or `?` (an extglob opener) ends that word
+   with the `(` kept in it, and is also a `(` token of its own: with `extglob` on (which an
+   earlier line can set,
    like `expand_aliases`) bash reads an extglob pattern that may match a file named
    `commit`, so the word holds `(` and is not literal (step 4; `git @(commit) -m x` gives
    `git`, `@(`, `(`, `commit`, `)`, `-m`, `x` and is denied with the literal-subcommand
@@ -188,15 +193,18 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    and `git commit -m \'a\` plus newline plus `b` (the escaped newline removed) (deny);
    PowerShell `git commit -m "a“"b"` and `git commit -m 'e’'f'` (deny) and
    `git status "x“"; git commit -m x"` (no output: one string argument). Script-call
-   exemption (tokenized, no output): Bash `node "/opt/a#b/commit.cjs" plan` and
-   `node "/home/u/‘q’/commit.cjs" plan`, PowerShell
+   exemption (tokenized, no output): Bash `node "/opt/a#b/commit.cjs" plan`,
+   `node "/home/u/‘q’/commit.cjs" plan` and `node "/opt/x@(y)/commit.cjs" plan` (the `@(`
+   stays a plain character in the quoted path; it is not an unquoted extglob opener), PowerShell
    `& node "C:/a#b/commit.cjs" check --plan <planId>` and
    `node "C:/x@(y)/commit.cjs" plan`; not exempt (blanket, deny): Bash
    `node "/opt/a#b/commit.cjs" plan; git commit -m x`, the same call plus a newline and
    `git commit -m x`, `node "/opt/x/commit.cjs" plan # note` and
    `node "/opt/a!b#/commit.cjs" plan`, PowerShell
    `& node "C:/a#b/commit.cjs" plan; git commit -m x` and
-   `node "C:/$(x)/commit.cjs" plan`. Blanket rule (each with no segments, oracle `blanket`): every form
+   `node "C:/$(x)/commit.cjs" plan`; not exempt (leading `-`, holds no other blanket
+   trigger, so it is simply tokenized and still recognized as a script call by basename, no
+   output — the interpreter gap, Out of Scope): Bash `node "-x/commit.cjs" plan`. Blanket rule (each with no segments, oracle `blanket`): every form
    listed in Q3's round-8 amendment, among them Bash `echo ‘ ; git commit -m x ; ‘`,
    `: # "` plus the lines `git commit -m x` and `: # "`,
    `git${IFS}commit${IFS}-m${IFS}x`, `echo $(git commit -m x)`, `` echo `git commit -m x` ``,
@@ -213,8 +221,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `git commit --no-edit # done`, `git log --grep "#12" | grep commit`, PowerShell
    `${env:X}; git commit --no-edit`, `Write-Output $( <# ) #> 1 ) ; git commit --no-edit`
    and a `@'…'@` here-string holding `commit` (deny); a script call whose install path
-   holds a blanket-rule construct, outside the exemption's form (chained, a further word,
-   or a path also holding `!` or a control character, `node "/opt/a!b#/commit.cjs" plan`,
+   holds a blanket-rule construct, outside the exemption's form (chained, a word outside
+   `[A-Za-z0-9._:=-]`, or a path also holding `!` or a control character,
+   `node "/opt/a!b#/commit.cjs" plan`,
    deny); and a `git` word after another command's `--%` (`Write-Output --% git commit -m x`,
    deny).
 3. In each segment, find a token whose basename (the part after the last `/` or `\`, in both

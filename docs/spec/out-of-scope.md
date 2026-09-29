@@ -48,7 +48,8 @@ and the module sections point here, and the README states it in full.
   `git log --grep "#12" | grep commit`, PowerShell `Write-Output @'…'@` with `commit` in
   it. An install path holding a blanket-rule construct the entry point does not refuse
   leaves the plain script call exempt (C:guard step 2 script-call exemption); only such a
-  call outside the exempt form (chained after `cd sub &&`, a further word), or a path that
+  call outside the exempt form (chained after `cd sub &&`, a word outside
+  `[A-Za-z0-9._:=-]`), or a path that
   also holds `!` or a control character, is denied. The commit worker and the
   skills are unaffected: they run only script calls with plain flags (C:cli, no subcommand
   reads stdin; free text goes through files written with `Write`, C:worker-input; handback

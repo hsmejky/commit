@@ -4245,6 +4245,23 @@
    }
   },
   {
+   "id": "b-exempt-atparen",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"/opt/x@(y)/commit.cjs\" plan",
+   "segments": [
+    [
+     "node",
+     "/opt/x@(y)/commit.cjs",
+     "plan"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
    "id": "p-exempt-hash",
    "shell": "powershell",
    "topic": "script-call exemption",
@@ -4280,6 +4297,23 @@
    "oracle": {
     "ps51": "match",
     "ps7": "match"
+   }
+  },
+  {
+   "id": "b-exempt-dash",
+   "shell": "bash",
+   "topic": "script-call exemption",
+   "command": "node \"-x/commit.cjs\" plan",
+   "segments": [
+    [
+     "node",
+     "-x/commit.cjs",
+     "plan"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
    }
   },
   {

@@ -42,7 +42,7 @@ function hasHeredocOp(s) {
 }
 // C:guard step 2 script-call exemption: one plain script call, tokenized despite a trigger in
 // its double-quoted path.
-const EXEMPT_PATH = '"[^"\\u201C-\\u201E$`!\\u0000-\\u001F\\u007F]*[/\\\\]commit\\.cjs"';
+const EXEMPT_PATH = '"(?!-)[^"\\u201C-\\u201E$`!\\u0000-\\u001F\\u007F]*[/\\\\]commit\\.cjs"';
 const EXEMPT_TAIL = ' (?:plan|check|commit|release|infer)(?: [A-Za-z0-9._:=-]+)* *$';
 const EXEMPT = {
   bash: new RegExp(`^ *node(?:\\.exe)? ${EXEMPT_PATH}${EXEMPT_TAIL}`),

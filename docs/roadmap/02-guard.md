@@ -48,8 +48,7 @@ guard, end silently; under `COMMIT_GUARD_DEBUG=1` one stderr line records it.
 
 **What to build:** G2 for Bash (`\` escapes, literal single quotes, `\"` `\\` `\$` in double
 quotes, `$'…'` with its backslash escapes decoded and a decoded NUL ending its value, quote
-removal, segments on `&&`, `||`, `;`, `|`, `&`, newlines, extglob openers kept in their
-word), preceded by the step 2 script-call exemption and blanket
+removal, segments on `&&`, `||`, `;`, `|`, `&`, newlines), preceded by the step 2 script-call exemption and blanket
 rule for both shells (a command that is not one plain script call and holds a substitution, heredoc, here-string, comment or
 Bash typographic quote is denied untokenized), and the thinnest G3, so `git commit -m x` in
 Bash is denied with the routing text.
@@ -58,7 +57,7 @@ Bash is denied with the routing text.
 
 **Status:** ready-for-agent
 
-**Sources:** Q3, Q8, Q24, C:guard (Parsing step 2 blanket rule and Bash column, Deny messages), stories 10, 11, 12, 13.
+**Sources:** Q3, Q8, Q24, C:guard (Parsing step 2 script-call exemption and blanket rule, and Bash column, Deny messages), stories 10, 11, 12, 13.
 
 - [ ] Seam 2: `git commit -m x` → the deny JSON of C:guard with `Direct git commit is blocked. <route>` and the fixed personal-skill line; exit 0.
 - [ ] Seam 3: `cd x && git commit -m x`, `a; git commit -m x`, `a | git commit -m x`, `a & git commit -m x` and a newline-separated form are denied; `git co''mmit -m x` is denied (not an early exit); `git commit -m "a\"b"` is one message argument.
@@ -155,8 +154,10 @@ into one quoted token while scanning continues.
 **What to build:** redirections are dropped with their target, `(` and `)` are tokens
 as are Bash `<(` / `>(` (read as `(`) and PowerShell `{` / `}` (a `)` or `}` ends git's
 arguments, and every `git` token of a segment is classified), `<<<` is a plain
-redirection, and typographic quotes are removed for the early-exit check, read as quotes in
-PowerShell (U+201C-U+201E double, U+2018-U+201B single) and blanket-denied in Bash.
+redirection, typographic quotes are removed for the early-exit check, read as quotes in
+PowerShell (U+201C-U+201E double, U+2018-U+201B single) and blanket-denied in Bash, and
+Bash extglob openers (an unquoted `(` directly after an unquoted `@`, `!`, `+`, `*` or `?`)
+keep the `(` in their word and are also a `(` token of their own.
 
 **Blocked by:** GRD-06.
 
@@ -170,6 +171,7 @@ PowerShell (U+201C-U+201E double, U+2018-U+201B single) and blanket-denied in Ba
 - [ ] `cat <<'EOF' > f`, body line `git commit -m x`, `EOF` → denied by the blanket rule (documented false positive); `<<<` treated as a plain redirection.
 - [ ] `git “commit” -m x` (Bash) and PowerShell `git co‘’mmit -m x` → denied.
 - [ ] Bash typographic-quote fixtures are blanket cases (oracle `blanket`); PowerShell ones are cross-checked.
+- [ ] Bash extglob: `git @(commit) -m x` and `!(git commit -m x)` → denied; `!(git commit --no-edit)` → no output.
 
 
 ## GRD-10: Detecting `git` in every spelling
@@ -245,7 +247,7 @@ the fixed list) and S2 `build` emits the one quoted form the allow rules match.
 - [ ] A caller's `plan`, `check`, `commit` and `release` script calls produce no guard output outside the worker (story 38).
 - [ ] Seam 3: an `infer` script call is recognised as a script call, like the other four subcommands.
 - [ ] Seam 3: `node commit.cjs foo` (an unrecognised subcommand) is not recognised as a script call.
-- [ ] Seam 3: `build`'s output is in C:guard's step 2 script-call exemption form; the exemption seed cases (`b-exempt-*`, `p-exempt-*`: a path holding `#`, `@(` or `‘`) are recognised script calls with no output, and the same call with `; git commit -m x` appended is blanket-denied.
+- [ ] Seam 3: `build`'s output is in C:guard's step 2 script-call exemption form; the exemption seed's four `decision: none` cases (`b-exempt-hash`, `b-exempt-typographic`, `p-exempt-hash`, `p-exempt-atparen`: a path holding `#`, `@(` or `‘`) are recognised script calls with no output, and the rest (`b-exempt-appended`, `b-exempt-newline`, `b-exempt-comment`, `b-exempt-bang`, `p-exempt-appended`, `p-exempt-dollar`) are blanket-denied.
 
 
 ## GRD-14: Worker-only rule
