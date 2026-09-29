@@ -341,6 +341,10 @@ const CALL_CASES = [
   ['unquoted call with no arguments', 'const token = fetchAccessToken();', false],
   ['unquoted snake_case call', 'password = get_password_from_env()', false],
   ['unquoted dotted method call with an argument', 'token = self._fetch_token(scope)', false],
+  // Word-shaped rule (finding 1, SCN-09 re-review): a trailing version digit still reads as a
+  // real name reference, so these stay excluded.
+  ['unquoted call with a trailing-digit callee', 'token = getV2()', false],
+  ['unquoted call with a trailing-digit snake_case callee', 'token = fetchToken2()', false],
 ];
 
 for (const [name, line, hit] of CALL_CASES) {
@@ -385,6 +389,54 @@ test('generic-secret call rule: a call whose identifier-shaped argument itself l
 test('generic-secret call rule: a call-shaped value too long to be a real call still hits', () => {
   const jwt = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJ0ZXN0In0', 'FAKEsignatureAbC123'].join('.');
   const line = ['AUTH_TOKEN', `${jwt}(x)`].join('=');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 1);
+});
+
+// `generic-secret` word-shaped rule (finding 1, SCN-09 re-review): the earlier call rule
+// entropy-checked only the argument, so a secret standing in as the callee itself — with no
+// argument, or with a well-shaped argument — was wrongly excluded as a call. Each case below
+// puts the key and value in separate array elements, joined at run time, so this file's own
+// source never holds the key and value contiguously (the "no literal hit" self-check below
+// would otherwise flag it).
+const CALLEE_BYPASS_CASES = [
+  // [case, key, value]
+  ['a digit inside the bare callee, no argument', 'SECRET', 'Xk9aQ2xL7mZ4pRkW8vT3()'],
+  ['a digit inside the leading segment of a dotted callee', 'token', 'a.Xk9aQ2xL7mZ4pRkW8vT3()'],
+  ['a digit inside the trailing segment of a dotted callee', 'token', 'Xk9aQ2xL7mZ4pRkW8vT3.x()'],
+  ['a digit inside the callee, with a well-shaped argument', 'token', 'Xk9aQ2xL7mZ4(pRkW8vT3)'],
+  ['a digit inside every segment of a dotted callee', 'token', 'Xk9a.Q2xL.7mZ4.pRkW.8vT3(a)'],
+  ['a digit inside the callee after a leading $', 'token', '$Xk9aQ2xL7mZ4pRkW8vT3()'],
+  ['a hex-shaped callee with digits throughout', 'token', 'f3a9c2e1b7d4a8f6c0e2b9d7a1c3e5f7()'],
+  ['a digit inside the argument segment, well-shaped callee', 'token', 'fetchToken(a1b2c3)'],
+];
+
+for (const [name, key, value] of CALLEE_BYPASS_CASES) {
+  test(`generic-secret call rule: ${name} → hit`, () => {
+    const line = [key, value].join(' = ');
+    const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+    assert.equal(hits.length, 1);
+  });
+}
+
+// `generic-secret` call rule length boundary (finding 3, SCN-09 re-review): the cap is 40
+// characters, so a 40-character call-shaped value is still excluded and a 41-character one is
+// not. Built from a fixed pool of distinct letters, with no digit, so this isolates the length
+// cap from the word-shaped rule (finding 1) and stays high-entropy once the cap rejects it.
+const CALL_VALUE_LENGTH_POOL = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+test('generic-secret call rule: a 40-character call-shaped value → no hit', () => {
+  const value = CALL_VALUE_LENGTH_POOL.slice(0, 38) + '()';
+  assert.equal(value.length, 40);
+  const line = ['token', value].join(' = ');
+  const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
+  assert.equal(hits.length, 0);
+});
+
+test('generic-secret call rule: a 41-character call-shaped value → hit', () => {
+  const value = CALL_VALUE_LENGTH_POOL.slice(0, 39) + '()';
+  assert.equal(value.length, 41);
+  const line = ['token', value].join(' = ');
   const hits = scanText(line, { osUser: null }).filter((h) => h.patternId === 'generic-secret');
   assert.equal(hits.length, 1);
 });

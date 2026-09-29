@@ -156,8 +156,9 @@ rules for quoted and unquoted values.
 - [ ] Seam 3: a `commit-scan: allow` comment on the line changes nothing (story 146).
 - [ ] No CLI flag or environment variable exists that turns the scan off (story 146; checked
       by a review of the argv/usage table and the entry point's env reads).
-- [ ] unquoted zero/one-argument call forms → no hit; quoted call-shaped value and
-      argument-bearing secrets → hit.
+- [ ] Seam 3: zero- or one-identifier-argument calls of 40 characters or fewer → no hit; a
+      quoted call-shaped value, a call-shaped value over 40 characters, a high-entropy
+      argument, or a digit inside a callee or argument segment → hit.
 
 
 ## SCN-11: `local-path` OS-user segment

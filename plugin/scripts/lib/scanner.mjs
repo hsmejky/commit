@@ -110,12 +110,32 @@ const SECRET_PLACEHOLDER = /example|changeme|dummy|xxx|\$\{|<|proce[s]s\.env|os\
 // call's value stops at the row's own `,` lookahead before reaching its own `)` (`a` in
 // `fetchAccessToken(a, b);`), so it never matches here and stays a documented false positive
 // (C:scan-patterns) — this regex does not, and cannot, cover that case.
-const UNQUOTED_CALL_VALUE = /^[A-Za-z_$][\w$.]*\((?<argument>[A-Za-z_$][\w$.]*)?\)$/;
+const UNQUOTED_CALL_VALUE =
+  /^(?<callee>[A-Za-z_$][\w$.]*)\((?<argument>[A-Za-z_$][\w$.]*)?\)$/;
 
 // A call-shaped value this long is no longer a plausible name reference in source (the
-// longest real example above is 25 characters); it is far more likely a secret dressed up as
+// longest real example above is 24 characters); it is far more likely a secret dressed up as
 // one, e.g. a JWT ending in `(x)` (C:scan-patterns).
 const MAX_CALL_VALUE_LENGTH = 40;
+
+// A dotted segment of a call's callee or argument is word-shaped (C:scan-patterns) when a
+// digit appears only at the segment's end (`getV2`, `fetchToken2`): a real name reference
+// still reads this way even with a trailing version number, while a digit buried inside a
+// segment (`Xk9aQ2xL7mZ4pRkW8vT3`) means the "name" is a secret standing in as the callee or
+// argument, not a plausible identifier. This does not catch an all-letter, arbitrary-looking
+// callee (`XkaQxLmZpRkWvT()`); that residual gap is accepted (C:scan-patterns) since a real
+// secret does not accidentally end in `()`.
+const WORD_SHAPED_SEGMENT = /^[A-Za-z_$]+\d*$/;
+
+/**
+ * Whether every dotted segment of a call's callee or argument is word-shaped
+ * (`WORD_SHAPED_SEGMENT`).
+ *
+ * @param {string} identifier a bare or dotted identifier (a callee or an argument)
+ */
+function isWordShaped(identifier) {
+  return identifier.split('.').every((segment) => WORD_SHAPED_SEGMENT.test(segment));
+}
 
 /**
  * A `generic-secret` value without its quotes, alongside whether it was quoted: the call rule
@@ -131,9 +151,12 @@ function unquote(value) {
 /**
  * Whether an unquoted `generic-secret` value is a call site reading a secret, rather than the
  * secret itself (C:scan-patterns): short enough to be a real call (`MAX_CALL_VALUE_LENGTH` or
- * fewer characters), shaped like one (`UNQUOTED_CALL_VALUE`), and, when it carries an
- * argument, that argument does not itself look like a secret (the row's own entropy floor) —
- * an identifier-shaped but high-entropy argument (`abc(Xk9aQ2xL7mZ4pRkW8vT3)`) is not a call.
+ * fewer characters), shaped like one (`UNQUOTED_CALL_VALUE`), every dotted segment of its
+ * callee and of its argument (if any) word-shaped (`isWordShaped`) — a digit inside a segment
+ * (`Xk9aQ2xL7mZ4pRkW8vT3()`, `a.Xk9aQ2xL7mZ4pRkW8vT3()`) means a secret is standing in as the
+ * callee, not a call — and, when it carries an argument, that argument does not itself look
+ * like a secret by entropy either (the row's own entropy floor): an identifier-shaped but
+ * high-entropy argument (`abc(Xk9aQ2xL7mZ4pRkW8vT3)`) is not a call.
  *
  * @param {string} value
  */
@@ -141,8 +164,10 @@ function isCallSite(value) {
   if (value.length > MAX_CALL_VALUE_LENGTH) return false;
   const match = UNQUOTED_CALL_VALUE.exec(value);
   if (match === null) return false;
-  const { argument } = match.groups;
-  return argument === undefined || shannonEntropy(argument) < MIN_SECRET_ENTROPY;
+  const { callee, argument } = match.groups;
+  if (!isWordShaped(callee)) return false;
+  if (argument === undefined) return true;
+  return isWordShaped(argument) && shannonEntropy(argument) < MIN_SECRET_ENTROPY;
 }
 
 /**
