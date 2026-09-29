@@ -9,12 +9,15 @@
   the script, which calls git via `child_process`, so the hook does not see it as a direct
   commit. The hook fires for subagent tool calls as well.
   - Detection tokenises the command ([contracts](../contracts/guard.md)) with the quoting rules
-    of the shell named in `tool_name` (Bash: `\` escapes, `'…'` literal; PowerShell: `` ` ``
-    escapes, `''` inside `'…'`, here-strings), segments split on `&&`, `||`, `;`, `|`, `&`
-    and newlines. Escaped newlines (Bash `\` plus newline, PowerShell backtick plus newline)
-    are removed outside single quotes before splitting, so a continued line stays one
-    segment. An unterminated quote or here-string makes the rest of its line one
-    quoted token and scanning goes on, so a `git commit` before it is still denied.
+    of the shell named in `tool_name` (Bash: `\` escapes, `'…'` literal, `$'…'` read with
+    its backslash escapes; PowerShell: `` ` `` escapes, `''` inside `'…'`, here-strings),
+    segments split on `&&`, `||`, `;`, `|`, `&` and newlines. Unquoted `(` and `)` are
+    tokens of their own, and so are Bash `<(` / `>(` (read as `(`) and PowerShell `{` / `}`,
+    so a `git` inside a subshell, a process substitution or a script block is found.
+    Escaped newlines (Bash `\` plus newline, PowerShell backtick plus newline) are removed
+    outside single quotes before splitting, so a continued line stays one segment. An
+    unterminated quote or here-string makes the rest of its line one quoted token and
+    scanning goes on, so a `git commit` before it is still denied.
     Redirection operators outside quotes (`>`, `>>`, `<`, `2>&1` and the like) become tokens
     of their own and are dropped with their target, so `git commit … 2>&1` is still denied
     and a redirect target is never read as a commit argument or option;
@@ -25,12 +28,14 @@
     with or without the `&` call operator; git global options (`-C`, `-c`, `--git-dir`,
     `--work-tree`, `--no-pager`, `-P`, …) skipped before the subcommand. An unknown global
     option followed by a `commit` token is denied (fail closed), and so is a subcommand
-    token that contains `$` (a variable or substitution such as `git $c`) or, in
-    PowerShell, starts with `@` (a splat), since it may expand to `commit`.
+    token that contains `$` (a variable or substitution such as `git $c`, in a command that
+    mentions `commit` elsewhere) or a backtick, or, in PowerShell, starts with `@` (a
+    splat), since it may expand to `commit`.
   - Output: a `deny` decision with a fixed message, or nothing. The hook never returns
     `allow`, so the user's permission prompts still apply. A crash or unreadable hook input
     exits 0 with no output (fail open): a guard bug must not block every shell call.
-  - False positives such as `echo git commit` (unquoted) are accepted; a deny costs one turn.
+  - False positives such as `echo git commit` (unquoted) and a comment that mentions it
+    (`git commit --no-edit # done`, `# git commit -m x`) are accepted; a deny costs one turn.
 - **Amended.** By spec pass 1 (2026-09-27): an unterminated quote or here-string turns the
   rest of its line into one quoted token and scanning continues on the next line, so a
   truncated `git commit -m "…` is still denied. By spec pass 2 (2026-09-27): redirection
@@ -71,6 +76,49 @@
   to its delimiter), so a script written through `cat <<'EOF'` that contains `git commit`
   is not denied. The PowerShell reading of typographic quotes (pass 5) was verified on
   2026-09-27 with the PowerShell 7 parser, where `git co‘’mmit` parses to `commit`.
+- **Amended.** By the tokenizer spike (PRE-03, 2026-09-29), which ran a prototype of the
+  contract's parsing against 143 cases cross-checked with bash's own words and the
+  PowerShell 5.1 and 7 parser API. The decided rules held (case-insensitive `git`, `commit`
+  and subcommand; `(` and `)` as tokens; heredoc bodies dropped); its seven findings are
+  settled, each with a wider fail-closed rule, a documented false positive or an accepted
+  gap, none needing a parser beyond the hand-written design (unbash stays unvendored):
+  - A subcommand token holding a backtick is denied (fail closed). An unquoted Bash
+    backtick substitution splits into several tokens (`` git `echo commit` -m x `` gives
+    `` `echo `` then `` commit` ``), so neither the `$` rule nor a literal `commit` caught
+    it; a backtick is the same signal as `$`. In PowerShell a backtick survives quote
+    removal only inside `'…'`, so the rule costs nothing there.
+  - Bash `$'…'` (ANSI-C quoting) is read, with its backslash escapes decoded as Bash does.
+    Read as `$` plus a single-quoted span, `$'\''` looked like an unterminated quote that
+    swallowed the rest of the line, so `echo $'\'' ; git commit -m x` passed: a fail open
+    that one more quoting form closes. As a bonus `git $'commit'` reads as the literal
+    `commit`, as bash does.
+  - PowerShell unquoted `{` and `}` are tokens of their own, like `(` and `)`, and a `}`
+    token ends `commit`'s arguments like `)`. PowerShell lets a script block glue its
+    brace to the first word (`&{git commit -m x}`, `if ($true) {git commit -m x}`), so
+    `git` was hidden in the token `{git`. Bash keeps braces in the word: there `{a,b}` is
+    brace expansion (pass 5's subcommand rule relies on it) and a `{ …; }` group needs
+    spaces anyway.
+  - Bash process substitution `<(` / `>(` is read as `(`, not as a redirection. It runs its
+    command like a subshell, and as a redirection its target was the `git` token, dropped
+    with it, so `diff <(git commit -m x) f` passed.
+  - Comments stay words, a documented false positive (fail closed):
+    `git commit --no-edit # done` and `# git commit -m x` are denied in both shells, as is
+    a PowerShell `<# … #>` block. Recognising comments needs word-start rules (`a#b`, `$#` and `${#x}`
+    are not comments) and multi-line block comments; getting one wrong could hide a
+    commit, while a false deny costs one turn and agents rarely comment a shell command.
+  - Expansion in the command position (Bash brace expansion `{git,commit,-m,x}`, a glob
+    such as `/usr/bin/gi? commit -m x`) joins the accepted gap of `$(echo git) commit`
+    (below). An agent does not reach these forms by accident, the hook steers rather than
+    guards, and denying every brace or glob in a command's first word would hit ordinary
+    commands.
+  - C:guard's example for the `$` rule, `git $c -m x`, never reaches the rule: its text
+    has no `commit`, so the early exit ends it. The rule applies only when `commit` appears
+    elsewhere in the command (`c=commit; git $c -m x`), as story 15 and GRD-12 already
+    said; the contract's wording was fixed, the behaviour is unchanged.
+
+  The case list, with the amended decisions, is GRD-03's fixture seed
+  (`tests/fixtures/guard/segments-seed.json`), and the classes of case where the oracle
+  deliberately differs from the tokenizer are listed in C:guard.
 - **Rejected.**
   - Description tuning alone; the hook alone.
   - Git-native enforcement (a `pre-commit` / `commit-msg` hook, e.g. via `core.hooksPath`).
@@ -86,7 +134,9 @@
     scripts that wrap git (`xargs git commit` is denied: unquoted, it tokenizes to separate
     `git` and `commit` tokens).
   - Command substitution (`$(…)`, backticks) and variables anywhere but the subcommand
-    position (`$(echo git) commit`); `GIT_DIR` / `GIT_WORK_TREE` redirection;
+    position (`$(echo git) commit`), and Bash brace expansion or a glob in the command
+    position (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`); `GIT_DIR` / `GIT_WORK_TREE`
+    redirection;
     config injected through env prefixes (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`,
     `GIT_CONFIG_VALUE_<n>`).
   - `.git/config` and `.git/hooks` are trusted as git itself trusts them: an untrusted repo

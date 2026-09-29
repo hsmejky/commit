@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29; cases with a finding hold the current-contract output and the intended decision pending that finding. Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class.",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with finding is one whose expected output that decision set (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes).",
  "cases": [
   {
    "id": "b-plain",
@@ -780,8 +780,7 @@
    "oracle": {
     "bash": "expansion"
    },
-   "finding": "F7",
-   "intended": "deny"
+   "finding": "F7"
   },
   {
    "id": "b-ansi-c",
@@ -791,15 +790,20 @@
    "segments": [
     [
      "echo",
-     "$\\ ; git commit -m x"
+     "'"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
-    "bash": "fragility:F2-ansi-c-quoting"
+    "bash": "match"
    },
-   "finding": "F2",
-   "intended": "deny"
+   "finding": "F2"
   },
   {
    "id": "b-ansi-c-sub",
@@ -809,15 +813,16 @@
    "segments": [
     [
      "git",
-     "$commit",
+     "commit",
      "-m",
      "x"
     ]
    ],
    "decision": "deny",
    "oracle": {
-    "bash": "expansion"
-   }
+    "bash": "match"
+   },
+   "finding": "F2"
   },
   {
    "id": "b-bt-msg",
@@ -870,12 +875,11 @@
      "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "expansion"
    },
-   "finding": "F1",
-   "intended": "deny"
+   "finding": "F1"
   },
   {
    "id": "b-bt-sub-dq",
@@ -890,12 +894,11 @@
      "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "expansion"
    },
-   "finding": "F1",
-   "intended": "deny"
+   "finding": "F1"
   },
   {
    "id": "b-bash-c",
@@ -1431,12 +1434,9 @@
     [
      "diff",
      {
-      "redir": "<",
-      "target": "git"
-     },
-     {
       "op": "("
      },
+     "git",
      "commit",
      "-m",
      "x",
@@ -1446,12 +1446,11 @@
      "f"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
-    "bash": "fragility:F4-process-substitution"
+    "bash": "expansion"
    },
-   "finding": "F4",
-   "intended": "deny"
+   "finding": "F4"
   },
   {
    "id": "b-brace-sub",
@@ -1483,8 +1482,7 @@
    "oracle": {
     "bash": "expansion"
    },
-   "finding": "F6",
-   "intended": "deny"
+   "finding": "F6"
   },
   {
    "id": "b-glob-cmd",
@@ -1503,8 +1501,7 @@
    "oracle": {
     "bash": "match"
    },
-   "finding": "F6",
-   "intended": "deny"
+   "finding": "F6"
   },
   {
    "id": "b-comment-trailing",
@@ -1522,10 +1519,9 @@
    ],
    "decision": "deny",
    "oracle": {
-    "bash": "fragility:F5-comments"
+    "bash": "comment"
    },
-   "finding": "F5",
-   "intended": "none"
+   "finding": "F5"
   },
   {
    "id": "b-comment-line",
@@ -1547,10 +1543,9 @@
    ],
    "decision": "deny",
    "oracle": {
-    "bash": "fragility:F5-comments"
+    "bash": "comment"
    },
-   "finding": "F5",
-   "intended": "none"
+   "finding": "F5"
   },
   {
    "id": "b-if",
@@ -2477,19 +2472,24 @@
    "command": "&{git commit -m x}",
    "segments": [
     [
-     "{git",
+     {
+      "op": "{"
+     },
+     "git",
      "commit",
      "-m",
-     "x}"
+     "x",
+     {
+      "op": "}"
+     }
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
-    "ps51": "fragility:F3-ps-scriptblock",
-    "ps7": "fragility:F3-ps-scriptblock"
+    "ps51": "ps-scriptblock",
+    "ps7": "ps-scriptblock"
    },
-   "finding": "F3",
-   "intended": "deny"
+   "finding": "F3"
   },
   {
    "id": "p-scriptblock-dot",
@@ -2499,19 +2499,24 @@
    "segments": [
     [
      ".",
-     "{git",
+     {
+      "op": "{"
+     },
+     "git",
      "commit",
      "-m",
-     "x}"
+     "x",
+     {
+      "op": "}"
+     }
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
-    "ps51": "fragility:F3-ps-scriptblock",
-    "ps7": "fragility:F3-ps-scriptblock"
+    "ps51": "ps-scriptblock",
+    "ps7": "ps-scriptblock"
    },
-   "finding": "F3",
-   "intended": "deny"
+   "finding": "F3"
   },
   {
    "id": "p-if-block",
@@ -2528,19 +2533,24 @@
      {
       "op": ")"
      },
-     "{git",
+     {
+      "op": "{"
+     },
+     "git",
      "commit",
      "-m",
-     "x}"
+     "x",
+     {
+      "op": "}"
+     }
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
-    "ps51": "fragility:F3-ps-scriptblock",
-    "ps7": "fragility:F3-ps-scriptblock"
+    "ps51": "ps-expression-statement",
+    "ps7": "ps-expression-statement"
    },
-   "finding": "F3",
-   "intended": "deny"
+   "finding": "F3"
   },
   {
    "id": "p-foreach-spaced",
@@ -2559,19 +2569,24 @@
      {
       "op": ")"
      },
-     "{",
+     {
+      "op": "{"
+     },
      "git",
      "commit",
      "-m",
      "x",
-     "}"
+     {
+      "op": "}"
+     }
     ]
    ],
    "decision": "deny",
    "oracle": {
     "ps51": "ps-expression-statement",
     "ps7": "ps-expression-statement"
-   }
+   },
+   "finding": "F3"
   },
   {
    "id": "p-pwsh-c",
@@ -2784,11 +2799,10 @@
    ],
    "decision": "deny",
    "oracle": {
-    "ps51": "fragility:F5-comments",
-    "ps7": "fragility:F5-comments"
+    "ps51": "comment",
+    "ps7": "comment"
    },
-   "finding": "F5",
-   "intended": "none"
+   "finding": "F5"
   },
   {
    "id": "p-comment-block",
@@ -2815,11 +2829,10 @@
    ],
    "decision": "deny",
    "oracle": {
-    "ps51": "fragility:F5-comments",
-    "ps7": "fragility:F5-comments"
+    "ps51": "comment",
+    "ps7": "comment"
    },
-   "finding": "F5",
-   "intended": "none"
+   "finding": "F5"
   },
   {
    "id": "p-GIT-exe",

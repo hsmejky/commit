@@ -14,20 +14,23 @@ and the module sections point here, and the README states it in full.
 - The guard is not a security boundary: every allowed form (`--no-edit`, `--amend
   --no-edit`, `--fixup=<commit>`) commits the current index unscanned, and aliases,
   interpreters (`sh -c '…'`, `pwsh -c`), command substitution and variables anywhere
-  but git's subcommand position (`$(echo git) commit`), `GIT_DIR` redirection and
-  env-prefixed config pass it.
+  but git's subcommand position (`$(echo git) commit`), Bash brace expansion or a glob in
+  the command position (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`), `GIT_DIR`
+  redirection and env-prefixed config pass it.
 - A command whose text never spells `commit` (`git $(echo com)mit`, PowerShell
   `git ('com'+'mit')`) passes G1's early exit unparsed (Q3); `sudo -u git git commit` is
-  not addressed. Brace expansion, a parenthesised or globbed subcommand, typographic quotes
-  and the dashed `git-commit` binary are denied (story 15).
+  not addressed. Brace expansion, a parenthesised or globbed subcommand, a backtick
+  substitution in the subcommand position, typographic quotes and the dashed `git-commit`
+  binary are denied (story 15).
 - Other paths to a commit pass the guard (Q3): `git commit-tree`, `git am`, the replays of
   `git stash` and `git cherry-pick`, and shells provided by MCP servers.
 - A `commit` split by an escaped newline (Bash `\` plus newline, PowerShell backtick plus
   newline) passes the guard (Q3): G1's early-exit check removes the `\` or backtick but
   keeps the newline, so the command exits early unparsed.
 - False positives: a command that only mentions `git commit` in text, such as
-  `echo git commit`, is denied, and so is a git subcommand held in a variable (`git $x`)
-  in a command that mentions `commit` anywhere.
+  `echo git commit`, is denied, and so is a comment that mentions it
+  (`git commit --no-edit # done`, `# git commit -m x`, PowerShell `<# … #>`), and a git
+  subcommand held in a variable (`git $x`) in a command that mentions `commit` anywhere.
 - In interactive mode a `humanOnly` confirmation is advisory (Q16, Q17): the reply asks the
   caller to put it to the user, but nothing enforces that the user, not the model, answers
   it. `--confirmed` stops a steered worker from returning the confirmed command itself, but

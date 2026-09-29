@@ -39,7 +39,8 @@ line under debug, with the fields known so far, and still no stdout.
 `runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`. Sources: Q1, Q3, Q23, C:guard.
 
 **G2 Shell tokenizer.** Tokenise per `tool_name` with the rules of C:guard (Bash: `\` escapes,
-literal single quotes, `\"` `\\` `\$` in double quotes; PowerShell: backtick escapes, `''`
+literal single quotes, `\"` `\\` `\$` in double quotes, `$'…'` with its backslash escapes
+decoded; PowerShell: backtick escapes, `''`
 and `""`, here-strings closing at column 0); in both shells typographic quotes as quotes,
 as PowerShell reads them (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`;
 Q3 as amended); escaped newlines (Bash `\` plus newline,
@@ -52,6 +53,12 @@ tokens of their own that G3 and S2 drop together with their target, so they are 
 as commit arguments or options. An unquoted `(` or `)` becomes a token of its own too (not
 dropped), except inside a `$(…)` substitution, which stays in its word up to its matching
 `)`; so G3 finds the `git` of `(git commit -m x)`, and a `)` token ends `commit`'s arguments.
+Bash process substitution `<(` / `>(` becomes a `(` token (not a redirection), and in
+PowerShell an unquoted `{` or `}` becomes a token too (not inside `${…}` or `$(…)`), so G3
+finds the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell
+`}` token ends `commit`'s arguments like `)`. Comments are not recognised: `#` and what
+follows, and a PowerShell `<# … #>` block, are ordinary text (documented false positives,
+Q3 as amended).
 A Bash heredoc (`<<` or `<<-` outside quotes) drops its operator and delimiter word like a
 redirection, and drops its body, from the next line to the first line equal to the
 delimiter after quote removal (leading tabs stripped with `<<-`; bodies of several heredocs
@@ -65,9 +72,10 @@ the dashed `git-commit` (with or without `.exe`, in any directory, compared
 case-insensitively), which classifies as `git commit`; skip the
 known global options; remember `-c` and `--config-env`; compare the subcommand with
 `commit` case-insensitively (`git COMMIT` is a commit, fail closed); deny an unknown option before
-`commit`, and a subcommand token that contains `$`, `{`, `(` or a glob character (`*`, `?`,
-`[`) or, in PowerShell only, starts with `@` (fail closed); expand commit arguments up to
-the segment's end or a `)` token and apply the Q4 allowlist;
+`commit`, and a subcommand token that contains `$`, a backtick, `{`, `(` or a glob character
+(`*`, `?`, `[`) or, in PowerShell only, starts with `@` (fail closed); expand commit
+arguments up to the segment's end or a `)` token (in PowerShell also a `}` token) and apply
+the Q4 allowlist;
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
 expansion and the trailing personal-skill line are data here; no text names `/commit`.

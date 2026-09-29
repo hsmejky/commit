@@ -104,9 +104,12 @@ in the hunk index are cross-checked against `git diff --numstat -z`, observable 
 The Bash tokenizer's golden fixtures are cross-checked in CI by letting bash print its own
 words for each segment (`printf '%s\0'`); PowerShell fixtures by the PowerShell parser API
 (Other checks). Fixture classes where G2 deliberately differs from the shell are
-oracle-skipped: typographic quotes in Bash, unterminated quotes, redirections, `$` and
-`$(…)` expansion, splats, subshell parentheses and heredocs (the shell would expand or
-reject them).
+oracle-skipped, as listed in C:guard (Oracle-skip classes, from the tokenizer spike):
+redirections, heredocs, expansions (`$`, `$(…)`, backticks, brace expansion, process
+substitution), unterminated quotes, subshell parentheses, PowerShell script-block braces,
+PowerShell assignment and keyword statements, splats, `--%`, a PowerShell backtick plus
+newline inside a word, a carriage return in Bash, typographic quotes in Bash, and comments
+(the shell would expand, reject or drop them).
 
 **End-to-end time budget (Seam 1).** A three-group `split` run with the stepping clock: group
 1 commits, the clock steps to 61 s elapsed (fewer than 480 s left), the call stops with a
