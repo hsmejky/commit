@@ -8,10 +8,10 @@
 //
 // This test is deliberately version-agnostic: it names no git version and skips nothing, so
 // the same assertions run unmodified on the current release here and on git 2.34 in the
-// `ubuntu:22.04` CI container job (FND-03, not yet built). It was run locally only against
-// the git release installed on this machine; see the roadmap slice's commit message for the
-// exact version. If a future CI run on git 2.34 disagrees with these assertions, that is a
-// Q11 amendment, not a change to this file.
+// `ubuntu:22.04` CI container job (FND-03, not yet built). See
+// docs/decisions/open-verification-items.md ("The temporary index (Q11)") for the outcome
+// this test backs and the exact git version it was run against. If a future CI run on git
+// 2.34 disagrees with these assertions, that is a Q11 amendment, not a change to this file.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -29,6 +29,28 @@ const FIXED_IDENTITY = {
   GIT_COMMITTER_DATE: '2024-01-01T00:00:00Z',
 };
 
+// The pinned diff options and `-c` config pins from Q11 ("Every diff the script runs uses
+// pinned options ... from the toplevel"), so this proof exercises the exact invocation shape
+// `plan` and `commit` will use, not a bare `git diff -M`.
+const PINNED_DIFF_ARGS = [
+  '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
+  '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
+  '--ignore-submodules=dirty', '--src-prefix=a/', '--dst-prefix=b/',
+];
+const PINNED_CONFIG_ARGS = ['-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false'];
+
+// Q9: every git call drops every inherited `GIT_*` environment variable, so a variable set
+// on the host (or by whatever launched this test run) cannot influence the checks here. The
+// env this test needs (fixed identity, git-config isolation) is set explicitly by the
+// caller, not inherited.
+function withoutInheritedGitVars(env) {
+  const filtered = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.startsWith('GIT_')) filtered[key] = value;
+  }
+  return filtered;
+}
+
 // Builds a fresh repo in its own temp directory, isolated from the host's git config (no
 // system or user config, fixed HOME) so the check does not depend on what is installed on
 // this machine. Returns the repo directory and the env every git call in the test should use.
@@ -39,7 +61,7 @@ function makeRepo() {
   const repoDir = path.join(homeDir, 'repo');
   fs.mkdirSync(repoDir);
   const env = {
-    ...process.env,
+    ...withoutInheritedGitVars(process.env),
     ...FIXED_IDENTITY,
     HOME: homeDir,
     USERPROFILE: homeDir,
@@ -88,7 +110,7 @@ function cleanup(t, homeDir) {
 
 // --- AC 1: intent-to-add paths diff as A, with their content ------------------------------
 
-test('git diff -M against an index copy with a git add -N entry shows the path as A with its content', (t) => {
+test('git diff against an index copy with git add -N entries shows each intent-to-add path as A with its content', (t) => {
   const { homeDir, repoDir, env } = makeRepo();
   cleanup(t, homeDir);
 
@@ -96,17 +118,32 @@ test('git diff -M against an index copy with a git add -N entry shows the path a
   writeFile(repoDir, 'base.txt', 'base\n');
   commitAll(repoDir, env, 'base');
 
+  // An untracked candidate: never staged in the real index.
   writeFile(repoDir, 'new.txt', 'hello new\n');
+
+  // A staged-new path (Q11 step 2's other source of intent-to-add candidates): already
+  // `git add`ed into the real index, not merely sitting untracked in the working tree.
+  writeFile(repoDir, 'staged.txt', 'hello staged\n');
+  git(repoDir, env, ['add', 'staged.txt']);
+
   const indexCopy = copyIndexResetToHead(repoDir, env);
-  git(repoDir, env, ['add', '-N', 'new.txt'], { GIT_INDEX_FILE: indexCopy });
+  git(repoDir, env, ['add', '-N', 'new.txt', 'staged.txt'], { GIT_INDEX_FILE: indexCopy });
 
-  const nameStatus = git(repoDir, env, ['diff', '-M', '--name-status'], { GIT_INDEX_FILE: indexCopy });
-  assert.equal(nameStatus, 'A\tnew.txt\n');
+  const nameStatus = git(
+    repoDir, env, [...PINNED_CONFIG_ARGS, 'diff', ...PINNED_DIFF_ARGS, '--name-status'],
+    { GIT_INDEX_FILE: indexCopy },
+  );
+  assert.equal(nameStatus, 'A\tnew.txt\nA\tstaged.txt\n');
 
-  const full = git(repoDir, env, ['diff', '-M'], { GIT_INDEX_FILE: indexCopy });
+  const full = git(
+    repoDir, env, [...PINNED_CONFIG_ARGS, 'diff', ...PINNED_DIFF_ARGS],
+    { GIT_INDEX_FILE: indexCopy },
+  );
   assert.match(full, /diff --git a\/new\.txt b\/new\.txt/);
+  assert.match(full, /diff --git a\/staged\.txt b\/staged\.txt/);
   assert.match(full, /new file mode/);
   assert.match(full, /^\+hello new$/m);
+  assert.match(full, /^\+hello staged$/m);
 });
 
 // --- AC 2: a deleted path plus an intent-to-add path pair as R ----------------------------
@@ -124,7 +161,10 @@ test('a plain mv pairs as R after the temporary-index steps', (t) => {
   const indexCopy = copyIndexResetToHead(repoDir, env);
   git(repoDir, env, ['add', '-N', 'renamed.txt'], { GIT_INDEX_FILE: indexCopy });
 
-  const nameStatus = git(repoDir, env, ['diff', '-M', '--name-status'], { GIT_INDEX_FILE: indexCopy });
+  const nameStatus = git(
+    repoDir, env, [...PINNED_CONFIG_ARGS, 'diff', ...PINNED_DIFF_ARGS, '--name-status'],
+    { GIT_INDEX_FILE: indexCopy },
+  );
   assert.equal(nameStatus, 'R100\told.txt\trenamed.txt\n');
 });
 
@@ -148,7 +188,10 @@ test('a git mv pairs as R after the temporary-index steps (step 1 deletes the ol
   const indexCopy = copyIndexResetToHead(repoDir, env);
   git(repoDir, env, ['add', '-N', stagedNew], { GIT_INDEX_FILE: indexCopy });
 
-  const nameStatus = git(repoDir, env, ['diff', '-M', '--name-status'], { GIT_INDEX_FILE: indexCopy });
+  const nameStatus = git(
+    repoDir, env, [...PINNED_CONFIG_ARGS, 'diff', ...PINNED_DIFF_ARGS, '--name-status'],
+    { GIT_INDEX_FILE: indexCopy },
+  );
   assert.equal(nameStatus, 'R100\told2.txt\trenamed2.txt\n');
 });
 

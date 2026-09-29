@@ -89,7 +89,14 @@
   with an intent-to-add path as `R` (a plain `mv` and a `git mv` after step 1's reset), and
   that `git diff --cached --no-renames --diff-filter=A` lists a `git mv`'s new path and works
   on an unborn HEAD, on git 2.34 and the current release. Spike before the file-level
-  slice.
+  slice. **2.54.0 half resolved** on 2026-09-29 (git 2.54.0, Windows;
+  `tests/temporary-index.test.js`, PRE-09). All three assumptions hold with the exact pinned
+  diff options and `-c` config pins: an intent-to-add path (untracked or already staged-new)
+  diffs as `A` with its working-tree content; a plain `mv` and a `git mv`, each followed by
+  step 1's reset and an intent-to-add of the new path, pair as `R100`; and the staged-new-path
+  query lists only a `git mv`'s new path, both on a normal HEAD and an unborn one. No Q11
+  amendment needed. Not yet run on git 2.34: that leg waits on the CI `ubuntu:22.04` container
+  job (FND-03), not yet built.
 - How Claude Code ends a Bash/PowerShell tool call (Esc, timeout) on Linux, macOS and
   Windows: whether it sends a process-group `SIGTERM`, a `SIGKILL`, or a Windows tree kill,
   and whether a detached child (the spawned git or hook process; Q9's kill handling, Q18's
