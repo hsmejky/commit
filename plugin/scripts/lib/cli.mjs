@@ -21,11 +21,17 @@ const EXIT_CODES = Object.freeze({
  * @param {string} kind a CLI error kind (C:cli-and-exit-codes).
  * @param {string} message
  * @returns {{ stdoutJson: object, exitCode: number }}
+ * @throws {Error} when `kind` has no entry in `EXIT_CODES`: an unmapped kind would otherwise
+ *   silently exit 0 with `ok: false` (`EXIT_CODES[kind]` reading `undefined`).
  */
-function failure(kind, message) {
+export function failure(kind, message) {
+  const exitCode = EXIT_CODES[kind];
+  if (exitCode === undefined) {
+    throw new Error(`no exit code mapped for kind ${JSON.stringify(kind)}`);
+  }
   return {
     stdoutJson: { version: 1, ok: false, error: { kind, message } },
-    exitCode: EXIT_CODES[kind],
+    exitCode,
   };
 }
 
@@ -48,5 +54,6 @@ export async function main(argv, env) {
   if (!SUBCOMMANDS.includes(subcommand)) {
     return failure('usage', `unknown subcommand ${JSON.stringify(subcommand)}; ${expected}`);
   }
+  // RPL-02+: every subcommand routes to M18 once its argv parsing and workflow exist.
   return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
 }

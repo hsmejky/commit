@@ -145,6 +145,34 @@ test('an unexpected throw is internal on stdout, with the debug output on stderr
   assert.equal(/cli\.mjs:2/.test(result.stdout), false);
 });
 
+test('a stub M1 resolving undefined is internal on stdout, not a raw crash', async (t) => {
+  const c = createCase(t);
+  const { entry } = installEntryWithStubLib(c, [
+    'export async function main() {',
+    '  return undefined;',
+    '}',
+    '',
+  ].join('\n'));
+  const result = await runCommit(c, ['plan'], { script: entry });
+  assert.equal(result.exitCode, 1);
+  assert.deepEqual(Object.keys(result.json).sort(), ['error', 'ok', 'version']);
+  assert.equal(result.json.error.kind, 'internal');
+});
+
+test('a stub M1 result holding a BigInt is internal on stdout, not a raw crash', async (t) => {
+  const c = createCase(t);
+  const { entry } = installEntryWithStubLib(c, [
+    'export async function main() {',
+    '  return { stdoutJson: { version: 1, ok: true, n: 1n }, exitCode: 0 };',
+    '}',
+    '',
+  ].join('\n'));
+  const result = await runCommit(c, ['plan'], { script: entry });
+  assert.equal(result.exitCode, 1);
+  assert.deepEqual(Object.keys(result.json).sort(), ['error', 'ok', 'version']);
+  assert.equal(result.json.error.kind, 'internal');
+});
+
 test('M1 receives argv after the script path and the injected environment', async (t) => {
   const c = createCase(t);
   const { entry } = installEntryWithStubLib(c, [
@@ -178,4 +206,16 @@ test('without CLAUDE_CONFIG_DIR the Claude home is .claude in the OS home', asyn
   ].join('\n'));
   const result = await runCommit(c, ['plan'], { script: entry });
   assert.equal(result.json.claudeHome, path.join(c.osHome, '.claude'));
+});
+
+// The entry point must parse on Node 12 (architectural decisions "Entry points survive an
+// old Node"): a syntax check the old Node check itself cannot perform, since it only runs
+// once the file has already parsed. A banned token anywhere (including a comment or string)
+// is flagged without trying to tell code from prose: cheap, and the shipped file has none of
+// these by construction.
+test('the shipped entry point has no syntax newer than Node 12', () => {
+  const source = fs.readFileSync(COMMIT_ENTRY, 'utf8');
+  const banned = ['\\bconst\\b', '\\blet\\b', '\\bclass\\b', '=>', '\\?\\.', '\\?\\?'];
+  const found = banned.filter((pattern) => new RegExp(pattern).test(source));
+  assert.deepEqual(found, []);
 });

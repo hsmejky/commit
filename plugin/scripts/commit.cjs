@@ -48,18 +48,39 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
     osHome: osHome,
     claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(osHome, '.claude'),
     osUser: osUser,
-    scriptPath: __filename,
+    // The reply contract (docs/contracts/reply-and-handback.md "run") names
+    // `process.argv[1]`, not `__filename`: they can differ through a symlink (e.g. a
+    // plugin cache linked into place), and the `run` command must match the path the
+    // process was actually invoked with.
+    scriptPath: process.argv[1],
     env: process.env,
   };
 
+  // Every step from here on runs inside the chain, including the `JSON.stringify` of M1's
+  // result: a stub `main` that resolves `undefined`, or a result holding a BigInt, throws
+  // there, not in a handler outside the chain, so a single `.catch` below is the only place
+  // that needs to turn a throw into the `internal` shape. A rejection handler passed as a
+  // `.then` call's 2nd argument only catches a rejection of the promise it is chained from,
+  // never a throw from that same `.then` call's own success handler, so building the output
+  // string in the same handler that would throw, then a dedicated `.catch`, is what keeps
+  // every throw path making it to the one final write below.
   import(url.pathToFileURL(path.join(__dirname, 'lib', 'cli.mjs')).href)
     .then(function (cli) {
       return cli.main(process.argv.slice(2), injected);
     })
     .then(function (result) {
-      writeResult(result.stdoutJson, result.exitCode);
-    }, function (err) {
+      return { text: JSON.stringify(result.stdoutJson) + '\n', code: result.exitCode };
+    })
+    .catch(function (err) {
       process.stderr.write('commit: unexpected error\n' + ((err && err.stack) || String(err)) + '\n');
-      writeResult(failure('internal', 'unexpected error: ' + ((err && err.message) || String(err))), 1);
+      return {
+        text: JSON.stringify(failure('internal', 'unexpected error: ' + ((err && err.message) || String(err)))) + '\n',
+        code: 1,
+      };
+    })
+    .then(function (output) {
+      process.stdout.write(output.text);
+      // Never `process.exit()`: it can cut a piped stdout short on Windows.
+      process.exitCode = output.code;
     });
 }
