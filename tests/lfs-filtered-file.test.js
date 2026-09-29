@@ -10,10 +10,13 @@
 //
 // Requires `git-lfs` on PATH; skips cleanly (reason in the skip message) when it is not
 // installed, per the same item ("The test suite covers the mechanism with a `sed` clean
-// filter; this spike covers LFS itself.").
+// filter; this spike covers LFS itself."), *unless* `COMMIT_REQUIRE_LFS=1` is set, in which
+// case a missing git-lfs fails the test instead of skipping it: the CI `ubuntu:22.04`
+// container job (FND-03) installs git-lfs and sets that variable, so a broken container
+// image is caught there rather than silently skipping.
 //
 // Verified here against the current release only. Git 2.34 coverage is the CI
-// `ubuntu:22.04` container job (FND-03), not yet built; this test does not claim it.
+// `ubuntu:22.04` container job (FND-03, not yet built); this test does not claim it.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -33,62 +36,118 @@ const FIXED_ENV = {
   GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
 };
 
-// The pinned diff options from Q11 ("Every diff the script runs uses pinned options"),
-// so this proof exercises the exact invocation shape `plan` and `commit` will use.
+// The pinned diff options and `-c` config pins from Q11 ("Every diff the script runs uses
+// pinned options ... from the toplevel"), so this proof exercises the exact invocation shape
+// `plan` and `commit` will use, not a bare `git diff`. Matches
+// tests/temporary-index.test.js (PRE-09) verbatim.
 const PINNED_DIFF_ARGS = [
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
   '--ignore-submodules=dirty', '--src-prefix=a/', '--dst-prefix=b/',
 ];
+const PINNED_CONFIG_ARGS = ['-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false'];
+
+// Q9: every git call drops every inherited `GIT_*` environment variable, so a variable set
+// on the host (or by whatever launched this test run) cannot influence the checks here. The
+// env each call needs (fixed identity, git-config isolation, and — for diff calls only —
+// literal pathspecs) is set explicitly by the caller, not inherited.
+function withoutInheritedGitVars(env) {
+  const filtered = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.startsWith('GIT_')) filtered[key] = value;
+  }
+  return filtered;
+}
+
+// Isolated from the host's git config (no system or user config, fixed HOME) so the checks
+// do not depend on what is installed on this machine, mirroring
+// tests/temporary-index.test.js's makeRepo() (PRE-09). Returns the base env (used for
+// `init`/`config`/`lfs`/`add`/`commit`) and a variant with `GIT_LITERAL_PATHSPECS=1` added
+// (Q9: every call except `git commit` runs with it, and it is what makes this proof's `diff`
+// calls the exact invocation shape `plan` and `commit` will use). The caller owns `homeDir`
+// and removes it.
+function buildEnv(homeDir) {
+  const emptyConfig = path.join(homeDir, 'empty.gitconfig');
+  writeFileSync(emptyConfig, '');
+  const env = {
+    ...withoutInheritedGitVars(process.env),
+    ...FIXED_ENV,
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: emptyConfig,
+  };
+  return { env, diffEnv: { ...env, GIT_LITERAL_PATHSPECS: '1' } };
+}
+
+function git(cwd, env, args) {
+  return execFileSync('git', args, { cwd, env, encoding: 'utf8' });
+}
+
+// Raw bytes, not decoded, per Q11: a diff's content must be compared byte-for-byte, not as
+// a possibly-lossy UTF-8 string.
+function gitBuffer(cwd, env, args) {
+  return execFileSync('git', args, { cwd, env });
+}
 
 function hasGitLfs() {
+  const homeDir = mkdtempSync(path.join(tmpdir(), 'commit-pre10-probe-'));
   try {
-    execFileSync('git', ['lfs', 'version'], { stdio: 'pipe' });
+    const { env } = buildEnv(homeDir);
+    execFileSync('git', ['lfs', 'version'], { env, stdio: 'pipe' });
     return true;
   } catch {
     return false;
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
   }
-}
-
-function git(cwd, args) {
-  return execFileSync('git', args, {
-    cwd,
-    env: { ...process.env, ...FIXED_ENV },
-    encoding: 'utf8',
-  });
 }
 
 // A throwaway repo under the OS temp dir, torn down by the caller. Kept local to this
 // test file rather than tests/helpers/ so a concurrently-running agent's own git-repo
 // helper (PRE-09) cannot collide with it.
 function makeLfsRepo() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'commit-pre10-'));
-  git(dir, ['init', '-q', '-b', 'main']);
-  git(dir, ['config', 'user.name', 'Commit Test']);
-  git(dir, ['config', 'user.email', 'commit-test@example.invalid']);
-  git(dir, ['lfs', 'install', '--local']);
-  return dir;
+  const homeDir = mkdtempSync(path.join(tmpdir(), 'commit-pre10-'));
+  const { env, diffEnv } = buildEnv(homeDir);
+  const dir = path.join(homeDir, 'repo');
+  mkdirSync(dir);
+  git(dir, env, ['init', '-q', '-b', 'main']);
+  git(dir, env, ['config', 'user.name', 'Commit Test']);
+  git(dir, env, ['config', 'user.email', 'commit-test@example.invalid']);
+  git(dir, env, ['lfs', 'install', '--local']);
+  return { dir, homeDir, env, diffEnv };
 }
 
 const lfsAvailable = hasGitLfs();
+const requireLfs = process.env.COMMIT_REQUIRE_LFS === '1';
 
 test(
   'an LFS-tracked change diffs as a pointer, and staging it matches the pre-add diff and stores the object',
-  { skip: lfsAvailable ? false : 'git-lfs is not installed on this machine' },
+  { skip: lfsAvailable || requireLfs ? false : 'git-lfs is not installed on this machine' },
   () => {
-    const dir = makeLfsRepo();
+    if (!lfsAvailable) {
+      assert.fail(
+        'COMMIT_REQUIRE_LFS=1 is set but git-lfs is not installed (expected in the CI '
+        + 'ubuntu:22.04 container job, FND-03, which installs it)',
+      );
+    }
+
+    const { dir, homeDir, env, diffEnv } = makeLfsRepo();
     try {
-      git(dir, ['lfs', 'track', '*.bin']);
+      git(dir, env, ['lfs', 'track', '*.bin']);
       mkdirSync(path.join(dir, 'assets'));
       writeFileSync(path.join(dir, 'assets', 'data.bin'), 'hello world content v1');
-      git(dir, ['add', '.gitattributes', 'assets/data.bin']);
-      git(dir, ['commit', '-q', '-m', 'init']);
+      git(dir, env, ['add', '.gitattributes', 'assets/data.bin']);
+      git(dir, env, ['commit', '-q', '-m', 'init']);
 
       const newContent = 'hello world content v2 longer';
       writeFileSync(path.join(dir, 'assets', 'data.bin'), newContent);
 
       // AC1: `git diff` shows the LFS-tracked change as a pointer diff, not the real bytes.
-      const unstagedDiff = git(dir, ['diff', ...PINNED_DIFF_ARGS, '--', 'assets/data.bin']);
+      const unstagedDiffBuf = gitBuffer(
+        dir, diffEnv, [...PINNED_CONFIG_ARGS, 'diff', ...PINNED_DIFF_ARGS, '--', 'assets/data.bin'],
+      );
+      const unstagedDiff = unstagedDiffBuf.toString('utf8');
       assert.match(unstagedDiff, /^-oid sha256:[0-9a-f]{64}$/m, 'old pointer line');
       assert.match(unstagedDiff, /^\+oid sha256:[0-9a-f]{64}$/m, 'new pointer line');
       assert.doesNotMatch(unstagedDiff, /hello world content/, 'raw content must not appear in the diff');
@@ -97,7 +156,7 @@ test(
       // by the content's own sha256, and the staged diff then matches the diff `plan`
       // would have hashed before the add.
       const expectedOid = createHash('sha256').update(newContent).digest('hex');
-      git(dir, ['add', 'assets/data.bin']);
+      git(dir, env, ['add', 'assets/data.bin']);
 
       const objectPath = path.join(
         dir, '.git', 'lfs', 'objects', expectedOid.slice(0, 2), expectedOid.slice(2, 4), expectedOid,
@@ -105,14 +164,19 @@ test(
       assert.ok(existsSync(objectPath), `LFS object not found at ${objectPath}`);
       assert.equal(readFileSync(objectPath, 'utf8'), newContent, 'stored object holds the real content');
 
-      const stagedDiff = git(dir, ['diff', '--cached', ...PINNED_DIFF_ARGS, '--', 'assets/data.bin']);
-      assert.equal(
-        stagedDiff, unstagedDiff,
-        'the staged diff must match the diff `plan` hashed before `git add`',
+      const stagedDiffBuf = gitBuffer(
+        dir, diffEnv,
+        [...PINNED_CONFIG_ARGS, 'diff', '--cached', ...PINNED_DIFF_ARGS, '--', 'assets/data.bin'],
       );
-      assert.match(stagedDiff, new RegExp(`^\\+oid sha256:${expectedOid}$`, 'm'));
+      assert.deepEqual(
+        stagedDiffBuf, unstagedDiffBuf,
+        'the staged diff must match the diff `plan` hashed before `git add`, byte for byte',
+      );
+      assert.match(
+        stagedDiffBuf.toString('utf8'), new RegExp(`^\\+oid sha256:${expectedOid}$`, 'm'),
+      );
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(homeDir, { recursive: true, force: true });
     }
   },
 );
