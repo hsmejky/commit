@@ -69,6 +69,18 @@
   `.git/lfs/objects`, and that the staged diff then matches the planned hash; on git 2.34
   and the current release. The test suite covers the mechanism with a `sed` clean filter;
   this spike covers LFS itself. Spike before the slice that stages a filtered or LFS file.
+  **Partially resolved** on 2026-09-29 (git 2.54.0, git-lfs 3.7.1, Windows;
+  `tests/lfs-filtered-file.test.js`, PRE-10). Both assumptions hold, run with the exact
+  pinned diff options: `git diff` on a modified LFS-tracked file shows the pointer's `oid`
+  and `size` lines changing, never the real bytes, because git runs the `clean` filter on
+  the working-tree content before diffing it against the (already clean) index blob, the
+  same mechanism Q11 already describes for the general filter-attribute case. `git add` of
+  the whole file stores the object at
+  `.git/lfs/objects/<oid[0:2]>/<oid[2:4]>/<oid>` keyed by the content's own sha256, and
+  `git diff --cached` afterwards is byte-for-byte identical to the pre-add `git diff`, so
+  the diff `plan` would hash before staging equals the one `commit` verifies after. No Q11
+  amendment needed. Not yet run on git 2.34: that leg waits on the CI `ubuntu:22.04`
+  container job (FND-03), not yet built.
 - Agent frontmatter (Q24): **resolved** on 2026-09-26. The plugin docs list `omitClaudeMd`
   among the supported plugin-agent fields (ignored there: `permissionMode`, `hooks`,
   `mcpServers`, `initialPrompt`). Probe (Claude Code, Windows, headless, `--plugin-dir`, a
