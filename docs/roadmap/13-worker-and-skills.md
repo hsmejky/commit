@@ -137,20 +137,20 @@ arguments per Q2, and tells the caller to edit no files until the reply arrives.
 
 **Blocked by:** WRK-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q2, Q8, Q24, Q25, Prompt-only and manifest blocks "`/commit` skill", stories
 2-5, 7, 9, 228.
 
-- [ ] Frontmatter `disable-model-invocation: true`; a static test asserts it (story 7)
-- [ ] The text maps bare → no `intent`, text → `intent: <text>`, `reword` → `reword: true`,
+- [x] Frontmatter `disable-model-invocation: true`; a static test asserts it (story 7)
+- [x] The text maps bare → no `intent`, text → `intent: <text>`, `reword` → `reword: true`,
       `reword <text>` → `reword: <text>`, and never adds an `intent` of its own (stories
       2-5)
-- [ ] The text says to edit no files until the worker's reply and to follow its
+- [x] The text says to edit no files until the worker's reply and to follow its
       `callerRule`
-- [ ] CI size tests: SKILL.md ≤ 1.5 kB, description ≤ 200 characters (story 228's budgets
+- [x] CI size tests: SKILL.md ≤ 1.5 kB, description ≤ 200 characters (story 228's budgets
       as held by Q24)
-- [ ] The spawn names `model: "sonnet"`, and the SKILL.md joins WRK-01's model-equality
+- [x] The spawn names `model: "sonnet"`, and the SKILL.md joins WRK-01's model-equality
       test (Q24 as amended by PRE-15)
 
 
