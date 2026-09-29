@@ -80,3 +80,126 @@ export function hideFilter(paths) {
   }
   return { candidates, hidden };
 }
+
+// C:summary-only-files rule 1: lockfile names, matched on the last path segment (any
+// directory).
+const LOCKFILES = Object.freeze([
+  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'Cargo.lock',
+  'poetry.lock', 'uv.lock', 'Gemfile.lock', 'composer.lock', 'go.sum',
+]);
+
+// Rule 5 (`lines`) and rule 6 (`size`, Q19): exactly at the boundary is not over.
+const LINES_CAP = 1000;
+const SIZE_CAP_BYTES = 262144; // 256 KB
+
+/**
+ * The reason a file is summary-only, in C:summary-only-files order (first match wins).
+ *
+ * @param {string} path repo-relative, forward slashes
+ * @param {{ added: number, deleted: number, generated: boolean, size: number }} stats
+ *   `added`/`deleted`: changed-line counts from the diff (their sum is the `lines` rule).
+ *   `generated`: the `linguist-generated` `.gitattributes` flag. `size`: the file's byte
+ *   size (its new content; deletions use the old content's size), the `size` rule.
+ * @returns {'lockfile'|'minified'|'sourcemap'|'generated'|'lines'|'size'|null}
+ */
+export function summaryOnly(path, stats) {
+  const name = path.split('/').pop();
+  if (LOCKFILES.includes(name)) {
+    return 'lockfile';
+  }
+  if (name.includes('.min.')) {
+    return 'minified';
+  }
+  if (name.endsWith('.map')) {
+    return 'sourcemap';
+  }
+  if (stats.generated) {
+    return 'generated';
+  }
+  if (stats.added + stats.deleted > LINES_CAP) {
+    return 'lines';
+  }
+  if (stats.size > SIZE_CAP_BYTES) {
+    return 'size';
+  }
+  return null;
+}
+
+// bucketOf: path-derived grouping hints only (Q11), never a grouping rule. Checked in this
+// order: `test`, `ci`, `docs`, `build`, else `code`. `spec`/`specs` is deliberately not a
+// test segment: unlike `test`/`tests`, it also names non-test directories (this repo's own
+// `docs/spec`), so only the `*.spec.*` name pattern catches it.
+const TEST_SEGMENTS = new Set(['test', 'tests', '__tests__']);
+
+const CI_DIRS = Object.freeze([
+  '.github/workflows/', '.circleci/', '.gitlab/', '.buildkite/', '.gitea/workflows/',
+  '.forgejo/workflows/', '.woodpecker/',
+]);
+const CI_NAMES = Object.freeze(['.gitlab-ci.yml', '.travis.yml', '.drone.yml', 'Jenkinsfile']);
+
+const BUILD_NAMES = Object.freeze([
+  'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb',
+  'Cargo.lock', 'Cargo.toml', 'poetry.lock', 'pyproject.toml', 'uv.lock', 'Gemfile',
+  'Gemfile.lock', 'composer.json', 'composer.lock', 'go.mod', 'go.sum', 'Dockerfile',
+  'Makefile', 'tsconfig.json',
+]);
+const BUILD_CONFIG_SUFFIXES = Object.freeze(['.config.js', '.config.mjs', '.config.cjs', '.config.ts']);
+
+/**
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isTestPath(path) {
+  const segments = path.split('/');
+  const name = segments[segments.length - 1];
+  return segments.some((segment) => TEST_SEGMENTS.has(segment))
+    || name.includes('.test.') || name.includes('.spec.');
+}
+
+/**
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isCiPath(path) {
+  const name = path.split('/').pop();
+  return CI_DIRS.some((dir) => path.startsWith(dir)) || CI_NAMES.includes(name);
+}
+
+/**
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isDocsPath(path) {
+  const name = path.split('/').pop();
+  return path === 'docs' || path.startsWith('docs/') || name.endsWith('.md') || name.endsWith('.mdx');
+}
+
+/**
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isBuildName(name) {
+  return BUILD_NAMES.includes(name) || BUILD_CONFIG_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/**
+ * A path-derived grouping hint (C:plan `bucket`), never a grouping rule (Q11).
+ *
+ * @param {string} path repo-relative, forward slashes
+ * @returns {'code'|'test'|'docs'|'ci'|'build'}
+ */
+export function bucketOf(path) {
+  if (isTestPath(path)) {
+    return 'test';
+  }
+  if (isCiPath(path)) {
+    return 'ci';
+  }
+  if (isDocsPath(path)) {
+    return 'docs';
+  }
+  if (isBuildName(path.split('/').pop())) {
+    return 'build';
+  }
+  return 'code';
+}
