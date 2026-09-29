@@ -68,8 +68,10 @@ fixed, delete it here; IDs are never reused.
 - **KD-R23.** RUN-09's Windows retry-window holder releases on an unnamed event (timing
   dependent). Name a marker file.
 - **KD-R24.** RUN-09's stubbed probe failure and `busy` cases have no mechanism and end in a
-  hedge. Base them on FND-10 (`EPERM` → retries → probe → `busy`; `ENOTSUP` →
-  `run-folder`); fix a probe basename prefix or move the case to RUN-10 as a gap.
+  hedge. FND-10 now accepts a list of `name[=code]` entries, so the lock link can fail
+  `EPERM` while the probe link fails `ENOTSUP` in the same run; RUN-09 still needs a fixed
+  probe basename to use it (or a prefix match added to FND-10, if the probe name is
+  inherently random).
 - **KD-R25.** CHG-04 fires the `clean` filter during the inventory, which precedes the
   fingerprint, so no `diff-changed` fires. Fire it during the step-5 snapshot diff, or fix
   the step order in C:plan.

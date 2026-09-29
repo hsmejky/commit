@@ -193,14 +193,14 @@ stub entry point that drives it in the test tree is `.cjs`, like the real entry 
 
 **Blocked by:** FND-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Seams "Fault-injection preload at Seam 1", Architectural decisions "Injected
 environment", "Module type fixed by extension".
 
-- [ ] Driving a stub entry point in the test tree: with the `os.userInfo()` fault set, `os.userInfo()` throws; unset, it returns normally.
-- [ ] Driving the stub: with a named fs boundary set to a target basename, `fs.linkSync` and `fs.renameSync` (and the callback and promise forms the code path uses) fail only for a target path matching that basename; a call for any other path succeeds.
-- [ ] Driving the stub: with the errno option set to `EEXIST`, and again to `EPERM`, the injected error's `code` equals the configured code; with the option unset it is `EIO`.
-- [ ] Driving a stub that uses named ESM imports (`import { linkSync, renameSync } from 'node:fs'`, `import { userInfo } from 'node:os'`): each configured fault fires exactly as it does through a property access on the module object.
-- [ ] Driving the stub: with call-order logging on, each intercepted call's target path is appended to the log file in call order; with it off, no log file is written.
-- [ ] The preload lives only in the test tree; the packaged plugin directory contains no reference to it.
+- [x] Driving a stub entry point in the test tree: with the `os.userInfo()` fault set, `os.userInfo()` throws; unset, it returns normally.
+- [x] Driving the stub: with a named fs boundary set to a target basename, `fs.linkSync` and `fs.renameSync` (and the callback and promise forms the code path uses) fail only for a target path matching that basename; a call for any other path succeeds.
+- [x] Driving the stub: with the errno option set to `EEXIST`, and again to `EPERM`, the injected error's `code` equals the configured code; with the option unset it is `EIO`.
+- [x] Driving a stub that uses named ESM imports (`import { linkSync, renameSync } from 'node:fs'`, `import { userInfo } from 'node:os'`): each configured fault fires exactly as it does through a property access on the module object.
+- [x] Driving the stub: with call-order logging on, each intercepted call's target path is appended to the log file in call order; with it off, no log file is written.
+- [x] The preload lives only in the test tree; the packaged plugin directory contains no reference to it.
