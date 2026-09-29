@@ -257,6 +257,80 @@ test('scanUnits of units with no hit reports no hits and no skipped files', () =
   assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
 });
 
+// Line cut at 4096 characters (SCN-12): every scanned line (diff line, symlink target,
+// message line) is cut to its first 4096 UTF-16 code units before any regex runs. Padding is
+// spaces, not word characters, so it never merges into the `github-token` row's own `\b`
+// boundary; a github-token is enough to isolate the cut (SCN-05's pattern), per the slice.
+const LINE_CUT = 4096;
+
+// A line whose `github-token` starts `padLength` characters in: at `LINE_CUT - token.length`
+// the token sits entirely inside the cut (line length exactly 4096, untouched); one more and
+// the cut's last character falls one short of the token, so the minimum-length alternative
+// can no longer match.
+function paddedTokenLine(padLength) {
+  return ' '.repeat(padLength) + githubToken('x');
+}
+
+test('scanUnits: a github-token entirely before the cut → hit', () => {
+  const line = paddedTokenLine(LINE_CUT - githubToken('x').length);
+  const units = [textUnit('big.diff', [{ line: 1, text: line }])];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, [
+    { patternId: 'github-token', path: 'big.diff', line: 1 },
+  ]);
+});
+
+test('scanUnits: the same github-token shifted one character past the cut → missed', () => {
+  const line = paddedTokenLine(LINE_CUT - githubToken('x').length + 1);
+  const units = [textUnit('big.diff', [{ line: 1, text: line }])];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, []);
+});
+
+test('scanUnits: the same cut applies to a symlink target, one before the cut → hit', () => {
+  const line = paddedTokenLine(LINE_CUT - githubToken('x').length);
+  const units = [
+    { path: 'link', oldPath: null, status: 'A', kind: 'symlink', addedLines: [{ line: 1, text: line }] },
+  ];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, [
+    { patternId: 'github-token', path: 'link', line: 1 },
+  ]);
+});
+
+test('scanUnits: a symlink target one character past the cut → missed', () => {
+  const line = paddedTokenLine(LINE_CUT - githubToken('x').length + 1);
+  const units = [
+    { path: 'link', oldPath: null, status: 'A', kind: 'symlink', addedLines: [{ line: 1, text: line }] },
+  ];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, []);
+});
+
+test('scanText: the same cut applies to a message line, one before the cut → hit', () => {
+  const line = paddedTokenLine(LINE_CUT - githubToken('x').length);
+  assert.equal(
+    scanText(line, { osUser: null }).filter((hit) => hit.patternId === 'github-token').length,
+    1,
+  );
+});
+
+test('scanText: a message line one character past the cut → missed', () => {
+  const line = paddedTokenLine(LINE_CUT - githubToken('x').length + 1);
+  assert.equal(
+    scanText(line, { osUser: null }).filter((hit) => hit.patternId === 'github-token').length,
+    0,
+  );
+});
+
+test('scanUnits: a multi-megabyte line scans in bounded time regardless of length', () => {
+  const hugeLine = ' '.repeat(20_000_000);
+  const units = [textUnit('huge.txt', [{ line: 1, text: hugeLine }])];
+
+  const started = Date.now();
+  const { hits } = scanUnits(units, { scanIgnore: [], osUser: null });
+  const elapsedMs = Date.now() - started;
+
+  assert.deepEqual(hits, []);
+  assert.ok(elapsedMs < 200, `took ${elapsedMs} ms scanning a 20M-character line, bound 200 ms`);
+});
+
 // `local-path` OS-user segment (SCN-11): the OS user name as a whole path segment in any
 // path. Paths the fixed shapes would catch are built at run time, so this file holds no hit.
 function localPathHits(text, osUser) {

@@ -57,6 +57,24 @@ function isPlaceholderUser(segment) {
   return PATH_PLACEHOLDER_USERS.has(segment.toLowerCase()) || ILLEGAL_USER_CHARACTER.test(segment);
 }
 
+// Every scanned line (diff line, symlink target, message line) is cut to its first 4096
+// UTF-16 code units before any regex or false-positive rule runs, so scanning stays linear
+// in the input regardless of how long the underlying line is; text past the cut is not
+// scanned, an accepted gap (C:scan-patterns, Q10, SCN-12). `String#slice` on UTF-16 code
+// units, not code points, matching the contract's own unit.
+const LINE_CUT_LENGTH = 4096;
+
+/**
+ * Cut a scanned line to `LINE_CUT_LENGTH` UTF-16 code units. Applied to every line before a
+ * pattern's regex or false-positive rule sees it, including a line only read as lookahead
+ * context (`private-key`'s body rule), so no rule ever runs against the uncut text.
+ *
+ * @param {string} line
+ */
+function cutLine(line) {
+  return line.length > LINE_CUT_LENGTH ? line.slice(0, LINE_CUT_LENGTH) : line;
+}
+
 // `private-key` body rule (C:scan-patterns): a key body line starts, after trimming, with 40
 // or more base64 characters; the RFC 1421 header lines of an encrypted PEM are not counted.
 const KEY_BODY_LINE = /^[A-Za-z0-9+/=]{40,}/;
@@ -94,7 +112,7 @@ function hasKeyBody(match, { lines, index }) {
  */
 function* followingLines(split, lines, index) {
   yield* split;
-  for (let next = index + 1; next < lines.length; next += 1) yield lines[next];
+  for (let next = index + 1; next < lines.length; next += 1) yield cutLine(lines[next]);
 }
 
 // `generic-secret` false-positive rule (C:scan-patterns): a low-entropy value, one holding a
@@ -341,7 +359,7 @@ export function createScanner(patterns) {
    * @returns {{ patternId: string, start: number, end: number }[]}
    */
   function scanLine(lines, index, osUser, osUserSegment) {
-    const line = lines[index];
+    const line = cutLine(lines[index]);
     const context = { osUser, osUserSegment, lines, index };
     const hits = [];
     for (const { row, regex } of compiled) {
@@ -364,7 +382,10 @@ export function createScanner(patterns) {
   }
 
   /**
-   * Scan a text (a normalised commit message) line by line.
+   * Scan a text (a normalised commit message) line by line. Each line is cut to
+   * `LINE_CUT_LENGTH` before it is matched (SCN-12); offsets are still computed against the
+   * uncut text, so a hit's `start`/`end` stay correct even though nothing past the cut on a
+   * long line can ever be one.
    *
    * @param {string} text
    * @param {{ osUser?: string | null }} [options]
