@@ -33,7 +33,7 @@ export function parse(message) {
  * regex gives only the header reason: no further rule runs on it.
  *
  * @param {string} message
- * @param {{ types: readonly string[] }} values
+ * @param {{ types: readonly string[], scope?: 'forbidden' | 'optional' | 'required' }} values
  * @returns {string[]}
  */
 export function lint(message, values) {
@@ -44,6 +44,11 @@ export function lint(message, values) {
   const reasons = [];
   if (!values.types.includes(header.type)) {
     reasons.push(`type '${header.type}' not in types`);
+  }
+  if (values.scope === 'forbidden' && header.scope !== null) {
+    reasons.push(`scope '${header.scope}' not allowed (scope: forbidden)`);
+  } else if (values.scope === 'required' && header.scope === null) {
+    reasons.push('scope required (scope: required)');
   }
   return reasons;
 }

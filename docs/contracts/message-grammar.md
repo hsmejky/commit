@@ -14,7 +14,9 @@ the `u` flag.
   flag, description. A header that does not match this regex fails lint with the reason
   `header is not 'type(scope)!: description'`, and no type check runs (so `Feat: x` fails
   here, on the uppercase first character, never on its type).
-- `type` must be in `types` (reason `type '<type>' not in types`); `scope` must obey `scope`.
+- `type` must be in `types` (reason `type '<type>' not in types`); `scope` must obey `scope`:
+  `forbidden` with a scope present fails with `scope '<scope>' not allowed (scope:
+  forbidden)`; `required` with no scope fails with `scope required (scope: required)`.
 - `maxSubjectLength` counts the **code points** of the whole header line.
 - `subjectCase: lower`: fails only when the first character of the description is an
   uppercase letter (`\p{Lu}`), unless the first word is all uppercase with at least two

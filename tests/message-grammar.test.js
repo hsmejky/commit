@@ -136,3 +136,63 @@ test('lint does not mutate the config values', () => {
   assert.deepEqual(values, { types: ['feat'] });
   assert.equal(values.types, types);
 });
+
+// MSG-02 AC: `feat(api): x` fails under `forbidden`, passes under `optional` and
+// `required`; `feat: x` fails under `required` only.
+
+const scopeTable = [
+  { message: 'feat(api): x', scope: 'forbidden', reasons: ["scope 'api' not allowed (scope: forbidden)"] },
+  { message: 'feat(api): x', scope: 'optional', reasons: [] },
+  { message: 'feat(api): x', scope: 'required', reasons: [] },
+  { message: 'feat: x', scope: 'forbidden', reasons: [] },
+  { message: 'feat: x', scope: 'optional', reasons: [] },
+  { message: 'feat: x', scope: 'required', reasons: ['scope required (scope: required)'] },
+];
+
+for (const { message, scope, reasons } of scopeTable) {
+  test(`lint ${JSON.stringify(message)} under scope: ${scope}`, () => {
+    assert.deepEqual(lint(message, config({ scope })), reasons);
+  });
+}
+
+// MSG-02 AC: `feat!: x` and `feat(api)!: x` parse with the breaking flag set and lint clean
+// where the scope rule allows.
+
+const breakingTable = [
+  {
+    message: 'feat!: x',
+    header: { type: 'feat', scope: null, breaking: true, description: 'x' },
+  },
+  {
+    message: 'feat(api)!: x',
+    header: { type: 'feat', scope: 'api', breaking: true, description: 'x' },
+  },
+];
+
+for (const { message, header } of breakingTable) {
+  test(`parse ${JSON.stringify(message)} sets the breaking flag`, () => {
+    assert.deepEqual(parse(message).header, header);
+  });
+
+  test(`lint ${JSON.stringify(message)} lints clean under scope: optional`, () => {
+    assert.deepEqual(lint(message, config({ scope: 'optional' })), []);
+  });
+}
+
+// MSG-02 AC: `feat(a b): x`, `feat(): x` and `feat((a)): x` are header-shape failures.
+
+const scopeShapeTable = [
+  { case: 'space inside scope', message: 'feat(a b): x' },
+  { case: 'empty scope', message: 'feat(): x' },
+  { case: 'nested parens in scope', message: 'feat((a)): x' },
+];
+
+for (const { case: name, message } of scopeShapeTable) {
+  test(`${name} (${JSON.stringify(message)}): parse has no header`, () => {
+    assert.equal(parse(message).header, null);
+  });
+
+  test(`${name} (${JSON.stringify(message)}): lint gives only the header reason`, () => {
+    assert.deepEqual(lint(message, config({ scope: 'optional' })), [HEADER_REASON]);
+  });
+}
