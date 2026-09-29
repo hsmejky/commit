@@ -16,17 +16,17 @@ typographic quotes, case-insensitive) ends with no output and exit 0.
 
 **Blocked by:** FND-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, Q13, Q1, C:guard (Output, Parsing step 1), stories 17, 22, Architectural decisions "Code split", "Entry points survive an old Node", "Module type fixed by extension".
 
-- [ ] Seam 2: `ls -la` as Bash and as PowerShell → empty stdout, exit 0, no heartbeat file.
-- [ ] Seam 2: a large stdin payload delivered in several chunks is read whole (no synchronous read of descriptor 0).
-- [ ] Seam 3: `runHook` with injected `claudeHome` and `now` gives the same result as Seam 2 for the same input.
-- [ ] A static check asserts the guard entry point's import graph reaches only G1-G3, S1 and S2, and that the entry point checks the Node version before its dynamic import of the library.
-- [ ] A static check scans the guard entry point's own source text (the part that runs before the dynamic `import()`) for syntax newer than Node 12 parses (optional chaining `?.`, nullish coalescing `??`, top-level `await`, an `import()` outside that guarded line) and fails if any appears.
-- [ ] A static check greps the guard's reachable source (G1-G3, S1, S2, entry point) for the string `allow` used as a `permissionDecision` value, and fails if any code path can emit it; only `deny` and no-output are possible outputs.
-- [ ] A static check greps the same reachable source for `node:child_process` / `child_process` and fails if it appears — no guard module may spawn a process (Architectural decisions, Code split).
+- [x] Seam 2: `ls -la` as Bash and as PowerShell → empty stdout, exit 0, no heartbeat file.
+- [x] Seam 2: a large stdin payload delivered in several chunks is read whole (no synchronous read of descriptor 0).
+- [x] Seam 3: `runHook` with injected `claudeHome` and `now` gives the same result as Seam 2 for the same input.
+- [x] A static check asserts the guard entry point's import graph reaches only G1-G3, S1 and S2, and that the entry point checks the Node version before its dynamic import of the library.
+- [x] A static check scans the guard entry point's own source text (the part that runs before the dynamic `import()`) for syntax newer than Node 12 parses (optional chaining `?.`, nullish coalescing `??`, top-level `await`, an `import()` outside that guarded line) and fails if any appears.
+- [x] A static check greps the guard's reachable source (G1-G3, S1, S2, entry point) for the string `allow` used as a `permissionDecision` value, and fails if any code path can emit it; only `deny` and no-output are possible outputs.
+- [x] A static check greps the same reachable source for `node:child_process` / `child_process` and fails if it appears — no guard module may spawn a process (Architectural decisions, Code split).
 
 
 ## GRD-02: Fail open on unreadable input or a crash
