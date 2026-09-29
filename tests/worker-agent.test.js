@@ -166,11 +166,11 @@ const SPAWN_INSTRUCTION_SOURCES = [
     name: "the /commit skill's spawn (plugin/skills/commit/SKILL.md, WRK-05)",
     read: () => fs.readFileSync(COMMIT_SKILL_PATH, 'utf8'),
     extractModels: (text) => {
-      const re = /spawn\s+`?commit:commit-worker`?\s+with\s+`?model:\s*"(\w+)"`?/gi;
+      const re = /`subagent_type:\s*commit:commit-worker`\s+and\s+`model:\s*"(\w+)"`/gi;
       const matches = [...text.matchAll(re)];
       assert.ok(
         matches.length > 0,
-        'expected "spawn commit:commit-worker with model: \\"<name>\\"" in plugin/skills/commit/SKILL.md',
+        'expected "`subagent_type: commit:commit-worker` and `model: \\"<name>\\"`" in plugin/skills/commit/SKILL.md',
       );
       return matches.map((m) => m[1]);
     },

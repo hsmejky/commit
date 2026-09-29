@@ -141,7 +141,7 @@
   - **Script path.** An agent file gets no base directory, and on the model-invoked path no
     caller knows the path either. The agent body names the script as
     `${CLAUDE_PLUGIN_ROOT}/scripts/commit.cjs`, which the plugin loader substitutes (docs and
-    spike); `/commit`'s SKILL.md does the same. The variable is **not** in the worker's shell
+    spike). The variable is **not** in the worker's shell
     environment (spike), so no command relies on it. A handback's `run` carries the script's
     own absolute path (`process.argv[1]`), so the caller needs none.
   - **The script call, not `git commit`.** The worker's prompt tells it to commit only

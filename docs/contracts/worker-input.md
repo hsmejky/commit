@@ -1,7 +1,9 @@
 # Worker input
 
 The Agent prompt that spawns `commit:commit-worker`: `key: value` lines, one per field, every field
-optional. `intent`, `interactive` and `reword` and their meaning are public surface (Q25); a
+optional, each value on one line; a caller whose argument spans several lines (a pasted
+multi-paragraph reword, a multi-line intent) joins it onto one line before writing the field.
+`intent`, `interactive` and `reword` and their meaning are public surface (Q25); a
 workflow skill spawns the worker with them. `mode`, `takeOver`, `resume` and `edit` are
 internal: respawn-only, do not write by hand. They appear only in a handback's `respawn`
 and may change in a minor release.
