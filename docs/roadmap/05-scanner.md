@@ -205,15 +205,15 @@ added line, and drops units whose path a `scanIgnore` matcher matches.
 
 **Blocked by:** SCN-05, SCN-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M8, Q10, Q19, C:scan-patterns, stories 140, 145, 148.
 
-- [ ] Seam 3: a secret on a removed line → no hit; a binary unit → neither hit nor skipped.
-- [ ] Seam 3: a unit with over 1 MB added → `skipped` with the exact reason `"added content
+- [x] Seam 3: a secret on a removed line → no hit; a binary unit → neither hit nor skipped.
+- [x] Seam 3: a unit with over 1 MB added → `skipped` with the exact reason `"added content
       over 1 MB"` (C:plan), no hits.
-- [ ] Seam 3: a symlink unit whose target is a home path → hit.
-- [ ] Seam 3: a secret in a unit matched by `tests/fixtures/**` → no hit.
+- [x] Seam 3: a symlink unit whose target is a home path → hit.
+- [x] Seam 3: a secret in a unit matched by `tests/fixtures/**` → no hit.
 
 
 ## SCN-14: `scanIgnore` change flags the repo config's units
