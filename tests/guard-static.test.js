@@ -2,9 +2,10 @@
 
 // GRD-01 static checks over the guard's source (docs/spec/architectural-decisions.md "Code
 // split", "Entry points survive an old Node", "Module type fixed by extension"; C:guard
-// Output; Q1, Q3, Q15). Every check reads raw source text, comments and literals included,
-// so a false failure is possible and a false pass is not. Each checker also runs against a
-// small bad sample, so it cannot pass vacuously.
+// Output; Q1, Q3, Q15). Every check reads raw source text, literals included, so a false
+// failure is possible and a false pass is not; the check that counts `import` calls matches
+// only `import(`, so a bare mention of the word in a comment does not trigger it. Each
+// checker also runs against a small bad sample, so it cannot pass vacuously.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,8 +15,9 @@ const { GUARD_ENTRY } = require('./helpers/process-seam.js');
 
 const LIB_DIR = path.join(path.dirname(GUARD_ENTRY), 'lib');
 
-// The guard's own modules plus the two shared ones (docs/spec/modules.md): G1 hook I/O, G2
-// shell tokenizer, G3 command classifier, S1 heartbeat, S2 script call.
+// The guard's own modules plus the two shared ones: file names derived from the module
+// titles in docs/spec/modules.md (G1 hook I/O, G2 shell tokenizer, G3 command classifier,
+// S1 heartbeat, S2 script call).
 const GUARD_MODULES = new Set([
   'hook-io.mjs',
   'shell-tokenizer.mjs',
@@ -23,6 +25,10 @@ const GUARD_MODULES = new Set([
   'heartbeat.mjs',
   'script-call.mjs',
 ]);
+
+// S1 and S2 load nothing else (docs/spec/architectural-decisions.md "Code split"): any
+// relative import out of these two files is a problem, even one that targets a guard module.
+const SHARED_LEAVES = new Set(['heartbeat.mjs', 'script-call.mjs']);
 
 const QUOTED = String.raw`\s*(['"])([^'"\r\n]*)\1`;
 
@@ -47,8 +53,8 @@ function specifiers(source) {
 }
 
 // Walks the graph from `entry`: returns the reachable files (entry included) and every
-// problem found on the way (a module outside GUARD_MODULES, a bare specifier that is not a
-// `node:` built-in, an unreadable call).
+// problem found on the way (a module outside GUARD_MODULES, a relative import out of S1 or
+// S2, a bare specifier that is not a `node:` built-in, an unreadable call).
 function guardGraph(entry, readSource = (file) => fs.readFileSync(file, 'utf8')) {
   const files = [];
   const problems = [];
@@ -66,6 +72,10 @@ function guardGraph(entry, readSource = (file) => fs.readFileSync(file, 'utf8'))
       if (spec.startsWith('node:')) continue;
       if (!spec.startsWith('.')) {
         problems.push(`${path.basename(file)}: '${spec}' is neither a node: built-in nor a guard module`);
+        continue;
+      }
+      if (SHARED_LEAVES.has(path.basename(file))) {
+        problems.push(`${path.basename(file)}: '${spec}' - S1 and S2 load nothing else`);
         continue;
       }
       const target = path.resolve(path.dirname(file), spec);
@@ -96,7 +106,7 @@ function oldNodeSyntaxProblems(source) {
   if (source.includes('?.')) problems.push('optional chaining `?.`');
   if (source.includes('??')) problems.push('nullish coalescing `??`');
   if (/\bawait\b/.test(source)) problems.push('`await` (top-level await)');
-  const imports = (source.match(/\bimport\b/g) || []).length;
+  const imports = (source.match(/\bimport\s*\(/g) || []).length;
   if (imports !== 1) problems.push(`${imports} \`import\` keywords, expected only the guarded \`import(\``);
   return problems;
 }
@@ -149,6 +159,15 @@ test('the import-graph check flags a module outside the guard set and a computed
   assert.equal(problems.length, 2, problems.join('\n'));
 });
 
+test('the import-graph check flags S1 or S2 importing anything else, even a guard module', () => {
+  const fake = {
+    [GUARD_ENTRY]: "import('./lib/heartbeat.mjs')",
+    [path.join(LIB_DIR, 'heartbeat.mjs')]: "import { x } from './hook-io.mjs';",
+  };
+  const { problems } = guardGraph(GUARD_ENTRY, (file) => fake[file]);
+  assert.equal(problems.length, 1, problems.join('\n'));
+});
+
 test('the guard entry point checks the Node version before its dynamic import', () => {
   assert.deepEqual(versionGuardProblems(fs.readFileSync(GUARD_ENTRY, 'utf8')), []);
   assert.notDeepEqual(versionGuardProblems("import('./lib/hook-io.mjs');\nvar major = Number(process.versions.node);"), []);
@@ -157,6 +176,7 @@ test('the guard entry point checks the Node version before its dynamic import', 
 
 test('the guard entry point uses no syntax newer than Node 12 parses', () => {
   assert.deepEqual(oldNodeSyntaxProblems(fs.readFileSync(GUARD_ENTRY, 'utf8')), []);
+  assert.deepEqual(oldNodeSyntaxProblems('// see the import above\nimport(x);'), []);
   for (const bad of ['a?.b; import(x)', 'a ?? b; import(x)', 'await x; import(x)', 'import(x); import(y)']) {
     assert.notDeepEqual(oldNodeSyntaxProblems(bad), [], bad);
   }
