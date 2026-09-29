@@ -14,8 +14,9 @@ forward slashes, case-sensitively on every OS, and must match the whole path.
 | anything else | literal | `a+b.txt` | `a+b.txt` | — |
 
 Config error (Q6): `**` inside a segment (`a**b`), braces `{…}`, classes `[…]`, a leading
-`!`, a `\`, an empty pattern, a `..` segment, or a pattern with no literal character (Q10):
-one made only of `*`, `?`, `**` and `/` (`**`, `**/*`, `**/?*`, `*/**`, `/**`), so one
-amended line cannot switch the scan off. A broad pattern with a literal character
-(`src/**`) stays legal.
+`!`, a `\`, an empty pattern, a `..` segment, an empty segment (two consecutive `/`, or a
+pattern that is only `/`, before the leading-`/` strip and trailing-`/`-to-`**` rules above
+are applied: `/`, `//`, `a//b`), or a pattern with no literal character (Q10): one made only
+of `*`, `?`, `**` and `/` (`**`, `**/*`, `**/?*`, `*/**`, `/**`), so one amended line cannot
+switch the scan off. A broad pattern with a literal character (`src/**`) stays legal.
 Every row, and every error, has a fixture.

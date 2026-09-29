@@ -13,33 +13,58 @@
 /**
  * @typedef {readonly string[]} Segment
  *   One pattern segment: its chunks split at `*` (`?` kept inside the chunks).
- * @typedef {{ readonly groups: readonly (readonly Segment[])[], readonly openEnd: boolean }} Matcher
- *   Opaque compiled pattern: its segments cut into groups at each `**` segment; `openEnd`
- *   when the pattern ends in `**`, which then takes at least one segment.
+ * @typedef {{ readonly groups: readonly (readonly Segment[])[] }} Matcher
+ *   Opaque compiled pattern: its segments cut into groups at each `**` segment. A trailing
+ *   `**` (open end) is the group after the last `**`, always empty; `matches` reads that
+ *   directly rather than carrying a redundant flag.
  */
+
+// A pattern with no literal character (C:scanignore-globs, Q10): made only of `*`, `?` and
+// `/` (`**` is two `*`), so one amended line cannot switch the scan off. Applied to `body`
+// (post leading-`/`-strip, post trailing-`/`-to-`**`), after the per-segment checks below
+// have already rejected `**` mixed into a literal segment.
+const NO_LITERAL_CHARACTER = /^[*?/]*$/;
 
 /**
  * Compile a `scanIgnore` pattern into a matcher for `matches`.
  *
  * @param {string} pattern
  * @returns {{ ok: true, matcher: Matcher } | { ok: false, code: 'config' }}
- *   (the failure branch is the typed-result shape; no pattern takes it yet)
+ *   `code: 'config'` (C:scanignore-globs errors, Q6, Q10): an empty pattern; a leading `!`;
+ *   a `\`; a brace `{…}` or class `[…]`; a `..` segment; an empty segment (a bare `/`, `//`,
+ *   `a//b`); `**` inside a segment (`a**b`); or a pattern with no literal character.
  */
 export function compileGlob(pattern) {
+  if (
+    pattern === '' ||
+    pattern.startsWith('!') ||
+    pattern.includes('\\') ||
+    /[{}[\]]/.test(pattern)
+  ) {
+    return { ok: false, code: 'config' };
+  }
   // A leading `/` is stripped (patterns are always relative to the repo root); a trailing
   // `/` means everything under that directory, the same as `dir/**`.
   const rooted = pattern.startsWith('/') ? pattern.slice(1) : pattern;
   const body = rooted.endsWith('/') ? `${rooted}**` : rooted;
+  const segments = body.split('/');
+  for (const segment of segments) {
+    if (segment === '' || segment === '..' || (segment !== '**' && segment.includes('**'))) {
+      return { ok: false, code: 'config' };
+    }
+  }
+  if (NO_LITERAL_CHARACTER.test(body)) {
+    return { ok: false, code: 'config' };
+  }
   const groups = [[]];
-  for (const segment of body.split('/')) {
+  for (const segment of segments) {
     if (segment === '**') {
       groups.push([]);
     } else {
       groups[groups.length - 1].push(Object.freeze(segment.split('*')));
     }
   }
-  const openEnd = body === '**' || body.endsWith('/**');
-  const matcher = { groups: Object.freeze(groups.map(Object.freeze)), openEnd };
+  const matcher = { groups: Object.freeze(groups.map(Object.freeze)) };
   return { ok: true, matcher: Object.freeze(matcher) };
 }
 
@@ -60,7 +85,8 @@ export function matches(matcher, path) {
   const last = groups[groups.length - 1];
   // A trailing `**` (then `last` is empty) matches what is under a directory, not the
   // directory itself: it keeps one segment back from the middle groups.
-  const kept = matcher.openEnd ? 1 : 0;
+  const openEnd = last.length === 0;
+  const kept = openEnd ? 1 : 0;
   if (parts.length < first.length + last.length + kept) {
     return false;
   }

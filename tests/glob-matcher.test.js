@@ -101,6 +101,8 @@ const table = [
   // Row leading `/`: stripped; patterns are always relative to the repo root.
   { pattern: '/docs/*.md', match: ['docs/a.md'], noMatch: ['x/docs/a.md', '/docs/a.md', 'docs/x/a.md'] },
   { pattern: '/tests/fixtures/', match: ['tests/fixtures/a.txt'], noMatch: ['tests/fixtures', 'x/tests/fixtures/a.txt'] },
+  // SCN-03 AC: a broad but literal pattern (only one segment is a bare `**`) stays legal.
+  { pattern: 'src/**', match: ['src/a.txt', 'src/a/b.txt'], noMatch: ['src', 'srcx/a.txt', 'x/src/a.txt'] },
 ];
 
 for (const { pattern, match, noMatch } of table) {
@@ -114,6 +116,37 @@ for (const { pattern, match, noMatch } of table) {
       assert.equal(matches(compiled(pattern), path), false);
     });
   }
+}
+
+// SCN-03: config errors (C:scanignore-globs errors, Q6, Q10, M7). One fixture per error;
+// `compileGlob` returns the M7 failure shape `{ ok: false, code: 'config' }` and builds no
+// matcher. SCN-02 review: a bare `/`, `//` and `a//b` produce an empty segment, folded into
+// the same error family (C:scanignore-globs amended).
+const configErrors = [
+  { label: '`**` inside a segment', pattern: 'a**b' },
+  { label: 'braces', pattern: 'a{b,c}.txt' },
+  { label: 'a character class', pattern: 'a[bc].txt' },
+  { label: 'a leading `!`', pattern: '!a.txt' },
+  { label: 'a backslash', pattern: 'a\\b.txt' },
+  { label: 'an empty pattern', pattern: '' },
+  { label: 'a `..` segment', pattern: 'a/../b.txt' },
+  { label: 'no literal character: `**`', pattern: '**' },
+  { label: 'no literal character: `**/*`', pattern: '**/*' },
+  { label: 'no literal character: `**/?*`', pattern: '**/?*' },
+  { label: 'no literal character: `*/**`', pattern: '*/**' },
+  { label: 'no literal character: `/**`', pattern: '/**' },
+  { label: 'an empty segment: `/`', pattern: '/' },
+  { label: 'an empty segment: `//`', pattern: '//' },
+  { label: 'an empty segment: `a//b`', pattern: 'a//b' },
+];
+
+for (const { label, pattern } of configErrors) {
+  test(`${label} (${JSON.stringify(pattern)}) is a config error`, () => {
+    const result = compileGlob(pattern);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'config');
+    assert.equal('matcher' in result, false);
+  });
 }
 
 test('one compiled matcher serves many paths', () => {
