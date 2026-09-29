@@ -67,15 +67,15 @@ them.
 
 **Blocked by:** RPL-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Domain code → CLI kind, C:cli-and-exit-codes (exit table, failure shape),
 architectural decision "Typed results and one error table".
 
-- [ ] Every domain code row maps to its kind and exit code in one table; a test lists, for
+- [x] Every domain code row maps to its kind and exit code in one table; a test lists, for
       each row already reachable through this slice's blockers (RPL-01's `usage` refusals),
       the Seam 1 case that reaches it; rows not yet built are left to INT-31
-- [ ] Only M18 maps domain codes; modules below it return typed results with domain codes
+- [x] Only M18 maps domain codes; modules below it return typed results with domain codes
 
 
 ## RPL-04: Reply tracer: a `failed` reply for a pre-folder refusal
