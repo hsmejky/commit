@@ -17,7 +17,8 @@ and the module sections point here, and the README states it in full.
   `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
   `Start-Process`),
   shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
-  `Set-Alias g git`) and expansion in the command position (`$GIT commit`,
+  `Set-Alias g git`), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
+  blanket trigger and is read as a script call by basename, C:guard step 2), and expansion in the command position (`$GIT commit`,
   PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
   `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`; `$(echo git) commit` is denied by
   the blanket rule, C:guard step 2), `GIT_DIR`
@@ -25,9 +26,10 @@ and the module sections point here, and the README states it in full.
 - A command whose text never spells `commit` (`git $(echo com)mit`, `git co${x}mmit`,
   `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or PowerShell 7 `` git co`u{6d}mit ``)
   passes G1's early exit unparsed (Q3); `sudo -u git git commit` is
-  not addressed. Brace expansion, a parenthesised or globbed subcommand, a backtick
-  substitution in the subcommand position, typographic quotes and the dashed `git-commit`
-  binary are denied (story 15).
+  not addressed. Brace expansion, a parenthesised or globbed subcommand and the dashed
+  `git-commit` binary are denied (story 15); a backtick or typographic quote in Bash, like
+  any blanket-rule construct, is denied anywhere in a command that mentions `commit`
+  (C:guard step 2).
 - Other paths to a commit pass the guard (Q3): `git commit-tree`, `git am`, the replays of
   `git stash` and `git cherry-pick`, and shells provided by MCP servers.
 - False positives: a command that only mentions `git commit` in text, such as

@@ -27,4 +27,4 @@ with forward slashes. Everything here except the scan pattern IDs and the public
 - [Scan patterns](scan-patterns.md): Specifies the secret and local-path scan patterns: their regexes, exclusions, and sources
 - [scanIgnore globs](scanignore-globs.md): Specifies the scanIgnore glob syntax (a hand-written matcher) and which patterns are config errors
 - [Confirmation triggers](confirmation-triggers.md): Specifies which conditions make check set confirm, per mode (split, staged, reword)
-- [Guard](guard.md): Specifies the guard hook: how it parses commands to detect a git commit or script call, and its deny messages
+- [Guard](guard.md): Specifies the guard hook: early exit, script-call exemption and blanket fail-closed rule, how it tokenizes commands to detect a git commit or script call, and its deny messages

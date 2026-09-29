@@ -3,7 +3,8 @@
 The `PreToolUse` guard: the thin guard entry point over G1 hook I/O, G2 shell tokenizer,
 G3 classifier and deny catalogue, S2 script-call recognition and building, S1 heartbeat,
 and the hook registration. It denies an agent's direct `git commit` with a route to the
-worker, never allows, fails open, and writes the heartbeat for `plan` calls. Tested at Seam
+worker, never allows, fails open on a crash or unreadable input while failing closed on
+commands it does not parse (the blanket rule), and writes the heartbeat for `plan` calls. Tested at Seam
 2 (the real hook process) and Seam 3 (`runHook`, G2 `segments`, S2 `build`). Sources: Q3,
 Q4, Q13, Q23, Q25, C:guard, stories 10-39, Modules S1-S2 and G1-G3.
 
@@ -124,7 +125,7 @@ the same denies hold for PowerShell commands.
 stories 13, 14.
 
 - [ ] Seam 3: ``git commit -m "a`"b"``, `& git commit -m x`, a compound PowerShell command → denied; a here-string holding `git commit` piped into another command → denied by the blanket rule (documented false positive).
-- [ ] Seam 3: PowerShell `git commit --no-edit # done` (the generic row, after GRD-04's allowlist) and `<# git commit -m x #> git status` → denied by the blanket rule (documented false positive).
+- [ ] Seam 3: PowerShell `git commit --no-edit # done` and `<# git commit -m x #> git status` → the blanket message (documented false positive), no other row.
 - [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` `` git commit`0 --no-edit `` and `` git commit`u{00} --no-edit `` → denied: a PowerShell NUL ends the token's value and git's arguments (a `cut` token), as the native command line is cut there.
 - [ ] Seam 3: `` Write-Output x`0 (git commit -m x) `` `` if ("x`0") {git commit -m x} `` and `` git commit --no-edit`0 (git commit -m x) `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
 - [ ] Seam 2: one PowerShell deny case end to end.
@@ -135,7 +136,8 @@ stories 13, 14.
 
 **What to build:** escaped newlines are joined before splitting (and removed from step 1's
 mention text regardless of quotes), and an unterminated quote turns the rest of its line
-into one quoted token while scanning continues.
+into one quoted token while scanning continues; step 1's mention text also has every `$`
+directly before a quote character removed before the quote characters go.
 
 **Blocked by:** GRD-06.
 
@@ -147,6 +149,7 @@ into one quoted token while scanning continues.
 - [ ] `git commit -m "unterminated` in both shells → denied.
 - [ ] `git com\`⏎`mit -m x` → denied (step 1's mention text drops the escaped newline).
 - [ ] Its PowerShell form: `` git com`⏎`mit -m x `` (backtick-newline split) → denied.
+- [ ] `git co$'m'mit -m x` (Bash) → denied (step 1 drops the `$` before a quote, so the mention text holds `commit`).
 
 
 ## GRD-08: Redirections, parentheses and typographic quotes
@@ -279,7 +282,7 @@ redacted.
 **Sources:** Q23, Q5, C:guard (Heartbeat), stories 21, 36, 37.
 
 - [ ] Seam 2: a `plan` script call in each shell and quoting form writes the file under the temp Claude home (`CLAUDE_CONFIG_DIR` honoured), with `ts` from `now`, the raw `cwd`, and `command` as `commit.cjs plan <flags>` without the path or other segments, cut to 200 characters.
-- [ ] A denied compound command that also calls `plan` still writes the heartbeat; `check`, `commit` or a crash write none.
+- [ ] A denied compound command that also calls `plan` and holds no blanket-rule construct still writes the heartbeat; a blanket-denied one (`node "…/commit.cjs" plan # x`), `check`, `commit` or a crash write none.
 - [ ] The write goes through a temporary name with pid and random part, renamed into place; no temporary file remains.
 - [ ] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).
 - [ ] Seam 2 with `COMMIT_GUARD_DEBUG=1`: a `plan` script call whose Claude home path is an existing file, not a directory, throws on the write, caught by GRD-02's fail-open (no stdout, exit 0, one debug stderr line); without the variable, no stderr.

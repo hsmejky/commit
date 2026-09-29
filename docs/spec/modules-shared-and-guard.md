@@ -87,7 +87,14 @@ redirection), and in PowerShell an unquoted `{` or `}` becomes a token too, so G
 the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell `}`
 token ends git's arguments like `)`. In PowerShell a `--%` word after escape removal, not
 inside quotes, makes the rest of its line, up to `|`, `&&` or `||`, words split on
-whitespace only. `segments(command, shell) → Token[][] | { blanket: <trigger kind> }`.
+whitespace only. `segments(command, shell) → Token[][] | { blanket: <trigger kind> }`. G2
+also exports `blanketTrigger(command, shell) → <trigger kind> | null`, the trigger-kind check
+alone (used directly by G1's debug log, which names the trigger kind instead of the command
+for a blanket deny) and `isExemptScriptCall(command, shell) → boolean`, the script-call
+exemption check alone (both reasonable to expose next to `segments`, which composes them);
+and, as a test seam only, `segmentSpans(command, shell) → [start, end][] | null`, each
+segment's span in the command text, feeding the oracle cross-check that lets the shell read
+each span on its own.
 Sources: Q3, C:guard.
 
 **G3 Command classifier and deny catalogue.** Per segment: find every token whose basename (the

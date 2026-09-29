@@ -326,8 +326,12 @@
     scripts that wrap git (`xargs git commit` is denied: unquoted, it tokenizes to separate
     `git` and `commit` tokens).
   - Expansion in the command position: what a variable holds there (Bash
-    `$GIT commit -m x`, PowerShell `& $g commit -m x`; a substitution there,
-    `$(echo git) commit`, is denied by the blanket rule),
+    `$GIT commit -m x`, PowerShell `& $g commit -m x`; a variable holding the whole command,
+    word-split at runtime, `x='git commit'; $x`; a substitution there,
+    `$(echo git) commit`, is denied by the blanket rule), and arithmetic-evaluation command
+    execution, where a variable set by an earlier, separately-guarded command is read in a
+    later command's arithmetic context (Bash `((`, `$(())`) that runs it — the guard
+    classifies one command's text at a time and does not track variables across calls,
     Bash brace expansion or a glob (`{git,commit,-m,x}`, `/usr/bin/gi? commit -m x`), and a
     PowerShell expression (`& ('git') commit -m x`); `GIT_DIR` / `GIT_WORK_TREE`
     redirection;

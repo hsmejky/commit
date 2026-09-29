@@ -63,6 +63,9 @@
   **Other**: `AskUserQuestion`'s free-text option.
 - **script call**: a shell segment that runs the commit entry point with a subcommand, in the
   shape C:guard fixes; built and recognised only by S2.
+- **blanket rule / script-call exemption**: C:guard step 2; a command that mentions commit
+  and holds a construct the tokenizer does not model is denied untokenized, unless it is
+  exactly one plain script call.
 - **run-folder directory**: `<toplevel>/.commit-plan/`, which holds every run folder and
   the run lock (the `run-folder` refusal is about this directory).
   **run folder / run lock / run state**: per-run working files (`<planId>/`), the single
