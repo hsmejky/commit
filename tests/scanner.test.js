@@ -319,16 +319,68 @@ test('scanText: a message line one character past the cut → missed', () => {
   );
 });
 
-test('scanUnits: a multi-megabyte line scans in bounded time regardless of length', () => {
+// A probe row whose `notHit` records the length of `match.input` — the string a rule
+// actually receives, after the cut — rather than the length of the original line. `[^]$`
+// matches once, at the last character of that (possibly cut) string, so it fires once per
+// line and never loops. This is structural: it proves the cut runs before any rule sees the
+// line, unlike a wall-clock bound, which only proves something is fast today (SCN-12 review).
+test('scanUnits: a multi-megabyte line is cut to 4096 characters before any rule runs', () => {
   const hugeLine = ' '.repeat(20_000_000);
+  const seen = [];
+  const probe = createScanner([
+    {
+      id: 'probe',
+      regex: /[^]$/,
+      notHit: (match) => {
+        seen.push(match.input.length);
+        return true;
+      },
+      source: 'test',
+    },
+  ]);
   const units = [textUnit('huge.txt', [{ line: 1, text: hugeLine }])];
 
   const started = Date.now();
-  const { hits } = scanUnits(units, { scanIgnore: [], osUser: null });
+  const { hits } = probe.scanUnits(units, { scanIgnore: [], osUser: null });
   const elapsedMs = Date.now() - started;
 
   assert.deepEqual(hits, []);
-  assert.ok(elapsedMs < 200, `took ${elapsedMs} ms scanning a 20M-character line, bound 200 ms`);
+  assert.deepEqual(seen, [4096], 'the rule saw a line already cut to 4096 characters');
+  // Loose smoke bound, not the point of the test: catches a gross regression (e.g. the cut
+  // being skipped and a quadratic rule run over the full 20M characters) without being flaky.
+  assert.ok(elapsedMs < 2000, `took ${elapsedMs} ms scanning a 20M-character line, bound 2 s`);
+});
+
+// `private-key` body lookahead (scanner.mjs's `hasKeyBody`/`followingLines`): the lookahead
+// line is cut to 4096 before the key-body regex runs, same as any scanned line. Built so the
+// cut changes the outcome: the base64 run sits entirely past the cut, behind a run of spaces
+// longer than 4096. Without the cut, trimming the (long) line would remove the leading spaces
+// and reveal the base64 run; with the cut, the visible slice is space-only and trims to empty.
+test('private-key: the body lookahead line is cut to 4096 before the key-body check runs', () => {
+  const header = '-----BEGIN ' + 'PRIVATE KEY-----';
+  const bodyLine = ' '.repeat(5000) + 'A'.repeat(50);
+  const units = [
+    textUnit('key.pem', [
+      { line: 1, text: header },
+      { line: 2, text: bodyLine },
+    ]),
+  ];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, []);
+});
+
+// `scanText` offsets (SCN-12 review): the line before the hit is longer than the cut, so this
+// checks that offset accumulation uses each line's real length, not its cut length, and that
+// slicing the original (uncut) message at `start..end` still yields exactly the token.
+test('scanText: the offset of a hit on the line after a line longer than 4096 is exact', () => {
+  const longLine = 'x'.repeat(5000);
+  const token = githubToken('x');
+  const text = `${longLine}\n${token} here`;
+
+  const hits = scanText(text, { osUser: null }).filter((hit) => hit.patternId === 'github-token');
+
+  assert.equal(hits.length, 1);
+  const { start, end } = hits[0];
+  assert.equal(text.slice(start, end), token);
 });
 
 // `local-path` OS-user segment (SCN-11): the OS user name as a whole path segment in any

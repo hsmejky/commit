@@ -3,7 +3,10 @@
 Only added lines are scanned. The IDs are public surface. Every scanned line (diff line,
 symlink target, message line) is cut to its first 4096 characters (UTF-16 code units)
 before any regex or false-positive rule runs, so scanning stays linear in the input; text
-past the cut is not scanned (accepted gap, Q10). Over a commit message the scanner
+past the cut is not scanned (accepted gap, Q10). A token that starts before the cut and runs
+past it can still hit on its truncated prefix, since `\b` and `$` are satisfied at the cut's
+new end exactly as they would be at the line's real end (a consequence of cutting before
+matching). Over a commit message the scanner
 returns each hit as `{ patternId, start, end }`: UTF-16 offsets into the normalised message,
 `end` exclusive, never the matched value; overlapping hits stay separate entries. A
 `lintFailed` text replaces the union of the spans with `[<pattern-id>]` (the first hit's ID
