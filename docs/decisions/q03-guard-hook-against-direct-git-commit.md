@@ -187,20 +187,23 @@
     (`git -C "$dir" commit --no-edit`, `--fixup "$sha"`) is a documented false positive;
     recording quoting per character would widen the fixture format for a form an agent
     rarely needs next to the commit worker.
-  - **Stop-parsing.** An unquoted `--%` makes the rest of its line, up to `|`, `&&` or
-    `||`, words split on whitespace only (C:guard step 2). Read as ordinary text, `;` split
+  - **Stop-parsing.** A `--%` word, after escape removal and not inside quotes (`--%`,
+    `` `--% ``, `` -`-% ``), makes the rest of its line, up to `|`, `&&` or `||`, words
+    split on whitespace only (C:guard step 2). Read as ordinary text, `;` split
     `git --% -c x.y=; commit -m x` into two segments, and a quote or here-string opener
     after `--%` (`Write-Output --% @'`) swallowed the next lines that PowerShell runs as
     commands, a fail open.
   - **Substitution bodies are classified.** A command substitution stays in its word and
     its body is also tokenised as a command of its own, recursively, into extra segments
-    (Bash `$(…)` and backticks unquoted, in double quotes, in `${…}` and in an unquoted
-    heredoc body; PowerShell `$(…)` unquoted, in double quotes and in `@"…"@`). Pass 8 kept
-    `$(…)` in its word only so that parentheses in a heredoc message would not produce stray
-    tokens; nothing decided that a commit run inside a substitution passes, and
-    `echo $(git commit -m x)`, `out=$(git commit -m x 2>&1)` and PowerShell
-    `$(git commit -m x)` did. The extra segments only add denies. What a substitution
-    prints stays the command-position gap (`$(echo git) commit`).
+    (Bash `$(…)`, Bash 5.3 `${ …; }` and `${| …; }`, and backticks unquoted, in double
+    quotes, in `${…}` and in an unquoted heredoc body; PowerShell `$(…)` unquoted, in
+    double quotes and in `@"…"@`). Pass 8 kept `$(…)` in its word only so that parentheses
+    in a heredoc message would not produce stray tokens; nothing decided that a commit run
+    inside a substitution passes, and `echo $(git commit -m x)`,
+    `out=$(git commit -m x 2>&1)` and PowerShell `$(git commit -m x)` did. Bash 5.3
+    `${ …; }` (`echo "${ git commit -m x; }"`) was found in the sixth round. The extra
+    segments only add denies. What a substitution prints stays the command-position gap
+    (`$(echo git) commit`).
   - Unbash is still not indicated: the Bash finding was a rule gap, not tokenizer
     fragility; the fragility sits in PowerShell's native-argument binding, which differs
     between 5.1 and 7 and which a Bash parser does not cover.
@@ -215,8 +218,10 @@
     current index unscanned: `git add . && git commit --amend --no-edit` gets past lint and
     scan.
   - Aliases (`git ci`), `git -c alias.x=commit x`.
-  - Commands run through another interpreter: `sh -c '…'`, `bash -c '…'`, `cmd /c`, `pwsh -c`,
-    `eval`, PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
+  - Commands run through another interpreter or a construct that evaluates a string as
+    code: `sh -c '…'`, `bash -c '…'`, `cmd /c`, `pwsh -c`, `eval`, Bash `${x@P}` prompt
+    expansion and array-subscript evaluation (a variable holding `a[$(…)]` read in an
+    arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
     scripts that wrap git (`xargs git commit` is denied: unquoted, it tokenizes to separate
     `git` and `commit` tokens).
   - Expansion in the command position: what a substitution prints or a variable holds

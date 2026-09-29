@@ -79,28 +79,34 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    own the same way (not dropped), except in a `${…}` variable name and inside a `$(…)`
    subexpression, so a script block glued to its first word (`&{git commit -m x}`,
    `if ($true) {git commit -m x}`) is denied and a `}` token ends git's arguments like
-   `)`. In Bash `{` and `}` stay in their word (brace expansion, step 4), and a backtick
-   substitution stays in its word up to the next backtick not escaped by `\`, like `$(…)`.
+   `)`. In Bash `{` and `}` stay in their word (brace expansion, step 4), a backtick
+   substitution stays in its word up to the next backtick not escaped by `\`, like `$(…)`,
+   and so does a Bash 5.3 `${` followed by a space, a tab, a newline or `|` (`${ cmd; }`,
+   `${| cmd; }`, a command substitution run in the current shell), up to the `}` word that
+   closes it in command position, as for a `{ …; }` group (a `}` inside quotes or inside a
+   nested `${…}` does not close it); its body is the text after that blank or `|`.
    A command substitution is read twice: it stays in its word, and its body is also
    tokenised as a command of its own, with the same rules and recursively, into segments that
-   follow the segment holding it (after those of substitutions earlier in the text), so steps
-   3 to 5 classify the commands it runs: `echo $(git commit -m x)` gives `echo` and
-   `$(git commit -m x)`, then `git`, `commit`, `-m`, `x`, and is denied. The extra segments
-   only add denies (fail closed). Bash reads `$(…)` (and `$((…))`, read the same way) and a
+   come right after the segment holding it, before the next segment of the text (after those
+   of substitutions earlier in that segment), so steps 3 to 5 classify the commands it runs:
+   `echo $(git commit -m x)` gives `echo` and `$(git commit -m x)`, then `git`, `commit`,
+   `-m`, `x`, and is denied. The extra segments only add denies (fail closed). Bash reads
+   `$(…)` (and `$((…))`, read the same way), a `${ …; }` or `${| …; }` substitution and a
    backtick substitution (its body with `\\`, `` \` `` and `\$` unescaped) unquoted, inside
    double quotes, inside `${…}`, and in the body of a heredoc whose delimiter is unquoted (its
-   segments follow the segment holding the `<<`); not inside single quotes, `$'…'` or a heredoc
+   segments come right after the segment holding the `<<`); not inside single quotes, `$'…'` or a heredoc
    with a quoted delimiter. PowerShell reads `$(…)` unquoted, inside double quotes and inside
-   an `@"…"@` here-string; not inside single quotes, `@'…'@` or after `--%`. In PowerShell an
-   unquoted `--%` word stops parsing: the rest of its line, up to the next `|`, `&&` or `||`,
+   an `@"…"@` here-string; not inside single quotes, `@'…'@` or after `--%`. In PowerShell a
+   word equal to `--%` after escape removal, not inside quotes (`--%`, `` `--% ``,
+   `` -`-% ``), stops parsing: the rest of its line, up to the next `|`, `&&` or `||`,
    is split into words on whitespace only, so quotes, backticks, `$`, brackets, `;`, `&`,
    `#`, redirection operators and here-string openers are characters of their word and no
    substitution body is read; the newline still ends the segment. So
    `git --% -c x.y=; commit -m x` is one segment (`git`, `--%`, `-c`, `x.y=;`, `commit`, `-m`,
    `x`; PowerShell runs `git -c x.y=; commit -m x`), and `Write-Output --% @'` followed by the
-   line `git commit -m x` gives that line a segment of its own, as PowerShell runs it
-   (verified 2026-09-29 with PowerShell 5.1 and 7). A quoted `'--%'` does not stop parsing
-   (step 4 denies it among git's arguments). Comments are not
+   line `git commit -m x` gives that line a segment of its own, as PowerShell runs it, and so
+   does `` Write-Output `--% @' `` (verified 2026-09-29 with PowerShell 5.1 and 7). A quoted
+   `'--%'` does not stop parsing (step 4 denies it among git's arguments). Comments are not
    recognised in either shell: `#` and the words after it, and a PowerShell `<# … #>` block,
    are read like any other text (documented false positives, below):
 
@@ -127,11 +133,13 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `&{git commit -m x}`, `. {git commit -m x}` and `if ($true) {git commit -m x}` (deny),
    and `&{git commit --no-edit}` (no output); substitutions: Bash `echo $(git commit -m x)`,
    `` echo `git commit -m x` ``, `echo "$(git commit -m x)"`, `echo $(echo $(git commit -m x))`,
-   `echo ${x:-$(git commit -m x)}` and `cat <<EOF` with the body line `$(git commit -m x)`
-   (deny), `echo '$(git commit -m x)'`, the same heredoc with `<<'EOF'` and
-   `echo $(git commit --no-edit)` (no output); PowerShell `$(git commit -m x)`,
-   `Write-Output "$(git commit -m x)"` and its `@"…"@` form (deny); stop-parsing:
-   `git --% -c x.y=; commit -m x` and the `Write-Output --% @'` case (deny), and
+   `echo ${x:-$(git commit -m x)}`, `cat <<EOF` with the body line `$(git commit -m x)`,
+   `echo "${ git commit -m x; }"`, `echo ${| git commit -m x; }` and `cat <<EOF` with the
+   body line `${ git commit -m x; }` (deny), `echo '$(git commit -m x)'`, the same heredoc
+   with `<<'EOF'`, `echo $(git commit --no-edit)` and `echo "${ git commit --no-edit; }"`
+   (no output); PowerShell `$(git commit -m x)`, `Write-Output "$(git commit -m x)"` and its
+   `@"…"@` form (deny); stop-parsing: `git --% -c x.y=; commit -m x`, the
+   `Write-Output --% @'` case and its `` Write-Output `--% @' `` form (deny), and
    `Write-Output --% (git commit -m x)` (no output: PowerShell passes the brackets as text).
    Documented false positives (fail closed): a comment that mentions `git commit`,
    `git commit --no-edit # done`, `# git commit -m x` on its own line, PowerShell
@@ -229,13 +237,13 @@ deliberately differs from the shell and the check is skipped:
 | --- | --- | --- |
 | `redirection` | Bash | a redirection is a token with its target; the shell applies it and prints no word |
 | `heredoc` | Bash | the heredoc body is dropped; the shell feeds it to the command |
-| `expansion` | both | `$` variables, `$(…)`, backticks, brace expansion, globs and process substitution stay unexpanded in their word (process substitution as `(`), and a substitution body adds segments of its own after its segment (step 2); the shell expands them and has no words of its own for the body |
+| `expansion` | both | `$` variables, `$(…)`, `${ …; }`, backticks, brace expansion, globs and process substitution stay unexpanded in their word (process substitution as `(`), and a substitution body adds segments of its own after its segment (step 2); the shell expands them and has no words of its own for the body |
 | `unterminated` | both | an unterminated quote or here-string is the rest of its line; the shell rejects the command |
 | `subshell-parens` | both | `(` and `)` are tokens; the shell has no words for a subshell or a grouping expression |
 | `ps-scriptblock` | PowerShell | `{` and `}` are tokens; the parser yields a script-block expression, not the commands in it |
 | `ps-expression-statement` | PowerShell | assignment and keyword statements (`$m = …`, `if`, `foreach`) are words; the parser yields no command elements for them |
 | `splat` | PowerShell | `@name` is a word; the parser yields a splatted variable |
-| `ps-stop-parsing` | PowerShell | the rest of the line after an unquoted `--%` is split into words on whitespace (step 2); the parser yields it as one verbatim element |
+| `ps-stop-parsing` | PowerShell | the rest of the line after a `--%` word (after escape removal, not inside quotes) is split into words on whitespace (step 2); the parser yields it as one verbatim element |
 | `ps-array-comma` | PowerShell | a `,` stays in its word or is a word of its own; the parser yields one array-literal element for the words it joins |
 | `escaped-newline-in-word` | PowerShell | a backtick plus newline inside a word is removed (step 2); PowerShell keeps the newline in the word |
 | `ps-nul` | PowerShell | a NUL escape (`` `0 ``, a zero `` `u{…} ``) ends its token's value and a `cut` token follows it, ending git's arguments while the later tokens stay in the segment; the parser keeps the NUL and the rest in the word and has no `cut` there (the native command line is cut only when the command runs); Windows PowerShell 5.1 reads `` `u{…} `` as `u` and a script block |

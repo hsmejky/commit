@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap).",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*).",
  "cases": [
   {
    "id": "b-plain",
@@ -627,15 +627,15 @@
      "x=$(cat <<'EOF'\nfix(a): y)\nEOF\n)"
     ],
     [
-     "git",
-     "status"
-    ],
-    [
      "cat",
      {
       "heredoc": "<<",
       "delim": "EOF"
      }
+    ],
+    [
+     "git",
+     "status"
     ]
    ],
    "decision": "none",
@@ -3552,6 +3552,112 @@
    }
   },
   {
+   "id": "b-funsub-dq",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo \"${ git commit -m x; }\"",
+   "segments": [
+    [
+     "echo",
+     "${ git commit -m x; }"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-funsub-reply",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo ${| git commit -m x; }",
+   "segments": [
+    [
+     "echo",
+     "${| git commit -m x; }"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-funsub-heredoc",
+   "shell": "bash",
+   "topic": "heredoc",
+   "command": "cat <<EOF\n${ git commit -m x; }\nEOF",
+   "segments": [
+    [
+     "cat",
+     {
+      "heredoc": "<<",
+      "delim": "EOF"
+     }
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
+   "id": "b-funsub-sq",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo '${ git commit -m x; }'",
+   "segments": [
+    [
+     "echo",
+     "${ git commit -m x; }"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-funsub-allowed",
+   "shell": "bash",
+   "topic": "subst",
+   "command": "echo \"${ git commit --no-edit; }\"",
+   "segments": [
+    [
+     "echo",
+     "${ git commit --no-edit; }"
+    ],
+    [
+     "git",
+     "commit",
+     "--no-edit"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "expansion"
+   }
+  },
+  {
    "id": "b-fixup-var",
    "shell": "bash",
    "topic": "expansion",
@@ -3892,6 +3998,63 @@
      "ps-stop-parsing",
      "ps-expression-statement"
     ]
+   }
+  },
+  {
+   "id": "p-stop-escaped-herestring",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "Write-Output `--% @'\ngit commit -m x\n'@",
+   "segments": [
+    [
+     "Write-Output",
+     "--%",
+     "@'"
+    ],
+    [
+     "git",
+     "commit",
+     "-m",
+     "x"
+    ],
+    [
+     "@"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": [
+     "ps-stop-parsing",
+     "unterminated",
+     "ps-expression-statement"
+    ],
+    "ps7": [
+     "ps-stop-parsing",
+     "unterminated",
+     "ps-expression-statement"
+    ]
+   }
+  },
+  {
+   "id": "p-stop-escaped-mid",
+   "shell": "powershell",
+   "topic": "stop-parsing",
+   "command": "git -`-% -c x.y=; commit -m x",
+   "segments": [
+    [
+     "git",
+     "--%",
+     "-c",
+     "x.y=;",
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "ps51": "ps-stop-parsing",
+    "ps7": "ps-stop-parsing"
    }
   },
   {

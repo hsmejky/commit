@@ -13,7 +13,9 @@ every accepted gap named elsewhere in this spec is listed here; story 201, the R
 and the module sections point here, and the README states it in full.
 - The guard is not a security boundary: every allowed form (`--no-edit`, `--amend
   --no-edit`, `--fixup=<commit>`) commits the current index unscanned, and aliases,
-  interpreters (`sh -c '…'`, `pwsh -c`, `eval`, `Invoke-Expression`, `Start-Process`),
+  interpreters and constructs that evaluate a string as code (`sh -c '…'`, `pwsh -c`,
+  `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
+  `Start-Process`),
   and expansion in the command position (`$(echo git) commit`, `$GIT commit`,
   PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
   `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`), `GIT_DIR`
@@ -30,8 +32,14 @@ and the module sections point here, and the README states it in full.
   keeps the newline, so the command exits early unparsed.
 - False positives: a command that only mentions `git commit` in text, such as
   `echo git commit`, is denied, and so is a comment that mentions it
-  (`git commit --no-edit # done`, `# git commit -m x`, PowerShell `<# … #>`), and a git
-  subcommand held in a variable (`git $x`) in a command that mentions `commit` anywhere.
+  (`git commit --no-edit # done`, `# git commit -m x`, PowerShell `<# … #>`), a git
+  subcommand held in a variable (`git $x`) in a command that mentions `commit` anywhere,
+  a quoted variable among git's arguments (`git -C "$dir" commit --no-edit`,
+  `git commit --fixup "$sha"`), a `git` word after another PowerShell command's `--%`
+  (`Write-Output --% git commit -m x`), and any git command with `$` in a global option
+  value in a command that mentions `commit` anywhere (`git -C "$d" log | grep commit`),
+  since git's arguments must be literal (C:guard step 4). The commit worker and the skills
+  are unaffected: the worker runs only script calls.
 - In interactive mode a `humanOnly` confirmation is advisory (Q16, Q17): the reply asks the
   caller to put it to the user, but nothing enforces that the user, not the model, answers
   it. `--confirmed` stops a steered worker from returning the confirmed command itself, but
