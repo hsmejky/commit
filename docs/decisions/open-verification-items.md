@@ -24,6 +24,36 @@
   pass 8 (Q3); the spike only confirms them. Safety comes from failing closed
   on unrecognised options; fragility it finds is answered with a wider fail-closed rule or a
   documented false positive. Spike before the tokenizer slice.
+  **Run** on 2026-09-29 (PRE-03; throwaway prototype of C:guard "Parsing" plus a G1/G3-lite
+  classifier, not kept; bash 5.3, Windows PowerShell 5.1 and PowerShell 7.6 parser API).
+  The 143 cases, with the prototype's segments, decision and per-oracle class, are the
+  GRD-03 fixture seed: `tests/fixtures/guard/segments-seed.json`. Confirmed: the `git`
+  basename, the `commit` substring and the subcommand case-insensitively (`GIT`,
+  `Git.exe`, `/usr/bin/GIT`, `git COMMIT`, `git-COMMIT.exe`); `(` and `)` as tokens
+  (`( git commit )` and `(git commit -m x)` denied, `(git commit --no-edit)` allowed, in
+  both shells); heredoc bodies dropped (quoted and unquoted delimiters, `<<-`, two heredocs
+  on one line, unterminated body, a heredoc inside `"$(…)"` whose body holds `)`); escaped
+  newlines, unterminated quotes and here-strings, redirections, reordered global options.
+  PowerShell 5.1 and 7 agree on every case. Oracle differences outside the listed skip
+  classes: backtick substitution and brace expansion (Bash expansions like `$`),
+  PowerShell assignment and keyword statements, `--%`, a backtick plus newline inside a
+  word (PowerShell keeps the newline), and a carriage return (the Cygwin bash used strips
+  it). **Pending a decision** (fragility, no rule adopted by the spike):
+  - F1: a Bash subcommand holding a backtick (`` git `echo commit` -m x ``) is not denied.
+  - F2: Bash `$'…'` quoting is not read, so `echo $'\'' ; git commit -m x` swallows the rest
+    of the line as an unterminated quote and is not denied.
+  - F3: PowerShell script blocks glue `{` to `git` (`&{git commit -m x}`,
+    `if ($true) {git commit -m x}`), so they are not denied.
+  - F4: Bash process substitution `diff <(git commit -m x) f` reads `git` as the `<`
+    target, so it is not denied.
+  - F5: comments are read as words: `git commit --no-edit # done` and `# git commit -m x`
+    are denied (false positives, fail closed), in both shells.
+  - F6: expansion in the command position (`{git,commit,-m,x}`, `/usr/bin/gi? commit`) is
+    not denied, like the accepted `$(echo git) commit` gap.
+  - F7: C:guard step 4's example `git $c -m x` exits early (no `commit` in the text); the
+    `$` rule applies only in a command that mentions `commit` elsewhere, as story 15 and
+    GRD-12 already say.
+  No finding needs a parser beyond the hand-written design (unbash not raised).
 - Exec-form hooks (Q3, Q13): the guard is registered in exec form (`node` as the command,
   the guard entry point as the only argument), so no shell quotes the plugin path. Which
   minimum Claude Code version supports exec-form hooks in a plugin's `hooks.json`. Before
