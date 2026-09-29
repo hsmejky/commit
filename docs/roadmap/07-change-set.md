@@ -35,12 +35,12 @@ order (`lockfile`, `minified`, `sourcemap`, `generated` from the `linguist-gener
 
 **Blocked by:** CHG-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Q19, C:summary-only-files, C:plan (`bucket`), M9.
 
-- [ ] Seam 3: one row per lockfile name, `*.min.*`, `*.map`, generated flag, 1000/1001 changed lines, 256 KB / 256 KB + 1 byte; first matching reason wins when several apply.
-- [ ] Seam 3: `bucketOf` rows for each bucket, with buckets documented as hints only.
+- [x] Seam 3: one row per lockfile name, `*.min.*`, `*.map`, generated flag, 1000/1001 changed lines, 256 KB / 256 KB + 1 byte; first matching reason wins when several apply.
+- [x] Seam 3: `bucketOf` rows for each bucket, with buckets documented as hints only.
 
 
 ## CHG-03: Tracer: modified tracked files become whole-file units
