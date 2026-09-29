@@ -38,8 +38,13 @@ test("the marketplace lists the plugin's directory and carries version 0.1.0 on 
 
   const entry = marketplace.plugins.find((candidate) => candidate.name === PLUGIN_NAME);
   assert.ok(entry, 'marketplace must list a plugin entry named commit');
-  assert.equal(entry.source, './plugin');
   assert.equal(entry.version, VERSION);
+
+  // entry.source resolves from the marketplace root, which is the repo root.
+  const repoRoot = path.join(__dirname, '..');
+  const resolvedPluginJsonPath = path.join(repoRoot, entry.source, '.claude-plugin', 'plugin.json');
+  const resolvedPlugin = readJson(resolvedPluginJsonPath);
+  assert.equal(resolvedPlugin.name, PLUGIN_NAME);
 });
 
 test('the package manifest carries version 0.1.0', () => {
@@ -47,13 +52,12 @@ test('the package manifest carries version 0.1.0', () => {
   assert.equal(manifest.version, VERSION);
 });
 
-test('the plugin, marketplace entry and package versions agree', () => {
+test('the plugin, marketplace entry and package versions agree with each other', () => {
   const plugin = readJson(pluginJsonPath);
   const marketplace = readJson(marketplaceJsonPath);
   const pkg = readJson(packageJsonPath);
   const entry = marketplace.plugins.find((candidate) => candidate.name === PLUGIN_NAME);
 
-  assert.equal(plugin.version, VERSION);
-  assert.equal(entry.version, VERSION);
-  assert.equal(pkg.version, VERSION);
+  assert.equal(plugin.version, entry.version);
+  assert.equal(entry.version, pkg.version);
 });

@@ -3,6 +3,7 @@
   "owner": {
     "name": "commit contributors"
   },
+  "description": "Deterministic commit script, guard hook, and worker agent.",
   "plugins": [
     {
       "name": "commit",
