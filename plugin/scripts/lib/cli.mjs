@@ -12,7 +12,9 @@ const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer'
 
 // Kind → exit code, the exit table of C:cli-and-exit-codes, 0-6 (0 is `ok`, carried by the
 // caller building a success envelope directly; there is no failure kind for it here).
-const EXIT_CODES = Object.freeze({
+// Exported (read-only) so a test can assert its key set against the documented one instead
+// of duplicating it (tests/cli.test.js).
+export const EXIT_CODES = Object.freeze({
   usage: 1,
   config: 1,
   env: 1,
@@ -38,13 +40,15 @@ const EXIT_CODES = Object.freeze({
  * @param {string} message
  * @returns {{ stdoutJson: object, exitCode: number }}
  * @throws {Error} when `kind` has no entry in `EXIT_CODES`: an unmapped kind would otherwise
- *   silently exit 0 with `ok: false` (`EXIT_CODES[kind]` reading `undefined`).
+ *   silently exit 0 with `ok: false` (`EXIT_CODES[kind]` reading `undefined`), or, for a kind
+ *   spelled like an inherited property (e.g. `toString`), resolve to that inherited value
+ *   instead of being rejected (`Object.hasOwn` checks ownership, not just presence).
  */
 export function failure(kind, message) {
-  const exitCode = EXIT_CODES[kind];
-  if (exitCode === undefined) {
+  if (!Object.hasOwn(EXIT_CODES, kind)) {
     throw new Error(`no exit code mapped for kind ${JSON.stringify(kind)}`);
   }
+  const exitCode = EXIT_CODES[kind];
   return {
     stdoutJson: { version: 1, ok: false, error: { kind, message } },
     exitCode,

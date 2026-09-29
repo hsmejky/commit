@@ -14,6 +14,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { parseDomainCodeDocRows, firstColumnKey } = require('./helpers/domain-code-doc.js');
 
 const ROWS = [
   {
@@ -64,6 +65,23 @@ for (const entry of ROWS) {
 }
 
 test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable or not', () => {
-  assert.equal(ROWS.length, 25);
+  const docRows = parseDomainCodeDocRows();
+  // Not hard-coded: the doc is the oracle for both the row count and, per row (in table
+  // order, which this manifest already follows), what it names. A manifest label may carry
+  // a shorter or differently annotated aside than the doc row (e.g. this manifest's `env
+  // (install path, M3)` vs. the doc's longer parenthetical), so the comparison is on the
+  // part before that aside (`firstColumnKey`), and a manifest label naming more than the
+  // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
+  // it starts with that key.
+  assert.equal(ROWS.length, docRows.length);
   assert.equal(ROWS.filter((r) => r.reachable).length, 1);
+
+  docRows.forEach((docRow, i) => {
+    const docKey = firstColumnKey(docRow);
+    const manifestKey = firstColumnKey(ROWS[i].row);
+    assert.ok(
+      manifestKey === docKey || manifestKey.startsWith(docKey),
+      `ROWS[${i}] = ${JSON.stringify(ROWS[i].row)} does not match doc row ${JSON.stringify(docRow)}`,
+    );
+  });
 });

@@ -81,6 +81,13 @@ test('kindForDomainCode throws on an unmapped domain code, instead of returning 
   assert.throws(() => kindForDomainCode('not-a-real-code'), /not-a-real-code/);
 });
 
+test('kindForDomainCode throws on an inherited property name instead of resolving it', () => {
+  // A plain-object lookup (`DOMAIN_CODE_TO_KIND[domainCode]`) resolves 'constructor' to
+  // Object's constructor function rather than reporting it unmapped; the lookup must check
+  // ownership (Object.hasOwn or a null-prototype map), not just presence.
+  assert.throws(() => kindForDomainCode('constructor'), /constructor/);
+});
+
 // The rows this table deliberately leaves out (comment at the top of domain-codes.mjs):
 // M1's own generic "bad argv" usage and the "unexpected throw" catch-all are not domain
 // codes a module reports through it, so they must not appear as keys either.

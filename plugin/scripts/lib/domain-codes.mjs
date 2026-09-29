@@ -75,12 +75,13 @@ export const DOMAIN_CODE_TO_KIND = Object.freeze({
  * @returns {string} the CLI kind (C:cli-and-exit-codes).
  * @throws {Error} when `domainCode` has no entry: an unmapped code must fail loudly here,
  *   the same way `lib/cli.mjs` `failure()` refuses to exit 0 on an unmapped kind, instead of
- *   silently reaching M1 as `undefined`.
+ *   silently reaching M1 as `undefined`, or, for a domain code spelled like an inherited
+ *   property (e.g. `constructor`), resolving to that inherited value (`Object.hasOwn` checks
+ *   ownership, not just presence).
  */
 export function kindForDomainCode(domainCode) {
-  const kind = DOMAIN_CODE_TO_KIND[domainCode];
-  if (kind === undefined) {
+  if (!Object.hasOwn(DOMAIN_CODE_TO_KIND, domainCode)) {
     throw new Error(`no CLI kind mapped for domain code ${JSON.stringify(domainCode)}`);
   }
-  return kind;
+  return DOMAIN_CODE_TO_KIND[domainCode];
 }
