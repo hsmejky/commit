@@ -7,9 +7,10 @@
 // ends the call: `{ status }` for a reply, or `{ refusal: { code, message } }` with a domain
 // code this module maps to a CLI kind. INT-01 built the walking skeleton (steps 1, 4 and 6,
 // only as far as a clean tree needs); GIT-01 adds step 2's first rows (`env`, `state`
-// outside a usable repo). Later slices insert the other rows (3 run folder and lock peek,
-// 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in their place in
-// PLAN_STEPS, and widen these.
+// outside a usable repo). CFG-02 adds step 1's M4 `loadConfig` (repo layer only, from the
+// worktree) and step 2's `config` row, ahead of `state` (C:plan step 2 order). Later slices
+// insert the other rows (3 run folder and lock peek, 5 snapshot and scan, 7 store and lock,
+// 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 adds the `call.lock` and `busy`,
@@ -21,16 +22,29 @@ import { releaseById } from './run.mjs';
 import { reply } from './reply.mjs';
 import { planRefusal } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
+import { loadConfig } from './config.mjs';
 
-/** Step 1: probe the repo state, git and Node versions (M3). */
+/** Step 1: probe the repo state, git and Node versions (M3). Shared with `release`. */
 async function probeRepo(ctx) {
   ctx.probe = await probe({ cwd: ctx.cwd, env: ctx.injected.env, now: ctx.injected.now });
   return undefined;
 }
 
+/**
+ * `plan` step 1 (config part): M4 `loadConfig`, thin (the repo layer only), and only when the
+ * probe found a worktree to read it from. `release` never runs this: it shares only the
+ * `env` refusal with `plan` (C:cli-and-exit-codes), so it never needs a config load.
+ */
+async function loadRepoConfig(ctx) {
+  ctx.config = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
+    ? loadConfig({ toplevel: ctx.probe.repo.toplevel })
+    : null;
+  return undefined;
+}
+
 /** Step 2: pre-folder refusals (M15 `planRefusal`); none of them creates the run folder. */
 async function preFolderRefusals(ctx) {
-  const refusal = planRefusal(ctx.probe);
+  const refusal = planRefusal({ ...ctx.probe, config: ctx.config });
   if (refusal !== null) return { refusal };
   ctx.toplevel = ctx.probe.repo.toplevel;
   return undefined;
@@ -49,7 +63,7 @@ async function postScanRefusals(ctx) {
   throw new Error('plan on a working tree with changes is not built yet');
 }
 
-const PLAN_STEPS = Object.freeze([probeRepo, preFolderRefusals, inventory, postScanRefusals]);
+const PLAN_STEPS = Object.freeze([probeRepo, loadRepoConfig, preFolderRefusals, inventory, postScanRefusals]);
 
 /**
  * `release` step 2: the probe's `env` refusal, the only refusal `release` shares with `plan`

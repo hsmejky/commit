@@ -247,3 +247,26 @@ test('M15 run policy module stays pure', () => {
   const { assertPureSource } = require('./helpers/assert-pure-source');
   assertPureSource('run-policy');
 });
+
+// CFG-02 (docs/roadmap/04-config-and-attribution.md): the repo config layer, read from the
+// worktree (M4), checked by `plan` step 2 before any run folder or lock exists (Q6).
+
+test('plan with unparseable repo config JSON exits 1 config, naming the repo layer, and creates no .commit-plan', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.claude/commit.json', '{ "types": [');
+
+  const result = await runCommit(c, ['plan']);
+
+  assertRefusal(result, 'config', 1);
+  assert.match(result.json.error.message, /\.claude[/\\]commit\.json/);
+  assertNoRunFolder(c.repoDir);
+});
+
+test('plan with no repo config file gets no config refusal and goes on', async (t) => {
+  const c = createCase(t);
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.status, 'nothing');
+});

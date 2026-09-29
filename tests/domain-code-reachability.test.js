@@ -34,7 +34,18 @@ const ROWS = [
   { row: 'staged-empty', reachable: false },
   { row: 'already-committed', reachable: false },
   { row: 'no-groups', reachable: false },
-  { row: 'config', reachable: false },
+  {
+    row: 'config',
+    kind: 'config',
+    exitCode: 1,
+    reachable: true,
+    // CFG-02: unparseable JSON in the repo config layer (tests/plan-pre-folder-refusals.test.js).
+    async seam1Case(t) {
+      const c = createCase(t);
+      c.writeFile('.claude/commit.json', '{ "types": [');
+      return runCommit(c, ['plan']);
+    },
+  },
   {
     row: 'env (install path, M3)',
     kind: 'env',
@@ -100,7 +111,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 3);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 4);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

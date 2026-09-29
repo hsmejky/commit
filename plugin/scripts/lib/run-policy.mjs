@@ -5,8 +5,9 @@
 // GIT-01 builds the first `planRefusal` rows: `env` (git missing, unreadable or older than
 // 2.34), `state` (not a repository, bare repository) and `timed-out` (a start-up `spawnSync`
 // call, M2, past its fixed short timeout; GIT-07 brings the 540 s deadline). Node older than
-// 22 stays enforced by the entry point (`commit.cjs`), before M15 ever loads. CFG and GIT-02
-// onward add `config` and the other `state` rows; RUN-14 completes their order.
+// 22 stays enforced by the entry point (`commit.cjs`), before M15 ever loads. CFG-02 adds
+// `config` (C:plan step 2 order: `env`, `config`, `state`); GIT-02 onward adds the other
+// `state` rows; RUN-14 completes their order.
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });
@@ -34,16 +35,21 @@ const STATE_MESSAGES = Object.freeze({
 });
 
 /**
- * The pre-folder refusals of `plan` (C:plan step 2), in order: `env`, then `state`, then a
- * start-up call's `timed-out` (M2's fixed short timeout, before any run folder exists).
+ * The pre-folder refusals of `plan` (C:plan step 2), in order: `env`, then `config` (M4's
+ * result, already loaded by M18 step 1: M15 stays pure, so it never reads a layer itself),
+ * then `state`, then a start-up call's `timed-out` (M2's fixed short timeout, before any run
+ * folder exists).
  *
- * @param {{ git: object, node: object, repo: object|null }} facts the M3 probe result.
+ * @param {{ git: object, node: object, repo: object|null, config?: { error: string } | null }}
+ *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (`null` or
+ *   omitted when no repo layer error was found, e.g. outside a worktree).
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */
 export function planRefusal(facts) {
   const envMessage = envRefusal(facts);
   if (envMessage !== null) return { code: 'env', message: envMessage };
+  if (facts.config != null) return { code: 'config', message: facts.config.error };
   if (facts.repo !== null && Object.hasOwn(STATE_MESSAGES, facts.repo.kind)) {
     return { code: facts.repo.kind, message: STATE_MESSAGES[facts.repo.kind] };
   }
