@@ -139,7 +139,7 @@ and the module sections point here, and the README states it in full.
   command instead of running it.
 - The run folder lives in the working tree (Q9): `git clean -fdx` mid-run deletes it, file
   watchers and Docker build contexts see it, and cloud-synced folders may copy or lock it.
-- A lock put-back that meets `EEXIST` (Q22) keeps its private copy until the 24-hour sweep.
+- A lock put-back that meets `EEXIST` (Q22) cannot be produced by a fixture: the new holder's adoption of the private copy is checked by hand only (RUN-26).
 - Claude Code versions older than the first one with exec-form plugin hooks are not
   supported (the minimum is pending the spike); the sandbox is covered only as far as the
   heartbeat spike reaches; PowerShell editions other than Windows PowerShell 5.1 and

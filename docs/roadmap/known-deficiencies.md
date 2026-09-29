@@ -132,7 +132,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
 
 - **KD-R53.** CFG-03 lacks a wrong-JSON-type case such as `body: 1` → `config` (not
   `body: "required"`).
-- **KD-R54.** The README RUN-20 gate row names only one path to RUN-24 (also via RPL-09).
 - **KD-R55.** CHG-17's Gates line restates its PRE-15 blocker. Delete the line.
 - **KD-R56.** CHG-16 states the 1 MB rule it hands to SCN-13; CHG-12's Sources omit story
   219.
@@ -153,6 +152,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R49, KD-R50, KD-R45.
-7. Edges: KD-R54, KD-R7, KD-R30, KD-R10.
+7. Edges: KD-R7, KD-R30, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26, KD-R27.
 9. The rest of the text and bookkeeping items.

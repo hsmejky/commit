@@ -56,9 +56,8 @@ slices widen it.
 
 ## Can start immediately
 
-Agent work: PRE-01, PRE-03, PRE-09, PRE-10, FND-01.
-Human work: PRE-02, PRE-05, PRE-08, PRE-11, PRE-13, PRE-15, PRE-16, FND-06, CFG-01, RUN-20,
-EXE-01.
+Agent work: none (PRE-01, PRE-03, PRE-09, PRE-10 and FND-01 are done).
+Human work: PRE-02, PRE-05, PRE-11, PRE-13, PRE-16, FND-06.
 
 After FND-01 → FND-03 → FND-04 → RPL-01, the walking skeleton INT-01 opens most groups.
 FND-09 (agent work, the roadmap graph check) also starts right after FND-01.
@@ -71,7 +70,7 @@ FND-09 (agent work, the roadmap graph check) also starts right after FND-01.
   RPL-03 can take INT-01's place (an equally long chain). CHG-03b takes the run lock at
   step 7; the path is the thin one only (no confirmation, trailer, scan wiring or guard
   notice): RUN-06 (which follows CHG-03b), RUN-18, MSG-07, CHG-16/SCN-15 and INT-27 widen
-  it. INT-02 also waits on the PRE-08 spike (needs-human, no blockers), off the chain.
+  it. INT-02's PRE-08 spike (off the chain) is done.
 - Release (REL-05), 30 slices: FND-01 → FND-03 → FND-04 → RPL-01 → INT-01 → GIT-01 → CFG-02 →
   RUN-05 → GIT-02 → CHG-03 → CHG-03b → RUN-06 → PLN-01 → PLN-06 → CFG-05 → CFG-06 → CFG-07 →
   SCN-14 → RUN-17 → RUN-18 → EXE-22 → INT-09 → INT-10 → INT-15 → INT-16 → INT-17 → INT-28 →
@@ -85,11 +84,6 @@ only through another gated slice, named in parentheses.
 
 | Slice | Open item | Gates |
 | --- | --- | --- |
-| PRE-15 | story wording that disagrees with decisions or contracts (the texts and policy items are settled; the stories that yield to their decision remain) | GRD-17, GIT-12, CHG-17, PLN-03, INT-17, WRK-01, REL-03 |
-| CFG-01 | `scanIgnore`: HEAD vs stored patterns in the backstop, which units are flagged, repo-config path for `snapshotBlob`, `scanIgnoreChanged` wording, repo config invalid at HEAD but fixed in the worktree | CFG-07, SCN-14, EXE-13, INT-16 |
-| EXE-01 | `osUser` missing from M14/M16 interfaces, cleanup past `cleanupDeadline`, M16 `internal` path trigger, failure JSON examples without `reply` | PLN-06, EXE-13, EXE-17, INT-07, INT-15, INT-31 |
-| RUN-20 | run-lock basics: item 6 (a `modeChoice` answer that conflicts with the mode flag); items 10 and 11 (who removes `call.lock`; the `lock` error-table row, KD-S15) are documentation syncs; item 12 (the step-7 rechecks between the inventory and taking the lock on the takeover path, KD-S10) | GIT-08, INT-13, RPL-09, RUN-21; EXE-24 *(transitive, via GIT-08)*; RUN-22, RUN-23, RUN-24, RUN-25, RUN-26 *(transitive, via RUN-21)* |
-| RUN-20b | takeover: items 1-5 and 7-9 (orphan renamed lock, `finishTakeover` deletion order, a failed index repair, `--take-over` of an ended run, the unbuildable mixed-index case, the `modeChoice` fallback after `--take-over`, takeover notices never stored, Q9's restored sentence) | RUN-21, RUN-23, RUN-24, RUN-25; RUN-22 and RUN-26 *(transitive, via RUN-21)* |
 | PRE-16 | managed-settings directory path per OS and the CI permissions to write it | CFG-11 |
 | FND-06 | privacy test file set and segment matcher | FND-07 |
 | PRE-02 | personal commit skill removed before spikes and dogfooding | PRE-04, PRE-06, PRE-12, GRD-21, WRK-06 |
@@ -97,7 +91,6 @@ only through another gated slice, named in parentheses.
 | PRE-05 | spike: heartbeat under the sandbox | GRD-15; GRD-17 *(transitive, via GRD-15)* |
 | PRE-06 | spike: exec-form hooks in a plugin | PRE-07, GRD-18, REL-02; GRD-19 *(transitive, via PRE-07)* |
 | PRE-07 | guard cold start measured, target set | GRD-19 |
-| PRE-08 | spike: tool output limits | CHG-18, INT-02; RPL-05 *(transitive, via INT-02)* |
 | PRE-11 | spike: project directory and `CLAUDE_PROJECT_DIR` | CFG-10 |
 | PRE-12 | spike: README allow rules and the worker's shell | WRK-02, REL-02 |
 | PRE-13 | spike: how a tool call is terminated | GIT-08, EXE-24 |
@@ -111,15 +104,12 @@ Minor and nit items of the spec's [known deficiencies](../spec/known-deficiencie
 no decision slice settles. Their disposition for 0.1.0:
 
 - Accepted as written (the slices follow the contract as it stands; no further decision):
-  KD-S11, KD-S13, KD-S14, KD-S21 to KD-S23, KD-S35 to KD-S37, KD-S39, KD-S40, KD-S42 to
+  KD-S11, KD-S13, KD-S14, KD-S21 to KD-S23, KD-S35, KD-S37, KD-S39, KD-S40, KD-S42 to
   KD-S44, KD-S46 and KD-S49 to KD-S51.
-- Covered at slice level: KD-S54 (Q6 value domains, CFG-03), KD-S45 (changes read only
-  through `hunks.txt`, WRK-02) and KD-S48 (heartbeat location, GRD-15 and GRD-17).
-- Settled by RUN-20: KD-S15 (item 11) and KD-S10 (item 12), with KD-S6 (item 6) and
-  KD-S25 (item 10).
-- Settled by RUN-20b: KD-S1 to KD-S5 and KD-S7 to KD-S9.
-- Folded into PRE-15: KD-S64 (story 185 yields to C:infer) and KD-S66 (story 147 yields to
-  Q9's keep-set), with the other story-wording rows.
+- Covered at slice level: KD-S45 (changes read only through `hunks.txt`, WRK-02) and
+  KD-S48 (heartbeat location, GRD-15 and GRD-17).
+- Settled and deleted: the story-wording and text rows by PRE-15, the run-lock rows by
+  RUN-20 and the takeover rows by RUN-20b (see those slices' records).
 - KD-S20 (`infer` rows missing from the error table): INF-01 follows C:infer; the table rows
   and the unborn-HEAD outcome are a documentation sync.
 - KD-S41 (kill-timeout cases): EXE-17 asserts no commit for a killed `pre-commit` hook and a

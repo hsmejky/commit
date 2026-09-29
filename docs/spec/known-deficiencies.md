@@ -71,10 +71,6 @@ Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](te
   `.com`/`.exe`; no case is marked POSIX-only and no `git.exe` shim or argv log is
   specified. Fix: specify a compiled Windows shim and the log format, or mark the cases
   POSIX-only. Disposition: accepted for 0.1.0 (roadmap KD-R21).
-- **KD-S36. No oracle-skip class for PowerShell 5.1 `&&`/`||`.** Fix: an edition-specific
-  skip class; only the oracle differs per edition. Disposition: resolved by PRE-03: the
-  oracle reads command elements whatever parse errors are reported (`p51-and` matches;
-  C:guard, Oracle-skip classes).
 - **KD-S37. Hook registration check ignores the `if` condition** (Q13); a mismatch
   silently disables the heartbeat. Fix: assert `if` matches every S2 `build` output.
   Disposition: accepted for 0.1.0.

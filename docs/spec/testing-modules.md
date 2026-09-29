@@ -72,7 +72,12 @@ Case lists:
   then taken over → the repair reads the first run's facts through the renamed lock file;
   group 1 committed, a call killed in phase (a) of group 2, then
   taken over → no reset and no reset notice, the `unstaged` notice still given; an automatic stale takeover on a clean tree → "nothing to commit" carrying the takeover notice with the stale run's `planId`, an automatic stale takeover with `killedLeftover` in an interactive run → the forced `modeChoice` carrying the takeover, `killedLeftover` and `unstaged` notices; a takeover whose repair resets the killed group's staging under `--take-over <planId> --staged` → `staged-empty` carrying the reset notice (the case "a reset leaving a mixed index → `modeChoice`" cannot be built: `git reset -q` leaves the index equal to HEAD); a foreign `index.lock` blocking the takeover's repair → `index-lock` with the notices so far and the "repair failed" notice, the taken-over folder and renamed lock kept and the run's own lock and folder gone, then, the `index.lock` removed, the next `plan` adopts and repairs; `plan --reword` on a clean tree → exit 0 and the lock taken; a
-  signing failure reached only after the clean-tree and `staged-hit` checks.
+  signing failure reached only after the clean-tree and `staged-hit` checks; an orphan
+  `lock.<planId>` whose chain has `indexReset` and an uncommitted group, adopted at step 7 →
+  exit 6 `diff-changed` (`index-changed`) with the repair-first notice, the chain kept and
+  the run's own lock and folder gone; X's lock in place but X's folder gone, then
+  `plan --take-over X` → exit 6 `lock` (`ended`), no `lock.<planId>` and no lock or folder of
+  the new run left.
 - Scanner: positive fixtures for a private key flattened onto one line, as a GCP JSON key and
   as an escaped `.env` value; a line far over the 4096-character cut, scanned in linear time, with a secret
   before the cut found and one past it missed; a secret

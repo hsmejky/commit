@@ -18,7 +18,7 @@
 | `held` (also from `peek` at `plan` step 3), `taken-over` (also a late `ENOENT` on the call's own `call.lock` or run folder), `ended` (also a state `version` mismatch, and `--take-over` of a run that already ended: a rename `ENOENT` whose re-peek finds no lock, or an `ENOENT` on that run's `call.lock`), `busy` (also a live `call.lock`, a lock operation that failed with `EPERM`, `EBUSY` or `EACCES`, or a lock link whose `EPERM`/`EBUSY` persists after retries while the hard-link probe succeeds) | M12 | `lock` | 6 |
 | `index-locked` (also a foreign `index.lock` blocking the takeover's index repair at `plan` step 3) | M10 via M16; M10 via M18 (`plan` step 3 takeover repair) | `index-lock` | 6 |
 | `unmatched` (hash set differs), `mismatch` (staged ≠ group) | M10 via `plan --hunks` and M16 | `diff-changed` | 6 |
-| `index-changed` (index fingerprint changed, HEAD unchanged) | M18 `plan` step 7; M16 before each group | `diff-changed` | 6 |
+| `index-changed` (index fingerprint changed, HEAD unchanged; also an orphan adopted at `plan` step 7 whose chain needs the repair) | M18 `plan` step 7; M16 before each group | `diff-changed` | 6 |
 | `head-moved` | M3 via `plan` (after `acquire`), `plan --hunks` and M16 | `head-moved` | 6 |
 | `lint` | M14 | `lint` | 2 |
 | `backstop-hit` | M8 via M16 | `scan` | 3 |

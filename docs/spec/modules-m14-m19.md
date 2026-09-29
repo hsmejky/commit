@@ -141,7 +141,7 @@ Sources: Q9, Q11, Q18, Q20, Q22, C:commit-release.
 
 **M17 Reply and handback.** Build the reply for every output that ends the worker's part:
 `status`; `text` (commits, failure, the confirm block with its 20-file cap and a hunk count per file in a hunk plan, lint texts,
-`Notices:`, trailer line, tree state; lists capped at 10 plus "+N more"); `callerRule`
+`Notices:`, trailer line when `commits` is non-empty, tree state; lists capped at 10 plus "+N more"); `callerRule`
 (base plus handback rule, fixed text); the handback kinds with their answers; `run` via S2
 `build` from the injected `scriptPath`, with `timeoutMs` 600 000 for `commit` and 60 000
 otherwise; `respawn` (answer fields plus the `mode` flag of the `plan` call that produced

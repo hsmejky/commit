@@ -104,7 +104,8 @@ slice adds the `failed` variant.
 
 **What to build:** the shared `text` layout for every status: the variant's lines, lists
 capped at 10 plus "+N more", the `Notices:` block, the trailer line (or "no trailer" with its
-attribution source) and the tree state; messages never cut; CI size fixtures at every cap.
+attribution source, only when `commits` is non-empty) and the tree state; messages never
+cut; CI size fixtures at every cap.
 
 **Blocked by:** EXE-11, INT-02, INT-05, INT-09, INT-15, MSG-07, RUN-16.
 
@@ -117,8 +118,10 @@ stories 55, 56, 57, 60, 228.
       `unstaged` paths, 11 files left and 11 notices → each list shows 10 plus "+1 more"
 - [ ] A `lintFailed` with three groups with bodies and 11 errors
 - [ ] Size tests: reply without `text` ≤ 2 kB; `text` ≤ 4 kB not counting quoted messages
-- [ ] Every notice appears in `text` under `Notices:` on every status (story 57); the trailer
-      line names the appended trailer or "no trailer" with its source (story 55)
+- [ ] Every notice appears in `text` under `Notices:` on every status (story 57); on a reply
+      with commits the trailer line names the appended trailer or "no trailer" with its
+      source (story 55), and a reply with no commits (`nothing`, a refusal) has no trailer
+      line
 - [ ] A `not-a-repo` refusal's reply carries no tree state at all (it has no tree to read); a
       `release` reply past its 45 s budget omits the tree state too, distinct from "working
       tree clean"

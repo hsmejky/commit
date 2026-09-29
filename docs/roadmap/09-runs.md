@@ -94,15 +94,15 @@ live `call.lock`, or a `call.lock` or folder that vanishes with `ENOENT` → `ta
 State writes use a temporary name, then a rename. With no group-commit behaviour built
 yet, a matched lock's call falls through to a stub that ends the call at once, exit 0,
 with no commits; EXE-02 replaces the stub with the real loop. `call.lock` is created
-exclusively when the call starts and removed when it ends (C:run-folder, `call.lock` row;
-architectural decisions), settling former RUN-20 items 10-11 as documentation, not open
-questions.
+exclusively when the call starts and removed when it ends by M12 `run.close()` (idempotent,
+`ENOENT`-tolerant), called from M18's `finally` for every call with `--plan` (RUN-20 item
+10; C:run-folder, `call.lock` row; architectural decisions).
 
 **Blocked by:** RUN-02, RPL-02.
 
 **Status:** ready-for-agent
 
-**Sources:** Q22, C:run-folder (versioned state), C:commit-release phase (a), M12 `open`, stories 192, 209, 224.
+**Sources:** Q22, C:run-folder (versioned state), C:commit-release phase (a), M12 `open`, M12 `run.close()`, stories 192, 209, 224.
 
 - [ ] Seam 1: the lock holds Y and `commit --plan X --all` runs → exit 6 `lock`, with the
       "this run was taken over by another /commit" text.
@@ -114,6 +114,8 @@ questions.
 - [ ] Seam 1: `X/call.lock` holds a live pid → `busy`, and the run is kept.
 - [ ] Seam 1: a `call.lock` or folder that vanishes with `ENOENT` mid-call maps to
       `taken-over`, not `internal` (C:cli-and-exit-codes `lock` row).
+- [ ] M12 test row: `run.close()` called twice, and after the folder was deleted, succeeds
+      without error.
 
 
 ## RUN-05: `plan` creates the provisional run folder and checks the directory
@@ -204,7 +206,8 @@ handback itself is built by INT-05.
 **What to build:** M12 `sweep` at the end of `plan` step 7. It deletes `<planId>/` folders
 older than 24 hours that the lock does not name, and leftover lock temporary files. It
 considers only entries named in the minted form and never follows a link. A cleanup error
-becomes a notice and never changes the outcome.
+becomes a notice and never changes the outcome. It never deletes a renamed lock file
+(`lock.<planId>`) or a folder on its chain: adoption owns them (RUN-20b; RUN-25 asserts it).
 
 **Blocked by:** RUN-06.
 
@@ -486,14 +489,10 @@ takeover mechanics (RUN-20b covers those). Record each decision in Q22 (and Q9 w
 respawn is concerned), C:run-folder, C:plan, C:reply-and-handback, M12 and M18. The items:
 (6) a `modeChoice` answer that conflicts with the refused call's mode flag: the answer
 replaces the flag, with the handback table row fixed and a `split`-answer fixture added;
-(10) settled, not open: no M12 operation needs to separately "own" `call.lock` removal —
-RUN-04 already asserts it is created exclusively at call start and removed at call end
-(C:run-folder `call.lock` row, architectural decisions); this is a documentation-sync note,
-not a decision;
-(11) settled, not open: the error table's `lock` row (C:cli-and-exit-codes) already
-documents the late `ENOENT` → `taken-over` path alongside `EPERM`/`EBUSY` and the
-hard-link-probe detail (KD-S15); a documentation-sync note, confirmed by RUN-04's
-own criterion;
+(10) a documentation sync: M12 `run.close()` (idempotent, `ENOENT`-tolerant) removes the
+call's `call.lock` from M18's `finally` and from the signal handler (KD-S25);
+(11) a documentation sync: both lock error tables (C:cli-and-exit-codes, domain code → CLI
+kind) list the late `ENOENT` → `taken-over` and the probe-succeeds `busy` cause (KD-S15);
 (12) scoped to the takeover path only: what happens "between the inventory and taking the
 lock" for the index-fingerprint and HEAD rechecks C:plan cites twice (KD-S10),
 *during a takeover*. RUN-06 already builds and tests the non-takeover step-7 HEAD recheck,
@@ -624,6 +623,9 @@ lock → `lock` naming it (RUN-20b item 4).
       outside `.commit-plan/` is touched.
 - [ ] Seam 1 (RUN-20b item 4): no lock in place, then `plan --take-over X` → exit 6
       `lock` (`ended`), and no lock or folder of the new run is left.
+- [ ] Seam 1 (RUN-20b item 4): X's lock in place but X's folder gone, then
+      `plan --take-over X` → exit 6 `lock` (`ended`); no `lock.<planId>` and no lock or
+      folder of the new run is left.
 
 
 ## RUN-23: takeover of a killed run repairs the index
@@ -714,6 +716,10 @@ never deletes a renamed lock.
       past 24 hours, leaves both in place.
 - [ ] Seam 1 (RUN-20b item 2): a renamed lock whose chain ends at a missing folder →
       counted done, no repair, and deleted.
+- [ ] Seam 1 (RUN-20b item 1, step 7): an orphan `lock.<planId>` whose chain has
+      `indexReset` and an uncommitted group, placed after `peek` (injected between steps 3
+      and 7) → exit 6 `diff-changed` (`index-changed`) with the repair-first notice; the
+      chain remains, and the run's own lock and folder are gone.
 
 
 ## RUN-26: manual check: a lock put-back that meets `EEXIST`

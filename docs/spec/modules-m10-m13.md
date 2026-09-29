@@ -183,7 +183,7 @@ forward slashes.
   `takeOver` is the stale holder `peek` reported (automatic, or the orphans alone when there
   is no lock) or the `--take-over` `planId`; without it `acquire` only links the lock
   (step 7) and adopts any orphan. Success: `{ run, takeover }`, `takeover` `null` when it
-  took over and adopted nothing, else `{ planId, notice, killedRun }` (`planId`: the
+  took nothing over and adopted no orphan, else `{ planId, notice, killedRun }` (`planId`: the
   taken-over run's, or the first adopted one's), where `killedRun` is `null` when no chain
   reaches a readable `state.json`, else `{ groupPaths, preStaged, indexOnly, indexReset,
   groupStatus }` (`groupPaths`: the current group's unit paths, both halves of a rename
