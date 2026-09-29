@@ -172,7 +172,11 @@ same way except that `\n` and `\t` are kept (ESC is escaped, so ANSI sequences a
 neutralised), and only its last 2000 characters, prefixed with "[… N characters cut]" when
 cut; the full output stays in `gitOutput` (Q18, C:reply-and-handback). `reply(facts: ReplyFacts, { scriptPath,
 argv })`, where `ReplyFacts` is a discriminated union per status (`committed`, `nothing`,
-`handback`, `failed`) carrying exactly the fields C:reply-and-handback lists for it.
+`handback`, `failed`) carrying exactly the fields C:reply-and-handback lists for it, plus one
+internal discriminator per variant that never reaches the rendered reply: the `nothing`
+variant also carries `reason` (`clean` | `released` | `already-ended`), which selects the
+first line of `text` (C:commit-release) and is not itself one of C:reply-and-handback's
+fields (review-RUN-01 finding 6).
 Sources: Q9, Q16, Q22, Q24, Q25, C:reply-and-handback.
 
 **M18 Subcommand workflows.** Sequences over the modules, each a numbered step table that is

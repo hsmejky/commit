@@ -38,7 +38,8 @@
   0.1.0 (Out of Scope).
 - **Run IDs are validated, deletions contained.** A `planId` is `crypto.randomUUID()` output;
   every `planId` the script reads (`--plan`, `--take-over`, a lock's content) must match that
-  form exactly (lowercase UUID v4). M1 refuses a malformed flag value as `usage`; M12 treats a
+  form exactly (lowercase UUID v4). M12 owns the form (`isValidPlanId`); M1 imports that pure
+  export and applies it, refusing a malformed flag value as `usage`. M12 treats a
   lock with a malformed `planId` like an unparseable one (story 191). Every folder or file M12
   deletes is resolved and checked to lie strictly inside `<toplevel>/.commit-plan/` (no `..`,
   not absolute, not the directory itself), and the sweep considers only entries named in the

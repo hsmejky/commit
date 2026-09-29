@@ -30,6 +30,17 @@ delete it here; IDs are never reused.
   string toplevel; on POSIX a toplevel path containing non-UTF-8 bytes is mangled to U+FFFD
   and then fails as a later call's `cwd`. Where: M2, `plugin/scripts/lib/process-adapter.mjs`.
   Disposition: accepted for 0.1.0.
+- **KD-S54. `release` outside a working tree is unsettled.** `state` is limited to `plan` and
+  `infer` (C:cli-and-exit-codes), while story 56 implies a not-a-repo refusal without a tree
+  state; no slice schedules the choice. Today `release` throws "release outside a working
+  tree is not built yet", which `main` maps to exit 1 `internal` — a real, if generic, ending,
+  not a crash, but the message overclaims that a slice is scheduled. Where: M18
+  `plugin/scripts/lib/workflows.mjs` (`releaseRefusals`), [C:commit-release](../contracts/commit-release.md),
+  [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md),
+  [domain-code-cli-kind.md](domain-code-cli-kind.md). Fix: settle on either a `state` row for
+  `release`, a no-op "nothing to release" (no repo means no run folder), or a documented
+  `internal` with a real message, then update the message and the tables together
+  (review-RUN-01 finding 7).
 
 ## Error tables and API contract
 

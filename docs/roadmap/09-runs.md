@@ -63,6 +63,14 @@ at a time), M12, story 209.
 - [ ] Seam 1: the `call.lock` names another host (or is unreadable). If it is fresh →
       `busy`. With its mtime aged past 15 minutes → replaced, and `release` succeeds.
 - [ ] Seam 1: when the lock does not match, `release` never creates a `call.lock`.
+- [ ] `release` removes the lock through the same rename-to-private-name, verify-`planId`,
+      unlink-or-put-back sequence `acquire`'s takeover uses, not a bare unlink by name, so a
+      takeover racing a `release` between the lock read and the delete cannot delete the new
+      holder's lock instead (review-RUN-01 finding 1).
+- [ ] Before this slice's own `<planId>/call.lock` path resolution touches `call.lock`, it
+      `lstat`s `<planId>` itself and refuses to follow it when it is a link (a junction
+      swapped in between the lock check and the `call.lock` write must not redirect the
+      write outside the run-folder directory; review-RUN-01 finding 1).
 
 
 ## RUN-03: `release` bounds its tree-state read (45 s)

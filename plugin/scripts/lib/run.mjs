@@ -61,7 +61,9 @@ export function insideRunDir(runDir, name) {
   if (name.split(/[\\/]/).includes('..')) throw outside(name);
   const resolved = path.resolve(runDir, name);
   const relative = path.relative(runDir, resolved);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) throw outside(name);
+  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw outside(name);
+  }
   return resolved;
 }
 
@@ -78,6 +80,11 @@ function isPlainDirectory(dir) {
   return stats.isDirectory() && !stats.isSymbolicLink();
 }
 
+// The lock holds only `{ planId, created }` (C:run-folder); a few KB is generous. Checked
+// before the read so an oversized file, or a non-regular one (a FIFO would otherwise block
+// `readFileSync` forever on POSIX), is never opened (review-RUN-01 finding 10).
+const LOCK_MAX_BYTES = 65536;
+
 /**
  * Reads the run lock's `planId`. A missing lock, and a lock whose content is not `{ planId,
  * … }` with a minted `planId` (unparseable, C:run-folder), hold no run.
@@ -86,12 +93,24 @@ function isPlainDirectory(dir) {
  * @returns {string | null} the holder's `planId`, or `null` when no run holds the lock.
  */
 function lockHolder(runDir) {
+  const lockPath = insideRunDir(runDir, 'lock');
+  let stats;
+  try {
+    // Follows a link (read, never delete, follows it), so a link to a huge file or a FIFO is
+    // caught the same as one in place directly.
+    stats = fs.statSync(lockPath);
+  } catch (err) {
+    // No lock, a broken link, or a path component that is not a directory.
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR' || err.code === 'ELOOP') return null;
+    throw err;
+  }
+  if (!stats.isFile() || stats.size > LOCK_MAX_BYTES) return null;
   let text;
   try {
-    text = fs.readFileSync(insideRunDir(runDir, 'lock'), 'utf8');
+    text = fs.readFileSync(lockPath, 'utf8');
   } catch (err) {
-    // No lock, or a lock path that is not a file.
-    if (err.code === 'ENOENT' || err.code === 'EISDIR') return null;
+    // The lock vanished between the stat and the read.
+    if (err.code === 'ENOENT') return null;
     throw err;
   }
   let content;

@@ -164,7 +164,10 @@ lock files; after a failed repair M18 does not call it, so the chain stays for t
 adopter; an automatic takeover adds a notice naming the stale
 `planId`; a file-in-use error on any other operation → `busy` (C:run-folder);
 `release` a no-op on mismatch, and on a match it takes the `call.lock` (`busy`) before
-deleting; 24-hour sweep of `<planId>/` folders (minted form only, never
+deleting the run folder; it removes the lock itself through the same rename-to-private-name,
+verify-`planId`, unlink-or-put-back sequence `acquire`'s takeover uses (RUN-02), closing the
+TOCTOU window between reading the lock and deleting it that a same-instant takeover of a
+stale lock could otherwise hit; 24-hour sweep of `<planId>/` folders (minted form only, never
 following a link) the lock does not name, and of leftover takeover and lock temp files,
 never of a renamed lock file (`lock.<planId>`) or a folder on its chain (adoption owns
 them).
@@ -197,8 +200,12 @@ forward slashes.
   folder already deleted by `release` or a takeover is not an error). Called from M18's
   `finally` for every call with `--plan` and from the entry point's signal handler.
 - `run.state`, `run.write(name, data)`, `run.readWorkerPlan()`, `run.touch()`,
-  `run.release()`, `Run.releaseById(planId)` (typed: `busy`, or ok with `released: false`
-  when the lock does not hold `planId`), `Run.sweep(now)`.
+  `run.release()`, `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
+  false` for the no-op when the lock does not hold `planId`; a future `busy` once RUN-02 adds
+  the `call.lock` check), `Run.sweep(now)`. Every M12 static entry that has no open run to read
+  `toplevel` from (`create`, `open`, `releaseById`) takes it explicitly, alongside its own
+  arguments, since M18 already holds it from the probe (Q9); `Run.create({ now })` and
+  `Run.open(planId, { now })` above will take `toplevel` the same way once built.
 Sources: Q9, Q22, C:run-folder.
 
 **M13 Hunk index renderer.** Presentation only: the summary-only reason per unit; the body

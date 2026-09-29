@@ -2,7 +2,7 @@
 
 | Module | Kind | Depends on |
 | --- | --- | --- |
-| M1 CLI and envelope | effectful (stdout, exit code) | M18 |
+| M1 CLI and envelope | effectful (stdout, exit code) | M18, M12 (pure `isValidPlanId` only) |
 | M2 Process adapter | effectful | — |
 | M3 Repo-state probe | effectful, read-only | M2 |
 | M4 Config loader | effectful, read-only; pure merge and validation | M2, M7 |

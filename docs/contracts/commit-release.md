@@ -180,6 +180,10 @@ creates the run's `call.lock` like every `--plan` call (another call on this run
 running → exit 6 `lock`, `busy`, and the run is kept, so a folder is never deleted under a
 running call), then removes the lock and deletes the run folder; otherwise a no-op with exit
 0 before touching the run folder (the run has already ended, or was taken over and the lock
-is someone else's, Q22). Output `{ "version": 1, "ok": true, "reply": {
+is someone else's, Q22). Removing the lock uses the same rename-to-private-name,
+verify-`planId`, unlink-or-put-back sequence `acquire`'s takeover uses (RUN-02), not a bare
+unlink by name: reading the lock and deleting it are two steps, and a takeover of a now-stale
+lock could land in between (review-RUN-01 finding 1). Outside a working tree (not a repo, a
+bare repository, or git timing out), what `release` does is not yet settled (KD-S54). Output `{ "version": 1, "ok": true, "reply": {
 "status": "nothing", "text": "nothing committed", … } }`; after a no-op the `text` says
 "nothing to release: the run has already ended or was taken over".

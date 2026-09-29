@@ -221,6 +221,91 @@ test('release does not follow a .commit-plan link to a directory outside the rep
   assert.deepEqual(snapshot(target), before);
 });
 
+test('release deletes a <planId> junction without following it into its target', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  const target = path.join(c.root, 'elsewhere');
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, 'keep.txt'), 'keep\n');
+  fs.symlinkSync(target, path.join(runDir, planId), 'junction');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertNothingReply(result, 'nothing committed');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false, 'the junction entry is gone');
+  assert.equal(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8'), 'keep\n', 'the target is kept');
+});
+
+test('release deletes a link nested inside <planId>/ without descending into its target', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  const folder = writeRunFolder(runDir, planId);
+  const target = path.join(c.root, 'elsewhere');
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, 'keep.txt'), 'keep\n');
+  fs.symlinkSync(target, path.join(folder, 'nested'), 'junction');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertNothingReply(result, 'nothing committed');
+  assert.equal(fs.existsSync(folder), false, 'the run folder is gone');
+  assert.equal(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8'), 'keep\n', "the nested link's target is kept");
+});
+
+test('release --plan X when .commit-plan is a regular file is a no-op', async (t) => {
+  const c = createRepo(t);
+  const planId = crypto.randomUUID();
+  // The `/.commit-plan/` exclude line (C:run-folder) only matches the directory form; ignore
+  // the plain-file form too so the tree stays clean and this test isolates finding 2's
+  // no-op case, not finding 3's separate dirty-tree gap.
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '.commit-plan\n');
+  fs.writeFileSync(runDirOf(c), 'not a directory\n');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertNothingReply(result, NOTHING_TO_RELEASE);
+  assert.equal(fs.readFileSync(runDirOf(c), 'utf8'), 'not a directory\n');
+});
+
+test('release --plan X removes a matching lock even when X/ does not exist', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assertNothingReply(result, 'nothing committed');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false);
+});
+
+// Finding 3 (review-RUN-01): the release itself (lock and folder gone) succeeds, but the
+// reply's tree-state read only renders a clean tree today (the walking skeleton's thin
+// read; CHG-04 completes it with the "N files left" case), so a release on a dirty tree
+// still ends the call `internal` even though the run has already ended.
+test('release on a dirty tree still ends the run, but the reply fails internal (thin tree-state read, CHG-04)', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  writeRunFolder(runDir, planId);
+  c.writeFile('dirty.txt', 'x\n');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false, 'the lock is removed');
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false, 'the run folder is deleted');
+  assert.equal(result.exitCode, 1, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.error.kind, 'internal');
+});
+
 test('release run from a subdirectory releases the run of the toplevel', async (t) => {
   const c = createRepo(t);
   const runDir = runDirOf(c);

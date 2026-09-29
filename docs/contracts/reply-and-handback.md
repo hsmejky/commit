@@ -35,10 +35,10 @@ handles it the same way.
 
 - `version`: `1`. With `callerRule`, the keys a caller recognises the reply by.
 - `status`: `committed` (at least one commit, no failure), `nothing` (clean tree, zero
-  groups, `no`), `handback`, `failed` (a failure, possibly after some commits: `commits`
-  lists them).
+  groups, `no`, `release`), `handback`, `failed` (a failure, possibly after some commits:
+  `commits` lists them).
 - `planId`: the run's `planId`, which every `run` answer passes as `--plan`; `null` when no
-  run folder is kept (clean tree, `modeChoice`, a refusal).
+  run folder is kept (clean tree, `modeChoice`, a refusal, `release`).
 - `commits`: the commits this call made, entries as in the `commit` output (`n`, `sha`,
   `header`); `[]` when none.
 - `text`: what the user reads, and the only field a caller relays. For `committed` the
