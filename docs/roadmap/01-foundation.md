@@ -86,14 +86,14 @@ CLI gains no switch.
 
 **Blocked by:** FND-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q18, Seams "Clock at Seam 1", Architectural decisions "Injected environment".
 
-- [ ] Driving a stub entry point in the test tree: the first `Date.now()` returns real time (`callStarted`); before the first step later reads run in real time; after a step the value is frozen at `callStarted + elapsed` until the next step.
-- [ ] Steps are keyed to observable events (a path that exists, a reflog entry count); a step whose event holds at start applies from the second call on; the schedule never counts `Date.now()` calls.
-- [ ] A boundary step (exactly 60 000 ms elapsed) reads back exactly.
-- [ ] The preload lives only in the test tree; the packaged plugin directory contains no reference to it.
+- [x] Driving a stub entry point in the test tree: the first `Date.now()` returns real time (`callStarted`); before the first step later reads run in real time; after a step the value is frozen at `callStarted + elapsed` until the next step.
+- [x] Steps are keyed to observable events (a path that exists, a reflog entry count); a step whose event holds at start applies from the second call on; the schedule never counts `Date.now()` calls.
+- [x] A boundary step (exactly 60 000 ms elapsed) reads back exactly.
+- [x] The preload lives only in the test tree; the packaged plugin directory contains no reference to it.
 
 
 ## FND-06: Settle the privacy test's file set and segment matcher
