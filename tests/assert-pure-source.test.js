@@ -187,3 +187,153 @@ test('an import specifier string still reads correctly once literals are blanked
     );
   }, /not-allowed\.mjs/);
 });
+
+// Fail-closed lexing: whenever the helper cannot tell a literal from real code, it must
+// leave the text in place (still checked), never blank real code.
+
+test('a string holding a "{" inside a ${…} substitution does not hide later code', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "function g() {\n  return `${open ? '{' : ''}`;\n}\nprocess.exit(0);\nconst b = `ok`;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('a template nested inside a ${…} substitution does not hide later code', () => {
+  assert.throws(() => {
+    assertPureSourceText(
+      "const s = `a ${`b ${'}'} c`} d`;\nprocess.exit(0);\nconst b = `ok`;\n",
+      'fixture.mjs',
+    );
+  }, assert.AssertionError);
+});
+
+test('an unterminated template leaves the rest of the source checked', () => {
+  assert.throws(() => {
+    assertPureSourceText('const s = `${a`;\nprocess.exit(0);\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('an unterminated string leaves the rest of the source checked', () => {
+  assert.throws(() => {
+    assertPureSourceText("const s = 'abc\nprocess.exit(0);\n", 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('an unterminated block comment leaves the rest of the source checked', () => {
+  assert.throws(() => {
+    assertPureSourceText('/* open\nprocess.exit(0);\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('division after a postfix ++ is not mistaken for a regex literal', () => {
+  assert.throws(() => {
+    assertPureSourceText('const t = n++ / 2 + process.uptime() / 2;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('division after a postfix -- is not mistaken for a regex literal', () => {
+  assert.throws(() => {
+    assertPureSourceText('const t = n-- / 2 + process.uptime() / 2;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+for (const prop of ['in', 'of', 'new', 'delete', 'return', 'typeof']) {
+  test(`division after a keyword-named property (.${prop}) is not mistaken for a regex literal`, () => {
+    assert.throws(() => {
+      assertPureSourceText(
+        `const avg = counts.${prop} / n + process.uptime() / 2;\n`,
+        'fixture.mjs',
+      );
+    }, assert.AssertionError);
+  });
+}
+
+test('division after an optional-chained keyword-named property is not mistaken for a regex', () => {
+  assert.throws(() => {
+    assertPureSourceText('const avg = counts?.in / n + process.uptime() / 2;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('a "/" guessed as a regex start is kept as code when what follows cannot follow a regex', () => {
+  assert.throws(() => {
+    assertPureSourceText('const t = {} / 2 + process.uptime() / 2;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+// Regressions: the blanking that lets real literals mention banned words keeps working.
+
+test('a banned word in a regex literal after a keyword passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText('function f(s) {\n  return /process\\.env/.test(s);\n}\n', 'fixture.mjs');
+  });
+});
+
+test('banned words in regex literals with flags, in an array and as arguments pass', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText(
+      "const rs = [/console/g, /Date\\b/i];\nconst ok = s.replace(/globalThis/g, '') && /process/.source;\n",
+      'fixture.mjs',
+    );
+  });
+});
+
+test('a regex literal holding quotes, "//" and a class with "/" passes and stays scoped', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText("const r = /['\"]\\/\\/[/*]process/;\nconst y = 1;\n", 'fixture.mjs');
+  });
+  assert.throws(() => {
+    assertPureSourceText("const r = /['\"]\\/\\/[/*]x/;\nprocess.exit(0);\n", 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('a banned word in a string inside a ${…} substitution passes', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText("const s = `a ${cond ? '{process}' : `console`} b`;\n", 'fixture.mjs');
+  });
+});
+
+test('a banned word in real code inside a nested ${…} substitution still fails', () => {
+  assert.throws(() => {
+    assertPureSourceText('const s = `a ${`b ${process.env.X}`} c`;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('an object literal with braces inside a ${…} substitution is balanced', () => {
+  assert.doesNotThrow(() => {
+    assertPureSourceText('const s = `${JSON.stringify({ a: { b: 1 } })} process`;\n', 'fixture.mjs');
+  });
+});
+
+test('a keyword spelled as an identifier prefix still counts as an identifier', () => {
+  assert.throws(() => {
+    assertPureSourceText('const t = index / 2 + process.uptime() / 2;\n', 'fixture.mjs');
+  }, assert.AssertionError);
+});
+
+test('lexing keeps length and line structure, blanking only comments and literal text', () => {
+  const { lexSource } = require('./helpers/assert-pure-source');
+  const source = [
+    "import { a } from './a.mjs'; // note",
+    '/* block',
+    '   comment */ const s = `t ${x ? "{" : `n ${y}`} u`;',
+    "const r = /re\\/x/g; const q = 'str';",
+    'const t = n++ / 2;',
+    '',
+  ].join('\r\n');
+  const { stripped, blanked } = lexSource(source);
+  for (const out of [stripped, blanked]) {
+    assert.equal(out.length, source.length);
+    assert.deepEqual(
+      [...out].map((ch, k) => (ch === '\n' || ch === '\r' ? k : -1)).filter((k) => k >= 0),
+      [...source].map((ch, k) => (ch === '\n' || ch === '\r' ? k : -1)).filter((k) => k >= 0),
+    );
+  }
+  assert.match(stripped, /from '\.\/a\.mjs';/);
+  assert.doesNotMatch(stripped, /note|block|comment/);
+  assert.ok(stripped.includes('/re\\/x/g'));
+  assert.match(blanked, /\$\{x \? " " : ` +\$\{y\}` *\}/);
+  assert.match(blanked, /const r = \/ {5}\/g; const q = ' {3}';/);
+  assert.match(blanked, /const t = n\+\+ \/ 2;/);
+});
