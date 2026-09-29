@@ -124,7 +124,9 @@ characters (C:scan-patterns), so scanning stays linear in the input; the cut is 
 Scope). Binaries (M10) and credential containers are not scanned (Out of Scope).
 `scanUnits(units, { scanIgnore, osUser, scanIgnoreChanged, isRepoConfigPath }) → { hits,
 skipped, scanIgnoreUnits }` (the last two options only from `plan`; the backstop passes
-neither and gets an empty `scanIgnoreUnits`); `scanText(text, { osUser }) → [{ patternId, start, end }]` (UTF-16
+neither and gets an empty `scanIgnoreUnits`);
+`hits: [{ patternId, path, line }]`, one per pattern and line; M18 maps `patternId` to C:plan's `pattern`.
+`scanText(text, { osUser }) → [{ patternId, start, end }]` (UTF-16
 offsets into `text`, `end` exclusive, never the matched value), the spans M14 passes on with
 its lint errors so M17 can replace the union of the spans with `[<pattern-id>]` (the first
 hit's ID where spans overlap). Sources: Q10, Q19,
