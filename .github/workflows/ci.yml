@@ -12,10 +12,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        # 22.0.0 is the documented floor (Q1, Q15: FND-01 was verified manually against it);
-        # '22' resolves to the latest 22.x release, '24' to the latest 24.x release.
-        node-version: ['22.0.0', '22', '24']
+        # 22.0.0 is the documented floor (Q1, Q15: FND-01 was verified manually against it).
+        # On windows-latest, Node 22.0.0's bundled npm cannot resolve npm-cli.js at all
+        # (nodejs/node#52682, actions/setup-node#1025, fixed in 22.1.0); no test of this
+        # repo can run there, so the windows "oldest" leg pins the first working patch
+        # instead. '22' resolves to the latest 22.x release, '24' to the latest 24.x.
+        include:
+          - os: ubuntu-latest
+            node-version: '22.0.0'
+          - os: ubuntu-latest
+            node-version: '22'
+          - os: ubuntu-latest
+            node-version: '24'
+          - os: macos-latest
+            node-version: '22.0.0'
+          - os: macos-latest
+            node-version: '22'
+          - os: macos-latest
+            node-version: '24'
+          - os: windows-latest
+            node-version: '22.1.0'
+          - os: windows-latest
+            node-version: '22'
+          - os: windows-latest
+            node-version: '24'
     steps:
       - uses: actions/checkout@v4
 
