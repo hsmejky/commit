@@ -26,3 +26,21 @@ test('failure() returns the failure shape and exit code for a mapped kind', () =
 test('failure() throws on a kind with no mapped exit code, instead of exiting 0', () => {
   assert.throws(() => failure('not-a-real-kind', 'x'), /not-a-real-kind/);
 });
+
+// RPL-03: the full kind -> exit code map, 0-6, from the exit table of C:cli-and-exit-codes.
+// Table-driven against that doc as the oracle, independent of the module's own EXIT_CODES.
+const EXIT_TABLE = [
+  ['usage', 1], ['config', 1], ['env', 1], ['internal', 1],
+  ['lint', 2],
+  ['scan', 3],
+  ['git', 4],
+  ['timeout', 5],
+  ['state', 6], ['signing', 6], ['pushed', 6], ['staged-hit', 6],
+  ['lock', 6], ['index-lock', 6], ['diff-changed', 6], ['head-moved', 6],
+];
+
+for (const [kind, exitCode] of EXIT_TABLE) {
+  test(`failure() maps kind ${kind} to exit ${exitCode}`, () => {
+    assert.equal(failure(kind, 'x').exitCode, exitCode);
+  });
+}

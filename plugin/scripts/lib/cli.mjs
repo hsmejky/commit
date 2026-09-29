@@ -2,17 +2,33 @@
 //
 // `main` peels the subcommand off argv and returns the single JSON object the entry point
 // prints (`version: 1`) with its exit code. M1 alone owns the envelope and the kind → exit
-// code map. This is the RPL-01 tracer: no or an unknown subcommand is a `usage` refusal;
-// per-subcommand argv parsing (RPL-02), the full exit table (RPL-03) and the routing to the
-// M18 workflows come later.
+// code map (architectural decisions "Typed results and one error table"); the domain code →
+// kind side of that table is `lib/domain-codes.mjs` (M18, RPL-03). This is still the RPL-01/
+// RPL-02 tracer for argv: no or an unknown subcommand is a `usage` refusal; per-subcommand
+// argv parsing (RPL-02) and the routing to the M18 workflows come later.
 
 /** The subcommands of the synopsis in C:cli-and-exit-codes. */
 const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);
 
-// Kind → exit code, C:cli-and-exit-codes. Only the kinds this tracer can produce so far.
+// Kind → exit code, the exit table of C:cli-and-exit-codes, 0-6 (0 is `ok`, carried by the
+// caller building a success envelope directly; there is no failure kind for it here).
 const EXIT_CODES = Object.freeze({
   usage: 1,
+  config: 1,
+  env: 1,
   internal: 1,
+  lint: 2,
+  scan: 3,
+  git: 4,
+  timeout: 5,
+  state: 6,
+  signing: 6,
+  pushed: 6,
+  'staged-hit': 6,
+  lock: 6,
+  'index-lock': 6,
+  'diff-changed': 6,
+  'head-moved': 6,
 });
 
 /**
