@@ -85,7 +85,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 
    | Rule | `Bash` | `PowerShell` |
    | --- | --- | --- |
-   | escape character | `\` (outside `'…'`) | `` ` `` (outside `'…'`) |
+   | escape character | `\` (outside `'…'`) | `` ` `` (outside `'…'`); `` `0 `` (and in PowerShell 7 `` `u{0} ``) is a NUL that ends the token's value there, as the native command line is cut at it, so the words after it in the segment are dropped too (`` git commit`0x -m x `` is `git commit`, and so is `` git commit`0 --no-edit ``; verified 2026-09-29 with PowerShell 5.1 and 7) |
    | single quotes | literal, no escapes | literal; `''` is one `'` |
    | double quotes | `\"`, `\\`, `\$` escaped | `` `" `` and `""` escaped |
    | ANSI-C quotes | `$'…'` outside double quotes: the `$` is removed and the span ends at the first `'` not escaped by `\`; its backslash escapes are decoded as Bash does (`\\`, `\'`, `\"`, `\?`, `\a`, `\b`, `\e`, `\E`, `\f`, `\n`, `\r`, `\t`, `\v`, `\nnn`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cx`); an unknown escape keeps its `\` (`echo $'\''` is `echo` and `'`; `git $'commit'` is `git commit`); a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`) | — |
@@ -170,6 +170,7 @@ deliberately differs from the shell and the check is skipped:
 | `splat` | PowerShell | `@name` is a word; the parser yields a splatted variable |
 | `ps-stop-parsing` | PowerShell | the words after `--%` are tokenised; the parser passes them on verbatim |
 | `escaped-newline-in-word` | PowerShell | a backtick plus newline inside a word is removed (step 2); PowerShell keeps the newline in the word |
+| `ps-nul` | PowerShell | a NUL escape (`` `0 ``, `` `u{0} ``) ends its token's value and drops the words after it in the segment; the parser keeps the NUL and the rest in the word and keeps the later words (the native command line is cut only when the command runs) |
 | `carriage-return` | Bash | a carriage return is a character of its word; the Windows (Cygwin) bash strips it before a newline |
 | `typographic-quotes-bash` | Bash | typographic quotes are quotes, as PowerShell reads them; bash keeps them as characters |
 | `comment` | both | a comment is read as words (the documented false positives); the shell drops it |

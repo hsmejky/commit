@@ -10,7 +10,12 @@
   commit. The hook fires for subagent tool calls as well.
   - Detection tokenises the command ([contracts](../contracts/guard.md)) with the quoting rules
     of the shell named in `tool_name` (Bash: `\` escapes, `'…'` literal, `$'…'` read with
-    its backslash escapes, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, `''` inside `'…'`, here-strings),
+    its backslash escapes, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the
+    `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
+    `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, where `` `0 `` (and `` `u{0} ``)
+    is a NUL that ends the token's value there, as the native command line is cut at it, so
+    the words after it in the segment are dropped too (`` git commit`0x -m x `` is
+    `git commit`), `''` inside `'…'`, here-strings),
     segments split on `&&`, `||`, `;`, `|`, `&` and newlines. Unquoted `(` and `)` are
     tokens of their own, and so are Bash `<(` / `>(` (read as `(`) and PowerShell `{` / `}`,
     so a `git` inside a subshell, a process substitution or a script block is found.
@@ -91,8 +96,16 @@
     Read as `$` plus a single-quoted span, `$'\''` looked like an unterminated quote that
     swallowed the rest of the line, so `echo $'\'' ; git commit -m x` passed: a fail open
     that one more quoting form closes. As a bonus `git $'commit'` reads as the literal
-    `commit`, as bash does. A decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`): Bash cuts
-    the decoded string at the NUL, so reading on past it would hide `commit`.
+    `commit`, as bash does. A decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the
+    `$'…'` span's value there (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is
+    `abef`): Bash cuts the decoded string at the NUL, so reading on past it would hide
+    `commit`.
+  - A PowerShell NUL escape outside `'…'` (`` `0 ``, and `` `u{0} `` in PowerShell 7) ends
+    the token's value there, and the words after it in the segment are dropped. Windows
+    PowerShell 5.1 and PowerShell 7 both pass the native command line cut at the NUL
+    (verified 2026-09-29), so `` git commit`0x -m x `` and `` git commit`0 --no-edit ``
+    both run a bare `git commit`. Reading on past the NUL would hide `commit` in the first
+    and keep an allowlisted `--no-edit` that git never sees in the second: two fail opens.
   - PowerShell unquoted `{` and `}` are tokens of their own, like `(` and `)`, and a `}`
     token ends `commit`'s arguments like `)`. PowerShell lets a script block glue its
     brace to the first word (`&{git commit -m x}`, `if ($true) {git commit -m x}`), so

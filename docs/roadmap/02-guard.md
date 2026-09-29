@@ -47,8 +47,9 @@ guard, end silently; under `COMMIT_GUARD_DEBUG=1` one stderr line records it.
 ## GRD-03: Bash tokenizer and the first deny
 
 **What to build:** G2 for Bash (`\` escapes, literal single quotes, `\"` `\\` `\$` in double
-quotes, `$'…'` with its backslash escapes decoded and a decoded NUL ending its value, quote removal, segments on `&&`, `||`,
-`;`, `|`, `&`, newlines) and the thinnest G3, so `git commit -m x` in Bash is denied with the routing text.
+quotes, `$'…'` with its backslash escapes decoded and a decoded NUL ending its value, quote
+removal, segments on `&&`, `||`, `;`, `|`, `&`, newlines) and the thinnest G3, so
+`git commit -m x` in Bash is denied with the routing text.
 
 **Blocked by:** GRD-01, PRE-01, PRE-03.
 
@@ -111,14 +112,15 @@ text.
 **What to build:** G2 for PowerShell (backtick escapes, `''` and `""`, here-strings closing
 at column 0, the `&` call operator), so the same denies hold for PowerShell commands.
 
-**Blocked by:** GRD-03.
+**Blocked by:** GRD-03, GRD-04.
 
 **Status:** ready-for-agent
 
 **Sources:** Q3, Q15, C:guard (Parsing step 2 PowerShell column), stories 13, 14.
 
 - [ ] Seam 3: ``git commit -m "a`"b"``, `& git commit -m x`, a compound PowerShell command → denied; a here-string holding `git commit` piped into another command → no output.
-- [ ] Seam 3: `git commit --no-edit # done` and `<# git commit -m x #> git status` → denied (the documented comment false positive).
+- [ ] Seam 3: PowerShell `git commit --no-edit # done` (the generic row, after GRD-04's allowlist) and `<# git commit -m x #> git status` → denied (the documented comment false positive).
+- [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` and `` git commit`0 --no-edit `` → denied: a PowerShell NUL ends the token's value and drops the words after it in the segment, as the native command line is cut there.
 - [ ] Seam 2: one PowerShell deny case end to end.
 - [ ] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
 
@@ -148,7 +150,7 @@ or here-string turns the rest of its line into one quoted token while scanning c
 (U+201C-U+201E read as double quotes and U+2018-U+201B as single quotes in both shells) are
 removed for the early-exit check.
 
-**Blocked by:** GRD-04, GRD-06.
+**Blocked by:** GRD-06.
 
 **Status:** ready-for-agent
 

@@ -35,7 +35,7 @@
   on one line, unterminated body, a heredoc inside `"$(…)"` whose body holds `)`); escaped
   newlines, unterminated quotes and here-strings, redirections, reordered global options.
   PowerShell 5.1 and 7 agree on every case. Oracle differences outside the listed skip
-  classes: backtick substitution and brace expansion (Bash expansions like `$`),
+  classes: backtick substitution, brace expansion and globs (Bash expansions like `$`),
   PowerShell assignment and keyword statements, `--%`, a backtick plus newline inside a
   word (PowerShell keeps the newline), and a carriage return (the Cygwin bash used strips
   it). **Settled in Q3 (PRE-03 amendment):**

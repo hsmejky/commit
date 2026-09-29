@@ -40,8 +40,12 @@ line under debug, with the fields known so far, and still no stdout.
 
 **G2 Shell tokenizer.** Tokenise per `tool_name` with the rules of C:guard (Bash: `\` escapes,
 literal single quotes, `\"` `\\` `\$` in double quotes, `$'…'` with its backslash escapes
-decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `''`
-and `""`, here-strings closing at column 0); in both shells typographic quotes as quotes,
+decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value
+there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`);
+PowerShell: backtick escapes, where `` `0 `` (and `` `u{0} ``) is a NUL that ends the
+token's value there, as the native command line is cut at it, so the words after it in the
+segment are dropped too (`` git commit`0x -m x `` is `git commit`), `''` and `""`,
+here-strings closing at column 0); in both shells typographic quotes as quotes,
 as PowerShell reads them (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`;
 Q3 as amended); escaped newlines (Bash `\` plus newline,
 PowerShell backtick plus newline) removed outside single quotes before splitting; quote

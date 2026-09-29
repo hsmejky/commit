@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output that the decision set (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes).",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes).",
  "cases": [
   {
    "id": "b-plain",
