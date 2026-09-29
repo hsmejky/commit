@@ -72,6 +72,53 @@ for (const file of readdirSync(FIXTURES).sort()) {
   });
 }
 
+// Multi-line cases: each `<id>/<positive|negative>-<name>.txt` is one case, scanned whole as
+// the added lines of one unit and as a commit message; a positive holds exactly one hit of
+// `<id>`, a negative none (the `private-key` body rule looks past the header's line).
+for (const entry of readdirSync(FIXTURES, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+  const patternId = entry.name;
+  for (const file of readdirSync(path.join(FIXTURES, patternId)).sort()) {
+    const match = /^(positive|negative)-.+\.txt$/.exec(file);
+    if (match === null) continue;
+    const expected = match[1] === 'positive' ? 1 : 0;
+    const lines = readFileSync(path.join(FIXTURES, patternId, file), 'utf8').split(/\r?\n/);
+
+    test(`fixture ${patternId}/${file} as added lines: ${expected ? 'one hit' : 'no hit'}`, () => {
+      const units = [textUnit('key.pem', lines.map((text, index) => ({ line: index + 1, text })))];
+      const { hits } = scanUnits(units, { scanIgnore: [], osUser: null });
+      assert.equal(hits.filter((hit) => hit.patternId === patternId).length, expected);
+    });
+
+    test(`fixture ${patternId}/${file} as a message: ${expected ? 'one hit' : 'no hit'}`, () => {
+      const hits = scanText(`chore: rotate the key\n\n${lines.join('\n')}`, { osUser: null });
+      assert.equal(hits.filter((hit) => hit.patternId === patternId).length, expected);
+    });
+  }
+}
+
+test('private-key: a header hit reports the header line, not the body line', () => {
+  const header = '-----BEGIN ' + 'PRIVATE KEY-----';
+  const units = [
+    textUnit('key.pem', [
+      { line: 10, text: header },
+      { line: 11, text: 'Proc-Type: 4,ENCRYPTED' },
+      { line: 12, text: 'A'.repeat(64) },
+    ]),
+  ];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, [
+    { patternId: 'private-key', path: 'key.pem', line: 10 },
+  ]);
+});
+
+test('private-key: the body rule reads added lines of the same unit only', () => {
+  const header = '-----BEGIN ' + 'PRIVATE KEY-----';
+  const units = [
+    textUnit('a.pem', [{ line: 1, text: header }]),
+    textUnit('b.txt', [{ line: 1, text: 'A'.repeat(64) }]),
+  ];
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }).hits, []);
+});
+
 test('every fixture file names a pattern ID of the table, with both a positive and a negative', () => {
   const files = readdirSync(FIXTURES);
   for (const { id } of PATTERNS) {

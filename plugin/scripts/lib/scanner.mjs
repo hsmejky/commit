@@ -7,12 +7,21 @@
  * @property {RegExp} regex the row's regex, with whole-regex flags only (no inline flags);
  *   the scanner adds `g` itself. It may add (named) capture groups to the contract's regex
  *   for its rule to read; they do not change what matches
- * @property {null | ((match: RegExpExecArray, context: { osUser: string | null }) => boolean)} notHit
+ * @property {null | ((match: RegExpExecArray, context: RuleContext) => boolean)} notHit
  *   the row's false-positive rule ("Not a hit when"): true drops the match; `null` for none.
  *   Takes the full match array (`match[0]` the whole match, `match[1]…` its capture groups),
  *   so a row whose rule reads a captured value (the `generic-secret` value, the `local-path`
  *   user segment) can pick its own group instead of the whole match
  * @property {string} source where the row's shape and sample cases were checked against
+ */
+
+/**
+ * @typedef {object} RuleContext What a false-positive rule sees besides its match.
+ * @property {string | null} osUser the current OS user name, `null` when unknown
+ * @property {readonly string[]} lines the scanned lines around the match, in order: the
+ *   added lines of the match's unit, or the lines of the message
+ * @property {number} index the position of the match's line in `lines`, so a rule that
+ *   spans lines (`private-key`'s body rule) reads `lines[index + 1]…`
  */
 
 // `connection-string` placeholder passwords (C:scan-patterns): each shape matches the whole
@@ -41,6 +50,46 @@ const ILLEGAL_USER_CHARACTER = /[[\]()*+?|^${}<>%]/;
  */
 function isPlaceholderUser(segment) {
   return PATH_PLACEHOLDER_USERS.has(segment.toLowerCase()) || ILLEGAL_USER_CHARACTER.test(segment);
+}
+
+// `private-key` body rule (C:scan-patterns): a key body line starts, after trimming, with 40
+// or more base64 characters; the RFC 1421 header lines of an encrypted PEM are not counted.
+const KEY_BODY_LINE = /^[A-Za-z0-9+/=]{40,}/;
+const RFC1421_HEADER_LINE = /^(?:Proc-Type|DEK-Info):/;
+const KEY_BODY_LOOKAHEAD = 3;
+
+/**
+ * Whether a `private-key` header has a key body: on its own line right after it (a one-line
+ * key), or within the next 3 non-blank lines, not counting RFC 1421 header lines. Literal
+ * `\n` escapes after the header split its line into lines first (a flattened key).
+ *
+ * @param {RegExpExecArray} match
+ * @param {RuleContext} context
+ */
+function hasKeyBody(match, { lines, index }) {
+  const [rest, ...split] = match.input.slice(match.index + match[0].length).split('\\n');
+  if (KEY_BODY_LINE.test(rest.trim())) return true;
+  let counted = 0;
+  for (const line of followingLines(split, lines, index)) {
+    const text = line.trim();
+    if (text === '' || RFC1421_HEADER_LINE.test(text)) continue;
+    if (KEY_BODY_LINE.test(text)) return true;
+    counted += 1;
+    if (counted === KEY_BODY_LOOKAHEAD) return false;
+  }
+  return false;
+}
+
+/**
+ * The lines after a header: the pieces its own line split into, then the following lines.
+ *
+ * @param {readonly string[]} split
+ * @param {readonly string[]} lines
+ * @param {number} index
+ */
+function* followingLines(split, lines, index) {
+  yield* split;
+  for (let next = index + 1; next < lines.length; next += 1) yield lines[next];
 }
 
 /**
@@ -79,6 +128,12 @@ export const PATTERNS = Object.freeze([
     id: 'anthropic-key',
     regex: /\bsk-ant-(api|admin)\d{2}-[A-Za-z0-9_-]{93}AA(?![A-Za-z0-9_-])/,
     notHit: null,
+    source: 'gitleaks, secretlint',
+  }),
+  Object.freeze({
+    id: 'private-key',
+    regex: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY( BLOCK)?-----/i,
+    notHit: (match, context) => !hasKeyBody(match, context),
     source: 'gitleaks, secretlint',
   }),
   Object.freeze({
@@ -139,14 +194,18 @@ export function createScanner(patterns) {
   }));
 
   /**
-   * Every hit on one line, offsets relative to the line, sorted by start (table order on a
-   * tie). Overlapping hits stay separate entries.
+   * Every hit on one line of `lines`, offsets relative to the line, sorted by start (table
+   * order on a tie). Overlapping hits stay separate entries. The other lines are only
+   * context for the rules.
    *
-   * @param {string} line
-   * @param {{ osUser: string | null }} context
+   * @param {readonly string[]} lines
+   * @param {number} index
+   * @param {string | null} osUser
    * @returns {{ patternId: string, start: number, end: number }[]}
    */
-  function scanLine(line, context) {
+  function scanLine(lines, index, osUser) {
+    const line = lines[index];
+    const context = { osUser, lines, index };
     const hits = [];
     for (const { row, regex } of compiled) {
       regex.lastIndex = 0;
@@ -175,14 +234,14 @@ export function createScanner(patterns) {
    * @returns {TextHit[]}
    */
   function scanText(text, { osUser = null } = {}) {
-    const context = { osUser };
+    const lines = text.split('\n');
     const hits = [];
     let offset = 0;
-    for (const line of text.split('\n')) {
-      for (const hit of scanLine(line, context)) {
+    for (let index = 0; index < lines.length; index += 1) {
+      for (const hit of scanLine(lines, index, osUser)) {
         hits.push({ patternId: hit.patternId, start: offset + hit.start, end: offset + hit.end });
       }
-      offset += line.length + 1;
+      offset += lines[index].length + 1;
     }
     return hits;
   }
@@ -199,18 +258,18 @@ export function createScanner(patterns) {
    * @returns {{ hits: UnitHit[], skipped: { path: string, reason: string }[] }}
    */
   function scanUnits(units, { osUser = null } = {}) {
-    const context = { osUser };
     const hits = [];
     for (const unit of units) {
-      for (const { line, text } of unit.addedLines) {
+      const lines = unit.addedLines.map(({ text }) => text);
+      unit.addedLines.forEach(({ line }, index) => {
         const seen = new Set();
-        for (const { patternId } of scanLine(text, context)) {
+        for (const { patternId } of scanLine(lines, index, osUser)) {
           if (!seen.has(patternId)) {
             seen.add(patternId);
             hits.push({ patternId, path: unit.path, line });
           }
         }
-      }
+      });
     }
     return { hits, skipped: [] };
   }

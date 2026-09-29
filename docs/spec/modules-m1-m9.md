@@ -115,7 +115,9 @@ pure test, run by M18), flags every unit whose path or old path is the repo conf
 (`isRepoConfigPath`), since a whole-file comparison cannot tell which hunk carries the
 change; with `false`, as when only another repo-config key was edited, it flags none, and
 M8 itself parses no config; never returns a
-matched value; the same patterns run over messages.
+matched value; the same patterns run over messages. A false-positive rule sees its match
+plus the scanned lines of the same unit's added lines (or of the message) and its line's
+index among them, which `private-key`'s body rule reads; the hit stays on the header's line.
 A symlink's target is scanned as one added line of its unit (Q11; Q10 as amended). The
 regexes and false-positive rules (among them the one-line `private-key` form, the RFC 1421
 header lines and the `generic-secret` spellings) are C:scan-patterns' and are not restated

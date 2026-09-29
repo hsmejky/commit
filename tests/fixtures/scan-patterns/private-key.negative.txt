@@ -1,0 +1,8 @@
+# private-key negatives (one physical line each): no non-comment line holds a hit.
+header with no body: -----BEGIN PRIVATE KEY-----
+placeholder: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+placeholder: "-----BEGIN PRIVATE KEY-----\n<your key here>\n-----END PRIVATE KEY-----"
+encrypted, no body: "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,FAKE0000FAKE0000FAKE0000FAKE0000\n-----END RSA PRIVATE KEY-----"
+body too short: -----BEGIN PRIVATE KEY-----FAKE0KEY0FAKE0KEY0FAKE0KEY0FAKE0KEY0FAK
+body on the fourth line: -----BEGIN PRIVATE KEY-----\none\ntwo\nthree\nFAKE0KEY0BODY0FOR0TESTS0ONLY0FAKE0KEY0BODY0FOR0TESTS0ONLY0FAKE0K
+a public key: -----BEGIN PUBLIC KEY-----\nFAKE0KEY0BODY0FOR0TESTS0ONLY0FAKE0KEY0BODY0FOR0TESTS0ONLY0FAKE0K

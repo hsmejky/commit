@@ -1,0 +1,7 @@
+config:
+  key: |
+    -----BEGIN EC PRIVATE KEY-----
+    # rotated
+    # by hand
+    FAKE0KEY0BODY0FOR0TESTS0ONLY0FAKE0KEY0BODY0FOR0TESTS0ONLY0FAKE0K
+    -----END EC PRIVATE KEY-----

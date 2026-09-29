@@ -42,6 +42,10 @@ name characters and be followed by `_`-joined name parts (`_KEY`), but not sit i
 longer word (`tokenizer`). The entropy and placeholder rules apply to quoted and unquoted
 values alike.
 
+A `private-key` body line starts, after trimming, with a run of 40 or more
+`[A-Za-z0-9+/=]` characters; what follows the run (a closing quote, an `-----END` marker on a
+one-line key) does not matter.
+
 `connection-string` placeholders match the whole password: the words `password`, `pass`
 and `secret` case-insensitively, `$VAR` and `%VAR%` as one variable name, and `***` as a run of
 three or more `*`; `postgres://u:passwords@h` is a hit.
