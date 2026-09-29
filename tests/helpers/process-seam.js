@@ -53,14 +53,19 @@ const KILL_BACKSTOP_MS = 5_000;
 // (e.g. git) can otherwise hold the case's cwd open, which is an EBUSY on Windows cleanup
 // and, via inherited pipes, keeps the run looking alive.
 function killTree(child) {
-  // The child may already have exited (its own `close` just hasn't fired yet in this tick):
-  // a kill is then unnecessary, and on Windows `taskkill /T /PID` against an exited PID risks
-  // hitting a PID the OS has already reused for something else.
-  if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32') {
+    // The child may already have exited (its own `close` just hasn't fired yet in this
+    // tick): a kill is then unnecessary, and `taskkill /T /PID` against an exited PID risks
+    // hitting a PID the OS has already reused for something else.
+    if (child.exitCode !== null || child.signalCode !== null) return;
     spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)]);
     return;
   }
+  // POSIX: signal the process group even if the direct child has already exited. A
+  // surviving grandchild left in the same group (e.g. one still holding stdout open) would
+  // otherwise never be reached, and the run would hang until the kill backstop fires instead
+  // of closing right away. This can never mis-hit a reused id: a process-group id stays
+  // reserved by the OS as long as any member of the group is still alive, unlike a bare pid.
   try {
     // Negative pid: the whole process group the detached child leads.
     process.kill(-child.pid, 'SIGKILL');
@@ -181,11 +186,15 @@ function createCase(t, options = {}) {
  * @param {string} [options.cwd] defaults to the repo, or the root when there is none.
  * @param {number} [options.timeoutMs=60000] the whole process tree is killed and the call
  *   rejects, after the child closes, past it.
+ * @param {number} [options.killBackstopMs=5000] grace period after the timeout kill before
+ *   giving up on the child's own `close` event and rejecting anyway (KILL_BACKSTOP_MS);
+ *   tests of the backstop itself can shrink this to stay fast.
  * @returns {Promise<{ stdout: string, stdoutBytes: number, stderr: string, exitCode: number|null, signal: string|null }>}
  */
 function runEntry(c, script, argv = [], options = {}) {
   const {
     stdin = '', env, nodeArgs = [], cwd, timeoutMs = DEFAULT_TIMEOUT_MS,
+    killBackstopMs = KILL_BACKSTOP_MS,
   } = options;
   const workDir = cwd || (fs.existsSync(c.repoDir) ? c.repoDir : c.root);
   return new Promise((resolve, reject) => {
@@ -220,7 +229,7 @@ function runEntry(c, script, argv = [], options = {}) {
           `${path.basename(script)} did not exit within ${timeoutMs} ms, and did not close `
             + 'after being killed',
         ));
-      }, KILL_BACKSTOP_MS);
+      }, killBackstopMs);
     }, timeoutMs);
     child.on('error', (err) => {
       if (settled) return;
@@ -312,9 +321,12 @@ async function runGuard(c, hook = {}, options = {}) {
   // Resolved from the env actually used for this spawn, not the case's own claudeHome: a
   // per-spawn CLAUDE_CONFIG_DIR (or HOME/USERPROFILE) override must be honored the same way
   // the real guard's own `process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')`
-  // would resolve it. Like `os.homedir()`, USERPROFILE wins on Windows and HOME wins
-  // elsewhere (falling back to the other if only it is set); if neither is set, fail with a
-  // clear message rather than let `path.join(undefined, '.claude')` throw a cryptic one.
+  // would resolve it. `os.homedir()` itself only ever reads the current process's own
+  // environment, so it cannot be pointed at an arbitrary env object; this reimplements its
+  // per-platform lookup instead (USERPROFILE first on Windows, HOME first elsewhere),
+  // falling back to the other variable so a spawn override that removes only one of them
+  // still resolves, since createCase always sets both. If neither is set, fail with a clear
+  // message rather than let `path.join(undefined, '.claude')` throw a cryptic one.
   const spawnEnv = mergeEnv(c.env, spawnOptions.env);
   let claudeHome = spawnEnv.CLAUDE_CONFIG_DIR;
   if (!claudeHome) {

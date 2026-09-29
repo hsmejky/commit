@@ -25,6 +25,7 @@ const ECHO = path.join(STUBS, 'echo.cjs');
 const STUB_GUARD = path.join(STUBS, 'stub-guard.cjs');
 const CLEANUP_PROBE = path.join(STUBS, 'cleanup-probe.js');
 const HANG_WITH_GRANDCHILD = path.join(STUBS, 'hang-with-grandchild.cjs');
+const HANG_WITH_ESCAPING_GRANDCHILD = path.join(STUBS, 'hang-with-escaping-grandchild.cjs');
 
 // Sets hostile values on this test process's own environment for one case and restores
 // them afterwards, so the case proves nothing from the host reaches the spawned process.
@@ -227,10 +228,10 @@ test('temp directories are removed after each case, also when the case fails', a
 // --- A timeout kills the whole process tree, not just the direct child -------------------
 
 // True if `pid` still denotes a live process. On Linux this also treats a zombie (`/proc/
-// <pid>/stat` state `Z`) as gone: the ubuntu:22.04 CI container runs its steps under a
-// `tail -f /dev/null` PID 1 with no `--init`, which never reaps a SIGKILLed orphan, so the
-// grandchild here stays a zombie and `process.kill(pid, 0)` would otherwise keep succeeding
-// against it forever even though it is already dead.
+// <pid>/stat` state `Z`) as gone: the `min-git` job's ubuntu:22.04 container runs with
+// `--init` (ci.yml), so its PID 1 does reap a SIGKILLed orphan, but not necessarily inside
+// the short wait below, and `process.kill(pid, 0)` keeps succeeding against an unreaped
+// zombie even though it is already dead.
 function isAlive(pid) {
   if (process.platform === 'linux') {
     let stat;
@@ -263,15 +264,33 @@ test('a timed-out run kills the direct child\'s grandchild too', async (t) => {
     runEntry(c, HANG_WITH_GRANDCHILD, [pidFile], { timeoutMs }),
     new RegExp(`did not exit within ${timeoutMs} ms`),
   );
-  // Poll rather than read once: even with the generous timeout above, a slow disk could still
-  // have the write land just after the kill fires.
-  const deadline = Date.now() + 5000;
-  while (!fs.existsSync(pidFile) && Date.now() < deadline) {
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
-  }
+  // By the time runEntry above has settled, the stub already had the full timeoutMs plus the
+  // kill grace period to write this file, so a bare existence check needs no poll; failing it
+  // with a clear message beats a bare ENOENT if the stub never got that far.
+  assert.ok(fs.existsSync(pidFile), `grandchild pid file was never written: ${pidFile}`);
   const grandchildPid = Number(fs.readFileSync(pidFile, 'utf8'));
+  assert.ok(
+    Number.isInteger(grandchildPid) && grandchildPid > 0,
+    `pid file did not contain a valid pid: ${fs.readFileSync(pidFile, 'utf8')}`,
+  );
   // The kill is sent right after the timeout fires; give the OS a moment to tear the
   // grandchild down before checking it is gone (also generous for a loaded CI container).
   await new Promise((resolve) => { setTimeout(resolve, 1000); });
   assert.equal(isAlive(grandchildPid), false, 'grandchild still running');
 });
+
+test(
+  'a timed-out run rejects via the kill backstop when a grandchild escapes the process '
+    + 'group and keeps stdout open',
+  { skip: process.platform === 'win32' && "killTree's group kill is POSIX-only; the plain "
+    + 'tree-kill test above covers the win32 taskkill path' },
+  async (t) => {
+    const c = createCase(t, { repo: false });
+    // Short but not razor-thin: the stub only has to spawn its grandchild and hang, no disk
+    // writes, so it starts well inside timeoutMs even on a loaded CI box.
+    await assert.rejects(
+      runEntry(c, HANG_WITH_ESCAPING_GRANDCHILD, [], { timeoutMs: 300, killBackstopMs: 500 }),
+      /did not exit within 300 ms, and did not close after being killed/,
+    );
+  },
+);
