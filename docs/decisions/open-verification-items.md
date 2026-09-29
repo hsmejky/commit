@@ -118,9 +118,8 @@
   `git diff --cached` afterwards is byte-for-byte identical to the pre-add `git diff` (the
   bytes compared, not a decoded string), so the diff `plan` would hash before staging
   equals the one `commit` verifies after. No Q11 amendment needed. The git 2.34 half is
-  proved by the CI `ubuntu:22.04` container job (FND-03, not yet built), which installs
-  git-lfs and sets `COMMIT_REQUIRE_LFS=1`; with that variable set, the test fails instead
-  of skipping if git-lfs turns out to be missing there.
+  pending: the CI `ubuntu:22.04` container job (FND-03) runs git 2.34.1, but it does not yet
+  install git-lfs or set `COMMIT_REQUIRE_LFS=1`, so this test is skipped there for now.
 - Agent frontmatter (Q24): **resolved** on 2026-09-26. The plugin docs list `omitClaudeMd`
   among the supported plugin-agent fields (ignored there: `permissionMode`, `hooks`,
   `mcpServers`, `initialPrompt`). Probe (Claude Code, Windows, headless, `--plugin-dir`, a

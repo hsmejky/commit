@@ -15,8 +15,10 @@
 // container job (FND-03) installs git-lfs and sets that variable, so a broken container
 // image is caught there rather than silently skipping.
 //
-// Verified here against the current release only. Git 2.34 coverage is the CI
-// `ubuntu:22.04` container job (FND-03, not yet built); this test does not claim it.
+// Verified here against the current release only. The CI `ubuntu:22.04` container job
+// (FND-03) runs git 2.34.1, but does not yet install git-lfs or set
+// `COMMIT_REQUIRE_LFS=1`, so the git 2.34 proof is pending until it does; this test does
+// not claim it.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -63,9 +65,9 @@ function withoutInheritedGitVars(env) {
 // do not depend on what is installed on this machine, mirroring
 // tests/temporary-index.test.js's makeRepo() (PRE-09). Returns the base env (used for
 // `init`/`config`/`lfs`/`add`/`commit`) and a variant with `GIT_LITERAL_PATHSPECS=1` added
-// (Q9: every call except `git commit` runs with it, and it is what makes this proof's `diff`
-// calls the exact invocation shape `plan` and `commit` will use). The caller owns `homeDir`
-// and removes it.
+// (Q9: only the `diff` calls run with it, which is what makes this proof's `diff` calls the
+// exact invocation shape `plan` and `commit` will use). The caller owns `homeDir` and
+// removes it.
 function buildEnv(homeDir) {
   const emptyConfig = path.join(homeDir, 'empty.gitconfig');
   writeFileSync(emptyConfig, '');
