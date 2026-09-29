@@ -503,17 +503,17 @@ RUN-20b and lives in RUN-21.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q9, Q17, Q22, C:run-folder, C:plan, C:reply-and-handback, C:cli-and-exit-codes, M12, M18.
 
-- [ ] Item 6 has a recorded decision (an **Amended** bullet in the Q it changes), and
+- [x] Item 6 has a recorded decision (an **Amended** bullet in the Q it changes), and
       decisions, contracts and spec agree.
-- [ ] Items 10 and 11 are recorded as documentation-sync notes (no **Amended** bullet
+- [x] Items 10 and 11 are recorded as documentation-sync notes (no **Amended** bullet
       needed): RUN-04 already asserts the behaviour they describe.
-- [ ] Item 12's takeover-path scope is recorded, and RUN-06's non-takeover recheck is
+- [x] Item 12's takeover-path scope is recorded, and RUN-06's non-takeover recheck is
       cited so the two are not retested twice.
-- [ ] GIT-08, INT-13, RPL-09 and RUN-21 (the direct dependents of this slice) are updated
+- [x] GIT-08, INT-13, RPL-09 and RUN-21 (the direct dependents of this slice) are updated
       to cite the settled behaviour; RUN-20b, not this slice, updates the takeover-only
       dependents.
 
