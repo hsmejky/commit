@@ -1,0 +1,222 @@
+'use strict';
+
+// FND-04 (docs/roadmap/01-foundation.md): self-tests of the process-seam harness in
+// tests/helpers/process-seam.js, the helper every Seam 1 and Seam 2 case builds on
+// (docs/spec/testing-seams.md). The entry points driven here are stubs in
+// tests/fixtures/process-seam/, not the shipped scripts, so the harness is proven before
+// commit.cjs and guard.cjs exist.
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const {
+  FIXED_IDENTITY,
+  createCase,
+  runEntry,
+  runCommit,
+  runGuard,
+} = require('./helpers/process-seam.js');
+
+const STUBS = path.join(__dirname, 'fixtures', 'process-seam');
+const PRINT_ENV = path.join(STUBS, 'print-env.cjs');
+const ECHO = path.join(STUBS, 'echo.cjs');
+const STUB_GUARD = path.join(STUBS, 'stub-guard.cjs');
+const CLEANUP_PROBE = path.join(STUBS, 'cleanup-probe.js');
+
+// Sets hostile values on this test process's own environment for one case and restores
+// them afterwards, so the case proves nothing from the host reaches the spawned process.
+function withHostEnv(t, vars) {
+  const saved = {};
+  for (const [key, value] of Object.entries(vars)) {
+    saved[key] = process.env[key];
+    process.env[key] = value;
+  }
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+}
+
+// --- AC 1: fixed author, committer and dates through plain git ---------------------------
+
+test('a case repo commits through plain git with the fixed author, committer and dates', (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'a\n');
+  c.git(['add', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'first']);
+  c.writeFile('b.txt', 'b\n');
+  c.git(['add', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'second']);
+
+  const log = c.git(['log', '--format=%an|%ae|%aI|%cn|%ce|%cI']).trim().split('\n');
+  const expected = [
+    FIXED_IDENTITY.GIT_AUTHOR_NAME,
+    FIXED_IDENTITY.GIT_AUTHOR_EMAIL,
+    '2024-01-01T00:00:00Z',
+    FIXED_IDENTITY.GIT_COMMITTER_NAME,
+    FIXED_IDENTITY.GIT_COMMITTER_EMAIL,
+    '2024-01-02T00:00:00Z',
+  ].join('|');
+  assert.deepEqual(log, [expected, expected]);
+  assert.equal(c.git(['symbolic-ref', '--short', 'HEAD']).trim(), 'main');
+});
+
+// --- AC 2: the spawned process sees only what the case sets ------------------------------
+
+test('the spawned entry point sees only the case OS home, Claude home and project dir', async (t) => {
+  const hostile = createCase(t, { repo: false });
+  const hostileGitConfig = path.join(hostile.root, 'host.gitconfig');
+  fs.writeFileSync(hostileGitConfig, '[user]\n\tname = Host Leak\n\temail = host@example.com\n');
+  fs.mkdirSync(path.join(hostile.root, 'xdg', 'git'), { recursive: true });
+  fs.writeFileSync(path.join(hostile.root, 'xdg', 'git', 'config'), '[user]\n\tname = Xdg Leak\n');
+  withHostEnv(t, {
+    CLAUDE_CONFIG_DIR: path.join(hostile.root, 'host-claude'),
+    CLAUDE_PROJECT_DIR: path.join(hostile.root, 'host-project'),
+    CLAUDE_CODE_ENTRYPOINT: 'cli',
+    GIT_CONFIG_GLOBAL: hostileGitConfig,
+    GIT_CONFIG_PARAMETERS: "'user.name'='Param Leak'",
+    GIT_AUTHOR_NAME: 'Host Author',
+    GIT_DIR: path.join(hostile.root, 'host-git-dir'),
+    XDG_CONFIG_HOME: path.join(hostile.root, 'xdg'),
+    EMAIL: 'host-email@example.com',
+    NODE_OPTIONS: '--no-warnings',
+    COMMIT_GUARD_DEBUG: '1',
+  });
+
+  const c = createCase(t);
+  const { json, exitCode } = await runCommit(c, ['--flag', 'value'], { script: PRINT_ENV });
+  assert.equal(exitCode, 0);
+
+  assert.equal(json.homedir, c.osHome);
+  assert.equal(json.env.HOME, c.osHome);
+  assert.equal(json.env.USERPROFILE, c.osHome);
+  assert.equal(json.env.CLAUDE_CONFIG_DIR, c.claudeHome);
+  assert.equal(json.env.CLAUDE_PROJECT_DIR, c.repoDir);
+  assert.equal(json.cwd, c.repoDir);
+  assert.deepEqual(json.argv, ['--flag', 'value']);
+
+  // Only the variables the case sets, none inherited from the host.
+  assert.deepEqual(json.claudeKeys, ['CLAUDE_CONFIG_DIR', 'CLAUDE_PROJECT_DIR']);
+  assert.deepEqual(json.gitKeys, [...Object.keys(FIXED_IDENTITY), 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM'].sort());
+  // On Windows libuv re-inserts USERNAME (with HOMEDRIVE, HOMEPATH and a few more) into
+  // every child environment; it names the OS user, which `os.userInfo()` gives anyway and
+  // the fault-injection preload removes where a case needs no OS user (testing-seams.md).
+  const absent = ['EMAIL', 'NODE_OPTIONS', 'XDG_CONFIG_HOME', 'COMMIT_GUARD_DEBUG', 'USER'];
+  if (process.platform !== 'win32') absent.push('USERNAME');
+  for (const key of absent) {
+    assert.equal(json.env[key], undefined, `${key} leaked into the spawned process`);
+  }
+
+  // No host git config or git identity: the only config git reads is the repo's own.
+  assert.equal(json.gitAuthorIdent, `${FIXED_IDENTITY.GIT_AUTHOR_NAME} <${FIXED_IDENTITY.GIT_AUTHOR_EMAIL}> 1704067200 +0000`);
+  for (const line of json.gitConfigOrigins) {
+    assert.match(line, /^file:\.git\/config\t/, `unexpected git config source: ${line}`);
+  }
+});
+
+test('without a Claude config dir the Claude home falls back to .claude in the OS home', async (t) => {
+  const c = createCase(t, { claudeConfigDir: false });
+  assert.equal(c.claudeHome, path.join(c.osHome, '.claude'));
+  const { json } = await runCommit(c, [], { script: PRINT_ENV });
+  assert.equal(json.env.CLAUDE_CONFIG_DIR, undefined);
+  assert.deepEqual(json.claudeKeys, ['CLAUDE_PROJECT_DIR']);
+});
+
+test('a case can override or remove single env variables for one spawn', async (t) => {
+  const c = createCase(t);
+  const { json } = await runCommit(c, [], {
+    script: PRINT_ENV,
+    env: { CLAUDE_PROJECT_DIR: undefined, COMMIT_GUARD_DEBUG: '1' },
+  });
+  assert.deepEqual(json.claudeKeys, ['CLAUDE_CONFIG_DIR']);
+  assert.equal(json.env.COMMIT_GUARD_DEBUG, '1');
+});
+
+// --- AC 3: Seam 1 stdout shape and size; Seam 2 stdin and heartbeat -----------------------
+
+test('the Seam 1 helper returns the single JSON object, exit code, stderr and stdout size', async (t) => {
+  const c = createCase(t);
+  const stdout = '{"ok":true,"n":"é"}\n';
+  const result = await runCommit(c, [stdout, '3', 'to stderr'], { script: ECHO });
+  assert.deepEqual(result.json, { ok: true, n: 'é' });
+  assert.equal(result.exitCode, 3);
+  assert.equal(result.stderr, 'to stderr');
+  assert.equal(result.stdout, stdout);
+  assert.equal(result.stdoutBytes, Buffer.byteLength(stdout, 'utf8'));
+});
+
+for (const [label, stdout] of [
+  ['empty stdout', ''],
+  ['text that is not JSON', 'not json'],
+  ['two JSON objects', '{"a":1}\n{"b":2}\n'],
+  ['a JSON array', '[{"a":1}]'],
+  ['a JSON scalar', '42'],
+  ['JSON null', 'null'],
+]) {
+  test(`the Seam 1 helper fails a case whose stdout is ${label}, reporting its length`, async (t) => {
+    const c = createCase(t);
+    await assert.rejects(runCommit(c, [stdout, '0'], { script: ECHO }), (err) => {
+      assert.ok(err instanceof assert.AssertionError, 'an assertion failure');
+      assert.match(err.message, /exactly one JSON object/);
+      assert.match(err.message, new RegExp(`stdout length ${Buffer.byteLength(stdout)} bytes`));
+      return true;
+    });
+  });
+}
+
+test('the Seam 2 helper feeds PreToolUse JSON on stdin and reads the heartbeat from the temp Claude home', async (t) => {
+  const c = createCase(t);
+  const command = 'node "$CLAUDE_PLUGIN_ROOT/scripts/commit.cjs" plan --split';
+  const result = await runGuard(c, { command, agentType: 'commit:commit-worker' }, { script: STUB_GUARD });
+  assert.equal(result.exitCode, 0);
+  const seen = JSON.parse(result.stdout);
+  assert.deepEqual(seen, {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_input: { command },
+    cwd: c.repoDir,
+    agent_type: 'commit:commit-worker',
+  });
+  assert.equal(result.heartbeat.command, command);
+  assert.equal(result.heartbeat.cwd, c.repoDir);
+  assert.ok(fs.existsSync(path.join(c.claudeHome, 'commit-guard', 'heartbeat.json')));
+});
+
+test('the Seam 2 helper reads no heartbeat when the guard wrote none, and passes raw stdin', async (t) => {
+  const c = createCase(t);
+  const result = await runGuard(c, { stdin: '{not json' }, { script: STUB_GUARD });
+  assert.equal(result.stdout, '');
+  assert.equal(result.stderr, 'unreadable input');
+  assert.equal(result.heartbeat, null);
+});
+
+test('the Seam 2 helper reads the heartbeat from the OS-home fallback when no Claude config dir is set', async (t) => {
+  const c = createCase(t, { claudeConfigDir: false });
+  const result = await runGuard(c, { toolName: 'PowerShell', command: 'commit.cjs plan' }, { script: STUB_GUARD });
+  assert.equal(JSON.parse(result.stdout).tool_name, 'PowerShell');
+  assert.equal(result.heartbeat.command, 'commit.cjs plan');
+  assert.ok(fs.existsSync(path.join(c.osHome, '.claude', 'commit-guard', 'heartbeat.json')));
+});
+
+// --- AC 4: temp directories are removed after each case, also on failure ----------------
+
+test('temp directories are removed after each case, also when the case fails', async (t) => {
+  const c = createCase(t, { repo: false });
+  const record = path.join(c.root, 'roots.txt');
+  const result = await runEntry(c, CLEANUP_PROBE, [], {
+    nodeArgs: ['--test', '--test-reporter=tap'],
+    env: { SEAM_PROBE_RECORD: record },
+  });
+  assert.notEqual(result.exitCode, 0, `the probe's failing case must fail the run:\n${result.stdout}`);
+  assert.match(result.stdout, /^not ok \d+ - a failing case/m);
+  assert.match(result.stdout, /^ok \d+ - a passing case/m);
+  const roots = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean);
+  assert.equal(roots.length, 2);
+  for (const root of roots) {
+    assert.equal(fs.existsSync(root), false, `case root still exists: ${root}`);
+  }
+});
