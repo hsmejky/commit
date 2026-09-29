@@ -17,13 +17,13 @@ commit is scanned under HEAD rules that already ignore fixtures.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q6, Q10, Q15, C:scanignore-globs, Further Notes "Prerequisite of the first slice".
 
-- [ ] The committed repo config holds `scanIgnore` with the single entry `tests/fixtures/**` and no key outside Q6's key set.
-- [ ] The glob is valid under C:scanignore-globs (it has a literal character, no braces or classes).
-- [ ] The commit is a Conventional Commits commit that touches only the repo config, and it precedes every commit that adds a file under the fixtures directory.
+- [x] The committed repo config holds `scanIgnore` with the single entry `tests/fixtures/**` and no key outside Q6's key set.
+- [x] The glob is valid under C:scanignore-globs (it has a literal character, no braces or classes).
+- [x] The commit is a Conventional Commits commit that touches only the repo config, and it precedes every commit that adds a file under the fixtures directory.
 
 
 ## PRE-02: Remove any personal commit skill before spikes and dogfooding
