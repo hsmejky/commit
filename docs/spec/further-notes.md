@@ -15,7 +15,7 @@ that does not depend on an item does not wait for it.
   confirms them. Before the tokenizer slice (G2, G3); the spike fixtures
   become Seam 3 cases (`runHook`). To revisit, not a spike: vendoring unbash (ISC), a Bash-only tokenizer, which would
   need a Q1 amendment; reconsidered only if the spike shows the hand-written tokenizer is
-  fragile.
+  fragile. Run 2026-09-29; findings settled in Q3.
 - **Hook `if` on compound commands, the heartbeat under the sandbox, exec-form hooks** (Q3,
   Q13, Q23): one spike settling whether an `if` condition matches when any subcommand of a
   compound command matches (with the script-call forms for the heartbeat), whether a

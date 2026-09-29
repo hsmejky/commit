@@ -38,7 +38,7 @@
   classes: backtick substitution and brace expansion (Bash expansions like `$`),
   PowerShell assignment and keyword statements, `--%`, a backtick plus newline inside a
   word (PowerShell keeps the newline), and a carriage return (the Cygwin bash used strips
-  it). **Pending a decision** (fragility, no rule adopted by the spike):
+  it). **Settled in Q3 (PRE-03 amendment):**
   - F1: a Bash subcommand holding a backtick (`` git `echo commit` -m x ``) is not denied.
   - F2: Bash `$'…'` quoting is not read, so `echo $'\'' ; git commit -m x` swallows the rest
     of the line as an unterminated quote and is not denied.

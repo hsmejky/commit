@@ -88,7 +88,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    | escape character | `\` (outside `'…'`) | `` ` `` (outside `'…'`) |
    | single quotes | literal, no escapes | literal; `''` is one `'` |
    | double quotes | `\"`, `\\`, `\$` escaped | `` `" `` and `""` escaped |
-   | ANSI-C quotes | `$'…'` outside double quotes: the `$` is removed and the span ends at the first `'` not escaped by `\`; its backslash escapes are decoded as Bash does (`\\`, `\'`, `\"`, `\?`, `\a`, `\b`, `\e`, `\E`, `\f`, `\n`, `\r`, `\t`, `\v`, `\nnn`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cx`); an unknown escape keeps its `\` (`echo $'\''` is `echo` and `'`; `git $'commit'` is `git commit`) | — |
+   | ANSI-C quotes | `$'…'` outside double quotes: the `$` is removed and the span ends at the first `'` not escaped by `\`; its backslash escapes are decoded as Bash does (`\\`, `\'`, `\"`, `\?`, `\a`, `\b`, `\e`, `\E`, `\f`, `\n`, `\r`, `\t`, `\v`, `\nnn`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cx`); an unknown escape keeps its `\` (`echo $'\''` is `echo` and `'`; `git $'commit'` is `git commit`); a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`) | — |
    | here-strings | — (heredoc bodies are not commands, next row) | `@'…'@`, `@"…"@`: one token, from the opening line to a closing `'@` / `"@` at column 0 |
    | heredocs | `<<` or `<<-` outside quotes, with its delimiter word (quoted or not), is dropped like a redirection; the body, from the next line to the first line equal to the delimiter after quote removal (leading tabs stripped with `<<-`), is dropped, not read as commands; several heredocs on one line take their bodies in order; an unterminated body runs to the end of the command; `<<<` is a plain redirection | — |
    | unterminated quote or here-string | the rest of that line is one quoted token; scanning continues on the next line | same |
@@ -152,7 +152,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 **Oracle-skip classes:** the step 2 `segments` golden fixtures
 (`tests/fixtures/guard/segments-seed.json`, seeded by the tokenizer spike, Q3) are
 cross-checked in CI against bash's own words for each segment (`printf '%s\0'`) and the
-PowerShell parser API's pipeline elements (5.1 and 7). A fixture's `oracle` value per shell
+PowerShell parser API's pipeline elements (5.1 and 7). The PowerShell oracle reads the command
+elements whatever parse errors the parser reports (5.1 reports `&&` and `||` as parse
+errors; `p51-and` matches). A fixture's `oracle` value per shell
 is `match` (the words must be equal) or one of these classes, where the tokenizer
 deliberately differs from the shell and the check is skipped:
 
@@ -160,7 +162,7 @@ deliberately differs from the shell and the check is skipped:
 | --- | --- | --- |
 | `redirection` | Bash | a redirection is a token with its target; the shell applies it and prints no word |
 | `heredoc` | Bash | the heredoc body is dropped; the shell feeds it to the command |
-| `expansion` | both | `$` variables, `$(…)`, backticks, brace expansion and process substitution stay unexpanded in their word (process substitution as `(`); the shell expands them |
+| `expansion` | both | `$` variables, `$(…)`, backticks, brace expansion, globs and process substitution stay unexpanded in their word (process substitution as `(`); the shell expands them |
 | `unterminated` | both | an unterminated quote or here-string is the rest of its line; the shell rejects the command |
 | `subshell-parens` | both | `(` and `)` are tokens; the shell has no words for a subshell or a grouping expression |
 | `ps-scriptblock` | PowerShell | `{` and `}` are tokens; the parser yields a script-block expression, not the commands in it |

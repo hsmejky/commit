@@ -58,4 +58,5 @@ classes.
 **Tokenizer spike (G2).** Before G2's slice, a spike runs the hand-written design against
 heredocs, `$(...)`, backticks, `bash -c '…'`, reordered flags, PowerShell here-strings,
 unterminated quotes, subshells and case variants ([Open items](further-notes.md#open-items)). Safety comes from failing closed on unrecognised options; fragility is
-answered with a wider fail-closed rule or a documented false positive.
+answered with a wider fail-closed rule or a documented false positive. Run 2026-09-29;
+findings settled in Q3.

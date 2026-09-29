@@ -105,7 +105,7 @@ The Bash tokenizer's golden fixtures are cross-checked in CI by letting bash pri
 words for each segment (`printf '%s\0'`); PowerShell fixtures by the PowerShell parser API
 (Other checks). Fixture classes where G2 deliberately differs from the shell are
 oracle-skipped, as listed in C:guard (Oracle-skip classes, from the tokenizer spike):
-redirections, heredocs, expansions (`$`, `$(…)`, backticks, brace expansion, process
+redirections, heredocs, expansions (`$`, `$(…)`, backticks, brace expansion, globs, process
 substitution), unterminated quotes, subshell parentheses, PowerShell script-block braces,
 PowerShell assignment and keyword statements, splats, `--%`, a PowerShell backtick plus
 newline inside a word, a carriage return in Bash, typographic quotes in Bash, and comments

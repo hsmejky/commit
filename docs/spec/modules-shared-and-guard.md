@@ -40,7 +40,7 @@ line under debug, with the fields known so far, and still no stdout.
 
 **G2 Shell tokenizer.** Tokenise per `tool_name` with the rules of C:guard (Bash: `\` escapes,
 literal single quotes, `\"` `\\` `\$` in double quotes, `$'…'` with its backslash escapes
-decoded; PowerShell: backtick escapes, `''`
+decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `''`
 and `""`, here-strings closing at column 0); in both shells typographic quotes as quotes,
 as PowerShell reads them (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`;
 Q3 as amended); escaped newlines (Bash `\` plus newline,

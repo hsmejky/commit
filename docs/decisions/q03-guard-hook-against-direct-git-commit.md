@@ -10,7 +10,7 @@
   commit. The hook fires for subagent tool calls as well.
   - Detection tokenises the command ([contracts](../contracts/guard.md)) with the quoting rules
     of the shell named in `tool_name` (Bash: `\` escapes, `'…'` literal, `$'…'` read with
-    its backslash escapes; PowerShell: `` ` `` escapes, `''` inside `'…'`, here-strings),
+    its backslash escapes, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`); PowerShell: `` ` `` escapes, `''` inside `'…'`, here-strings),
     segments split on `&&`, `||`, `;`, `|`, `&` and newlines. Unquoted `(` and `)` are
     tokens of their own, and so are Bash `<(` / `>(` (read as `(`) and PowerShell `{` / `}`,
     so a `git` inside a subshell, a process substitution or a script block is found.
@@ -91,7 +91,8 @@
     Read as `$` plus a single-quoted span, `$'\''` looked like an unterminated quote that
     swallowed the rest of the line, so `echo $'\'' ; git commit -m x` passed: a fail open
     that one more quoting form closes. As a bonus `git $'commit'` reads as the literal
-    `commit`, as bash does.
+    `commit`, as bash does. A decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`): Bash cuts
+    the decoded string at the NUL, so reading on past it would hide `commit`.
   - PowerShell unquoted `{` and `}` are tokens of their own, like `(` and `)`, and a `}`
     token ends `commit`'s arguments like `)`. PowerShell lets a script block glue its
     brace to the first word (`&{git commit -m x}`, `if ($true) {git commit -m x}`), so

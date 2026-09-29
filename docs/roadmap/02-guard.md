@@ -47,7 +47,7 @@ guard, end silently; under `COMMIT_GUARD_DEBUG=1` one stderr line records it.
 ## GRD-03: Bash tokenizer and the first deny
 
 **What to build:** G2 for Bash (`\` escapes, literal single quotes, `\"` `\\` `\$` in double
-quotes, `$'…'` with its backslash escapes decoded, quote removal, segments on `&&`, `||`,
+quotes, `$'…'` with its backslash escapes decoded and a decoded NUL ending its value, quote removal, segments on `&&`, `||`,
 `;`, `|`, `&`, newlines) and the thinnest G3, so `git commit -m x` in Bash is denied with the routing text.
 
 **Blocked by:** GRD-01, PRE-01, PRE-03.
@@ -60,8 +60,9 @@ quotes, `$'…'` with its backslash escapes decoded, quote removal, segments on 
 - [ ] Seam 3: `cd x && git commit -m x`, `a; git commit -m x`, `a | git commit -m x`, `a & git commit -m x` and a newline-separated form are denied; `git co''mmit -m x` is denied (not an early exit); `git commit -m "a\"b"` is one message argument.
 - [ ] Seam 3: G2 `segments` golden fixtures for Bash (seeded from PRE-03); in CI each is cross-checked against bash's own words (`printf '%s\0'`), with the deliberate classes oracle-skipped.
 - [ ] No deny text anywhere in the catalogue names `/commit`.
-- [ ] Seam 3: `echo git commit` (text that only mentions `git commit`) is denied — the documented false positive (Out of Scope); so are the comment forms `git commit --no-edit # done` and `# git commit -m x` (comments are read as words, Q3 as amended by PRE-03).
+- [ ] Seam 3: `echo git commit` (text that only mentions `git commit`) is denied — the documented false positive (Out of Scope); so is the comment form `# git commit -m x` (comments are read as words, Q3 as amended by PRE-03).
 - [ ] Seam 3: `echo $'\'' ; git commit -m x` is denied (the `$'…'` span ends at its unescaped `'`), and `git $'commit' -m x` segments as `git`, `commit`, `-m`, `x`.
+- [ ] Seam 3: `git $'commit\0x' -m x`, `git $'commit\x00' -m x` and `git $'commit\u0000' -m x` are denied: a decoded NUL ends the `$'…'` span's value, as in Bash, so the word is `commit`.
 
 
 ## GRD-04: Q4 allowlist and the generic deny
@@ -80,6 +81,7 @@ it.
 - [ ] `Direct git commit is blocked. <route>` (the bare/`-m` row, already asserted for plain `-m` in GRD-03): bare `git commit`, `-F`, `--message`, `--file`, `-mfoo` (expanded to `-m foo`, no other flag present).
 - [ ] Denied, naming the flag, the generic row `git commit <flag> is not allowed here. <route>`: `-t`, `-a`, `--allow-empty`, `--allow-empty-message`, a pathspec, `--`.
 - [ ] Precedence per C:guard (D2): `-am x` (expanded to `-a -m`) → the generic row naming `-a`, not the bare/`-m` text, since the generic "any other flag or argument" row outranks the bare/`-m`/`-F`/`--message`/`--file` row, which applies only when nothing else matches.
+- [ ] Seam 3: `git commit --no-edit # done` is denied by the generic row: the comment is read as words, so `#` and `done` are arguments outside the allowlist (Q3 as amended by PRE-03), while `git commit --no-edit` alone has no output.
 - [ ] A deny case run with `COMMIT_GUARD=off` and similar variables set is still denied (no env switch).
 
 
@@ -146,7 +148,7 @@ or here-string turns the rest of its line into one quoted token while scanning c
 (U+201C-U+201E read as double quotes and U+2018-U+201B as single quotes in both shells) are
 removed for the early-exit check.
 
-**Blocked by:** GRD-06.
+**Blocked by:** GRD-04, GRD-06.
 
 **Status:** ready-for-agent
 
