@@ -15,21 +15,21 @@ clause first; CI holds the frontmatter values and the 200-character budget.
 
 **Blocked by:** FND-02, FND-03, PRE-15.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q2, Q12, Q24, Q25, Prompt-only and manifest blocks "commit-worker agent", public
 surface (agent name), stories 6, 42, 228.
 
-- [ ] A static test reads the agent frontmatter: `model: sonnet`, `omitClaudeMd: true`,
+- [x] A static test reads the agent frontmatter: `model: sonnet`, `omitClaudeMd: true`,
       `maxTurns: 25`, tools exactly Bash, PowerShell, Read, Write (story 42)
-- [ ] CI size test: the description is ≤ 200 characters (story 228's budget as held by
+- [x] CI size test: the description is ≤ 200 characters (story 228's budget as held by
       Q24, whatever the story's wording)
-- [ ] The description holds the six Q2 clauses in order, starting with "follow the reply's
+- [x] The description holds the six Q2 clauses in order, starting with "follow the reply's
       `callerRule`"; a static test asserts that clause comes first, so any shortening cuts
       from the bottom (story 6)
-- [ ] The agent resolves as `commit:commit-worker` from the plugin layout (static check of
+- [x] The agent resolves as `commit:commit-worker` from the plugin layout (static check of
       the agent file name against the public-surface name)
-- [ ] A static test asserts that the frontmatter model equals the model named in every
+- [x] A static test asserts that the frontmatter model equals the model named in every
       spawn instruction the plugin ships: the respawn text of the base `callerRule`
       (C:reply-and-handback) and the guard's deny route (C:guard) now, the `/commit`
       skill (WRK-05) and the README spawn line (REL-03) as those slices add them (story 42
