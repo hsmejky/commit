@@ -1,0 +1,13 @@
+{
+  "name": "commit",
+  "owner": {
+    "name": "commit contributors"
+  },
+  "plugins": [
+    {
+      "name": "commit",
+      "source": "./plugin",
+      "version": "0.1.0"
+    }
+  ]
+}

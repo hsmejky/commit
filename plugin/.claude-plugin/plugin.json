@@ -1,0 +1,5 @@
+{
+  "name": "commit",
+  "version": "0.1.0",
+  "description": "Deterministic commit script, guard hook, and worker agent."
+}
