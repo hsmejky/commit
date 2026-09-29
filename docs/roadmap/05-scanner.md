@@ -78,15 +78,15 @@ record shape comes from the M10 interface; CHG-03 produces real units.
 
 **Blocked by:** SCN-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scan-patterns, M8, Q10, stories 135, 140.
 
-- [ ] Seam 3: a `github-token` added line → one hit with pattern ID, path and line; the
+- [x] Seam 3: a `github-token` added line → one hit with pattern ID, path and line; the
       result holds no matched value (asserted by searching the serialised result).
-- [ ] Seam 3: `scanText` returns UTF-16 offsets, `end` exclusive; two overlapping hits stay
+- [x] Seam 3: `scanText` returns UTF-16 offsets, `end` exclusive; two overlapping hits stay
       two entries.
-- [ ] Positive and negative fixtures under the fixtures directory; the test source holds no
+- [x] Positive and negative fixtures under the fixtures directory; the test source holds no
       literal hit (strings built at run time or loaded from fixtures).
 
 
