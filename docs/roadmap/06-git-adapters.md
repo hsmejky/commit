@@ -18,16 +18,16 @@ their order.
 
 **Blocked by:** INT-01, RPL-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q15, Q21, C:plan (steps 1-2), C:cli-and-exit-codes, stories 185, 202, M2, M3.
 
-- [ ] Seam 1: `plan` in a directory that is not a repository → exit 6, `error.kind: "state"`, no `.commit-plan` created.
-- [ ] Seam 1: `plan` in a bare repository → exit 6 `state`.
-- [ ] Seam 1: a PATH git shim reporting a version below 2.34 → `env` (story 202).
-- [ ] Seam 1: a PATH containing no git binary at all → exit 1 `env` (produced in CI through PATH manipulation, not only by hand).
-- [ ] M2 returns `stdout` as a `Buffer` and never decodes it; every spawn sets `windowsHide`, both asserted from the fixture's recorded call.
-- [ ] A static test greps every source file outside M2 for `child_process`, `spawn`, `execFile` or `exec` and fails when one is found (the architecture rule "M2 is the only spawner" holds for the code written so far).
+- [x] Seam 1: `plan` in a directory that is not a repository → exit 6, `error.kind: "state"`, no `.commit-plan` created.
+- [x] Seam 1: `plan` in a bare repository → exit 6 `state`.
+- [x] Seam 1: a PATH git shim reporting a version below 2.34 → `env` (story 202).
+- [x] Seam 1: a PATH containing no git binary at all → exit 1 `env` (produced in CI through PATH manipulation, not only by hand).
+- [x] M2 returns `stdout` as a `Buffer` and never decodes it; every spawn sets `windowsHide`, both asserted from the fixture's recorded call.
+- [x] A static test greps every source file outside M2 for `child_process`, `spawn`, `execFile` or `exec` and fails when one is found (the architecture rule "M2 is the only spawner" holds for the code written so far).
 
 
 ## GIT-02: M3 HEAD state: branch, detached, unborn, expected HEAD
