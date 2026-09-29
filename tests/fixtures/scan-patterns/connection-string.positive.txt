@@ -1,0 +1,7 @@
+# connection-string positives: every non-comment line holds exactly one hit.
+DATABASE_URL=postgres://u:s3cr3tpw@h
+mongodb+srv://app_user:FAKE-pass-0001@cluster0.example.net/db
+redis://default:FAKEredis42@localhost:6379
+amqp://guest:hunter2-FAKE@rabbit/vhost
+"url": "mysql://root:FAKE:with:colons@db:3306/app"
+password word inside a longer one: postgres://u:passwords@h

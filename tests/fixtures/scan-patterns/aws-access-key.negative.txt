@@ -1,0 +1,10 @@
+# aws-access-key negatives: no non-comment line holds a hit.
+AWS's documented example: AKIAIOSFODNN7EXAMPLE
+another example: ASIAFAKEFAKEEXAMPLE2
+IAM user unique ID: AIDAFAKEFAKEFAKEFAKE
+IAM role unique ID: AROAFAKEFAKEFAKEFAKE
+too short: AKIAFAKEFAKEFAKEFAK
+too long: AKIAFAKEFAKEFAKEFAKEF
+digit outside base32: AKIAFAKEFAKEFAKEFAK0
+lower case: akiafakefakefakefake
+inside a word: XAKIAFAKEFAKEFAKEFAKE

@@ -5,7 +5,8 @@
  * @typedef {object} PatternRow One row of C:scan-patterns, as data.
  * @property {string} id the public pattern ID
  * @property {RegExp} regex the row's regex, with whole-regex flags only (no inline flags);
- *   the scanner adds `g` itself
+ *   the scanner adds `g` itself. It may add (named) capture groups to the contract's regex
+ *   for its rule to read; they do not change what matches
  * @property {null | ((match: RegExpExecArray, context: { osUser: string | null }) => boolean)} notHit
  *   the row's false-positive rule ("Not a hit when"): true drops the match; `null` for none.
  *   Takes the full match array (`match[0]` the whole match, `match[1]…` its capture groups),
@@ -14,17 +15,81 @@
  * @property {string} source where the row's shape and sample cases were checked against
  */
 
+// `connection-string` placeholder passwords (C:scan-patterns): each shape matches the whole
+// password, the words case-insensitively.
+const PLACEHOLDER_PASSWORD =
+  /^(?:\$\{[^}]*\}|<[^>]*>|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%|\*{3,}|password|pass|secret)$/i;
+
+// `local-path` placeholders and service users (C:scan-patterns), compared case-insensitively
+// against the whole user segment. The bracketed and variable placeholders (`<…>`, `{…}`,
+// `$USER`, `%USERNAME%`) never reach this list: the regexes stop at `<`, and `{`, `$`, `%`
+// fall to the illegal-character rule.
+const PATH_PLACEHOLDER_USERS = new Set([
+  'user', 'username', 'you', 'me', 'name', 'example', 'node', 'root', 'ubuntu', 'admin',
+  'runner', 'app', 'build', 'dev', 'src', 'docker', 'jenkins', 'vagrant', 'ec2-user',
+  'www-data', 'git', 'circleci', 'gitpod', 'vscode', 'codespace', 'public', 'default',
+]);
+
+// A character no OS allows in a user name (C:scan-patterns).
+const ILLEGAL_USER_CHARACTER = /[[\]()*+?|^${}<>%]/;
+
+/**
+ * Whether a `local-path` user segment is not a real user: a placeholder, a service user, or
+ * a name holding a character no OS allows.
+ *
+ * @param {string} segment
+ */
+function isPlaceholderUser(segment) {
+  return PATH_PLACEHOLDER_USERS.has(segment.toLowerCase()) || ILLEGAL_USER_CHARACTER.test(segment);
+}
+
 /**
  * The pattern table of C:scan-patterns. A later row is one more entry here.
+ *
+ * `local-path`'s three fixed shapes are one regex: its `C:\Users\<name>` shape is
+ * case-insensitive (flags `iu` in the contract) while `/Users/` and `/home/` are not, so that
+ * alternative spells its letters as `[Uu]…` classes; one regex keeps `C:/Users/<name>` one
+ * hit instead of a drive hit plus an overlapping `/Users/` hit.
  *
  * @type {readonly PatternRow[]}
  */
 export const PATTERNS = Object.freeze([
   Object.freeze({
+    id: 'aws-access-key',
+    regex: /\b(A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/,
+    notHit: (match) => match[0].includes('EXAMPLE'),
+    source: 'gitleaks, secretlint',
+  }),
+  Object.freeze({
     id: 'github-token',
     regex: /\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b/,
     notHit: null,
     source: 'GitHub token prefixes',
+  }),
+  Object.freeze({
+    id: 'slack-token',
+    regex: /\b(xox[abeoprs]-|xoxe\.xox[bp]-|xapp-\d-)[A-Za-z0-9-]{10,}/,
+    notHit: null,
+    source: 'gitleaks, secretlint',
+  }),
+  Object.freeze({
+    id: 'anthropic-key',
+    regex: /\bsk-ant-(api|admin)\d{2}-[A-Za-z0-9_-]{93}AA(?![A-Za-z0-9_-])/,
+    notHit: null,
+    source: 'gitleaks, secretlint',
+  }),
+  Object.freeze({
+    id: 'connection-string',
+    regex: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:(?<password>[^\s/@]+)@/,
+    notHit: (match) => PLACEHOLDER_PASSWORD.test(match.groups.password),
+    source: 'secretlint',
+  }),
+  Object.freeze({
+    id: 'local-path',
+    regex:
+      /\b[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+(?<drive>[^\\/\s"'<>]+)|\/(?:Users|home)\/(?<home>[^/\s"'<>]+)/u,
+    notHit: (match) => isPlaceholderUser(match.groups.drive ?? match.groups.home),
+    source: 'this plugin (Q10)',
   }),
 ]);
 

@@ -1,0 +1,7 @@
+# slack-token negatives: no non-comment line holds a hit.
+too short: xoxb-FAKE-0000
+unknown letter: xoxz-FAKE-0000000000-EXAMPLE
+bare prefixes: xoxb- xoxp- xapp-1-
+app token without its digit: xapp-FAKE-0000000000-EXAMPLE
+rotated with a wrong inner prefix: xoxe.xoxa_FAKE-0000000000-EXAMPLE
+inside a word: axoxb-FAKE-0000000000-EXAMPLE

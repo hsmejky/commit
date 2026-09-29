@@ -1,0 +1,6 @@
+# aws-access-key positives: every non-comment line holds exactly one hit.
+aws_access_key_id = AKIAFAKEFAKEFAKEFAKE
+AWS_ACCESS_KEY_ID=ASIAFAKEFAKEFAKE2345
+"AccessKeyId": "ABIAFAKEFAKEFAKEFAKE"
+key ACCAFAKEFAKEFAKEFAKE in prose
+legacy A3TXFAKEFAKEFAKEFAKE prefix

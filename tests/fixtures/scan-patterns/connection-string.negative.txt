@@ -1,0 +1,14 @@
+# connection-string negatives: no non-comment line holds a hit.
+postgres://u:${DB_PASSWORD}@h
+postgres://u:<pw>@h
+postgres://u:$DB_PASSWORD@h
+postgres://u:%DB_PASSWORD%@h
+postgres://u:***@h
+postgres://u:****@h
+postgres://u:password@h
+postgres://u:PASSWORD@h
+postgres://u:pass@h
+postgres://u:secret@h
+no password: postgres://u@h/db
+no user info: https://example.com/path
+upper-case scheme: POSTGRES://u:s3cr3tpw@h

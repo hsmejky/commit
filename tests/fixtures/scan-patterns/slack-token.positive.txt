@@ -1,0 +1,11 @@
+# slack-token positives: one line per prefix form, each holds exactly one hit.
+SLACK_TOKEN=xoxa-FAKE-0000000000-EXAMPLE
+bot: xoxb-FAKE-0000000000-EXAMPLE
+config: xoxe-FAKE-0000000000-EXAMPLE
+"token": "xoxo-FAKE-0000000000-EXAMPLE"
+user xoxp-FAKE-0000000000-EXAMPLE end
+refresh=xoxr-FAKE-0000000000-EXAMPLE
+legacy xoxs-FAKE-0000000000-EXAMPLE
+rotated bot: xoxe.xoxb-FAKE-0000000000-EXAMPLE
+rotated user: xoxe.xoxp-FAKE-0000000000-EXAMPLE
+app-level: xapp-1-FAKE-0000000000-EXAMPLE

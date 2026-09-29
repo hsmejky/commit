@@ -85,6 +85,24 @@ test('every fixture file names a pattern ID of the table, with both a positive a
   }
 });
 
+// The contract's own regex table, scanned as added lines of a unit, is no hit for any row:
+// the illegal-character rule keeps `local-path` from matching its own regexes (Q10).
+test('the regex table of C:scan-patterns scanned as added lines is no hit', () => {
+  const contract = path.join(__dirname, '..', 'docs', 'contracts', 'scan-patterns.md');
+  const addedLines = readFileSync(contract, 'utf8')
+    .split(/\r?\n/)
+    .map((text, index) => ({ line: index + 1, text }))
+    .filter(({ text }) => text.startsWith('|'));
+  assert.ok(addedLines.length > PATTERNS.length, 'the table rows were read');
+
+  const result = scanUnits([textUnit('docs/contracts/scan-patterns.md', addedLines)], {
+    scanIgnore: [],
+    osUser: null,
+  });
+
+  assert.deepEqual(result.hits, []);
+});
+
 test('scanText: UTF-16 offsets into the whole text, end exclusive', () => {
   const token = githubToken();
   // The emoji is two UTF-16 code units; the message spans lines.

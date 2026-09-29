@@ -1,0 +1,14 @@
+# local-path negatives: no non-comment line holds a hit.
+WORKDIR /home/node/app
+/Users/<you>/x
+C:\Users\%USERNAME%\x
+C:/Users/<you>/project
+/home/$USER/.config
+/home/{user}/x
+/home/ROOT/x
+/home/runner/work/repo
+C:\Users\Public\Desktop
+C:\Users\Default\AppData
+upper-case home: /HOME/jdoe-fixture/x
+lower-case users: /users/jdoe-fixture/x
+| `local-path` | `\b[a-z]:[\/]+users[\/]+[^\/\s"'<>]+` (flags `iu`), `/Users/[^/\s"'<>]+`, `/home/[^/\s"'<>]+`; plus the current OS user name as a whole path segment (`[\/]<name>[\/]`) in any path, only when the name has 4 or more characters and is not a service user (below) | the user segment is a placeholder or service user (below), or contains a character no OS allows in a user name: `[ ] ( ) * + ? \| ^ $ { } < > %` | this plugin (Q10) |

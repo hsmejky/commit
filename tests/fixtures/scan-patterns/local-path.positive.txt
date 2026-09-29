@@ -1,0 +1,9 @@
+# local-path positives: every non-comment line holds exactly one hit.
+C:\Users\jdoe-fixture\project\src
+c:/users/jdoe
+D:\Users\jdoe-fixture\AppData
+cd /Users/jdoe-fixture/work
+WORKDIR /home/jdoe-fixture/app
+"cwd": "/home/jdoe-fixture"
+C:/Users/Node-Fixture/x
+/Users/nodejs/x

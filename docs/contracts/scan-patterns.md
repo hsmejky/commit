@@ -42,6 +42,10 @@ name characters and be followed by `_`-joined name parts (`_KEY`), but not sit i
 longer word (`tokenizer`). The entropy and placeholder rules apply to quoted and unquoted
 values alike.
 
+`connection-string` placeholders match the whole password: the words `password`, `pass`
+and `secret` case-insensitively, `$VAR` and `%VAR%` as one variable name, and `***` as a run of
+three or more `*`; `postgres://u:passwords@h` is a hit.
+
 `local-path` OS-user segment: `osUser` comes from `os.userInfo()`, falling back to `USER` or
 `USERNAME`, else `null`; a container without a passwd entry throws there, so with `osUser:
 null` the OS-user segment check is skipped and the fixed `/home/<name>`, `/Users/<name>` and
