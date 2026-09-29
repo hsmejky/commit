@@ -35,11 +35,11 @@ points `.cjs`, library `.mjs`; Q1, Q15 as amended by this slice's review).
 
 **Blocked by:** FND-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q8, Q15, Prompt-only and manifest blocks "Manifests", Further Notes "Other notes" (versioning).
 
-- [ ] A static test asserts the plugin name is `commit`, the marketplace name is `commit`, the marketplace lists the plugin's directory, and the plugin, marketplace entry and package all carry version 0.1.0.
+- [x] A static test asserts the plugin name is `commit`, the marketplace name is `commit`, the marketplace lists the plugin's directory, and the plugin, marketplace entry and package all carry version 0.1.0.
 
 
 ## FND-03: CI matrix
