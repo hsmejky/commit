@@ -118,7 +118,9 @@ Platform oracles in CI only: PowerShell fixtures cross-checked with the PowerShe
 API; the supported glob subset cross-checked with git `:(glob)` pathspecs (rows where
 C:scanignore-globs deliberately differs excluded).
 
-CI: ubuntu, windows, macos × Node 22 (oldest and latest) and 24, plus a git 2.34 job in an
+CI: ubuntu, windows, macos × Node 22 (oldest and latest) and 24 (on windows the oldest leg
+is 22.1.0, not 22.0.0: Node 22.0.0's bundled npm cannot resolve npm-cli.js there,
+nodejs/node#52682, fixed in 22.1.0), plus a git 2.34 job in an
 `ubuntu:22.04` container with the distribution's git, whose first step asserts
 `git --version` is 2.34.x (the hosted `ubuntu-22.04` image ships a newer git). The guard
 supports both Windows PowerShell 5.1 and PowerShell 7+: the windows runner ships both, and

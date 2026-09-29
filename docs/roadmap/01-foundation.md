@@ -54,7 +54,7 @@ container.
 
 **Sources:** Q15, Modules and how (CI paragraph), Dependency policy "Built-ins and version fences".
 
-- [ ] The matrix has nine legs (three OSes × Node 22 oldest, 22 latest, 24) and each runs FND-01's tests green.
+- [ ] The matrix has nine legs (three OSes × Node 22 oldest, 22 latest, 24; on windows the Node 22 oldest leg is 22.1.0, not 22.0.0, since Node 22.0.0's bundled npm cannot resolve npm-cli.js there, nodejs/node#52682, fixed in 22.1.0) and each runs FND-01's tests green.
 - [ ] The container job's first step fails unless `git --version` is 2.34.x, then runs the test command with Node 22 installed in the container.
 - [ ] On the windows leg, a step asserts both `powershell.exe` and `pwsh` are available (the guard's PowerShell oracle runs under each, GRD-06).
 - [ ] The container job installs `git-lfs` and sets `COMMIT_REQUIRE_LFS=1`, so `tests/lfs-filtered-file.test.js` (PRE-10) runs instead of skipping on git 2.34.

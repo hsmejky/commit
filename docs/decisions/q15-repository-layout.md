@@ -98,6 +98,12 @@
   CRLF cases) untouched. Why: Git for Windows and the windows CI runner default to
   `core.autocrlf=true`, which would rewrite committed bytes on checkout that later
   byte-comparing tests rely on.
+- **Amended.** By commit 78a273d (2026-09-29) and the FND-03 review (2026-09-29): the layout
+  table's workflow file is named `.github/workflows/ci.yml`, not `test.yml`. On
+  windows-latest, Node 22.0.0's bundled npm cannot resolve npm-cli.js at all
+  (nodejs/node#52682, fixed in 22.1.0), so the CI Node 22 leg's oldest pin is windows-only
+  22.1.0; ubuntu and macos keep the 22.0.0 floor (Dependency policy "Built-ins and version
+  fences").
 - **Rejected.**
   - Node 18 or 20 as the minimum: both are end-of-life, and Claude Code's npm install
     already requires Node 22.

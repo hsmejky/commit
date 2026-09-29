@@ -9,7 +9,9 @@ CC-BY-4.0 sources (Q10: licenses that do not restrict who may use them); code is
 copied. Token prefixes are facts and are credited anyway.
 
 **Built-ins and version fences.** The floor is any Node 22 release, and the CI Node 22 leg
-runs the oldest 22.x as well as the latest. The reasons below are kept timeless; the dated
+runs the oldest 22.x as well as the latest, except on windows, where the oldest leg is
+22.1.0: Node 22.0.0's bundled npm cannot resolve npm-cli.js there (nodejs/node#52682, fixed
+in 22.1.0); ubuntu and macos run 22.0.0. The reasons below are kept timeless; the dated
 release facts behind them are recorded in [Q1](../decisions/q01-skill-plus-a-deterministic-script.md).
 
 | Built-in | Module | Note |
@@ -20,7 +22,7 @@ release facts behind them are recorded in [Q1](../decisions/q01-skill-plus-a-det
 | `crypto.createHash`, `crypto.randomUUID` | M10, M12 | not `crypto.hash` (release candidate) |
 | `fs.openSync(p, 'wx')`, `utimesSync`, `renameSync`, `linkSync` | M12 | `openSync('wx')` the per-call `call.lock`, `linkSync` the run lock (and putting back a mismatched lock), mtime `touched`, takeover |
 | `os.userInfo`, `os.homedir` | entry points | `userInfo` throws without a passwd entry; fall back |
-| `node:test`, `node:assert` | tests | no snapshots, `mock.module`, `mock.timers` or coverage flag |
+| `node:test`, `node:assert` | tests | no snapshots, `mock.module`, `mock.timers` or coverage flag; a root-level async `before()` is not awaited on 22.0-22.1 (fixed in 22.2.0); tests load the library in `beforeEach` (guarded by tests/async-before-hook.test.js) |
 
 Fenced off: RegExp modifiers `(?i:…)` and `RegExp.escape` (Node 24 only), `path.matchesGlob`
 and `fs.glob` (see below).
