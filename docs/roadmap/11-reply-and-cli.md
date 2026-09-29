@@ -53,6 +53,8 @@ form), Q9, Q17, story 206.
       `plan` or `check` → exit 1 `usage`
 - [ ] No refused call creates `.commit-plan` or runs git (asserted on the temp repo)
 - [ ] Every legal synopsis line parses, asserted by not being refused `usage`
+- [ ] No CLI flag or environment variable exists that turns the scan off (story 146; checked
+      by a review of the argv/usage table and the entry point's env reads).
 
 
 ## RPL-03: Error table and exit codes

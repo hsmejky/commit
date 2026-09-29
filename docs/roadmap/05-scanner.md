@@ -99,21 +99,21 @@ placeholder and service-user list and the illegal-character rule.
 
 **Blocked by:** SCN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scan-patterns, Q10, stories 135, 136, 138.
 
-- [ ] Seam 3: positive and negative per ID; `EXAMPLE` AWS key and IAM `AIDA…`/`AROA…` IDs
+- [x] Seam 3: positive and negative per ID; `EXAMPLE` AWS key and IAM `AIDA…`/`AROA…` IDs
       are not hits; one positive per Slack prefix form; a short `sk-ant-…` placeholder is not
       a hit.
-- [ ] Seam 3: `postgres://u:s3cr3tpw@h` → hit; passwords `${X}`, `<pw>`, `$VAR`, `%VAR%`,
+- [x] Seam 3: `postgres://u:s3cr3tpw@h` → hit; passwords `${X}`, `<pw>`, `$VAR`, `%VAR%`,
       `***`, `password`, `pass`, `secret` → no hit.
-- [ ] Seam 3: a home path with a real-looking name → hit per shape; `/home/node/app`,
+- [x] Seam 3: a home path with a real-looking name → hit per shape; `/home/node/app`,
       `/Users/<you>/x`, `C:\Users\%USERNAME%` → no hit.
-- [ ] Seam 3: `c:/users/jdoe` (lowercase drive letter, forward slashes) → hit, since the
+- [x] Seam 3: `c:/users/jdoe` (lowercase drive letter, forward slashes) → hit, since the
       regex is case-insensitive and accepts either slash direction (this is a contract
       fixture example, not a real path).
-- [ ] Seam 3: the regex table text of C:scan-patterns scanned as added lines → no hit.
+- [x] Seam 3: the regex table text of C:scan-patterns scanned as added lines → no hit.
 
 
 ## SCN-07: `private-key` with its body rule
@@ -124,17 +124,17 @@ literal `\n` escapes splitting a flattened key.
 
 **Blocked by:** SCN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scan-patterns (`private-key`), testing-modules (scanner case list), story 135.
 
-- [ ] Seam 3: a header with no body and an encrypted header with only `Proc-Type`/`DEK-Info`
+- [x] Seam 3: a header with no body and an encrypted header with only `Proc-Type`/`DEK-Info`
       → no hit; an encrypted PEM with those lines before the body → hit.
-- [ ] Seam 3: a key flattened onto one line as a GCP JSON value and as an escaped `.env`
+- [x] Seam 3: a key flattened onto one line as a GCP JSON value and as an escaped `.env`
       value → hit.
-- [ ] Seam 3: a header with 40 or more body characters appended directly after it on the
+- [x] Seam 3: a header with 40 or more body characters appended directly after it on the
       same physical line, with no `\n` escape (the one-line-key case) → hit.
-- [ ] Seam 3: the same 3-non-blank-line body rule applied to a commit message: a header line
+- [x] Seam 3: the same 3-non-blank-line body rule applied to a commit message: a header line
       followed within 3 non-blank message lines by a body line → hit; a header with no
       qualifying body line in the message → no hit.
 
@@ -146,17 +146,15 @@ rules for quoted and unquoted values.
 
 **Blocked by:** SCN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scan-patterns (`generic-secret`), story 135, 146.
 
-- [ ] Seam 3: one positive per spelling (`GITHUB_TOKEN = "…"`, `DB_PASSWORD: "…"`,
+- [x] Seam 3: one positive per spelling (`GITHUB_TOKEN = "…"`, `DB_PASSWORD: "…"`,
       `STRIPE_SECRET_KEY = "…"`, a JSON key, an unquoted `.env` value, a YAML value).
-- [ ] Seam 3: `tokenizer = …`, a low-entropy value and each placeholder word → no hit.
-- [ ] Seam 3: a `commit-scan: allow` comment on the line changes nothing (story 146).
-- [ ] No CLI flag or environment variable exists that turns the scan off (story 146; checked
-      by a review of the argv/usage table and the entry point's env reads).
-- [ ] Seam 3: zero- or one-identifier-argument calls of 40 characters or fewer → no hit; a
+- [x] Seam 3: `tokenizer = …`, a low-entropy value and each placeholder word → no hit.
+- [x] Seam 3: a `commit-scan: allow` comment on the line changes nothing (story 146).
+- [x] Seam 3: zero- or one-identifier-argument calls of 40 characters or fewer → no hit; a
       quoted call-shaped value, a call-shaped value over 40 characters, a high-entropy
       argument, or a digit inside a callee or argument segment → hit.
 
@@ -168,16 +166,16 @@ or more characters that are not service users; `osUser: null` skips it.
 
 **Blocked by:** SCN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:scan-patterns (OS-user segment), Q10, architectural-decisions (`osUser`),
 stories 138, 139.
 
-- [ ] Seam 3: `osUser: "jdoe1"` → `/srv/jdoe1/x` is a hit; `osUser: "dev"` and `"runner"` →
+- [x] Seam 3: `osUser: "jdoe1"` → `/srv/jdoe1/x` is a hit; `osUser: "dev"` and `"runner"` →
       no segment hit.
-- [ ] Seam 3: `osUser: "bob"` (3 characters, not a service user) → no segment hit, isolating
+- [x] Seam 3: `osUser: "bob"` (3 characters, not a service user) → no segment hit, isolating
       the length rule from the service-user list.
-- [ ] Seam 3: `osUser: null` → no segment check, the fixed shapes still hit.
+- [x] Seam 3: `osUser: null` → no segment check, the fixed shapes still hit.
 
 
 ## SCN-12: Line cut at 4096 characters
