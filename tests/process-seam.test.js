@@ -24,6 +24,7 @@ const PRINT_ENV = path.join(STUBS, 'print-env.cjs');
 const ECHO = path.join(STUBS, 'echo.cjs');
 const STUB_GUARD = path.join(STUBS, 'stub-guard.cjs');
 const CLEANUP_PROBE = path.join(STUBS, 'cleanup-probe.js');
+const HANG_WITH_GRANDCHILD = path.join(STUBS, 'hang-with-grandchild.cjs');
 
 // Sets hostile values on this test process's own environment for one case and restores
 // them afterwards, so the case proves nothing from the host reaches the spawned process.
@@ -52,14 +53,16 @@ test('a case repo commits through plain git with the fixed author, committer and
   c.git(['add', 'b.txt']);
   c.git(['commit', '-q', '-m', 'second']);
 
-  const log = c.git(['log', '--format=%an|%ae|%aI|%cn|%ce|%cI']).trim().split('\n');
+  // %at/%ct (epoch seconds) rather than %aI/%cI: git before 2.45 prints the UTC offset as
+  // `+00:00` instead of `Z`, which the ubuntu:22.04 git-2.34 CI job runs.
+  const log = c.git(['log', '--format=%an|%ae|%at|%cn|%ce|%ct']).trim().split('\n');
   const expected = [
     FIXED_IDENTITY.GIT_AUTHOR_NAME,
     FIXED_IDENTITY.GIT_AUTHOR_EMAIL,
-    '2024-01-01T00:00:00Z',
+    '1704067200',
     FIXED_IDENTITY.GIT_COMMITTER_NAME,
     FIXED_IDENTITY.GIT_COMMITTER_EMAIL,
-    '2024-01-02T00:00:00Z',
+    '1704153600',
   ].join('|');
   assert.deepEqual(log, [expected, expected]);
   assert.equal(c.git(['symbolic-ref', '--short', 'HEAD']).trim(), 'main');
@@ -105,7 +108,7 @@ test('the spawned entry point sees only the case OS home, Claude home and projec
   // On Windows libuv re-inserts USERNAME (with HOMEDRIVE, HOMEPATH and a few more) into
   // every child environment; it names the OS user, which `os.userInfo()` gives anyway and
   // the fault-injection preload removes where a case needs no OS user (testing-seams.md).
-  const absent = ['EMAIL', 'NODE_OPTIONS', 'XDG_CONFIG_HOME', 'COMMIT_GUARD_DEBUG', 'USER'];
+  const absent = ['EMAIL', 'NODE_OPTIONS', 'XDG_CONFIG_HOME', 'COMMIT_GUARD_DEBUG', 'USER', 'LOGNAME'];
   if (process.platform !== 'win32') absent.push('USERNAME');
   for (const key of absent) {
     assert.equal(json.env[key], undefined, `${key} leaked into the spawned process`);
@@ -219,4 +222,20 @@ test('temp directories are removed after each case, also when the case fails', a
   for (const root of roots) {
     assert.equal(fs.existsSync(root), false, `case root still exists: ${root}`);
   }
+});
+
+// --- A timeout kills the whole process tree, not just the direct child -------------------
+
+test('a timed-out run kills the direct child\'s grandchild too', async (t) => {
+  const c = createCase(t, { repo: false });
+  const pidFile = path.join(c.root, 'grandchild.pid');
+  await assert.rejects(
+    runEntry(c, HANG_WITH_GRANDCHILD, [pidFile], { timeoutMs: 1000 }),
+    /did not exit within 1000 ms/,
+  );
+  const grandchildPid = Number(fs.readFileSync(pidFile, 'utf8'));
+  // The kill is sent right after the timeout fires; give the OS a moment to tear the
+  // grandchild down before checking it is gone (also generous for a loaded CI container).
+  await new Promise((resolve) => { setTimeout(resolve, 1000); });
+  assert.throws(() => process.kill(grandchildPid, 0), /ESRCH/, 'grandchild still running');
 });

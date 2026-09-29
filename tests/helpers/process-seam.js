@@ -44,6 +44,22 @@ const HOST_ALLOWLIST = new Set([
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+// Kills a timed-out child's whole process tree, not just the direct child: a grandchild
+// (e.g. git) can otherwise hold the case's cwd open, which is an EBUSY on Windows cleanup
+// and, via inherited pipes, keeps the run looking alive.
+function killTree(child) {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)]);
+    return;
+  }
+  try {
+    // Negative pid: the whole process group the detached child leads.
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+}
+
 function hostBaseEnv() {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -88,7 +104,10 @@ function createCase(t, options = {}) {
   const repoDir = path.join(root, 'repo');
   const globalConfig = path.join(root, 'empty.gitconfig');
   fs.mkdirSync(osHome);
-  fs.mkdirSync(claudeHome, { recursive: true });
+  // In fallback mode (no CLAUDE_CONFIG_DIR) the Claude home is not pre-created: a real guard
+  // or commit entry point creates it lazily (e.g. when writing the heartbeat), and a case
+  // should not assume it exists before that.
+  if (claudeConfigDir) fs.mkdirSync(claudeHome, { recursive: true });
   fs.writeFileSync(globalConfig, '');
 
   const project = projectDir === undefined ? repoDir : projectDir;
@@ -96,6 +115,7 @@ function createCase(t, options = {}) {
     ...hostBaseEnv(),
     HOME: osHome,
     USERPROFILE: osHome,
+    TZ: 'UTC',
     ...(claudeConfigDir ? { CLAUDE_CONFIG_DIR: claudeHome } : {}),
     ...(project === null ? {} : { CLAUDE_PROJECT_DIR: project }),
     ...FIXED_IDENTITY,
@@ -150,8 +170,9 @@ function createCase(t, options = {}) {
  * @param {Record<string, string|undefined>} [options.env] per-spawn overrides (`undefined` removes).
  * @param {string[]} [options.nodeArgs] node options before the script (e.g. `--import`).
  * @param {string} [options.cwd] defaults to the repo, or the root when there is none.
- * @param {number} [options.timeoutMs=60000] the child is killed and the call rejects past it.
- * @returns {Promise<{ stdout: string, stderr: string, exitCode: number|null, signal: string|null }>}
+ * @param {number} [options.timeoutMs=60000] the whole process tree is killed and the call
+ *   rejects, after the child closes, past it.
+ * @returns {Promise<{ stdout: string, stdoutBytes: number, stderr: string, exitCode: number|null, signal: string|null }>}
  */
 function runEntry(c, script, argv = [], options = {}) {
   const {
@@ -164,14 +185,18 @@ function runEntry(c, script, argv = [], options = {}) {
       env: mergeEnv(c.env, env),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      // POSIX: the child leads its own process group, so a timeout kill can reach a
+      // grandchild (e.g. git) that the direct SIGKILL would otherwise miss.
+      detached: process.platform !== 'win32',
     });
     const stdout = [];
     const stderr = [];
     child.stdout.on('data', (chunk) => stdout.push(chunk));
     child.stderr.on('data', (chunk) => stderr.push(chunk));
+    let timedOut = false;
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      reject(new Error(`${path.basename(script)} did not exit within ${timeoutMs} ms`));
+      timedOut = true;
+      killTree(child);
     }, timeoutMs);
     child.on('error', (err) => {
       clearTimeout(timer);
@@ -179,8 +204,14 @@ function runEntry(c, script, argv = [], options = {}) {
     });
     child.on('close', (exitCode, signal) => {
       clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`${path.basename(script)} did not exit within ${timeoutMs} ms`));
+        return;
+      }
+      const stdoutBuffer = Buffer.concat(stdout);
       resolve({
-        stdout: Buffer.concat(stdout).toString('utf8'),
+        stdout: stdoutBuffer.toString('utf8'),
+        stdoutBytes: stdoutBuffer.length,
         stderr: Buffer.concat(stderr).toString('utf8'),
         exitCode,
         signal,
@@ -194,7 +225,8 @@ function runEntry(c, script, argv = [], options = {}) {
 
 /**
  * Seam 1: runs the commit entry point (or `options.script`) and fails the case unless stdout
- * is exactly one JSON object. `stdoutBytes` is stdout's UTF-8 size, for the size budgets.
+ * is exactly one JSON object. `stdoutBytes` is stdout's raw byte size (not the UTF-8 size of
+ * the decoded string, which would hide an invalid byte sequence), for the size budgets.
  *
  * @param {ReturnType<typeof createCase>} c
  * @param {string[]} argv
@@ -203,7 +235,7 @@ function runEntry(c, script, argv = [], options = {}) {
 async function runCommit(c, argv = [], options = {}) {
   const { script = COMMIT_ENTRY, ...spawnOptions } = options;
   const result = await runEntry(c, script, argv, spawnOptions);
-  const stdoutBytes = Buffer.byteLength(result.stdout, 'utf8');
+  const { stdoutBytes } = result;
   let json;
   try {
     json = JSON.parse(result.stdout);
@@ -219,7 +251,7 @@ async function runCommit(c, argv = [], options = {}) {
       operator: 'runCommit',
     });
   }
-  return { ...result, json, stdoutBytes };
+  return { ...result, json };
 }
 
 /**
@@ -247,7 +279,14 @@ async function runGuard(c, hook = {}, options = {}) {
     ...hook.extra,
   });
   const result = await runEntry(c, script, [], { ...spawnOptions, stdin });
-  const heartbeatPath = path.join(c.claudeHome, 'commit-guard', 'heartbeat.json');
+  // Resolved from the env actually used for this spawn, not the case's own claudeHome: a
+  // per-spawn CLAUDE_CONFIG_DIR (or HOME/USERPROFILE) override must be honored the same way
+  // the real guard's own `process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')`
+  // would resolve it.
+  const spawnEnv = mergeEnv(c.env, spawnOptions.env);
+  const claudeHome = spawnEnv.CLAUDE_CONFIG_DIR
+    || path.join(spawnEnv.HOME || spawnEnv.USERPROFILE, '.claude');
+  const heartbeatPath = path.join(claudeHome, 'commit-guard', 'heartbeat.json');
   const heartbeat = fs.existsSync(heartbeatPath)
     ? JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'))
     : null;
