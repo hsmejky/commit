@@ -2,7 +2,9 @@
 
 Data shapes, grammars and classification rules shared by the script, the skills, the
 `commit-worker` agent and the guard. These are the test contract; the reasons behind them are
-in [decisions](../decisions/README.md). All JSON carries `"version": 1`. Paths are repo-relative
+in [decisions](../decisions/README.md). All JSON carries `"version": 1`, except the repo
+`.claude/commit.json` config: Q6 rejects a `version` key there, since additive keys and
+values plus warnings already cover forward compatibility. Paths are repo-relative
 with forward slashes. Everything here except the scan pattern IDs and the public
 [worker input](worker-input.md) fields (`intent`, `interactive`, `reword`) is internal (see
 [Public surface](../decisions/public-surface.md)).

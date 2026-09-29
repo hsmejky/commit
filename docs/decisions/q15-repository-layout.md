@@ -7,7 +7,7 @@
   ```
   .claude-plugin/marketplace.json
   .claude/CLAUDE.md
-  .claude/commit.json                 repo config; scanIgnore: tests/fixtures/**
+  .claude/commit.json                 repo config; scanIgnore: tests/fixtures/**, body: "optional"
   .github/workflows/test.yml          ubuntu + windows + macos × Node 22/24, + git 2.34 container job
   plugin/.claude-plugin/plugin.json
   plugin/scripts/commit.cjs           commit entry point (CommonJS): thin, subcommands for worker

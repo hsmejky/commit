@@ -1,3 +1,4 @@
 {
-  "scanIgnore": ["tests/fixtures/**"]
+  "scanIgnore": ["tests/fixtures/**"],
+  "body": "optional"
 }

@@ -62,7 +62,9 @@ that does not depend on an item does not wait for it.
 ## Prerequisite of the first slice
 
 - Commit `.claude/commit.json` with `scanIgnore: tests/fixtures/**` before any commit that
-  adds fixtures, since `scanIgnore` is read at HEAD (Q10).
+  adds fixtures, since `scanIgnore` is read at HEAD (Q10). The repo config also sets
+  `body: "optional"`, since repo commits carry `Co-Authored-By`/`Claude-Session` trailers
+  (Q6).
 
 ## First slice
 
