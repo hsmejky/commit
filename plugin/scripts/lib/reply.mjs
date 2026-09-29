@@ -2,9 +2,9 @@
 // the reply for every output that ends the worker's part. Pure.
 //
 // INT-01 builds the thinnest reply the walking skeleton needs: the `nothing` status on a
-// clean working tree, with the base `callerRule`. RPL-04 onward add `failed`, `committed`
-// and `handback` replies, the handback rule, notices, the trailer line and the "N files
-// left" tree state.
+// clean working tree, with the base `callerRule`; RUN-01 adds `release`'s two `nothing`
+// texts. RPL-04 onward add `failed`, `committed` and `handback` replies, the handback rule,
+// notices, the trailer line and the "N files left" tree state.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -24,22 +24,27 @@ function renderTreeState(treeState) {
   throw new Error('the "N files left" tree state is not built yet');
 }
 
-const STATUS_LINES = Object.freeze({
-  nothing: 'nothing to commit',
+// The first line of a `nothing` reply, per `reason`: `plan` on a clean tree; a `release`
+// that ended the run; a `release` whose lock did not hold its `planId` (C:commit-release).
+const NOTHING_LINES = Object.freeze({
+  clean: 'nothing to commit',
+  released: 'nothing committed',
+  'already-ended': 'nothing to release: the run has already ended or was taken over',
 });
 
 /**
  * Builds a reply from the facts of the output that ends the worker's part.
  *
- * @param {{ status: 'nothing', treeState: { clean: true } | { count: number, paths: string[] } }} facts
+ * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended',
+ *   treeState: { clean: true } | { count: number, paths: string[] } }} facts
  * @returns {object} the reply (C:reply-and-handback).
- * @throws {Error} for a status or tree state not built yet.
+ * @throws {Error} for a status, reason or tree state not built yet.
  */
 export function reply(facts) {
-  if (!Object.hasOwn(STATUS_LINES, facts.status)) {
-    throw new Error(`a ${JSON.stringify(facts.status)} reply is not built yet`);
+  if (facts.status !== 'nothing' || !Object.hasOwn(NOTHING_LINES, facts.reason)) {
+    throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
-  const text = `${STATUS_LINES[facts.status]}\n${renderTreeState(facts.treeState)}`;
+  const text = `${NOTHING_LINES[facts.reason]}\n${renderTreeState(facts.treeState)}`;
   return {
     version: 1,
     status: facts.status,

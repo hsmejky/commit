@@ -10,9 +10,14 @@
 // outside a usable repo). Later slices insert the other rows (3 run folder and lock peek,
 // 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in their place in
 // PLAN_STEPS, and widen these.
+//
+// `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
+// `nothing` reply ending with the tree state. RUN-02 adds the `call.lock` and `busy`,
+// RUN-03 the 45 s `releaseDeadline` on the tree-state read.
 
 import { probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
+import { releaseById } from './run.mjs';
 import { reply } from './reply.mjs';
 import { planRefusal } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
@@ -44,12 +49,35 @@ async function inventory(ctx) {
 
 /** Step 6: post-scan refusals. A clean tree ends the call with `nothing`. */
 async function postScanRefusals(ctx) {
-  if (ctx.inventory.clean === true) return { status: 'nothing' };
+  if (ctx.inventory.clean === true) return { status: 'nothing', reason: 'clean' };
   // CHG-03 / INT-02 go on to steps 7-8 for a tree with changes.
   throw new Error('plan on a working tree with changes is not built yet');
 }
 
 const PLAN_STEPS = Object.freeze([probeRepo, preFolderRefusals, inventory, postScanRefusals]);
+
+/**
+ * `release` step 2: the probe's `env` refusal, the only refusal `release` shares with `plan`
+ * (C:cli-and-exit-codes: `env` for any subcommand, `state` only for `plan` and `infer`).
+ */
+async function releaseRefusals(ctx) {
+  const refusal = planRefusal(ctx.probe);
+  if (refusal !== null && refusal.code === 'env') return { refusal };
+  const { repo } = ctx.probe;
+  if (repo === null || repo.kind !== 'worktree') {
+    throw new Error('release outside a working tree is not built yet');
+  }
+  ctx.toplevel = repo.toplevel;
+  return undefined;
+}
+
+/** `release` step 3: M12 `releaseById`, a no-op unless the lock holds this `planId`. */
+async function releaseRun(ctx) {
+  const { released } = releaseById({ toplevel: ctx.toplevel, planId: ctx.values.plan });
+  return { status: 'nothing', reason: released ? 'released' : 'already-ended' };
+}
+
+const RELEASE_STEPS = Object.freeze([probeRepo, releaseRefusals, releaseRun]);
 
 async function runSteps(steps, ctx) {
   for (const step of steps) {
@@ -79,12 +107,7 @@ export async function plan(values, injected, { cwd }) {
   }
   const ctx = { injected, cwd };
   const facts = await runSteps(PLAN_STEPS, ctx);
-  if (facts.refusal !== undefined) {
-    // A pre-folder refusal carries no reply yet: RPL-04 adds the `failed` reply.
-    return { failure: { kind: kindForDomainCode(facts.refusal.code), message: facts.refusal.message } };
-  }
-  // Every reply ends with the tree state, read after the call's last git call (M10).
-  const finalTree = await treeState({ toplevel: ctx.toplevel, env: injected.env, now: injected.now });
+  if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return {
     output: {
       planId: null,
@@ -92,8 +115,35 @@ export async function plan(values, injected, { cwd }) {
       // With no mode flag an empty index resolves to `split` (C:plan `mode`); a clean tree
       // has an empty index. M15 `resolveMode` replaces this at step 4.
       mode: 'split',
-      reply: reply({ ...facts, treeState: finalTree }),
+      reply: await finalReply(facts, ctx),
       hunks: null,
     },
   };
+}
+
+/**
+ * Runs `release --plan <planId>` (C:commit-release `release`).
+ *
+ * @param {{ plan: string }} values the parsed and validated `release` flags (M1 `parseArgv`).
+ * @param {object} injected the injected environment.
+ * @param {{ cwd: string }} call the call's working directory.
+ * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
+ */
+export async function release(values, injected, { cwd }) {
+  const ctx = { injected, cwd, values };
+  const facts = await runSteps(RELEASE_STEPS, ctx);
+  if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+  return { output: { reply: await finalReply(facts, ctx) } };
+}
+
+// A refusal before any reply: RPL-04 adds the `failed` reply.
+function refusalFailure(refusal) {
+  return { failure: { kind: kindForDomainCode(refusal.code), message: refusal.message } };
+}
+
+// Every reply ends with the tree state, read after the call's last git call (M10).
+async function finalReply(facts, ctx) {
+  const { env, now } = ctx.injected;
+  const finalTree = await treeState({ toplevel: ctx.toplevel, env, now });
+  return reply({ ...facts, treeState: finalTree });
 }

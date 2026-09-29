@@ -8,34 +8,22 @@
 // C:cli-and-exit-codes; every illegal combination and a malformed `planId` is refused
 // `usage` here, before M18 (and everything below it, including any git call or the
 // `.commit-plan` folder) is ever reached. A legal argv routes to its M18 workflow (INT-01:
-// `plan`); a subcommand whose workflow is not built yet falls through to an `internal`
-// placeholder.
+// `plan`; RUN-01: `release`); a subcommand whose workflow is not built yet falls through to
+// an `internal` placeholder.
 
 import { parseArgs } from 'node:util';
 
+// The minted `planId` form is M12's (C:run-folder); M1 refuses any other `--plan` or
+// `--take-over` value as `usage`.
+import { isValidPlanId } from './run.mjs';
 import * as workflows from './workflows.mjs';
 
 // The M18 workflow each subcommand routes to, as far as built. `plan --hunks` is its own
 // synopsis form and not built yet, so `workflows.plan` refuses it.
-const WORKFLOWS = Object.freeze({ plan: workflows.plan });
+const WORKFLOWS = Object.freeze({ plan: workflows.plan, release: workflows.release });
 
 /** The subcommands of the synopsis in C:cli-and-exit-codes. */
 const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);
-
-// `planId` is `crypto.randomUUID()` output (C:run-folder): a lowercase UUID v4, version
-// nibble `4` and variant nibble `8`-`b` included, so an uppercase value, a path, or any
-// other string that merely looks like a UUID is rejected.
-const PLAN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-/**
- * Checks whether a value is a `planId` in the exact minted form (C:run-folder).
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isValidPlanId(value) {
-  return typeof value === 'string' && PLAN_ID_PATTERN.test(value);
-}
 
 // One strict `parseArgs` options object per subcommand (C:cli-and-exit-codes synopsis).
 // `no-user` is declared literally, as its own boolean flag: `node:util`'s `parseArgs` has no
