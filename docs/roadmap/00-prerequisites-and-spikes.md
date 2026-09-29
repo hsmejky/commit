@@ -161,16 +161,16 @@ behaves as Q11 step 1 assumes.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Open verification items (temporary index), Further Notes "Git and tool checks".
 
 Gates: CHG-05 (temporary index), INT-02 (first end-to-end commit).
 
-- [ ] `git diff -M` against an index copy with `git add -N` entries shows each intent-to-add path as `A` with its content.
-- [ ] A deleted path plus an intent-to-add path pair as `R`, both for a plain `mv` and a `git mv` after the reset.
-- [ ] `git diff --cached --no-renames --diff-filter=A` lists a `git mv`'s new path and works on an unborn HEAD.
-- [ ] Each result holds on git 2.34 (the `ubuntu:22.04` distribution git) and the current release; a difference is recorded as a Q11 amendment.
+- [x] `git diff -M` against an index copy with `git add -N` entries shows each intent-to-add path as `A` with its content.
+- [x] A deleted path plus an intent-to-add path pair as `R`, both for a plain `mv` and a `git mv` after the reset.
+- [x] `git diff --cached --no-renames --diff-filter=A` lists a `git mv`'s new path and works on an unborn HEAD.
+- [x] Each result holds on git 2.34 (the `ubuntu:22.04` distribution git) and the current release; a difference is recorded as a Q11 amendment.
 
 
 ## PRE-10: Git check: filtered files and LFS
@@ -180,15 +180,15 @@ the current release.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Open verification items (filtered files), Further Notes "Git and tool checks".
 
 Gates: CHG-10 (filtered files and `linguist-generated`), CHG-21 (whole-file staging edge cases), INT-20 (filtered/LFS widening).
 
-- [ ] With `git-lfs` installed, `git diff` shows an LFS-tracked change as a pointer diff.
-- [ ] `git add` of the whole file stores the object under the LFS objects directory, and the staged diff then matches the planned hash.
-- [ ] Both hold on git 2.34 and the current release; a difference is recorded as a Q11 amendment.
+- [x] With `git-lfs` installed, `git diff` shows an LFS-tracked change as a pointer diff.
+- [x] `git add` of the whole file stores the object under the LFS objects directory, and the staged diff then matches the planned hash.
+- [x] Both hold on git 2.34 and the current release; a difference is recorded as a Q11 amendment.
 
 
 ## PRE-11: Spike: project directory and `CLAUDE_PROJECT_DIR`

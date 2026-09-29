@@ -89,15 +89,16 @@
   with an intent-to-add path as `R` (a plain `mv` and a `git mv` after step 1's reset), and
   that `git diff --cached --no-renames --diff-filter=A` lists a `git mv`'s new path and works
   on an unborn HEAD, on git 2.34 and the current release. Spike before the file-level
-  slice. **2.54.0 half resolved** on 2026-09-29 (git 2.54.0, Windows;
-  `tests/temporary-index.test.js`, PRE-09). All three assumptions hold with the exact pinned
-  diff options and `-c` config pins: an intent-to-add path (untracked or already staged-new)
-  diffs as `A` with its working-tree content; a plain `mv` and a `git mv`, each followed by
-  step 1's reset and an intent-to-add of the new path, pair as `R100`; and the staged-new-path
-  query lists only a `git mv`'s new path on a normal HEAD, and every staged path on an
-  unborn HEAD. No Q11
-  amendment needed. Not yet run on git 2.34: that leg waits on the CI `ubuntu:22.04` container
-  job (FND-03), not yet built.
+  slice. **Resolved** on 2026-09-29: git 2.54.0, Windows, local run
+  (`tests/temporary-index.test.js`, PRE-09); and git 2.34.1, the CI `ubuntu:22.04` container
+  min-git job (FND-03, run
+  https://github.com/hsmejky/commit/actions/runs/36566328437, job 109399035878, all 10 legs
+  green; `tests/temporary-index.test.js` ok 693-697). All three assumptions hold, on both git
+  versions, with the exact pinned diff options and `-c` config pins: an intent-to-add path
+  (untracked or already staged-new) diffs as `A` with its working-tree content; a plain `mv`
+  and a `git mv`, each followed by step 1's reset and an intent-to-add of the new path, pair
+  as `R100`; and the staged-new-path query lists only a `git mv`'s new path on a normal HEAD,
+  and every staged path on an unborn HEAD. No Q11 amendment needed.
 - How Claude Code ends a Bash/PowerShell tool call (Esc, timeout) on Linux, macOS and
   Windows: whether it sends a process-group `SIGTERM`, a `SIGKILL`, or a Windows tree kill,
   and whether a detached child (the spawned git or hook process; Q9's kill handling, Q18's
@@ -107,19 +108,21 @@
   `.git/lfs/objects`, and that the staged diff then matches the planned hash; on git 2.34
   and the current release. The test suite covers the mechanism with a `sed` clean filter;
   this spike covers LFS itself. Spike before the slice that stages a filtered or LFS file.
-  **2.54.0 half resolved** on 2026-09-29 (git 2.54.0, git-lfs 3.7.1, Windows;
-  `tests/lfs-filtered-file.test.js`, PRE-10). Both assumptions hold, run with the exact
-  pinned diff options: `git diff` on a modified LFS-tracked file shows the pointer's `oid`
-  and `size` lines changing, never the real bytes, because git runs the `clean` filter on
-  the working-tree content before diffing it against the (already clean) index blob, the
-  same mechanism Q11 already describes for the general filter-attribute case. `git add` of
-  the whole file stores the object at
+  **Resolved** on 2026-09-29: git 2.54.0, git-lfs 3.7.1, Windows, local run
+  (`tests/lfs-filtered-file.test.js`, PRE-10); and git 2.34.1 with git-lfs 3.0.2-1ubuntu0.3
+  and `COMMIT_REQUIRE_LFS=1`, the CI `ubuntu:22.04` container min-git job (FND-03, run
+  https://github.com/hsmejky/commit/actions/runs/36566328437, job 109399035878, all 10 legs
+  green; `ok 223 - an LFS-tracked change diffs as a pointer, and staging it matches the
+  pre-add diff and stores the object`). Both assumptions hold, on both git versions, run
+  with the exact pinned diff options: `git diff` on a modified LFS-tracked file shows the
+  pointer's `oid` and `size` lines changing, never the real bytes, because git runs the
+  `clean` filter on the working-tree content before diffing it against the (already clean)
+  index blob, the same mechanism Q11 already describes for the general filter-attribute
+  case. `git add` of the whole file stores the object at
   `.git/lfs/objects/<oid[0:2]>/<oid[2:4]>/<oid>` keyed by the content's own sha256, and
   `git diff --cached` afterwards is byte-for-byte identical to the pre-add `git diff` (the
   bytes compared, not a decoded string), so the diff `plan` would hash before staging
-  equals the one `commit` verifies after. No Q11 amendment needed. The git 2.34 half is
-  pending: the CI `ubuntu:22.04` container job (FND-03) runs git 2.34.1, but it does not yet
-  install git-lfs or set `COMMIT_REQUIRE_LFS=1`, so this test is skipped there for now.
+  equals the one `commit` verifies after. No Q11 amendment needed.
 - Agent frontmatter (Q24): **resolved** on 2026-09-26. The plugin docs list `omitClaudeMd`
   among the supported plugin-agent fields (ignored there: `permissionMode`, `hooks`,
   `mcpServers`, `initialPrompt`). Probe (Claude Code, Windows, headless, `--plugin-dir`, a

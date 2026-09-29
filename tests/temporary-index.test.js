@@ -8,7 +8,8 @@
 //
 // This test is deliberately version-agnostic: it names no git version and skips nothing, so
 // the same assertions run unmodified on the current release here and on git 2.34 in the
-// `ubuntu:22.04` CI container job (FND-03, not yet built). See
+// `ubuntu:22.04` CI min-git container job (FND-03), which also runs git-lfs with
+// `COMMIT_REQUIRE_LFS=1`. See
 // docs/decisions/open-verification-items.md ("The temporary index (Q11)") for the outcome
 // this test backs and the exact git version it was run against. If a future CI run on git
 // 2.34 disagrees with these assertions, that is a Q11 amendment, not a change to this file.

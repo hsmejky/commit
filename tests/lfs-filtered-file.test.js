@@ -12,13 +12,12 @@
 // installed, per the same item ("The test suite covers the mechanism with a `sed` clean
 // filter; this spike covers LFS itself."), *unless* `COMMIT_REQUIRE_LFS=1` is set, in which
 // case a missing git-lfs fails the test instead of skipping it: the CI `ubuntu:22.04`
-// container job (FND-03) installs git-lfs and sets that variable, so a broken container
-// image is caught there rather than silently skipping.
+// min-git container job (FND-03) installs git-lfs, sets that variable, and runs git 2.34.1,
+// so a broken container image is caught there rather than silently skipping.
 //
-// Verified here against the current release only. The CI `ubuntu:22.04` container job
-// (FND-03) runs git 2.34.1, but does not yet install git-lfs or set
-// `COMMIT_REQUIRE_LFS=1`, so the git 2.34 proof is pending until it does; this test does
-// not claim it.
+// Verified against the current release locally, and against git 2.34.1 with git-lfs in the
+// CI `ubuntu:22.04` min-git container job (FND-03). See
+// docs/decisions/open-verification-items.md ("Filtered files (Q11)") for both runs.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
