@@ -339,7 +339,14 @@ for (const [key, rawValue] of CFG_03_BAD_VALUES) {
     const result = await runCommit(c, ['plan']);
 
     assertRefusal(result, 'config', 1);
-    assert.match(result.json.error.message, new RegExp(key));
+    // review-CFG-03 finding 6: anchored on the layer and key together (not just the key
+    // appearing anywhere), so the test pins "naming the key" rather than "mentioning the
+    // word" (a future message about another key could otherwise still contain this key's
+    // name in passing).
+    assert.match(
+      result.json.error.message,
+      new RegExp(`repo config \\(\\.claude/commit\\.json\\) ${key}\\b`),
+    );
     assertNoRunFolder(c.repoDir);
   });
 }

@@ -150,7 +150,8 @@ test('validateLayer rejects a non-object top level, naming the layer', () => {
   for (const body of [[], null, 42, 'x']) {
     const result = config.validateLayer(body, 'repo config (.claude/commit.json)');
     assert.notEqual(result, null, JSON.stringify(body));
-    assert.match(result.error, /repo config \(\.claude\/commit\.json\)/, JSON.stringify(body));
+    assert.equal(result.errors.length, 1, JSON.stringify(body));
+    assert.match(result.errors[0], /repo config \(\.claude\/commit\.json\)/, JSON.stringify(body));
   }
 });
 
@@ -163,8 +164,17 @@ test('validateLayer rejects a wrong-type or out-of-range maxSubjectLength, namin
   for (const value of ['72', 19, 201, 0, 72.5]) {
     const result = config.validateLayer({ maxSubjectLength: value }, 'repo config');
     assert.notEqual(result, null, JSON.stringify(value));
-    assert.match(result.error, /maxSubjectLength/, JSON.stringify(value));
+    assert.match(result.errors[0], /maxSubjectLength/, JSON.stringify(value));
   }
+});
+
+// review-CFG-03 finding 4: JSON.stringify prints Infinity as `null`, which would misleadingly
+// read "... not null" for a value that parsed but is wildly out of range.
+test('validateLayer names an out-of-range Infinity maxSubjectLength as Infinity, not null', () => {
+  const result = config.validateLayer({ maxSubjectLength: 1e400 }, 'repo config');
+  assert.notEqual(result, null);
+  assert.match(result.errors[0], /Infinity/);
+  assert.doesNotMatch(result.errors[0], /not null/);
 });
 
 test('validateLayer accepts maxSubjectLength at both range boundaries (20 and 200)', () => {
@@ -177,8 +187,17 @@ test('validateLayer rejects an empty, malformed or wrong-type types value, namin
   for (const value of [[], ['Feat'], ['1x'], 'feat']) {
     const result = config.validateLayer({ types: value }, 'repo config');
     assert.notEqual(result, null, JSON.stringify(value));
-    assert.match(result.error, /types/, JSON.stringify(value));
+    assert.match(result.errors[0], /types/, JSON.stringify(value));
   }
+});
+
+// review-CFG-03 finding 5: the old wording ("a non-empty array of lowercase type names")
+// did not explain why `["1x"]` is rejected, since "1x" is already lowercase. The message
+// now states the actual rule.
+test('validateLayer states the starts-with-a-letter rule for a malformed types entry', () => {
+  const result = config.validateLayer({ types: ['1x'] }, 'repo config');
+  assert.match(result.errors[0], /starting with a letter/);
+  assert.match(result.errors[0], /\^\[a-z\]\[a-z0-9-\]\*\$/);
 });
 
 test('validateLayer accepts a well-formed types array', () => {
@@ -190,19 +209,30 @@ test('validateLayer accepts a well-formed types array', () => {
 test('validateLayer rejects a wrong-type scope, naming the key', () => {
   const result = config.validateLayer({ scope: 3 }, 'repo config');
   assert.notEqual(result, null);
-  assert.match(result.error, /scope/);
+  assert.match(result.errors[0], /scope/);
 });
 
 test('validateLayer rejects a wrong-type subjectCase, naming the key', () => {
   const result = config.validateLayer({ subjectCase: true }, 'repo config');
   assert.notEqual(result, null);
-  assert.match(result.error, /subjectCase/);
+  assert.match(result.errors[0], /subjectCase/);
 });
 
 test('validateLayer rejects a wrong-type body, naming the key', () => {
   const result = config.validateLayer({ body: [] }, 'repo config');
   assert.notEqual(result, null);
-  assert.match(result.error, /body/);
+  assert.match(result.errors[0], /body/);
+});
+
+// review-CFG-03 finding 2: validateLayer collects every applicable error in one pass
+// (docs/contracts/infer.md's `{ errors }` shape), not only the first.
+test('validateLayer collects every applicable error, not only the first', () => {
+  const result = config.validateLayer({ maxSubjectLength: 0, scope: 3, body: [] }, 'repo config');
+  assert.notEqual(result, null);
+  assert.equal(result.errors.length, 3);
+  assert.match(result.errors[0], /maxSubjectLength/);
+  assert.match(result.errors[1], /scope/);
+  assert.match(result.errors[2], /body/);
 });
 
 test('validateLayer accepts well-typed scope, body and subjectCase strings', () => {
@@ -210,8 +240,52 @@ test('validateLayer accepts well-typed scope, body and subjectCase strings', () 
 });
 
 // AC: a static test asserts `validateLayer` is exported, pure (no file reads in its source).
+//
+// review-CFG-03 finding 1: `assertPureSourceText`'s ordinary `AMBIENT_STATE` bans do not
+// include `fs`, `path` or a `*Sync` read, and only check the import statements of the text
+// handed to it; `Function.prototype.toString()` never reproduces an `import` statement (the
+// importing module's, not the function's own), so the whole-module import check can never
+// fire here either. A function body reaches `config.mjs`'s module-level `fs`/`path` imports
+// as plain identifiers, so `validateLayer`'s and `describeType`'s own text is checked
+// against those identifiers directly via `extraBans`. `describeType` is checked too, since
+// `validateLayer.toString()` does not include the body of a function it calls
+// (`Function.prototype.toString()` is per-function, not transitive).
+const FILE_READ_BANS = [
+  [/\bfs\b/, 'fs'],
+  [/\bpath\b/, 'path'],
+  [/\b(read|open|stat|lstat|exists)\w*Sync\b/, 'a *Sync read'],
+];
+
 test('validateLayer is exported and its own source does no file reads or ambient-state access', () => {
   const { assertPureSourceText } = require('./helpers/assert-pure-source');
   assert.equal(typeof config.validateLayer, 'function');
-  assertPureSourceText(config.validateLayer.toString(), 'validateLayer');
+  assertPureSourceText(config.validateLayer.toString(), 'validateLayer', { extraBans: FILE_READ_BANS });
+});
+
+test('describeType is exported and its own source does no file reads or ambient-state access', () => {
+  const { assertPureSourceText } = require('./helpers/assert-pure-source');
+  assert.equal(typeof config.describeType, 'function');
+  assertPureSourceText(config.describeType.toString(), 'describeType', { extraBans: FILE_READ_BANS });
+});
+
+// Self-check (review-CFG-03 finding 1): proves the purity check above actually catches a
+// file read, rather than passing vacuously the way the plain `assertPureSourceText` call
+// did before `extraBans` existed (it has no `import` statement and never mentions `fs` or
+// `path` as banned words on its own).
+test('the purity check fails on a validateLayer-shaped body that calls fs.readFileSync(path.join(...))', () => {
+  const { assertPureSourceText } = require('./helpers/assert-pure-source');
+  const impureBody = [
+    'function validateLayer(obj, layer) {',
+    '  const text = fs.readFileSync(path.join(layer, "x"), "utf8");',
+    '  return text ? null : { errors: ["bad"] };',
+    '}',
+  ].join('\n');
+
+  // Without extraBans this body passes today (the vacuous check review-CFG-03 found).
+  assert.doesNotThrow(() => assertPureSourceText(impureBody, 'validateLayer'));
+  // With extraBans (what the real test above uses) it must fail.
+  assert.throws(
+    () => assertPureSourceText(impureBody, 'validateLayer', { extraBans: FILE_READ_BANS }),
+    assert.AssertionError,
+  );
 });

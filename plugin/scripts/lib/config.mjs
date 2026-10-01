@@ -25,10 +25,23 @@ const MAX_SUBJECT_LENGTH = 200;
 /** Keys whose only CFG-03 check is "must be a string" (enum membership is CFG-06's warning). */
 const STRING_KEYS = ['scope', 'body', 'subjectCase'];
 
-function describeType(value) {
+// Exported only so `validateLayer`'s own static purity test (tests/config.test.js) can read
+// this helper's source directly: M4 itself is effectful (this file imports `fs` and `path`
+// at module level), so the whole-module `assertPureSource` helper other pure modules use
+// cannot run against `config.mjs`, and `Function.prototype.toString()` never follows a call
+// into another function's body (review-CFG-03 finding 1).
+export function describeType(value) {
   if (Array.isArray(value)) return 'an array';
   if (value === null) return 'null';
   return `a ${typeof value}`;
+}
+
+// `JSON.stringify` prints out-of-range numbers that parsed to `Infinity` or `-Infinity` as
+// `null` (e.g. `"maxSubjectLength": 1e400`), which would make the message read "... not
+// null" for a value that is very much not null (review-CFG-03 finding 4). Every other value
+// JSON.stringify prints is accurate for a message.
+function describeValue(value) {
+  return typeof value === 'number' ? String(value) : JSON.stringify(value);
 }
 
 /**
@@ -37,28 +50,36 @@ function describeType(value) {
  * `types` array. Pure: no file reads, no ambient state, so a caller that already has a
  * layer's parsed value (M19 `configFor`) can validate it without going through `loadConfig`.
  * Unknown keys, an unknown value of a known key, and a key in the wrong layer are CFG-06's
- * warnings, not this function's errors; `scanIgnore` is CFG-07's (M7 `compileGlob`).
+ * warnings, not this function's errors; `scanIgnore` is CFG-07's (M7 `compileGlob`, folded
+ * into this function then).
+ *
+ * Collects every applicable error in one pass rather than stopping at the first, so a
+ * caller that reports more than one problem at once (M19 `configFor`, and CFG-07's glob
+ * errors alongside these) can do so without a second pass over the same layer
+ * (review-CFG-03 finding 2; shape matches `docs/contracts/infer.md`'s `{ errors }`).
  *
  * @param {unknown} obj the parsed JSON value of a config layer.
  * @param {string} layer names the layer in every error message (e.g. `repo config
  *   (.claude/commit.json)`), matching `loadConfig`'s existing wording.
- * @returns {{ error: string } | null} the first error found, or `null` when every known key
+ * @returns {{ errors: string[] } | null} every error found, or `null` when every known key
  *   present is well-typed and in range.
  */
 export function validateLayer(obj, layer) {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
-    return { error: `the ${layer} top level must be a JSON object, not ${describeType(obj)}` };
+    return { errors: [`the ${layer} top level must be a JSON object, not ${describeType(obj)}`] };
   }
+
+  const errors = [];
 
   if (Object.hasOwn(obj, 'maxSubjectLength')) {
     const value = obj.maxSubjectLength;
     const inRange = typeof value === 'number' && Number.isInteger(value)
       && value >= MIN_SUBJECT_LENGTH && value <= MAX_SUBJECT_LENGTH;
     if (!inRange) {
-      return {
-        error: `the ${layer} maxSubjectLength must be an integer between ${MIN_SUBJECT_LENGTH} `
-          + `and ${MAX_SUBJECT_LENGTH}, not ${JSON.stringify(value)}`,
-      };
+      errors.push(
+        `the ${layer} maxSubjectLength must be an integer between ${MIN_SUBJECT_LENGTH} `
+          + `and ${MAX_SUBJECT_LENGTH}, not ${describeValue(value)}`,
+      );
     }
   }
 
@@ -67,20 +88,20 @@ export function validateLayer(obj, layer) {
     const wellFormed = Array.isArray(value) && value.length > 0
       && value.every((entry) => typeof entry === 'string' && TYPE_ENTRY_PATTERN.test(entry));
     if (!wellFormed) {
-      return {
-        error: `the ${layer} types must be a non-empty array of lowercase type names, `
-          + `not ${JSON.stringify(value)}`,
-      };
+      errors.push(
+        `the ${layer} types must be a non-empty array of lowercase type names, each starting `
+          + `with a letter (^[a-z][a-z0-9-]*$), not ${JSON.stringify(value)}`,
+      );
     }
   }
 
   for (const key of STRING_KEYS) {
     if (Object.hasOwn(obj, key) && typeof obj[key] !== 'string') {
-      return { error: `the ${layer} ${key} must be a string, not ${JSON.stringify(obj[key])}` };
+      errors.push(`the ${layer} ${key} must be a string, not ${JSON.stringify(obj[key])}`);
     }
   }
 
-  return null;
+  return errors.length > 0 ? { errors } : null;
 }
 
 // The repo config is a small hand-written file; a few KB is generous, same style as the
@@ -156,6 +177,10 @@ export function loadConfig({ toplevel }) {
   }
   // CFG-03: a non-object top level, a wrong JSON type, an out-of-range number or a bad
   // `types` array is a `config` error naming the repo layer and the key (Q6, review-CFG-02
-  // finding 5: CFG-02 was JSON-parseability only).
-  return validateLayer(parsed, `repo config (${REPO_CONFIG_PATH})`);
+  // finding 5: CFG-02 was JSON-parseability only). `validateLayer` collects every error it
+  // finds; `loadConfig`'s own `{ error }` shape (used by M15 `planRefusal` for `plan`'s
+  // single-line message, Q6) reports the first, same as before this collected every error
+  // (review-CFG-03 finding 2).
+  const result = validateLayer(parsed, `repo config (${REPO_CONFIG_PATH})`);
+  return result ? { error: result.errors[0] } : null;
 }

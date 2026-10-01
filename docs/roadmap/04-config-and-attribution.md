@@ -129,6 +129,12 @@ merged) and `plan`'s `config.values` and `config.sources` (`default`, `user`, `r
 and fall back to the next layer, then the default; a key in the wrong layer (`scanIgnore` in
 the user layer) → warning, ignored. Warnings go to `plan.warnings` and stderr.
 
+**Forward note (review-CFG-03 finding 3):** `validateLayer`'s `layer` parameter is a
+free-form display string (e.g. `repo config (.claude/commit.json)`), not a layer identity.
+Telling a key "in the wrong layer" needs to discriminate repo from user, so this slice has
+to give `validateLayer` (or its caller) a real identity to check against, not just a label
+to print.
+
 **Blocked by:** CFG-05.
 
 **Status:** ready-for-agent

@@ -88,12 +88,23 @@ function lineAt(source, index) {
  * I/O, reads no ambient state, and imports only the pure modules listed in `allowImports`
  * (exact specifiers, e.g. `./glob-matcher.mjs`).
  *
+ * `extraBans` adds words to ban on top of `AMBIENT_STATE`, for a caller that checks a single
+ * function's own text (`fn.toString()`) rather than a whole module file: a function body
+ * reaches an effectful module-level import (`fs`, `path`, and the like) as a plain
+ * identifier, with no `import` statement for `AMBIENT_STATE`'s own import check to see, so
+ * such a caller must ban those identifiers itself (e.g. M4's `validateLayer`, which this
+ * file cannot check with `assertPureSource` since `config.mjs` is itself effectful;
+ * review-CFG-03 finding 1). Left empty (the default), nothing changes for
+ * `assertPureSource`'s own whole-module callers, several of which use "path" and "fs" as
+ * ordinary English words in their comments and would wrongly fail if those were banned
+ * module-wide.
+ *
  * @param {string} source
  * @param {string} label
- * @param {{ allowImports?: string[] }} [options]
+ * @param {{ allowImports?: string[], extraBans?: [RegExp, string][] }} [options]
  */
-function assertPureSourceText(source, label, { allowImports = [] } = {}) {
-  for (const [pattern, what] of AMBIENT_STATE) {
+function assertPureSourceText(source, label, { allowImports = [], extraBans = [] } = {}) {
+  for (const [pattern, what] of [...AMBIENT_STATE, ...extraBans]) {
     const match = pattern.exec(source);
     assert.ok(
       match === null,
