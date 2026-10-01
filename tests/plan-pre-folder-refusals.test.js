@@ -145,12 +145,12 @@ test('plan with a PATH git file that cannot be executed exits 1 env, not interna
   fs.writeFileSync(fakeGit, 'not executable\n');
   fs.chmodSync(fakeGit, 0o644);
 
-  const result = await runCommit(c, ['plan'], { env: pathOverride(c, [dir, c.env.PATH]) });
+  // The non-executable file is the only `git` on PATH: a PATH search (execvp) skips a
+  // file it gets EACCES on and runs a later `git` instead, so with the host PATH after it
+  // the real git would run. Execution needs an x bit even for root, so this is EACCES on
+  // every POSIX runner.
+  const result = await runCommit(c, ['plan'], { env: pathOverride(c, [dir]) });
 
-  // On a sandbox or CI runner that executes as root, permission bits are ignored and this
-  // file may still run (as a non-git text file, which fails the same way a real EACCES
-  // would be routed: unreadable -> env, not internal). Assert the domain code either way;
-  // only skip the exact-message check when EACCES was not actually produced.
   assertRefusal(result, 'env', 1);
   assertNoRunFolder(c.repoDir);
 });
