@@ -8,6 +8,8 @@
 // 22 stays enforced by the entry point (`commit.cjs`), before M15 ever loads. CFG-02 adds
 // `config` (C:plan step 2 order: `env`, `config`, `state`); GIT-02 onward adds the other
 // `state` rows; RUN-14 completes their order.
+//
+// RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });
@@ -57,4 +59,21 @@ export function planRefusal(facts) {
     return { code: 'timed-out', message: 'git did not answer its start-up call in time' };
   }
   return null;
+}
+
+/** The budget of `releaseDeadline` (RUN-03, C:reply-and-handback): kept below the 60 s
+ * `release` tool timeout (M17), since the release itself (lock removed, folder deleted) is
+ * already complete by the time it could run out. */
+export const RELEASE_DEADLINE_MS = 45_000;
+
+/**
+ * M15 `releaseDeadline(callStarted)` (docs/spec/modules-m14-m19.md, C:reply-and-handback):
+ * the instant past which `release`'s tree-state read for its reply is skipped rather than
+ * spawned.
+ *
+ * @param {number} callStarted the call's start (its first read of the injected clock).
+ * @returns {number}
+ */
+export function releaseDeadline(callStarted) {
+  return callStarted + RELEASE_DEADLINE_MS;
 }

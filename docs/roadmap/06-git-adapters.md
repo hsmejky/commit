@@ -140,6 +140,15 @@ pins, and keeps every other variable for the user's hooks.
 - [ ] Seam 1: a clean filter that sleeps, with the clock stepped to 535 s elapsed at start → `plan` ends exit 5 `timeout` within about 10 s, no run folder left, no lock left.
 - [ ] Seam 1 (POSIX and Windows): the sleeping filter's child process is gone after the call returns (tree kill, not only the direct child).
 - [ ] A cleanup call whose `timeoutMs` is at or below 0 is not spawned and reports `timed-out`.
+- [ ] Seam 1: `release`'s M10 `treeState` read (M18 `finalReply`, `workflows.mjs`) takes its
+      `timeoutMs` from M15 `releaseDeadline` (RUN-03), not a fixed short timeout; with the
+      clock near 45 s elapsed since the call's start and a slow `git status`, the read times
+      out and the reply omits the tree-state line (`treeState: undefined`), the same as a read
+      skipped outright past the deadline — `release` exits 0, never `internal` (review-RUN-03
+      finding 1).
+- [ ] `callStarted` (RUN-03) is read once at dispatch (`cli.mjs`'s `main`) and threaded through
+      `injected`/`ctx`, rather than each M18 workflow reading it itself (review-RUN-03
+      finding 3).
 
 
 ## GIT-08: Signal handler: Esc or session end kills the active git tree

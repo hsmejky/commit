@@ -15,13 +15,17 @@ const { pathToFileURL } = require('node:url');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
 const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
 
 const NOTHING_TO_RELEASE = 'nothing to release: the run has already ended or was taken over';
 const CREATED = '2026-01-01T00:00:00.000Z';
 const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
+// The PATH git shim case below is POSIX-only, the same as GIT-01's (shell-less spawn on
+// Windows finds only `.com`/`.exe` files, so a script shim never runs there; roadmap KD-R21).
+const SHIM_SKIP = process.platform === 'win32'
+  && 'PATH script shims are not found by shell-less spawn on Windows (KD-R21)';
 
 function seedCommit(c) {
   c.writeFile('README.md', 'hello\n');
@@ -568,4 +572,59 @@ test('release below the 45 s tree-state budget still carries the tree state', as
   assertNothingReply(result, 'nothing committed');
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
   assert.equal(fs.existsSync(path.join(runDir, planId)), false);
+});
+
+// review-RUN-03 finding 5: a case at exactly 45 000 ms pins the `>=` choice (workflows.mjs
+// `finalReply`: `now() >= deadline`) at the boundary itself, not just a value on each side.
+test('release at exactly 45 000 ms elapsed since the call\'s start omits the tree state', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId } = matchingRun(c);
+  const schedulePath = clockScheduleAt(c, 45_000);
+
+  const result = await runCommit(c, ['release', '--plan', planId], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+  });
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 0, detail);
+  assert.equal(result.json.ok, true, detail);
+  assert.equal(result.json.reply.text, 'nothing committed', 'exactly 45 000 ms is already past the budget');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
+  assert.equal(fs.existsSync(path.join(runDir, planId)), false);
+});
+
+// review-RUN-03 finding 4: the "never spawned" claim (workflows.mjs comment near
+// `finalReply`) needs more than the omitted-text assertion above, which a spawned-then-
+// discarded read would also pass. A PATH git shim that logs every call it sees pins it down.
+test('release past the 45 s budget never spawns the tree-state git status call', { skip: SHIM_SKIP }, async (t) => {
+  const c = createRepo(t);
+  const { planId } = matchingRun(c);
+  const schedulePath = clockScheduleAt(c, 46_000);
+  const log = path.join(c.root, 'git-calls.log');
+  const shimDir = path.join(c.root, 'shim-bin');
+  fs.mkdirSync(shimDir);
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { env: c.env, encoding: 'utf8' }).stdout.trim();
+  assert.ok(realGit, 'no git on the host PATH');
+  fs.writeFileSync(path.join(shimDir, 'git'), [
+    '#!/bin/sh',
+    `echo "$@" >> '${log}'`,
+    `exec '${realGit}' "$@"`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(shimDir, 'git'), 0o755);
+
+  const result = await runCommit(c, ['release', '--plan', planId], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: {
+      ...pathOverride(c, [shimDir, c.env.PATH]),
+      COMMIT_TEST_CLOCK_SCHEDULE: schedulePath,
+    },
+  });
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 0, detail);
+  assert.equal(result.json.reply.text, 'nothing committed', detail);
+  const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
+  assert.doesNotMatch(calls, /status/, `git status was spawned past the deadline: ${calls}`);
 });

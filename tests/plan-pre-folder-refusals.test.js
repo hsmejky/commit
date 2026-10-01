@@ -277,6 +277,18 @@ test('M15 planRefusal orders env before config before state', async () => {
   );
 });
 
+// review-RUN-03 finding 2: `releaseDeadline` moved here from `workflows.mjs` (M18) once
+// CFG-03 freed `run-policy.mjs`; it is small and pure (M15), so it gets its own unit test
+// rather than only the Seam 1 coverage in tests/release.test.js.
+test('M15 releaseDeadline is the call\'s start plus 45 s', async () => {
+  const { loadLib } = require('./helpers/load-lib.js');
+  const { releaseDeadline, RELEASE_DEADLINE_MS } = await loadLib('run-policy');
+
+  assert.equal(RELEASE_DEADLINE_MS, 45_000);
+  assert.equal(releaseDeadline(1_000), 46_000);
+  assert.equal(releaseDeadline(0), 45_000);
+});
+
 // CFG-02 (docs/roadmap/04-config-and-attribution.md): the repo config layer, read from the
 // worktree (M4), checked by `plan` step 2 before any run folder or lock exists (Q6).
 

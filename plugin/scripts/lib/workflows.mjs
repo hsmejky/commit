@@ -14,17 +14,13 @@
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
-// RUN-03 the 45 s `releaseDeadline` on the tree-state read.
-//
-// `releaseDeadline` is M15's (docs/spec/modules-m14-m19.md), whose usual home is
-// `run-policy.mjs`; it is kept here instead because that file is owned by concurrent CFG-03
-// work. Move it there once free.
+// RUN-03 the 45 s M15 `releaseDeadline` (`run-policy.mjs`) on the tree-state read.
 
 import { probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
 import { releaseById } from './run.mjs';
 import { reply } from './reply.mjs';
-import { planRefusal } from './run-policy.mjs';
+import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 
@@ -96,22 +92,6 @@ async function releaseRun(ctx) {
 
 const RELEASE_STEPS = Object.freeze([probeRepo, releaseRefusals, releaseRun]);
 
-/** The budget of M15 `releaseDeadline` (RUN-03, C:reply-and-handback): kept below the 60 s
- * `release` tool timeout, since the release itself (lock removed, folder deleted) is already
- * complete by the time it could run out. */
-const RELEASE_DEADLINE_MS = 45_000;
-
-/**
- * M15 `releaseDeadline(callStarted)` (docs/spec/modules-m14-m19.md): the instant past which
- * `release`'s tree-state read for its reply is skipped rather than spawned.
- *
- * @param {number} callStarted the call's start (its first read of the injected clock).
- * @returns {number}
- */
-function releaseDeadline(callStarted) {
-  return callStarted + RELEASE_DEADLINE_MS;
-}
-
 async function runSteps(steps, ctx) {
   for (const step of steps) {
     const ending = await step(ctx);
@@ -165,6 +145,10 @@ export async function plan(values, injected, { cwd }) {
 export async function release(values, injected, { cwd }) {
   // The call's start (RUN-03): read once, first, so it precedes every other clock read the
   // call makes and `releaseDeadline` bounds the whole call, not just the part after it.
+  // M15 says `deadline`/`cleanupDeadline` are computed once when a call starts, for every
+  // subcommand (docs/spec/modules-m14-m19.md); once GIT-07 lands that read moves to dispatch
+  // (`cli.mjs`'s `main`, which already calls each M18 workflow with `injected`) and is
+  // threaded through `injected`/`ctx` instead of being re-read here (review-RUN-03 finding 3).
   const callStarted = injected.now();
   const ctx = { injected, cwd, values };
   const facts = await runSteps(RELEASE_STEPS, ctx);
@@ -181,6 +165,11 @@ function refusalFailure(refusal) {
 // past a given `deadline` (RUN-03, `release`'s `releaseDeadline`): the read is skipped
 // entirely (never spawned) and the reply omits the tree state, since the call it would report
 // on (here, the release itself) is already complete.
+//
+// GIT-07 (docs/roadmap/06-git-adapters.md): once M2 calls take `timeoutMs` from a deadline,
+// this read's own `timeoutMs` must come from `deadline - now()` too, and a read that times out
+// must land here as `treeState: undefined` (the line below only skips a read that hasn't
+// started), not as a thrown `internal` failure from `change-set.mjs`'s `treeState`.
 async function finalReply(facts, ctx, { deadline } = {}) {
   const { env, now } = ctx.injected;
   if (deadline !== undefined && now() >= deadline) {
