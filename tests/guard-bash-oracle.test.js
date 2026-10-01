@@ -22,8 +22,10 @@ const matchCases = JSON.parse(fs.readFileSync(SEED, 'utf8')).cases.filter(
 );
 
 // A `\c`, `\u` or `\U` escape in `$'…'` is decoded by bash 4 and later only (`\u`, `\U`: 4.2);
-// macOS /bin/bash 3.2 keeps it literal, so such a case is skipped there.
-const NEEDS_BASH_4 = /\$'[^']*\\[cuU]/;
+// macOS /bin/bash 3.2 keeps it literal, so such a case is skipped there. The body is scanned
+// the way bash's lexer pairs `\` with the next character (so an escaped `\'` does not end the
+// scan early), not by stopping at the first `'`.
+const NEEDS_BASH_4 = /\$'(?:\\[^cuU]|[^'\\])*\\[cuU]/;
 
 let segmentSpans;
 

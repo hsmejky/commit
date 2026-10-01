@@ -52,15 +52,19 @@ in PowerShell an optional `& `, `node` or `node.exe`, a double-quoted path endin
 `/commit.cjs` or `\commit.cjs` without `"`, U+201C-U+201E, `$`, backtick, `!` or a control
 character, a subcommand, then words of `[A-Za-z0-9._:=-]` only) skips the blanket rule and
 is tokenized, so an install path holding `#` does not deny the worker's own calls. Then
-the blanket rule: with that
-shell's escaped newlines removed regardless of quotes (Bash `\`, PowerShell backtick, each
-optionally followed by a carriage return, then a newline), a command holding anywhere,
-inside quotes or not, `$(`, `${` or `#` (both shells), a backtick, a run of two or more `<`
-other than exactly three (a heredoc)
-or a typographic quote U+2018-U+201E (Bash), or `@(` or an `@` directly followed by `'`,
-`"` or U+2018-U+201E (PowerShell) is not tokenized: G2 returns the trigger kind instead of
-segments, and G3 maps it to the blanket deny with no segments and no script calls (so no
-heartbeat and no worker-only rule). Otherwise tokenise per `tool_name` with the rules of
+the blanket rule: a command holding anywhere, inside quotes or not, `$(`, `${` or `#` (both
+shells), a backtick, a run of two or more `<` other than exactly three (a heredoc) or a
+typographic quote U+2018-U+201E (Bash), or `@(` or an `@` directly followed by `'`, `"` or
+U+2018-U+201E (PowerShell) is not tokenized, each checked with that shell's escaped
+newlines removed regardless of quotes. PowerShell checks one reading (backtick, optionally
+followed by a carriage return, then a newline, removed). Bash checks two readings, a
+trigger in either denying it: the text with every NUL and carriage return dropped, then
+`\` plus newline removed; and, when the command holds a carriage return, the text with only
+every NUL dropped, then `\` plus newline removed, where on this second reading a `\` before
+a kept carriage return escapes it instead of continuing the line. G2 returns the trigger
+kind instead of segments, and G3 maps it to the blanket deny with no segments and no script
+calls (so no heartbeat and no worker-only rule). Otherwise tokenise per `tool_name` with the
+rules of
 C:guard (Bash: `\` escapes, literal single quotes, `\"` `\\` `\$` in double quotes, `$"…"`
 read as `"…"`, a `(` directly after `@`, `!`, `+`, `*` or `?` kept in that word and also a
 `(` token (extglob), `$'…'`

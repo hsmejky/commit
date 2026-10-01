@@ -4745,6 +4745,38 @@
      "expansion"
     ]
    }
+  },
+  {
+   "id": "b-procsub-no-target-fd",
+   "shell": "bash",
+   "topic": "process substitution",
+   "command": "git 3< <(:) commit -m x",
+   "segments": [
+    [
+     "git",
+     {
+      "redir": "3<",
+      "target": null
+     },
+     {
+      "op": "("
+     },
+     ":",
+     {
+      "op": ")"
+     },
+     "commit",
+     "-m",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": [
+     "redirection",
+     "expansion"
+    ]
+   }
   }
  ]
 }

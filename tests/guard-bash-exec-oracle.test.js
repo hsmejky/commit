@@ -28,6 +28,7 @@ const NOT_DENIED = new Map([
   ['b-brace-sub', 'GRD-12: a subcommand holding `{` is unreadable'],
   ['b-brace-cmd', 'C:guard step 3 known gap (Q3): brace expansion in the command position'],
   ['b-procsub-no-target', 'C:guard step 4 (later slice): a `(` among git\'s arguments is denied'],
+  ['b-procsub-no-target-fd', 'C:guard step 4 (later slice): a `(` among git\'s arguments is denied'],
 ]);
 
 let runHook;
