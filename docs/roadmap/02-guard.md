@@ -56,18 +56,18 @@ Bash is denied with the routing text.
 
 **Blocked by:** GRD-01, PRE-01, PRE-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-**Sources:** Q3, Q8, Q24, C:guard (Parsing step 2 script-call exemption and blanket rule, and Bash column, Deny messages), stories 10, 11, 12, 13.
+**Sources:** Q3, Q8, Q24, C:guard (Parsing step 2 script-call exemption and blanket rule, and Bash column, Deny messages), stories 10, 11, 12, 13, 15.
 
-- [ ] Seam 2: `git commit -m x` → the deny JSON of C:guard with `Direct git commit is blocked. <route>` and the fixed personal-skill line; exit 0.
-- [ ] Seam 3: `cd x && git commit -m x`, `a; git commit -m x`, `a | git commit -m x`, `a & git commit -m x` and a newline-separated form are denied; `git co''mmit -m x` is denied (not an early exit); `git commit -m "a\"b"` is one message argument.
-- [ ] Seam 3: G2 `segments` golden fixtures for Bash (seeded from PRE-03); in CI each is cross-checked against bash's own words (`printf '%s\0'`), with the deliberate classes oracle-skipped.
-- [ ] No deny text anywhere in the catalogue names `/commit`.
-- [ ] Seam 3: `echo git commit` (text that only mentions `git commit`) is denied — the documented false positive (Out of Scope); so is the comment form `# git commit -m x` (the blanket rule, Q3 as amended by PRE-03 round 8).
-- [ ] Seam 3: the blanket rule: each blanket seed case (oracle `blanket`) is denied with the blanket message when it mentions `commit` and has no output otherwise (`echo "$(date)" && git status`); it yields no segments, no script call and no heartbeat.
-- [ ] Seam 3: `echo $'\'' ; git commit -m x` is denied (the `$'…'` span ends at its unescaped `'`), and `git $'commit' -m x` segments as `git`, `commit`, `-m`, `x`.
-- [ ] Seam 3: `git $'commit\0x' -m x`, `git $'commit\x00' -m x` and `git $'commit\u0000' -m x` are denied: a decoded NUL ends the `$'…'` span's value, as in Bash, so the word is `commit`.
+- [x] Seam 2: `git commit -m x` → the deny JSON of C:guard with `Direct git commit is blocked. <route>` and the fixed personal-skill line; exit 0.
+- [x] Seam 3: `cd x && git commit -m x`, `a; git commit -m x`, `a | git commit -m x`, `a & git commit -m x` and a newline-separated form are denied; `git co''mmit -m x` is denied (not an early exit); `git commit -m "a\"b"` is one message argument.
+- [x] Seam 3: G2 `segments` golden fixtures for Bash (seeded from PRE-03); in CI each is cross-checked against bash's own words (`printf '%s\0'`), with the deliberate classes oracle-skipped.
+- [x] No deny text anywhere in the catalogue names `/commit`.
+- [x] Seam 3: `echo git commit` (text that only mentions `git commit`) is denied — the documented false positive (Out of Scope); so is the comment form `# git commit -m x` (the blanket rule, Q3 as amended by PRE-03 round 8).
+- [x] Seam 3: the blanket rule: each blanket seed case (oracle `blanket`) is denied with the blanket message when it mentions `commit` and has no output otherwise (`echo "$(date)" && git status`); it yields no segments, no script call and no heartbeat.
+- [x] Seam 3: `echo $'\'' ; git commit -m x` is denied (the `$'…'` span ends at its unescaped `'`), and `git $'commit' -m x` segments as `git`, `commit`, `-m`, `x`.
+- [x] Seam 3: `git $'commit\0x' -m x`, `git $'commit\x00' -m x` and `git $'commit\u0000' -m x` are denied: a decoded NUL ends the `$'…'` span's value, as in Bash, so the word is `commit`.
 
 
 ## GRD-04: Q4 allowlist and the generic deny
@@ -139,6 +139,11 @@ mention text regardless of quotes), and an unterminated quote turns the rest of 
 into one quoted token while scanning continues; step 1's mention text also has every `$`
 directly before a quote character removed before the quote characters go.
 
+**Note (GRD-03):** the Bash tokenizer halves of this slice — escaped-newline joining and the
+unterminated-quote rule — and AC3 below (step 1's mention text dropping an escaped newline)
+already landed in GRD-03's G2 and G1 (review-GRD-03 finding 8). What remains here is the
+PowerShell (backtick) form; the Bash ACs are test-only confirmation of existing behavior.
+
 **Blocked by:** GRD-06.
 
 **Status:** ready-for-agent
@@ -161,6 +166,12 @@ redirection, typographic quotes are removed for the early-exit check, read as qu
 PowerShell (U+201C-U+201E double, U+2018-U+201B single) and blanket-denied in Bash, and
 Bash extglob openers (an unquoted `(` directly after an unquoted `@`, `!`, `+`, `*` or `?`)
 keep the `(` in their word and are also a `(` token of their own.
+
+**Note (GRD-03):** the Bash tokenizer halves of this slice — redirections, parentheses,
+process substitution (`<(`/`>(` read as `(`) and extglob — already landed in GRD-03's G2
+(review-GRD-03 finding 8). What remains here is the PowerShell forms (`{`/`}`, typographic
+quotes read as PowerShell quotes); the Bash ACs are test-only confirmation of existing
+behavior.
 
 **Blocked by:** GRD-06.
 
