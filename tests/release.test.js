@@ -217,6 +217,11 @@ test('a lock naming a traversal or absolute path deletes nothing outside .commit
 // deletes nothing (C:run-folder, story 206).
 test('release does not follow a .commit-plan link to a directory outside the repo', async (t) => {
   const c = createRepo(t);
+  // Git reads a POSIX symlink as a file, which the run folder's `/.commit-plan/` exclude
+  // line (directories only, C:run-folder) does not match: the link would be an untracked
+  // file, and the "N files left" tree state is not built yet (RPL). Exclude it here too so
+  // the tree stays clean and this test checks only that the link is not followed.
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '/.commit-plan\n');
   const target = path.join(c.root, 'elsewhere');
   const planId = crypto.randomUUID();
   writeLock(target, { planId, created: CREATED });
