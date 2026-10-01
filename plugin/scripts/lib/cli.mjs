@@ -20,7 +20,7 @@ import * as workflows from './workflows.mjs';
 
 // The M18 workflow each subcommand routes to, as far as built. `plan --hunks` is its own
 // synopsis form and not built yet, so `workflows.plan` refuses it.
-const WORKFLOWS = Object.freeze({ plan: workflows.plan, release: workflows.release });
+const WORKFLOWS = Object.freeze({ plan: workflows.plan, release: workflows.release, commit: workflows.commit });
 
 /** The subcommands of the synopsis in C:cli-and-exit-codes. */
 const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);

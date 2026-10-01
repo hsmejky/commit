@@ -18,7 +18,7 @@
 
 import { probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
-import { releaseById } from './run.mjs';
+import { releaseById, open, close } from './run.mjs';
 import { reply } from './reply.mjs';
 import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
@@ -96,6 +96,23 @@ async function releaseRun(ctx) {
 
 const RELEASE_STEPS = Object.freeze([probeRepo, releaseRefusals, releaseRun]);
 
+/**
+ * `commit` step 2: the probe's `env` refusal, the only refusal `commit` shares with `plan`
+ * (C:cli-and-exit-codes), mirroring `releaseRefusals`. `commit --plan` implies a prior
+ * successful `plan`, so the "outside a working tree" case is left unsettled the same way
+ * `release`'s own equivalent is (KD-S78): a slice that reaches it is not yet scheduled.
+ */
+async function commitRefusals(ctx) {
+  const refusal = planRefusal(ctx.probe);
+  if (refusal !== null && refusal.code === 'env') return { refusal };
+  const { repo } = ctx.probe;
+  if (repo === null || repo.kind !== 'worktree') {
+    throw new Error('commit outside a working tree is unsettled (KD-S78)');
+  }
+  ctx.toplevel = repo.toplevel;
+  return undefined;
+}
+
 async function runSteps(steps, ctx) {
   for (const step of steps) {
     const ending = await step(ctx);
@@ -158,6 +175,50 @@ export async function release(values, injected, { cwd }) {
   const facts = await runSteps(RELEASE_STEPS, ctx);
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return { output: { reply: await finalReply(facts, ctx, { deadline: releaseDeadline(callStarted) }) } };
+}
+
+/**
+ * Runs `commit --plan <planId> --all` (C:commit-release `commit`, M12 `open`).
+ *
+ * `open` is the whole call's own lock check (RUN-04): `taken-over` (the lock holds another
+ * `planId`), `ended` (no lock, or a state `version` mismatch) and `busy` (a live `call.lock`,
+ * or a `call.lock`/folder that vanishes mid-call) are refused before any group-commit work.
+ * With no group-commit behaviour built yet (M14/M16), a matched lock's call falls straight
+ * through to a stub that ends it at once, exit 0, with no commits; EXE-02 replaces the stub
+ * with the real per-group loop. `run.close()` always runs for a call that reached a
+ * successful `open` (success or a later failure alike), never when `open` itself failed
+ * (there is then no call.lock to close).
+ *
+ * The success envelope is kept bare on purpose: the full `commits`/`failed`/`remaining`/
+ * `reply` shape (C:commit-release, C:reply-and-handback) needs a real `reply.status` the
+ * stub cannot honestly report (`"committed"` requires at least one commit; `"nothing"`'s
+ * `reason` union does not yet have an entry for this stub). EXE-02, which replaces the stub
+ * with the real loop, is the natural place to build that reply surface instead of inventing
+ * a placeholder here that it would have to reconcile or rip out.
+ *
+ * @param {{ plan: string }} values the parsed and validated `commit` flags (M1 `parseArgv`).
+ * @param {object} injected the injected environment.
+ * @param {{ cwd: string }} call the call's working directory.
+ * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
+ */
+export async function commit(values, injected, { cwd }) {
+  // Not run through the shared `runSteps` (which demands the step table itself end with a
+  // definite outcome, for `plan` and `release`'s longer tables): `commit`'s own ending comes
+  // from `open`/the stub below, not from a refusal step, so only the two probe/refusal steps
+  // run directly here.
+  const ctx = { injected, cwd, values };
+  await probeRepo(ctx);
+  const refused = await commitRefusals(ctx);
+  if (refused !== undefined) return refusalFailure(refused.refusal);
+
+  const opened = open(values.plan, { toplevel: ctx.toplevel, now: injected.now });
+  if (!opened.ok) return refusalFailure({ code: opened.code, message: opened.message });
+
+  try {
+    return { output: { commits: [] } };
+  } finally {
+    close({ toplevel: ctx.toplevel, planId: values.plan });
+  }
 }
 
 // A refusal before any reply: RPL-04 adds the `failed` reply.

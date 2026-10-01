@@ -260,6 +260,62 @@ function busy(fileInUse = false) {
   return { ok: false, code: 'busy', message: fileInUse ? BUSY_FILE_IN_USE_MESSAGE : BUSY_MESSAGE };
 }
 
+// M12 `open`'s other two typed refusals (Q22, C:run-folder "versioned state"): no lock, or a
+// state `version` this build does not recognize ("a run started by another plugin build");
+// and a lock that holds a different, well-formed `planId` (someone else's run took over).
+// Neither implies cleanup: `ended` never deletes another plugin build's possibly-live state,
+// and `taken-over` leaves the new holder's files alone.
+function ended() {
+  return { ok: false, code: 'ended', message: 'this run has already ended; run /commit again' };
+}
+
+function takenOver() {
+  return { ok: false, code: 'taken-over', message: 'this run was taken over by another /commit; run /commit again' };
+}
+
+/** The `version` field `plan`/`check` write into `<planId>/state.json` (C:run-folder). */
+export const STATE_VERSION = 1;
+
+/**
+ * Reads `<planId>/state.json`'s `version` field, tolerant of everything that means "treat as
+ * ended" (missing, non-regular, unparseable, or no numeric `version`): `null`. A genuine
+ * file-in-use error (lstat/read `EPERM`/`EBUSY`/`EACCES`) throws `InUse` instead, so `open`
+ * maps it to `busy` like every other lock operation, not to `ended` (review-RUN-02 finding 4
+ * applied here too). Mirrors `readLockFile`'s lstat/ENOENT/non-regular handling rather than
+ * reusing it directly: `state.json` has its own size cap note (RUN-04 handoff) rather than
+ * silently inheriting `readLockFile`'s 64 KB lock-file cap semantics.
+ *
+ * @param {string} runDir
+ * @param {string} planId
+ * @returns {number | null}
+ */
+function readStateVersion(runDir, planId) {
+  const file = insideRunDir(runDir, `${planId}/state.json`);
+  let stats;
+  try {
+    stats = fs.lstatSync(file);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+    throw inUse(err);
+  }
+  if (!stats.isFile() || stats.size > LOCK_MAX_BYTES) return null;
+  let bytes;
+  try {
+    bytes = fs.readFileSync(file);
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw inUse(err);
+  }
+  let content;
+  try {
+    content = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return null;
+  }
+  if (content === null || typeof content !== 'object') return null;
+  return typeof content.version === 'number' ? content.version : null;
+}
+
 /**
  * Takes the run's `call.lock` exclusively (Q22 "one call per run at a time"). No folder,
  * or a folder that is a link or not a directory, holds no call to guard: nothing is
@@ -268,7 +324,7 @@ function busy(fileInUse = false) {
  *
  * @returns {{ ok: true, path: string | null } | { ok: false, code: 'busy', message: string }}
  */
-// A TOCTOU gap remains between each `isPlainDirectory` check here (and in `closeCallLock`)
+// A TOCTOU gap remains between each `isPlainDirectory` check here (and in `close`)
 // and the operation that follows it (the `wx` create, the rename, the `rmSync`): a junction
 // swapped in inside that window still redirects the operation. Node has no
 // `openat`/`O_NOFOLLOW` for directory path components, so this cannot be fully closed;
@@ -316,11 +372,17 @@ function takeCallLock(runDir, planId, { now, pid, host, isAlive }) {
   return busy();
 }
 
-// `run.close()` for `release`: removes the call's own `call.lock`; `ENOENT`-tolerant (the
-// folder deleted by the release itself or by a takeover) and never through a link. RUN-04
-// builds the real `run.close()` (also used by GIT-08's signal handler); this private stand-in
-// is meant to be replaced by it, not duplicated further.
-function closeCallLock(runDir, planId) {
+/**
+ * M12 `run.close()` (RUN-04; `release` RUN-02 and `commit`'s `finally`, GIT-08's signal
+ * handler): removes the call's own `call.lock`, idempotent and `ENOENT`-tolerant (the folder
+ * already deleted by the release itself, by a takeover, or by a second `close()` call) and
+ * never through a link.
+ *
+ * @param {{ toplevel: string, planId: string }} options
+ * @returns {void}
+ */
+export function close({ toplevel, planId }) {
+  const runDir = runDirOf(toplevel);
   if (!isPlainDirectory(insideRunDir(runDir, planId))) return;
   try {
     fs.rmSync(insideRunDir(runDir, `${planId}/call.lock`), { force: true });
@@ -388,6 +450,71 @@ export function releaseById({
     fs.rmSync(aside, { force: true });
     return { ok: true, released: true };
   } finally {
-    if (call.path !== null) closeCallLock(runDir, planId);
+    if (call.path !== null) close({ toplevel, planId });
   }
+}
+
+/**
+ * M12 `open` (RUN-04): `commit`'s first step, wired as the whole call's own lock check. In
+ * order (Q22 "reads the lock, checks it holds its planId, then refreshes the mtime", then
+ * the state `version`, then the call.lock for the whole call):
+ * 1. Reads the run lock. No lock, or one that does not parse to a minted `planId` → `ended`.
+ * 2. A lock holding a different, well-formed `planId` → `taken-over`.
+ * 3. The lock holds `planId`: refreshes its mtime (`touched`). A lock that vanishes in that
+ *    gap (a takeover completed between the read and the touch) → `taken-over`, not the
+ *    lenient "nothing to guard" `release` uses on a holder mismatch, because the lock was
+ *    just confirmed to hold `planId` moments ago.
+ * 4. `<planId>/state.json`'s `version` must match this build's `STATE_VERSION`; a mismatch
+ *    (including unreadable) → `ended` (a run started by another plugin build), never a
+ *    cleanup of someone else's possibly-live state.
+ * 5. Takes `call.lock` for the whole call (`takeCallLock`): `busy` on a live one; a folder
+ *    that is missing or not a plain directory by now → `taken-over` (the lock matched
+ *    moments ago, so a folder gone by now means a takeover raced this call, not a peaceful
+ *    end).
+ *
+ * @param {string} planId
+ * @param {{ toplevel: string, now?: () => number, pid?: number, host?: string,
+ *   isAlive?: (pid: number) => boolean }} options the clock, this call's pid and host, and
+ *   the pid probe, injectable for tests.
+ * @returns {{ ok: true, run: { toplevel: string, planId: string, callLockPath: string | null } }
+ *   | { ok: false, code: 'ended' | 'taken-over' | 'busy', message: string }}
+ * @throws {Error} on an unexpected filesystem error.
+ */
+export function open(planId, {
+  toplevel, now = Date.now, pid = process.pid, host = os.hostname(), isAlive = isPidAlive,
+}) {
+  const runDir = runDirOf(toplevel);
+  let lockFile;
+  try {
+    lockFile = readLockFile(insideRunDir(runDir, 'lock'));
+  } catch (err) {
+    if (err instanceof InUse) return busy(true);
+    throw err;
+  }
+  const holder = lockFile === null ? null : lockPlanId(lockFile.bytes);
+  if (holder === null) return ended();
+  if (holder !== planId) return takenOver();
+
+  try {
+    const d = new Date(now());
+    fs.utimesSync(insideRunDir(runDir, 'lock'), d, d);
+  } catch (err) {
+    if (err.code === 'ENOENT') return takenOver();
+    if (IN_USE.has(err.code)) return busy(true);
+    throw err;
+  }
+
+  let version;
+  try {
+    version = readStateVersion(runDir, planId);
+  } catch (err) {
+    if (err instanceof InUse) return busy(true);
+    throw err;
+  }
+  if (version !== STATE_VERSION) return ended();
+
+  const call = takeCallLock(runDir, planId, { now, pid, host, isAlive });
+  if (!call.ok) return call;
+  if (call.path === null) return takenOver();
+  return { ok: true, run: { toplevel, planId, callLockPath: call.path } };
 }

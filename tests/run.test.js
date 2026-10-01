@@ -440,3 +440,170 @@ test('releaseById: a live call.lock (genuine busy, not file-in-use) keeps the he
   assert.equal(result.code, 'busy');
   assert.equal(result.message, run.BUSY_MESSAGE);
 });
+
+// RUN-04 (docs/roadmap/09-runs.md): M12 `open`, `commit`'s own lock check. `runFixture`
+// writes a lock holding `holder` plus `<holder>/state.json` with `{"version":1}` already
+// (matching `STATE_VERSION`), so these tests only need to vary the lock, the state version
+// or the call.lock on top of that fixture.
+
+test('open: the lock holds a different, well-formed planId → taken-over', (t) => {
+  const holder = crypto.randomUUID();
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, holder);
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'taken-over');
+  assert.match(result.message, /this run was taken over by another \/commit/);
+});
+
+test('open: no lock at all → ended', (t) => {
+  const toplevel = tempDir(t);
+  const planId = crypto.randomUUID();
+
+  const result = run.open(planId, { toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'ended');
+  assert.match(result.message, /this run has already ended/);
+});
+
+test('open: an unparseable lock → ended', (t) => {
+  const toplevel = tempDir(t);
+  const planId = crypto.randomUUID();
+  fs.mkdirSync(path.join(toplevel, '.commit-plan'), { recursive: true });
+  fs.writeFileSync(path.join(toplevel, '.commit-plan', 'lock'), '{"planId":');
+
+  const result = run.open(planId, { toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.code, 'ended');
+});
+
+test('open: the lock matches but state.json\'s version differs from this build\'s → ended', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  fs.writeFileSync(path.join(f.folder, 'state.json'), '{"version":2}\n');
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.code, 'ended');
+});
+
+test('open: the lock matches but state.json is missing (no folder at all) → ended', (t) => {
+  const toplevel = tempDir(t);
+  const planId = crypto.randomUUID();
+  const runDir = path.join(toplevel, '.commit-plan');
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId, created: '2026-01-01T00:00:00.000Z' }));
+
+  const result = run.open(planId, { toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.code, 'ended');
+});
+
+test('open: a matching lock and version advance the lock\'s mtime and take call.lock', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  const lockPath = path.join(f.runDir, 'lock');
+  fs.utimesSync(lockPath, new Date(T0 - MINUTE), new Date(T0 - MINUTE));
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.deepEqual(result, { ok: true, run: { toplevel: f.toplevel, planId, callLockPath: f.callLock } });
+  assert.equal(fs.statSync(lockPath).mtimeMs, T0, "open refreshes the lock's mtime");
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 7, host: HOST });
+});
+
+test('open: a live call.lock → busy, the run kept', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'busy');
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 4242, host: HOST }, 'kept, not replaced');
+  assert.equal(fs.existsSync(path.join(f.runDir, 'lock')), true);
+  assert.equal(fs.existsSync(f.folder), true);
+});
+
+// The lock the earlier `readLockFile` confirmed held `planId` vanishes before the mtime
+// touch: a takeover completed in that gap, not a peaceful end (unlike `release`'s lenient
+// "nothing to guard" on a holder mismatch, which never had this confirmation).
+test('open: the lock vanishes between the read and the mtime touch (ENOENT) → taken-over', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  const lockPath = path.join(f.runDir, 'lock');
+  const realUtimes = fs.utimesSync;
+  t.after(() => { fs.utimesSync = realUtimes; });
+  fs.utimesSync = function utimesSync(file, ...rest) {
+    if (file === lockPath) fs.rmSync(lockPath, { force: true });
+    return realUtimes.call(this, file, ...rest);
+  };
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'taken-over');
+});
+
+// The `<planId>` folder vanishes after the lock and state-version checks already passed (a
+// concurrent `release` completing in that exact window): `takeCallLock` reports "nothing to
+// guard" (`path: null`), which `open` maps to `taken-over`, not a thrown error or `internal`
+// (C:cli-and-exit-codes `lock` row).
+test('open: the folder vanishes just before call.lock is taken → taken-over, not an error', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  const statePath = path.join(f.folder, 'state.json');
+  const realRead = fs.readFileSync;
+  t.after(() => { fs.readFileSync = realRead; });
+  fs.readFileSync = function readFileSync(file, ...rest) {
+    const result = realRead.call(this, file, ...rest);
+    if (file === statePath) fs.rmSync(f.folder, { recursive: true, force: true });
+    return result;
+  };
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'taken-over');
+});
+
+// The same race, but caught at the call.lock create itself (`writeFileSync` meets `ENOENT`
+// because the folder vanished at that exact instant) rather than at the earlier folder check.
+test('open: call.lock\'s own create meets ENOENT (folder vanished mid-call) → taken-over', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  const realWrite = fs.writeFileSync;
+  t.after(() => { fs.writeFileSync = realWrite; });
+  fs.writeFileSync = function writeFileSync(file, ...rest) {
+    if (file === f.callLock) {
+      const err = new Error('ENOENT: simulated mid-call folder removal');
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return realWrite.call(this, file, ...rest);
+  };
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'taken-over');
+});
+
+// M12 test row (RUN-04): `run.close()` called twice, and after the folder was deleted,
+// succeeds without error.
+test('close: idempotent — called twice, and after the folder is deleted, never throws', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+
+  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId }));
+  assert.equal(fs.existsSync(f.callLock), false);
+  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId }), 'second close() is a no-op');
+
+  fs.rmSync(f.folder, { recursive: true, force: true });
+  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId }), 'close() after the folder is gone');
+});
