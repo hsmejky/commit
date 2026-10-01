@@ -84,14 +84,14 @@ release has already completed.
 
 **Blocked by:** RUN-01, FND-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M15 `releaseDeadline`, M18 `release`, C:reply-and-handback, testing seams (Clock at Seam 1).
 
-- [ ] Seam 1 with the stepping clock at 46 s elapsed since the call's start (not since the
+- [x] Seam 1 with the stepping clock at 46 s elapsed since the call's start (not since the
       release completed): exit 0, the lock and folder are gone, and the reply's `text` has
       no tree-state line.
-- [ ] Seam 1 below the budget (measured from the call's start): the tree-state line is
+- [x] Seam 1 below the budget (measured from the call's start): the tree-state line is
       present.
 
 
