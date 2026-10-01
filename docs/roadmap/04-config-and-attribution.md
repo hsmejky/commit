@@ -93,15 +93,15 @@ error in the user layer refuses like a repo-layer error, naming the user layer.
 
 **Blocked by:** CFG-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5 (Claude home), Q6, M4, architectural-decisions (injected environment),
 story 112.
 
-- [ ] Seam 1: an invalid user layer under `CLAUDE_CONFIG_DIR` → exit 1 `config` naming the
+- [x] Seam 1: an invalid user layer under `CLAUDE_CONFIG_DIR` → exit 1 `config` naming the
       user layer; the same file in the OS-home `.claude` is ignored while the variable is
       set.
-- [ ] Seam 1: without `CLAUDE_CONFIG_DIR`, the OS-home `.claude/commit.json` is read.
+- [x] Seam 1: without `CLAUDE_CONFIG_DIR`, the OS-home `.claude/commit.json` is read.
 
 
 ## CFG-05: Effective values and sources in `plan`'s output
