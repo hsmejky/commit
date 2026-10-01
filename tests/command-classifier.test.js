@@ -88,3 +88,28 @@ for (const parsed of noneTable) {
     assert.deepEqual(classify(parsed, { shell: 'bash' }), { decision: 'none', scriptCalls: [] });
   });
 }
+
+// GRD-04 at G3 directly: where `commit`'s arguments end and which are not literal, per
+// shell (C:guard step 4). The PowerShell rows are reached through `runHook` once its
+// tokenizer lands (GRD-06).
+const commitArgTable = [
+  ['bash', [['git', 'commit', '--no-edit', { op: ')' }, '-m', 'x']], 'none'],
+  ['powershell', [['git', 'commit', '--no-edit', { op: '}' }, '-m', 'x']], 'none'],
+  ['powershell', [['git', 'commit', '--no-edit', { op: 'cut' }, '-m', 'x']], 'none'],
+  ['powershell', [['git', 'commit', { op: 'cut' }, '--no-edit']], 'bare'],
+  ['powershell', [['git', 'commit', '--fixup', '@s']], 'literalArguments'],
+  ['powershell', [['git', 'commit', '--no-edit', 'a,b']], 'literalArguments'],
+  ['powershell', [['git', 'commit', '--no-edit', '--%']], 'literalArguments'],
+  ['powershell', [['git', 'commit', '--fixup', { op: '(' }, 'HEAD', { op: ')' }]], 'literalArguments'],
+  ['bash', [['git', 'commit', '--fixup', '@~1']], 'none'],
+  ['bash', [['git', 'commit', '--no-edit', 'a,b']], 'generic:a,b'],
+];
+for (const [shell, parsed, expected] of commitArgTable) {
+  test(`classify(${JSON.stringify(parsed)}, ${shell}) → ${expected}`, () => {
+    const message = expected === 'none' ? undefined
+      : expected.startsWith('generic:') ? `git commit ${expected.slice(8)} is not allowed here. ${ROUTE_TEXT}\n${PERSONAL_TEXT}`
+        : MESSAGES[expected];
+    const want = message === undefined ? { decision: 'none', scriptCalls: [] } : { decision: 'deny', message, scriptCalls: [] };
+    assert.deepEqual(classify(parsed, { shell }), want);
+  });
+}

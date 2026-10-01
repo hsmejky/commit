@@ -876,6 +876,132 @@
    }
   },
   {
+   "id": "b-fixup-q",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit --fixup=1a2b3c4 -q",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--fixup=1a2b3c4",
+     "-q"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-fixup-separate",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit --fixup 1a2b3c4 --quiet",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--fixup",
+     "1a2b3c4",
+     "--quiet"
+    ]
+   ],
+   "decision": "none",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-am",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit -am x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-am",
+     "x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-m-attached",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit -mfoo",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "-mfoo"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-pathspec",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit --no-edit -- a.txt",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--no-edit",
+     "--",
+     "a.txt"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-noedit-value",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit --no-edit=x",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--no-edit=x"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
+   "id": "b-allow-empty",
+   "shell": "bash",
+   "topic": "flags",
+   "command": "git commit --no-edit --allow-empty",
+   "segments": [
+    [
+     "git",
+     "commit",
+     "--no-edit",
+     "--allow-empty"
+    ]
+   ],
+   "decision": "deny",
+   "oracle": {
+    "bash": "match"
+   }
+  },
+  {
    "id": "b-unknown-global",
    "shell": "bash",
    "topic": "flags",
