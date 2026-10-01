@@ -68,20 +68,20 @@ case refuses `plan` with `config` before any run starts, naming layer and key.
 
 **Blocked by:** CFG-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q6 (key table, error list), M4, stories 106, 110.
 
-- [ ] Seam 1 table: `maxSubjectLength` `"72"`, `19`, `201`, `0`, `72.5`; `types` `[]`,
+- [x] Seam 1 table: `maxSubjectLength` `"72"`, `19`, `201`, `0`, `72.5`; `types` `[]`,
       `["Feat"]`, `["1x"]`, `"feat"`; `scope` `3`; `subjectCase` `true` → each exit 1
       `config` naming the key.
-- [ ] Seam 1: `maxSubjectLength` `20` and `200` are accepted.
-- [ ] Seam 1: a repo layer whose top level is not a JSON object (`[]`, `null`, `42`, `"x"`) →
+- [x] Seam 1: `maxSubjectLength` `20` and `200` are accepted.
+- [x] Seam 1: a repo layer whose top level is not a JSON object (`[]`, `null`, `42`, `"x"`) →
       exit 1 `config` naming the repo layer; CFG-02's `loadConfig` accepts it as JSON-parseable
       (review-CFG-02 finding 5).
-- [ ] Seam 1: after each of those `config` refusals no `.commit-plan/` directory and no lock
+- [x] Seam 1: after each of those `config` refusals no `.commit-plan/` directory and no lock
       exist (story 110).
-- [ ] A static test asserts `validateLayer` is exported, pure (no file reads in its
+- [x] A static test asserts `validateLayer` is exported, pure (no file reads in its
       source).
 
 
