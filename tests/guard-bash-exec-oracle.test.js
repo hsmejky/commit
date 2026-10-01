@@ -50,26 +50,31 @@ const INPUT_MODE = /\r|\\$/;
 
 const quote = (arg) => `'${arg.replace(/'/g, "'\\''")}'`;
 
-// The stub writes each call as GS, then every argument followed by a NUL; each case starts
-// with FS and its index. The log is written by path, so a case's redirections cannot hide it.
+// The stub writes each call as GS, then every argument followed by a NUL, to the case's own
+// log `log-<index>`, by path, so a case's redirections cannot hide it. One log per case, not
+// one shared log: bash does not wait for a process substitution (`diff <(git commit -m x) f`),
+// so its stub call may still be writing after the next case started, and its two writes
+// would split that case's record.
 function driver(count) {
   let script = [
-    'LOG="$PWD/log"',
     'PATH="$PWD/empty"',
     "git() { { printf '\\035'; printf '%s\\0' \"$@\"; } >>\"$LOG\"; }",
     '',
   ].join('\n');
   for (let i = 0; i < count; i += 1) {
-    script += `printf '\\034%d' ${i} >>"$LOG"\n( cd work && . ../case-${i}.sh ) </dev/null >/dev/null 2>&1\n`;
+    script += `LOG="$PWD/log-${i}"; : >"$LOG"\n( cd work && . ../case-${i}.sh ) </dev/null >/dev/null 2>&1\n`;
   }
   return script;
 }
 
-function parseLog(text) {
+// The calls of each case that ran, by case index.
+function readCalls(dir, count) {
   const calls = new Map();
-  for (const record of text.split('\x1c').slice(1)) {
-    const [index, ...rest] = record.split('\x1d');
-    calls.set(Number(index), rest.map((call) => call.split('\0').slice(0, -1)));
+  for (let i = 0; i < count; i += 1) {
+    const file = path.join(dir, `log-${i}`);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    calls.set(i, text.split('\x1d').slice(1).map((call) => call.split('\0').slice(0, -1)));
   }
   return calls;
 }
@@ -87,7 +92,7 @@ test('bash runs no seed case as a git command the guard would deny, unless the g
   for (const name of ['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP']) if (process.env[name]) env[name] = process.env[name];
   const result = spawnSync(bash.path, ['driver.sh'], { cwd: dir, env, timeout: 60000 });
   assert.equal(result.error, undefined, String(result.error));
-  const calls = parseLog(fs.readFileSync(path.join(dir, 'log'), 'utf8'));
+  const calls = readCalls(dir, bashCases.length);
   assert.equal(calls.size, bashCases.length, 'every case ran');
 
   const leaks = [];
