@@ -31,14 +31,18 @@ async function probeRepo(ctx) {
 }
 
 /**
- * `plan` step 1 (config part): M4 `loadConfig`, thin (the repo layer only), and only when the
- * probe found a worktree to read it from. `release` never runs this: it shares only the
- * `env` refusal with `plan` (C:cli-and-exit-codes), so it never needs a config load.
+ * `plan` step 1 (config part): M4 `loadConfig`. CFG-04: the user layer is read from the
+ * injected Claude home regardless of repo state (C:plan step 2 puts `config` ahead of
+ * `state`, so a bad user layer must refuse even outside a usable repo); the repo layer is
+ * read only when the probe found a worktree to read it from. `release` never runs this: it
+ * shares only the `env` refusal with `plan` (C:cli-and-exit-codes), so it never needs a
+ * config load.
  */
 async function loadRepoConfig(ctx) {
-  ctx.config = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
-    ? loadConfig({ toplevel: ctx.probe.repo.toplevel })
+  const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
+    ? ctx.probe.repo.toplevel
     : null;
+  ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
   return undefined;
 }
 

@@ -382,3 +382,54 @@ for (const body of CFG_03_NON_OBJECT_TOP_LEVELS) {
     assertNoRunFolder(c.repoDir);
   });
 }
+
+// CFG-04 (docs/roadmap/04-config-and-attribution.md, Q5, Q6, story 112): the user layer,
+// read from `commit.json` directly under the Claude home the entry point resolves once
+// (`CLAUDE_CONFIG_DIR`, else `.claude` in the OS home) and injects.
+
+test('plan with an unparseable user config under CLAUDE_CONFIG_DIR exits 1 config naming the user layer', async (t) => {
+  const c = createCase(t); // claudeConfigDir: true (default): CLAUDE_CONFIG_DIR = c.claudeHome.
+  fs.writeFileSync(path.join(c.claudeHome, 'commit.json'), '{ "types": [');
+
+  const result = await runCommit(c, ['plan']);
+
+  assertRefusal(result, 'config', 1);
+  assert.match(result.json.error.message, /user/);
+  assert.match(result.json.error.message, /commit\.json/);
+  assertNoRunFolder(c.repoDir);
+});
+
+test('plan ignores an invalid commit.json in the OS-home .claude while CLAUDE_CONFIG_DIR is set', async (t) => {
+  const c = createCase(t); // claudeConfigDir: true: CLAUDE_CONFIG_DIR = c.claudeHome, not <osHome>/.claude.
+  const osHomeClaudeDir = path.join(c.osHome, '.claude');
+  fs.mkdirSync(osHomeClaudeDir, { recursive: true });
+  fs.writeFileSync(path.join(osHomeClaudeDir, 'commit.json'), '{ "types": [');
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.status, 'nothing');
+});
+
+test('plan without CLAUDE_CONFIG_DIR reads the user layer from the OS-home .claude/commit.json', async (t) => {
+  const c = createCase(t, { claudeConfigDir: false });
+  fs.mkdirSync(c.claudeHome, { recursive: true });
+  fs.writeFileSync(path.join(c.claudeHome, 'commit.json'), '{ "types": [');
+
+  const result = await runCommit(c, ['plan']);
+
+  assertRefusal(result, 'config', 1);
+  assert.match(result.json.error.message, /user/);
+  assertNoRunFolder(c.repoDir);
+});
+
+test('plan without CLAUDE_CONFIG_DIR goes on when the OS-home user layer is valid', async (t) => {
+  const c = createCase(t, { claudeConfigDir: false });
+  fs.mkdirSync(c.claudeHome, { recursive: true });
+  fs.writeFileSync(path.join(c.claudeHome, 'commit.json'), '{ "types": ["feat"] }');
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.status, 'nothing');
+});

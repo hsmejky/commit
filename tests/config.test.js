@@ -23,24 +23,36 @@ function tempToplevel(t) {
   return dir;
 }
 
-test('loadConfig returns null when the repo has no config file at all', (t) => {
+// CFG-04: every `loadConfig` call now also needs a `claudeHome`. Most of these tests are
+// about the repo layer only, so they get a fresh, empty Claude home (no user `commit.json`
+// at all): `loadConfig`'s own CFG-04 coverage further below uses a populated one.
+function tempClaudeHome(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-claude-home-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  return dir;
+}
+
+test('loadConfig returns null when neither layer has a config file at all', (t) => {
   const toplevel = tempToplevel(t);
-  assert.equal(config.loadConfig({ toplevel }), null);
+  const claudeHome = tempClaudeHome(t);
+  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
 });
 
 test('loadConfig returns null when the repo config is valid JSON', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": ["feat", "fix"] }');
-  assert.equal(config.loadConfig({ toplevel }), null);
+  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
 });
 
 test('loadConfig reports an error naming the repo layer on unparseable JSON', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": [');
 
-  const result = config.loadConfig({ toplevel });
+  const result = config.loadConfig({ toplevel, claudeHome });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -51,10 +63,11 @@ test('loadConfig reports an error naming the repo layer on unparseable JSON', (t
 // so a typo is easier to find (story 110).
 test('loadConfig appends the JSON parser error, including its position, to the message', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{"a": 1,}');
 
-  const result = config.loadConfig({ toplevel });
+  const result = config.loadConfig({ toplevel, claudeHome });
 
   assert.match(result.error, /position/i);
 });
@@ -63,6 +76,7 @@ test('loadConfig appends the JSON parser error, including its position, to the m
 // JSON file parsing, so a file saved by Windows PowerShell 5.1 or Notepad still parses.
 test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   const bom = Buffer.from([0xef, 0xbb, 0xbf]);
   fs.writeFileSync(
@@ -70,7 +84,7 @@ test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
     Buffer.concat([bom, Buffer.from('{ "types": ["feat"] }', 'utf8')]),
   );
 
-  assert.equal(config.loadConfig({ toplevel }), null);
+  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
 });
 
 // review-CFG-02 finding 4, Q6 (amended): invalid UTF-8 is treated as unparseable (a `config`
@@ -78,11 +92,12 @@ test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
 // U+FFFD replacement.
 test('loadConfig reports an error naming the repo layer on invalid UTF-8', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   // 0xFF is never valid anywhere in a UTF-8 byte sequence.
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), Buffer.from([0x7b, 0xff, 0x7d]));
 
-  const result = config.loadConfig({ toplevel });
+  const result = config.loadConfig({ toplevel, claudeHome });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -94,10 +109,11 @@ test('loadConfig reports an error naming the repo layer on invalid UTF-8', (t) =
 // `loadConfig` too, naming the repo layer.
 test('loadConfig reports an error naming the repo layer for a non-object top level', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   for (const body of ['[]', 'null', '42', '"x"']) {
     fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), body);
-    const result = config.loadConfig({ toplevel });
+    const result = config.loadConfig({ toplevel, claudeHome });
     assert.notEqual(result, null, body);
     assert.match(result.error, /repo config/, body);
     assert.match(result.error, /\.claude[/\\]commit\.json/, body);
@@ -109,9 +125,10 @@ test('loadConfig reports an error naming the repo layer for a non-object top lev
 // uncaught throw that ends as `internal`.
 test('loadConfig reports an error naming the repo layer when the path is a directory', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, config.REPO_CONFIG_PATH), { recursive: true });
 
-  const result = config.loadConfig({ toplevel });
+  const result = config.loadConfig({ toplevel, claudeHome });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -121,6 +138,7 @@ test('loadConfig reports an error naming the repo layer when the path is a direc
 // read) closes a self-DoS where a cloned repo commits an oversized `.claude/commit.json`.
 test('loadConfig reports an error naming the repo layer for an oversized file, never reading it', (t) => {
   const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   const configPath = path.join(toplevel, config.REPO_CONFIG_PATH);
   const fd = fs.openSync(configPath, 'w');
@@ -132,7 +150,7 @@ test('loadConfig reports an error naming the repo layer for an oversized file, n
     fs.closeSync(fd);
   }
 
-  const result = config.loadConfig({ toplevel });
+  const result = config.loadConfig({ toplevel, claudeHome });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -140,6 +158,64 @@ test('loadConfig reports an error naming the repo layer for an oversized file, n
 
 test('REPO_CONFIG_PATH is .claude/commit.json (Q6)', () => {
   assert.equal(config.REPO_CONFIG_PATH, '.claude/commit.json');
+});
+
+// CFG-04 (docs/roadmap/04-config-and-attribution.md, Q5, Q6, story 112): the user layer,
+// read from `commit.json` directly under the injected Claude home, goes through the same
+// pipeline as the repo layer and refuses the same way, naming the user layer.
+
+test('USER_CONFIG_FILENAME is commit.json (Q5, Q6, public surface)', () => {
+  assert.equal(config.USER_CONFIG_FILENAME, 'commit.json');
+});
+
+test('loadConfig returns null when the user config is absent, even with no toplevel at all', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  assert.equal(config.loadConfig({ toplevel: null, claudeHome }), null);
+});
+
+test('loadConfig returns null when the user config is valid JSON', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": ["feat", "fix"] }');
+  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
+});
+
+test('loadConfig reports an error naming the user layer on unparseable JSON, with no toplevel', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": [');
+
+  const result = config.loadConfig({ toplevel: null, claudeHome });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /user config/);
+  assert.match(result.error, /commit\.json/);
+});
+
+test('loadConfig reports an error naming the user layer for a bad value, even with a valid repo layer', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": ["feat"] }');
+  fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "maxSubjectLength": 0 }');
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /user config/);
+  assert.match(result.error, /maxSubjectLength/);
+});
+
+test('loadConfig reports the user-layer error even when the repo layer is also invalid', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": [');
+  fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": [');
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /user config/);
 });
 
 // CFG-03 (docs/roadmap/04-config-and-attribution.md): pure `validateLayer(obj, layer)` over

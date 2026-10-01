@@ -6,14 +6,25 @@
 // (Q6); a missing file is no layer at all, so `plan` goes on with the defaults. CFG-03 adds
 // the pure `validateLayer`, checked against the parsed repo layer: a non-object top level, a
 // wrong JSON type, an out-of-range or non-integer number, or a bad or empty `types` array
-// (Q6, stories 106 and 110). Later CFG slices add the user layer, warnings for unknown keys
-// and values, defaults, `sources`, and the `scanIgnore` machinery read at HEAD (M7, Q6, Q10).
+// (Q6, stories 106 and 110). CFG-04 adds the user layer, read from `commit.json` directly
+// under the Claude home the entry point resolves once and injects (`CLAUDE_CONFIG_DIR`, else
+// `.claude` in the OS home, Q5): it goes through the same read/decode/parse/validate pipeline
+// as the repo layer (now shared as `readLayer`), and an invalid user layer refuses `plan`
+// the same way, naming the user layer instead of the repo layer. Reading the user layer
+// never depends on being inside a worktree, unlike the repo layer: `toplevel` is nullable so
+// a caller outside a usable repo still gets the user-layer check (C:plan step 2 puts
+// `config` ahead of `state`). Later CFG slices add per-key override and effective values,
+// warnings for unknown keys and values, defaults, `sources`, and the `scanIgnore` machinery
+// read at HEAD (M7, Q6, Q10).
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 /** The repo config layer's path under the toplevel (Q6). */
 export const REPO_CONFIG_PATH = '.claude/commit.json';
+
+/** The user config layer's filename, directly under the Claude home (Q5, Q6, public surface). */
+export const USER_CONFIG_FILENAME = 'commit.json';
 
 /** A `types` entry: lowercase, starting with a letter (Q6). */
 const TYPE_ENTRY_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -111,48 +122,49 @@ export function validateLayer(obj, layer) {
 const CONFIG_MAX_BYTES = 65536;
 
 /**
- * Loads the config layers (thin for CFG-02: only the repo layer, read from the worktree).
+ * Reads and validates one config layer's file: the read/decode/parse/`validateLayer`
+ * pipeline shared by the user and repo layers (CFG-04), each named only by their path and
+ * display label. A missing file is no layer at all, not an error (Q6).
  *
- * @param {{ toplevel: string }} options `toplevel`: the working tree's toplevel (M3).
- * @returns {{ error: string } | null} `null` when the repo layer is absent, or when it is
- *   present and its JSON parses; otherwise the `config` refusal's message, naming the repo
- *   layer (Q6, C:cli-and-exit-codes).
+ * @param {string} filePath absolute path to the layer's file.
+ * @param {string} layer the layer's display label (used in every message, and passed to
+ *   `validateLayer` so a key error names the same layer).
+ * @returns {{ error: string } | { value: object | null }} `value: null` when the file is
+ *   absent; otherwise the parsed and validated layer object. `error` names `layer`.
  */
-export function loadConfig({ toplevel }) {
-  const repoConfigPath = path.join(toplevel, REPO_CONFIG_PATH);
-
+function readLayer(filePath, layer) {
   let stats;
   try {
     // Follows a link (read only, never write), so a link to a huge file or a FIFO is caught
     // the same as one in place directly (review-CFG-02 finding 10).
-    stats = fs.statSync(repoConfigPath);
+    stats = fs.statSync(filePath);
   } catch (err) {
-    // No repo layer at all: no config, no error (Q6, CFG-02 seam "a repo with no config file
-    // gets no `config` refusal"). ENOTDIR: a path component (e.g. `.claude`) is a file, which
-    // is just as absent a layer as ENOENT.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+    // No layer at all: no config, no error (Q6, CFG-02 seam "a repo with no config file gets
+    // no `config` refusal"). ENOTDIR: a path component (e.g. `.claude`) is a file, which is
+    // just as absent a layer as ENOENT.
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null };
     // EACCES, EPERM, ELOOP and the like: the layer exists but cannot be inspected. A `config`
-    // refusal naming the repo layer, not an uncaught throw ending as `internal`
+    // refusal naming the layer, not an uncaught throw ending as `internal`
     // (review-CFG-02 finding 1).
-    return { error: `the repo config (${REPO_CONFIG_PATH}) cannot be read (${err.code})` };
+    return { error: `the ${layer} cannot be read (${err.code})` };
   }
 
   // A directory (e.g. `mkdir .claude/commit.json`), a device, socket or FIFO: never a valid
   // config file, and never opened (review-CFG-02 finding 1's EISDIR case, finding 10).
   if (!stats.isFile()) {
-    return { error: `the repo config (${REPO_CONFIG_PATH}) is not a regular file` };
+    return { error: `the ${layer} is not a regular file` };
   }
   if (stats.size > CONFIG_MAX_BYTES) {
-    return { error: `the repo config (${REPO_CONFIG_PATH}) is larger than ${CONFIG_MAX_BYTES} bytes` };
+    return { error: `the ${layer} is larger than ${CONFIG_MAX_BYTES} bytes` };
   }
 
   let buffer;
   try {
-    buffer = fs.readFileSync(repoConfigPath);
+    buffer = fs.readFileSync(filePath);
   } catch (err) {
     // The layer vanished, or turned unreadable, between the stat and the read.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
-    return { error: `the repo config (${REPO_CONFIG_PATH}) cannot be read (${err.code})` };
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null };
+    return { error: `the ${layer} cannot be read (${err.code})` };
   }
 
   let text;
@@ -164,7 +176,7 @@ export function loadConfig({ toplevel }) {
     // Windows PowerShell 5.1 or Notepad still parses (Q6, review-CFG-02 finding 2).
     text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
   } catch {
-    return { error: `the repo config (${REPO_CONFIG_PATH}) is not valid UTF-8` };
+    return { error: `the ${layer} is not valid UTF-8` };
   }
 
   let parsed;
@@ -173,14 +185,46 @@ export function loadConfig({ toplevel }) {
   } catch (err) {
     // The parser's own message carries the position, which helps find the typo (story 110,
     // review-CFG-02 finding 3).
-    return { error: `the repo config (${REPO_CONFIG_PATH}) is not valid JSON: ${err.message}` };
+    return { error: `the ${layer} is not valid JSON: ${err.message}` };
   }
   // CFG-03: a non-object top level, a wrong JSON type, an out-of-range number or a bad
-  // `types` array is a `config` error naming the repo layer and the key (Q6, review-CFG-02
+  // `types` array is a `config` error naming the layer and the key (Q6, review-CFG-02
   // finding 5: CFG-02 was JSON-parseability only). `validateLayer` collects every error it
-  // finds; `loadConfig`'s own `{ error }` shape (used by M15 `planRefusal` for `plan`'s
-  // single-line message, Q6) reports the first, same as before this collected every error
-  // (review-CFG-03 finding 2).
-  const result = validateLayer(parsed, `repo config (${REPO_CONFIG_PATH})`);
-  return result ? { error: result.errors[0] } : null;
+  // finds; this reports the first, same as `loadConfig` did before CFG-03 collected every
+  // error (review-CFG-03 finding 2).
+  const result = validateLayer(parsed, layer);
+  return result ? { error: result.errors[0] } : { value: parsed };
+}
+
+/** The repo layer's display label, matching `REPO_CONFIG_PATH`. */
+const REPO_LAYER = `repo config (${REPO_CONFIG_PATH})`;
+
+/** The user layer's display label, matching `USER_CONFIG_FILENAME`. */
+const USER_LAYER = `user config (${USER_CONFIG_FILENAME})`;
+
+/**
+ * Loads the config layers: the user layer, read from `commit.json` directly under the
+ * Claude home (CFG-04, Q5, Q6), then, when `toplevel` names a worktree, the repo layer, read
+ * from `.claude/commit.json` under it (CFG-02). Thin: no per-key override yet (CFG-05), no
+ * `scanIgnore` at HEAD yet (CFG-07).
+ *
+ * @param {{ toplevel: string | null, claudeHome: string }} options `toplevel`: the working
+ *   tree's toplevel (M3), or `null` when `plan` is not inside one (the user layer is still
+ *   read and validated: C:plan step 2 puts `config` ahead of `state`). `claudeHome`: the
+ *   Claude home the entry point resolved once and injected (`CLAUDE_CONFIG_DIR`, else
+ *   `.claude` in the OS home, Q5).
+ * @returns {{ error: string } | null} `null` when neither layer present errors; otherwise
+ *   the `config` refusal's message, naming whichever layer errored first (user, then repo,
+ *   matching Q6's layer order) (C:cli-and-exit-codes).
+ */
+export function loadConfig({ toplevel, claudeHome }) {
+  const userResult = readLayer(path.join(claudeHome, USER_CONFIG_FILENAME), USER_LAYER);
+  if (userResult.error !== undefined) return { error: userResult.error };
+
+  if (toplevel === null || toplevel === undefined) return null;
+
+  const repoResult = readLayer(path.join(toplevel, REPO_CONFIG_PATH), REPO_LAYER);
+  if (repoResult.error !== undefined) return { error: repoResult.error };
+
+  return null;
 }
