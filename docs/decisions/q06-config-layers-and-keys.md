@@ -51,8 +51,9 @@
   why (review-CFG-02 finding 2). Invalid UTF-8 in the repo layer is treated as unparseable (a
   `config` refusal naming the repo layer), detected through a fatal-mode `TextDecoder` instead
   of Node's default silent U+FFFD replacement, since the check is cheap (review-CFG-02 finding
-  4). Both rules apply wherever a repo-layer file is read as text; CFG-07's HEAD read of
-  `scanIgnore` makes the same calls for consistency (finding 2's forward note).
+  4). Both rules apply wherever a config layer's file is read as text (CFG-04's shared
+  `readLayer` means the user layer follows them too); CFG-07's HEAD read of `scanIgnore`
+  makes the same calls for consistency (finding 2's forward note).
 - **Rejected.**
   - Repo only; a third local layer (commit style is shared by nature).
   - Unknown key or value as an error: one teammate on a newer plugin would break every commit

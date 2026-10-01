@@ -115,8 +115,8 @@ export function validateLayer(obj, layer) {
   return errors.length > 0 ? { errors } : null;
 }
 
-// The repo config is a small hand-written file; a few KB is generous, same style as the
-// run-lock read (`run.mjs` `LOCK_MAX_BYTES`). Checked before the read so an oversized file,
+// A config layer's file (user or repo) is small and hand-written; a few KB is generous, same
+// style as the run-lock read (`run.mjs` `LOCK_MAX_BYTES`). Checked before the read so an oversized file,
 // or a non-regular one (a symlink to a device file or a FIFO would otherwise hang or exhaust
 // memory, review-CFG-02 finding 10), is never opened.
 const CONFIG_MAX_BYTES = 65536;
@@ -140,8 +140,8 @@ function readLayer(filePath, layer) {
     stats = fs.statSync(filePath);
   } catch (err) {
     // No layer at all: no config, no error (Q6, CFG-02 seam "a repo with no config file gets
-    // no `config` refusal"). ENOTDIR: a path component (e.g. `.claude`) is a file, which is
-    // just as absent a layer as ENOENT.
+    // no `config` refusal"). ENOTDIR: a path component (e.g. the repo layer's `.claude`, or
+    // the user layer's Claude home) is a file, which is just as absent a layer as ENOENT.
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null };
     // EACCES, EPERM, ELOOP and the like: the layer exists but cannot be inspected. A `config`
     // refusal naming the layer, not an uncaught throw ending as `internal`

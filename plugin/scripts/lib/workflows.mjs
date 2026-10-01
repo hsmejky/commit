@@ -8,7 +8,8 @@
 // code this module maps to a CLI kind. INT-01 built the walking skeleton (steps 1, 4 and 6,
 // only as far as a clean tree needs); GIT-01 adds step 2's first rows (`env`, `state`
 // outside a usable repo). CFG-02 adds step 1's M4 `loadConfig` (repo layer only, from the
-// worktree) and step 2's `config` row, ahead of `state` (C:plan step 2 order). Later slices
+// worktree) and step 2's `config` row, ahead of `state` (C:plan step 2 order). CFG-04 widens
+// step 1 to also load the user layer, read regardless of repo state. Later slices
 // insert the other rows (3 run folder and lock peek, 5 snapshot and scan, 7 store and lock,
 // 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
 //
@@ -38,7 +39,7 @@ async function probeRepo(ctx) {
  * shares only the `env` refusal with `plan` (C:cli-and-exit-codes), so it never needs a
  * config load.
  */
-async function loadRepoConfig(ctx) {
+async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
     ? ctx.probe.repo.toplevel
     : null;
@@ -67,7 +68,7 @@ async function postScanRefusals(ctx) {
   throw new Error('plan on a working tree with changes is not built yet');
 }
 
-const PLAN_STEPS = Object.freeze([probeRepo, loadRepoConfig, preFolderRefusals, inventory, postScanRefusals]);
+const PLAN_STEPS = Object.freeze([probeRepo, loadConfigLayers, preFolderRefusals, inventory, postScanRefusals]);
 
 /**
  * `release` step 2: the probe's `env` refusal, the only refusal `release` shares with `plan`

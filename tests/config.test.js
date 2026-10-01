@@ -218,6 +218,39 @@ test('loadConfig reports the user-layer error even when the repo layer is also i
   assert.match(result.error, /user config/);
 });
 
+// review-CFG-04 finding 6: the shared pipeline's label threading (`readLayer`'s early-return
+// paths) was pinned for the repo layer only; these parametrise the same checks for the user
+// layer, naming it instead of the repo layer.
+test('loadConfig reports an error naming the user layer when the path is a directory', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.mkdirSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), { recursive: true });
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /user config/);
+});
+
+test('loadConfig reports an error naming the user layer for an oversized file, never reading it', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  const configPath = path.join(claudeHome, config.USER_CONFIG_FILENAME);
+  const fd = fs.openSync(configPath, 'w');
+  try {
+    // A sparse file well past the cap: if `loadConfig` ever read it whole, this test would
+    // hang or exhaust memory instead of failing fast.
+    fs.ftruncateSync(fd, 10 * 1024 * 1024);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.notEqual(result, null);
+  assert.match(result.error, /user config/);
+});
+
 // CFG-03 (docs/roadmap/04-config-and-attribution.md): pure `validateLayer(obj, layer)` over
 // the Q6 value domains. Unit-level coverage of the function itself; the Seam 1 refusals it
 // feeds (through `loadConfig`) live in tests/plan-pre-folder-refusals.test.js.

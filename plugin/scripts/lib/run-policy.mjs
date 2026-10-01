@@ -44,7 +44,8 @@ const STATE_MESSAGES = Object.freeze({
  *
  * @param {{ git: object, node: object, repo: object|null, config?: { error: string } | null }}
  *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (`null` or
- *   omitted when no repo layer error was found, e.g. outside a worktree).
+ *   omitted when no layer error was found; the user layer is checked even outside a
+ *   worktree, so this can hold a user-layer error there too, CFG-04).
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */

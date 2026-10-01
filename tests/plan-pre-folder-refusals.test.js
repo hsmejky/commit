@@ -433,3 +433,18 @@ test('plan without CLAUDE_CONFIG_DIR goes on when the OS-home user layer is vali
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   assert.equal(result.json.reply.status, 'nothing');
 });
+
+// review-CFG-04 finding 5: interpretation (b) (the user layer is read regardless of repo
+// state, so `config` precedes `state`) had no Seam 1 pin outside a usable repo.
+test('plan with an invalid user config outside a repository exits 1 config, not state', async (t) => {
+  const c = createCase(t, { repo: false });
+  fs.writeFileSync(path.join(c.claudeHome, 'commit.json'), '{ "types": [');
+  const dir = path.join(c.root, 'plain');
+  fs.mkdirSync(dir);
+
+  const result = await runCommit(c, ['plan'], { cwd: dir });
+
+  assertRefusal(result, 'config', 1);
+  assert.match(result.json.error.message, /user/);
+  assertNoRunFolder(dir);
+});
