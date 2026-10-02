@@ -97,18 +97,18 @@ text.
 
 **Blocked by:** GRD-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q4, Q18, Q20, C:guard (Deny messages), stories 27, 28, 30, 32.
 
-- [ ] `--amend` without `--no-edit` → the reword route text, which never suggests `--amend --no-edit`.
-- [ ] `--squash` in any form, including `--squash=HEAD --no-edit` → the squash text.
-- [ ] `-n`, `--no-verify`, `--no-gpg-sign` → `<flag> is not allowed. Fix the hook or signing setup instead.`
-- [ ] `--fixup=amend:<sha>`, `--fixup=reword:<sha>` → the fixup-kind text; `-C`, `--reuse-message`, `-c <commit>`, `--reedit-message` → the generic row.
-- [ ] Every message containing `<route>` ends with the personal-skill line; the others do not.
-- [ ] Precedence per C:guard (D2), the full row order (`-c`/`--config-env` before `commit`; literal-subcommand; literal-arguments; unknown global option; `--amend`; `--squash`; `-n`/`--no-verify`/`--no-gpg-sign`; `--fixup=amend:`/`--fixup=reword:`; the generic row; the bare/`-m`/`-F`/`--message`/`--file` row last, ties broken by argv order): `--amend -m x` → the amend text, not the bare/`-m` text.
-- [ ] `-n -m x` → the `-n` text, not the bare/`-m` text.
-- [ ] `--squash -m x` → the squash text, not the bare/`-m` text.
+- [x] `--amend` without `--no-edit` → the reword route text, which never suggests `--amend --no-edit`.
+- [x] `--squash` in any form, including `--squash=HEAD --no-edit` → the squash text.
+- [x] `-n`, `--no-verify`, `--no-gpg-sign` → `<flag> is not allowed. Fix the hook or signing setup instead.`
+- [x] `--fixup=amend:<sha>`, `--fixup=reword:<sha>` → the fixup-kind text; `-C`, `--reuse-message`, `-c <commit>`, `--reedit-message` → the generic row.
+- [x] Every message containing `<route>` ends with the personal-skill line; the others do not.
+- [x] Precedence per C:guard (D2), the full row order (`-c`/`--config-env` before `commit`; literal-subcommand; literal-arguments; unknown global option; `--amend`; `--squash`; `-n`/`--no-verify`/`--no-gpg-sign`; `--fixup=amend:`/`--fixup=reword:`; the generic row; the bare/`-m`/`-F`/`--message`/`--file` row last, ties broken by argv order): `--amend -m x` → the amend text, not the bare/`-m` text.
+- [x] `-n -m x` → the `-n` text, not the bare/`-m` text.
+- [x] `--squash -m x` → the squash text, not the bare/`-m` text.
 
 
 ## GRD-06: PowerShell tokenizer
