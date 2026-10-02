@@ -378,17 +378,20 @@ function takeCallLock(runDir, planId, { now, pid, host, isAlive }) {
  * M12 `run.close()` (RUN-04; `release` RUN-02 and `commit`'s `finally`, GIT-08's signal
  * handler): removes the call's own `call.lock`, idempotent and `ENOENT`-tolerant (the folder
  * already deleted by the release itself, by a takeover, or by a second `close()` call) and
- * never through a link. Only removes a `call.lock` that still holds this call's own
- * `{ pid, host }` (`process.pid`/`os.hostname()` by default): one a takeover already
- * replaced, or that cannot be read right now (a file-in-use error), is left alone rather than
- * deleted out from under its new owner (review-RUN-04 findings 9, 13).
+ * never through a link: neither the run-folder directory itself (a `.commit-plan` junction
+ * swapped in after `open`, mirroring `open`'s and `releaseById`'s own check) nor the
+ * `<planId>` folder is followed when it is a link (review-RUN-04 finding 18). Only removes a
+ * `call.lock` that still holds this call's own `{ pid, host }` (`process.pid`/`os.hostname()`
+ * by default): one a takeover already replaced, or that cannot be read right now (a
+ * file-in-use error), is left alone rather than deleted out from under its new owner
+ * (review-RUN-04 findings 9, 13).
  *
  * @param {{ toplevel: string, planId: string, pid?: number, host?: string }} options
  * @returns {void}
  */
 export function close({ toplevel, planId, pid = process.pid, host = os.hostname() }) {
   const runDir = runDirOf(toplevel);
-  if (!isPlainDirectory(insideRunDir(runDir, planId))) return;
+  if (!isPlainDirectory(runDir) || !isPlainDirectory(insideRunDir(runDir, planId))) return;
   const callLock = insideRunDir(runDir, `${planId}/call.lock`);
   let judged;
   try {
@@ -472,11 +475,14 @@ export function releaseById({
 
 /**
  * M12 `open` (RUN-04): `commit`'s first step, wired as the whole call's own lock check. In
- * order (Q22 "reads the lock, checks it holds its planId, then refreshes the mtime", then
- * the state `version`, then the call.lock for the whole call):
+ * order (Q22 "reads the lock, checks it holds its planId", then the state `version`, then
+ * refreshes the mtime, then the call.lock for the whole call):
  * 0. The run-folder directory itself must be a plain directory, never a link (mirroring
  *    `releaseById`'s own check): a `.commit-plan` junction is never followed → `ended`,
- *    nothing read or written through it (review-RUN-04 finding 12).
+ *    nothing read or written through it (review-RUN-04 finding 12). An `EPERM`/`EACCES`
+ *    from this check's `lstat` throws to `internal` rather than mapping to `busy`, matching
+ *    `releaseById`'s (and now `close`'s) identical check; noted only for consistency with
+ *    Q22's lock-operation-busy rule, not changed (review-RUN-04 finding 20).
  * 1. Reads the run lock. No lock, or one that does not parse to a minted `planId` → `ended`.
  * 2. A lock holding a different, well-formed `planId` → `taken-over`.
  * 3. The lock holds `planId`. `<planId>/state.json`'s `version` must match this build's

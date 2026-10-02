@@ -723,3 +723,65 @@ test('close: a call.lock held by a different { pid, host } is left alone', (t) =
   assert.equal(fs.existsSync(f.callLock), true, 'not ours: left alone');
   assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 4242, host: HOST });
 });
+
+// review-RUN-04 finding 19: the realistic takeover case — same host, different pid — is its
+// own test rather than only being covered alongside a host change too.
+test('close: a call.lock held by a different pid on this same host is left alone (finding 19)', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+
+  run.close({ toplevel: f.toplevel, planId, pid: 7, host: HOST });
+
+  assert.equal(fs.existsSync(f.callLock), true, 'not ours: left alone');
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 4242, host: HOST });
+});
+
+// review-RUN-04 finding 19: a file-in-use error reading call.lock means ownership can't be
+// verified right now, so close() leaves it alone instead of throwing or deleting it.
+for (const code of FAULT_CODES) {
+  test(`close: ${code} reading call.lock leaves it alone instead of throwing (finding 19)`, (t) => {
+    const planId = crypto.randomUUID();
+    const f = runFixture(t, planId);
+    writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+    const restore = withFsFault(t, 'readFileSync', (args) => args[0] === f.callLock, code);
+
+    assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId, pid: 4242, host: HOST }));
+
+    restore();
+    assert.equal(fs.existsSync(f.callLock), true, 'left alone: ownership could not be verified');
+    assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 4242, host: HOST });
+  });
+}
+
+// review-RUN-04 finding 19: unparseable call.lock content (not JSON, or missing pid/host) is
+// never this call's own lock, so close() leaves it alone.
+test('close: unparseable call.lock content is left alone (finding 19)', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, 'not json', T0);
+
+  run.close({ toplevel: f.toplevel, planId, pid: 4242, host: HOST });
+
+  assert.equal(fs.existsSync(f.callLock), true, 'unparseable: left alone');
+  assert.equal(fs.readFileSync(f.callLock, 'utf8'), 'not json');
+});
+
+// review-RUN-04 finding 18: a `.commit-plan` that is a link (a junction on Windows, a
+// directory symlink elsewhere) is not a run-folder directory: `close` must not follow it
+// either, mirroring `open`'s and `releaseById`'s own `isPlainDirectory` check on the same
+// path.
+test('close: a linked .commit-plan (junction) → left alone, nothing removed through the link', (t) => {
+  const toplevel = tempDir(t);
+  const target = tempDir(t);
+  const planId = crypto.randomUUID();
+  const folder = path.join(target, planId);
+  fs.mkdirSync(folder, { recursive: true });
+  const callLock = path.join(folder, 'call.lock');
+  fs.writeFileSync(callLock, JSON.stringify({ pid: 4242, host: HOST }));
+  fs.symlinkSync(target, path.join(toplevel, '.commit-plan'), 'junction');
+
+  run.close({ toplevel, planId, pid: 4242, host: HOST });
+
+  assert.equal(fs.existsSync(callLock), true, 'nothing was removed through the link');
+});
