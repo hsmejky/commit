@@ -491,21 +491,50 @@ function ensureExcludeLine(excludePath) {
   fs.appendFileSync(excludePath, `${separator}${EXCLUDE_LINE}\n`);
 }
 
+/** The `run-folder` refusal text (C:run-folder; C:cli-and-exit-codes recorded texts). */
+export const RUN_FOLDER_TEXT = '`.commit-plan` is tracked or not a plain directory; remove it by hand';
+
+// Whether nothing stands at `dir`: the only state besides a plain directory `create`
+// accepts there before its first write.
+function isAbsent(dir) {
+  try {
+    fs.lstatSync(dir);
+    return false;
+  } catch (err) {
+    if (err.code === 'ENOENT') return true;
+    throw err;
+  }
+}
+
+function runFolderRefusal() {
+  return { ok: false, code: 'run-folder', message: RUN_FOLDER_TEXT };
+}
+
 /**
- * M12 `Run.create` (RUN-05, `plan` step 3): adds the exclude line once, mints the `planId`
- * and creates the provisional run folder `<toplevel>/.commit-plan/<planId>/`.
+ * M12 `Run.create` (RUN-05, `plan` step 3): checks the run-folder directory, adds the
+ * exclude line once, mints the `planId` and creates the provisional run folder
+ * `<toplevel>/.commit-plan/<planId>/`.
  *
- * @param {{ toplevel: string, excludePath: string }} options `excludePath`: the common
- *   dir's `info/exclude` (M2 `gitPath`).
- * @returns {{ ok: true, provisional: { planId: string, runDir: string, discard: () => void } }}
+ * Before its first write it `lstat`s `<toplevel>/.commit-plan`: a symlink, a junction, a
+ * non-directory, or a path tracked in the index (`tracked`, which M18 asks git for: M12
+ * spawns nothing) refuses with `run-folder`; after `mkdir` it checks again (C:run-folder,
+ * story 207), so a link swapped in meanwhile is never written through.
+ *
+ * @param {{ toplevel: string, excludePath: string, tracked: boolean }} options
+ *   `excludePath`: the common dir's `info/exclude` (M2 `gitPath`); `tracked`: whether the
+ *   index holds `.commit-plan` or any path under it (M3 `isTracked`).
+ * @returns {{ ok: true, provisional: { planId: string, runDir: string, discard: () => void } }
+ *   | { ok: false, code: 'run-folder', message: string }}
  *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
  *   slashes (C:run-folder); `discard()` deletes it (every outcome that takes no lock).
  */
-export function create({ toplevel, excludePath }) {
+export function create({ toplevel, excludePath, tracked }) {
   const runDir = runDirOf(toplevel);
+  if (tracked || !(isAbsent(runDir) || isPlainDirectory(runDir))) return runFolderRefusal();
   ensureExcludeLine(excludePath);
   const planId = crypto.randomUUID();
   fs.mkdirSync(runDir, { recursive: true });
+  if (!isPlainDirectory(runDir)) return runFolderRefusal();
   const folder = insideRunDir(runDir, planId);
   fs.mkdirSync(folder);
   const discard = () => {

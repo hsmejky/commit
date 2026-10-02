@@ -21,9 +21,9 @@
 // shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
-import { probe } from './repo-probe.mjs';
+import { isTracked, probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
-import { releaseById, open, close, create } from './run.mjs';
+import { releaseById, open, close, create, RUN_DIR_NAME } from './run.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { reply } from './reply.mjs';
 import { planRefusal, releaseDeadline } from './run-policy.mjs';
@@ -61,14 +61,18 @@ async function preFolderRefusals(ctx) {
 }
 
 /**
- * Step 3 (RUN-05): M12 `create` adds the exclude line to the common dir's `info/exclude`,
- * mints the `planId` and creates the provisional run folder. `plan` discards it on every
+ * Step 3 (RUN-05): M12 `create` checks `.commit-plan` (a link, a non-directory, or a path
+ * the index holds, which M3 `isTracked` asks git for → `run-folder`), adds the exclude line
+ * to the common dir's `info/exclude`, mints the `planId` and creates the provisional run
+ * folder. `plan` discards it on every
  * outcome that takes no lock (`plan`'s `finally`). RUN-07 adds the lock `peek` here.
  */
 async function createRunFolder(ctx) {
   const { env, now } = ctx.injected;
   const [excludePath] = await gitPath(['info/exclude'], { cwd: ctx.toplevel, env, now });
-  const created = create({ toplevel: ctx.toplevel, excludePath });
+  const tracked = await isTracked(RUN_DIR_NAME, { cwd: ctx.toplevel, env, now });
+  const created = create({ toplevel: ctx.toplevel, excludePath, tracked });
+  if (!created.ok) return { refusal: { code: created.code, message: created.message } };
   ctx.provisional = created.provisional;
   return undefined;
 }

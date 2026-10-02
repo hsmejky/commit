@@ -76,3 +76,19 @@ export async function probe({ cwd, env, now }) {
   else return { git: { status: 'missing' }, node, repo: null };
   return { git, node, repo };
 }
+
+/**
+ * Whether the index holds a path, or any path under it (RUN-05: a tracked `.commit-plan`
+ * refuses `plan`, C:run-folder). One `git ls-files --cached` call with a literal pathspec,
+ * run from the toplevel.
+ *
+ * @param {string} name the path, relative to the toplevel, such as `.commit-plan`.
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<boolean>}
+ * @throws {Error} when git exits non-zero.
+ */
+export async function isTracked(name, { cwd, env, now }) {
+  const result = await run('git', ['ls-files', '-z', '--cached', '--', `:(literal)${name}`], { cwd, env, now });
+  if (result.code !== 0) throw new Error(`git ls-files failed (${result.code}): ${result.stderr}`);
+  return result.stdout.length > 0;
+}

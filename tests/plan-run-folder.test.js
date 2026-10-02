@@ -86,3 +86,65 @@ test('plan on a clean tree leaves no <planId> folder and no lock', async (t) => 
   assert.equal(result.json.runDir, null);
   assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), []);
 });
+
+// AC1: the run-folder directory check (C:run-folder, story 207).
+const REFUSAL_TEXT = '`.commit-plan` is tracked or not a plain directory; remove it by hand';
+
+function assertRunFolderRefusal(result) {
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 6, detail);
+  assert.equal(result.json.ok, false, detail);
+  assert.equal(result.json.error.kind, 'state', detail);
+  assert.equal(result.json.error.message, REFUSAL_TEXT, detail);
+}
+
+test('.commit-plan as a plain file refuses plan with state, and the file is unchanged', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  const file = path.join(c.repoDir, '.commit-plan');
+  fs.writeFileSync(file, 'mine\n');
+
+  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assert.equal(fs.readFileSync(file, 'utf8'), 'mine\n');
+});
+
+test('a tracked .commit-plan path refuses plan with state, and the directory is unchanged', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  c.writeFile('.commit-plan/notes.txt', 'tracked\n');
+  c.git(['add', '-f', '.commit-plan/notes.txt']);
+  c.git(['commit', '-q', '-m', 'track it']);
+
+  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), ['notes.txt']);
+});
+
+// A link in place of `.commit-plan` to a directory outside the repo: the refusal writes
+// nothing through it (the target stays empty).
+async function assertLinkRefused(t, type) {
+  const c = createCase(t);
+  seedCommit(c);
+  const target = path.join(c.root, 'elsewhere');
+  fs.mkdirSync(target);
+  try {
+    fs.symlinkSync(target, path.join(c.repoDir, '.commit-plan'), type);
+  } catch (err) {
+    // A Windows directory symlink needs Developer Mode or an elevated shell.
+    if (err.code === 'EPERM' && type === 'dir') return t.skip('creating a directory symlink needs privileges here');
+    throw err;
+  }
+
+  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assert.deepEqual(fs.readdirSync(target), []);
+}
+
+test('a symlinked .commit-plan refuses plan with state, and nothing is written through it', async (t) => {
+  await assertLinkRefused(t, 'dir');
+});
+
+// Junctions exist only on Windows; POSIX has the symlink case above.
+test('a .commit-plan junction refuses plan with state, and nothing is written through it',
+  { skip: process.platform !== 'win32' && 'junctions are Windows-only' },
+  async (t) => {
+    await assertLinkRefused(t, 'junction');
+  });

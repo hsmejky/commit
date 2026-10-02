@@ -829,3 +829,39 @@ test('discard: removes the provisional folder and only it', (t) => {
 
   assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [kept.planId]);
 });
+
+// RUN-05 AC1 at module level: the run-folder directory check (C:run-folder, story 207).
+
+test('create: a tracked .commit-plan refuses with run-folder before any write', (t) => {
+  const toplevel = tempDir(t);
+  const excludePath = path.join(toplevel, 'exclude');
+
+  const created = run.create({ toplevel, excludePath, tracked: true });
+
+  assert.deepEqual(created, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+  assert.equal(run.RUN_FOLDER_TEXT, '`.commit-plan` is tracked or not a plain directory; remove it by hand');
+  assert.equal(fs.existsSync(excludePath), false);
+  assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan')), false);
+});
+
+test('create: a link swapped in for .commit-plan by the time of its mkdir refuses, nothing written through it', (t) => {
+  const toplevel = tempDir(t);
+  const target = tempDir(t);
+  const runDir = path.join(toplevel, '.commit-plan');
+  // Another process puts a link in place right as `create` makes the directory: the check
+  // after `mkdir` must catch what the check before it could not see. A junction on Windows
+  // needs no privileges; a symlink elsewhere.
+  const realMkdir = fs.mkdirSync;
+  t.mock.method(fs, 'mkdirSync', (dir, options) => {
+    if (path.resolve(dir) === runDir) {
+      fs.symlinkSync(target, runDir, process.platform === 'win32' ? 'junction' : 'dir');
+      return undefined;
+    }
+    return realMkdir(dir, options);
+  });
+
+  const created = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+
+  assert.deepEqual(created, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+  assert.deepEqual(fs.readdirSync(target), []);
+});
