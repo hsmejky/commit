@@ -76,7 +76,10 @@ delete it here; IDs are never reused.
   a structural prefix allowlist, but a wrapper reached through an allowlisted word still
   passes: a Bash alias (with `expand_aliases`) for one, a function or a `PATH` script named
   `nice`, `nohup` or `env`; and since G2 drops quoting, a quoted reserved word or
-  assignment (`'if'`, `"A"=x`) that bash runs as a command of that name. Impact is small:
+  assignment (`'if'`, `"A"=x`) that bash runs as a command of that name. In PowerShell
+  a string run by `iex` or `Invoke-Expression` (`iex 'git commit -m x'`) holds no `git`
+  token and passes, like `eval` (the interpreter gap); `Start-Process`, `saps` and `start`
+  before `git` are denied as wrappers. Impact is small:
   the guard steers, it is no security boundary (Q3), and each needs a prepared alias,
   function or script. Where: [C:guard](../contracts/guard.md) step 3, Q3,
   [out-of-scope.md](out-of-scope.md). Disposition: accepted for 0.1.0.

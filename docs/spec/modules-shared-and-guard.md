@@ -88,8 +88,8 @@ and `elif` open it after any word, an argument included (bash takes them after `
 `fi`, `done`, `esac`, `for NAME`; review GRD-04 round 8), `$'…'`
 with its backslash escapes decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends
 the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
-`$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `` `u{…} `` read as its code point
-(PowerShell 7), where `` `0 `` and a zero `` `u{…} `` (`` `u{0} ``, `` `u{00} ``) are a NUL
+`$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes (`` `e `` and `` `u{ ``, which 5.1 and 7 read differently,
+are the blanket kind `escape`), where `` `0 `` is a NUL
 that ends the token's value there, as the native command line is cut at it, and a `cut`
 token follows the cut token, ending git's arguments while the later tokens stay in the
 segment (`` git commit`0x -m x `` is `git commit`; a raw NUL character reads the same),
@@ -114,7 +114,7 @@ inside quotes, makes the rest of its line, up to `|`, `&&` or `||`, words split 
 whitespace only. `segments(command, shell) → Token[][] | { blanket: <trigger kind> }`. G2
 also exports `blanketTrigger(command, shell) → <trigger kind> | null`, the trigger-kind check
 before tokenizing alone (the size cap `size` and the construct kinds; the kinds found only
-while tokenizing, `substitution` inside a pattern and `nesting`, come from `segments`, so
+while tokenizing, `substitution` inside a pattern, `nesting` and PowerShell's `escape`, come from `segments`, so
 G1's debug log, which names the trigger kind instead of the command for a blanket deny,
 takes it from the `segments` result) and `isExemptScriptCall(command, shell) → boolean`, the script-call
 exemption check alone (both reasonable to expose next to `segments`, which composes them);
@@ -142,8 +142,8 @@ no `(` token) is outside the prefix allowlist
 (Bash reserved words and `(`, literal assignments, then `nice`, `nohup`, `command`, `env` with
 fixed option grammars; PowerShell `&`), naming the first such token (the wrapper row, C:guard
 step 3); a segment is denied when any of its `git` tokens is;
-a blanket result from G2 gives the blanket deny and nothing else (the `nesting` and `size`
-kinds each their own row, every other kind the construct row);
+a blanket result from G2 gives the blanket deny and nothing else (the `nesting`, `size` and
+`escape` kinds each their own row, every other kind the construct row);
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
 expansion and the trailing personal-skill line are data here; no text names `/commit`.

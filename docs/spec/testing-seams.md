@@ -111,7 +111,7 @@ unterminated quotes, blanket-rule commands (a substitution, heredoc, here-string
 Bash typographic quote: never tokenized, no segments), subshell parentheses, PowerShell
 script-block braces, PowerShell assignment and keyword statements, splats, `--%`
 stop-parsing, PowerShell comma arrays, a PowerShell backtick plus newline inside a word, a
-PowerShell NUL escape (`` `0 ``, a zero `` `u{…} ``) and a carriage return in Bash (the
+PowerShell NUL escape (`` `0 ``) and a carriage return in Bash (the
 shell would expand, reject or drop them).
 
 **End-to-end time budget (Seam 1).** A three-group `split` run with the stepping clock: group
