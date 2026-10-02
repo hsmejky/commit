@@ -230,7 +230,9 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   marker, such as a conflicted `stash pop`, i.e. any `u` line of the status (`unmerged`,
   "resolve the conflicts first")) end `plan` with exit 6 and `error.kind: "state"` (Q21).
   `unborn: true` on a first commit. The state comes from one porcelain v2 `--branch` status
-  call pinned with `--untracked-files=no --ignore-submodules=all`.
+  call pinned with `--untracked-files=no --ignore-submodules=all --no-ahead-behind` (the
+  last avoids the upstream ahead/behind revision walk `--branch` would otherwise do,
+  review-GIT-02 finding 8).
 - `i18n.commitEncoding` set to anything other than UTF-8 (compared case-insensitively with
   `utf-8` and `utf8`) ends `plan` with exit 6 `state`: the script writes UTF-8 messages, and
   git would label them with the configured encoding.

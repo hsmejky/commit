@@ -22,7 +22,7 @@
   --git-path` for `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge`,
   `rebase-apply`, `BISECT_LOG`, `sequencer/` and `SQUASH_MSG`; unmerged entries from any `u`
   line of the same porcelain v2 status that reads HEAD (pinned `--untracked-files=no
-  --ignore-submodules=all`), so conflict markers are never committed. A paused sequence counts as in progress
+  --ignore-submodules=all --no-ahead-behind`), so conflict markers are never committed. A paused sequence counts as in progress
   even when no `CHERRY_PICK_HEAD` or `REVERT_HEAD` is left (the stop after a conflicted pick
   was committed by hand): a new commit would land in the middle of the sequence. The
   encoding check reads `i18n.commitEncoding`, compared case-insensitively with `utf-8` and
@@ -35,6 +35,9 @@
   own refusal text; unmerged index entries without an in-progress marker refused with
   `unmerged`; `i18n.commitEncoding` compared case-insensitively, so `UTF-8`, `utf-8` and
   `utf8` all pass.
+- **Amended.** By the GIT-02 review (2026-10-02): pin `--no-ahead-behind` (git 2.17+, below
+  the 2.34 minimum) on the status call, since `--branch` alone also computes the ahead/behind
+  counts against the upstream, a revision walk that can be expensive (review-GIT-02 finding 8).
 - **Rejected.** Letting the worker make the in-progress commit: its message, parents and
   conflict state belong to the operation, not to a Conventional Commits plan.
 - **Consequences.** Finishing a merge goes through the guard's `--no-edit` form (Q4), which is

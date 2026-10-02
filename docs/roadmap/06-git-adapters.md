@@ -33,15 +33,19 @@ their order.
 ## GIT-02: M3 HEAD state: branch, detached, unborn, expected HEAD
 
 **What to build:** M3 reads branch, detached and unborn HEAD from one porcelain v2 `--branch`
-status call pinned with `--untracked-files=no --ignore-submodules=all`, plus `head()` and
-`headTree()`; `plan` stores `state` and the expected HEAD (`null` when unborn) and adds the
-detached-HEAD notice.
+status call pinned with `--untracked-files=no --ignore-submodules=all --no-ahead-behind`,
+plus `head()` and `headTree()`; `plan` stores `state` and the expected HEAD (`null` when
+unborn) and adds the detached-HEAD notice.
 
 **Blocked by:** GIT-01, RUN-05.
 
 **Status:** ready-for-agent
 
 **Sources:** Q21, C:plan (`state.kind`, notices), stories 182, 183, M3.
+
+KD-R65: `plan.json` `state` and `state.json` `head` cannot be observed until CHG-03b writes
+either file; this slice asserts the first two criteria below against `plan`'s stdout
+`state`/`expectedHead` instead, a Seam-1 stand-in CHG-03b removes.
 
 - [ ] Seam 1: on a branch → `plan.json` `state: { kind: "branch", branch, unborn: false }` and the stored expected HEAD equals `git rev-parse HEAD`.
 - [ ] Seam 1: detached HEAD → `state.kind: "detached"` and the detached-HEAD notice in the stored notices (reply `notices` once RPL renders them).

@@ -122,6 +122,7 @@ assert the domain code and that the state is named, not an exact text.
 | discard-failure notice (no kind; the outcome is unchanged) | M12 `discard` (`plan`, every outcome that takes no lock) | run folder `` `.commit-plan/<planId>` `` was not removed (<code>); the 24-hour sweep removes it | C:run-folder |
 | guard notice (no kind; `env.guard: "not-seen"`, the run goes on) | M18 (`plan`, stored as a notice) | Guard hook did not run: `node` missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct `git commit` is not blocked. | Q23 |
 | signing prompt notice (no kind; `signing.ready: "prompt"`, the run goes on) | M18 (`plan`, stored as a notice) | signing enabled; a passphrase prompt may appear | Q18 |
+| detached-HEAD notice (no kind; `state.kind: "detached"`, the run goes on) | M18 (`plan`, stored as a notice) | HEAD is detached: new commits will not be on any branch | Q21 |
 
 Texts already fixed in their own contract stay there: the unreadable-lock message (above),
 the `run-folder` and `killed-leftover` texts ([run folder](run-folder.md)) and the `timeout`

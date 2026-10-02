@@ -43,7 +43,8 @@ handler.
 
 **M3 Repo-state probe.** Every question about repository state, as typed results: not a
 repo or bare; unborn, detached and current HEAD from one porcelain v2 `--branch` status
-(pinned `--untracked-files=no --ignore-submodules=all`);
+(pinned `--untracked-files=no --ignore-submodules=all --no-ahead-behind`, the last avoiding
+the upstream ahead/behind revision walk `--branch` would otherwise do, review-GIT-02 finding 8);
 
 unmerged entries (any `u` line of that same status, such as a conflicted `stash pop` that
 left no in-progress marker) → `unmerged` ("resolve the conflicts first"); in-progress merge,

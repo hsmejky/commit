@@ -106,6 +106,9 @@ KD-R63: if `plan`'s output carries a non-null `runDir` from this slice on, asser
       rename precedes the lock link, and the lock link precedes the `plan.json` rename;
       later `state.json` rewrites (step 8, the in-process `plan --hunks`) may follow in
       any order.
+- [ ] GIT-02's `state`/`expectedHead` stand-in (KD-R65) is retired: the Seam-1 assertions
+      move to `plan.json` `state` and `state.json` `head`, and `plan`'s stdout drops the
+      `state`/`expectedHead` fields (neither is in C:plan's stdout shape).
 
 
 ## CHG-04: Index fingerprint and tree state
