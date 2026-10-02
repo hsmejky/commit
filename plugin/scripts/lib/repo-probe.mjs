@@ -104,17 +104,22 @@ export async function headState({ cwd, env, now }) {
   return { kind, branch, unborn, head };
 }
 
-// Git-path names `inProgressState` checks, in Q21's own order, each paired with the kind it
-// reports. `MERGE_HEAD`/`CHERRY_PICK_HEAD`/`REVERT_HEAD` are checked before `sequencer`, so a
-// paused multi-pick cherry-pick or revert (its own head marker already committed by hand,
-// only `sequencer/` left) is told apart from one still active (whose head marker exists):
-// the first marker found, in this order, wins.
+// Git-path names `inProgressState` checks, each paired with the kind it reports. `rebase-merge`
+// and `rebase-apply` are checked first (review-GIT-03 finding 1, Q21 amended): a rebase
+// stopped on a conflicting `merge` todo command (`git rebase -r`, or a hand-written `merge`
+// line) leaves both a rebase marker and `MERGE_HEAD` (confirmed on git 2.54), and the rebase
+// marker must win so the advice is "continue the rebase by hand", not the merge
+// finish-or-abort text; the refusal's domain code and exit code are the same either way, only
+// the message changes. `MERGE_HEAD`/`CHERRY_PICK_HEAD`/`REVERT_HEAD` are checked before
+// `sequencer`, so a paused multi-pick cherry-pick or revert (its own head marker already
+// committed by hand, only `sequencer/` left) is told apart from one still active (whose head
+// marker exists): the first marker found, in this order, wins.
 const IN_PROGRESS_PATHS = Object.freeze([
+  ['rebase-merge', 'rebase'],
+  ['rebase-apply', 'rebase'],
   ['MERGE_HEAD', 'merge'],
   ['CHERRY_PICK_HEAD', 'cherry-pick'],
   ['REVERT_HEAD', 'revert'],
-  ['rebase-merge', 'rebase'],
-  ['rebase-apply', 'rebase'],
   ['BISECT_LOG', 'bisect'],
   ['sequencer', 'sequence'],
   ['SQUASH_MSG', 'squash'],

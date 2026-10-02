@@ -24,7 +24,12 @@
   line of the same porcelain v2 status that reads HEAD (pinned `--untracked-files=no
   --ignore-submodules=all --no-ahead-behind`), so conflict markers are never committed. A paused sequence counts as in progress
   even when no `CHERRY_PICK_HEAD` or `REVERT_HEAD` is left (the stop after a conflicted pick
-  was committed by hand): a new commit would land in the middle of the sequence. The
+  was committed by hand): a new commit would land in the middle of the sequence. A rebase
+  marker (`rebase-merge` or `rebase-apply`) wins over `MERGE_HEAD`, `CHERRY_PICK_HEAD` and
+  `REVERT_HEAD` when more than one is present: a rebase stopped on a conflicting `merge` todo
+  command leaves both a rebase marker and `MERGE_HEAD`, and the rebase advice ("continue the
+  rebase by hand") applies, not the merge one. A stopped `git am` also leaves `rebase-apply`
+  and gets the same rebase message. The
   encoding check reads `i18n.commitEncoding`, compared case-insensitively with `utf-8` and
   `utf8`: the script writes UTF-8 messages only, so a repo that declares another encoding
   would get commits labelled with the wrong one.
