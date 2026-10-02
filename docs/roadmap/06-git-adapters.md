@@ -39,7 +39,7 @@ unborn) and adds the detached-HEAD notice.
 
 **Blocked by:** GIT-01, RUN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q21, C:plan (`state.kind`, notices), stories 182, 183, M3.
 
@@ -47,10 +47,10 @@ KD-R65: `plan.json` `state` and `state.json` `head` cannot be observed until CHG
 either file; this slice asserts the first two criteria below against `plan`'s stdout
 `state`/`expectedHead` instead, a Seam-1 stand-in CHG-03b removes.
 
-- [ ] Seam 1: on a branch → `plan.json` `state: { kind: "branch", branch, unborn: false }` and the stored expected HEAD equals `git rev-parse HEAD`.
-- [ ] Seam 1: detached HEAD → `state.kind: "detached"` and the detached-HEAD notice in the stored notices (reply `notices` once RPL renders them).
-- [ ] Seam 1: unborn HEAD → `unborn: true`, expected HEAD `null`, no failing `git show HEAD:` call (config at HEAD skipped, story 182).
-- [ ] Exactly one status call supplies branch, HEAD and (for GIT-04) the unmerged lines; `headTree()` returns `HEAD^{tree}` (consumed by EXE's backstop tree comparison).
+- [x] Seam 1: on a branch → `plan.json` `state: { kind: "branch", branch, unborn: false }` and the stored expected HEAD equals `git rev-parse HEAD`.
+- [x] Seam 1: detached HEAD → `state.kind: "detached"` and the detached-HEAD notice in the stored notices (reply `notices` once RPL renders them).
+- [x] Seam 1: unborn HEAD → `unborn: true`, expected HEAD `null`, no failing `git show HEAD:` call (config at HEAD skipped, story 182).
+- [x] Exactly one status call supplies branch, HEAD and (for GIT-04) the unmerged lines; `headTree()` returns `HEAD^{tree}` (consumed by EXE's backstop tree comparison).
 
 
 ## GIT-03: M3 in-progress operations refused
