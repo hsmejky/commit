@@ -5,8 +5,8 @@
 // by a `commit` token is a commit: its arguments, read up to where git's arguments end, are
 // checked to be literal, expanded and matched against the Q4 allowlist; every other flag or
 // argument is the generic row naming it. An argument-appending wrapper (`xargs`, `gxargs`,
-// `parallel`, or a token holding a glob or brace character that may expand to one) before
-// `git` in the segment denies what would otherwise be allowed (the wrapper row), and
+// `parallel`, or a possible wrapper: a token the shell may expand into one, or a `)` token)
+// before `git` in the segment denies what would otherwise be allowed (the wrapper row), and
 // the bare/`-m`/`-F`/`--message`/`--file` row applies only when nothing else matches. Git's
 // own options before the subcommand, the specific rows and script calls (S2) follow in later
 // slices.
@@ -57,25 +57,34 @@ const COMMIT = /^commit$/i;
 // optionally `.exe`, case-insensitive. It appends words from its input (or its own
 // arguments) to the command it runs, so an allowlisted form under it may carry `-n` or `-m`.
 const WRAPPER = /(?:^|[/\\])(xargs|gxargs|parallel)(?:\.exe)?$/i;
-// A possible wrapper (C:guard step 3, fail closed): a token holding a glob or brace character
-// may expand to a wrapper's name (`/usr/bin/x[a]rgs`, `xargs{,}`). A lone `{` is the
-// brace-group keyword, which expands to nothing.
-const MAY_EXPAND = /[*?[{]/;
+// C:guard step 4: a token holding `$`, a backtick, `{`, `(` or a glob character may turn
+// into another word or into several arguments.
+const NOT_LITERAL = /[$`{(*?[]/;
+// A tilde expansion: `~` at the start of a word or after `=` or `:` (`~-` is `$OLDPWD`).
+const TILDE = /(?:^|[=:])~/;
+
+const isOp = (token, op) => typeof token === 'object' && token.op === op;
 
 // The first wrapper among the tokens before `end`: its lower-case basename, or a possible
-// wrapper as written; undefined when there is none.
+// wrapper as written; undefined when there is none. A possible wrapper (C:guard step 3, fail
+// closed) is a token that is not literal by step 4 or holds a tilde expansion, since the
+// shell may expand it to a wrapper's name (`/usr/bin/x[a]rgs`, `xargs{,}`, extglob `x@(a)rgs`,
+// `$W`, `~-`), or a `)` token, which ends an extglob split at its `|` (`x@(z|a)rgs`). Two
+// tokens are exempt: a lone `{` is the brace-group keyword, which expands to nothing, and a
+// lone `!(` is the `!` keyword before a subshell (`!(git commit --no-edit)`) or, with
+// extglob on, a pattern whose closing `)` token counts when it precedes `git` (`!(z) git …`).
+const NEVER_A_WRAPPER = new Set(['{', '!(']);
 function wrapperBefore(tokens, end) {
   for (let i = 0; i < end; i += 1) {
     const token = tokens[i];
+    if (isOp(token, ')')) return ')';
     if (typeof token !== 'string') continue;
     const match = WRAPPER.exec(token);
     if (match !== null) return match[1].toLowerCase();
-    if (token !== '{' && MAY_EXPAND.test(token)) return token;
+    if (!NEVER_A_WRAPPER.has(token) && (NOT_LITERAL.test(token) || TILDE.test(token))) return token;
   }
   return undefined;
 }
-
-const isOp = (token, op) => typeof token === 'object' && token.op === op;
 
 // C:guard step 4: git's arguments end at the segment's end, a `cut` token, a `)` token or,
 // in PowerShell, a `}` token.
@@ -84,11 +93,11 @@ function endsArguments(token, shell) {
 }
 
 // C:guard step 4: a token the shell may turn into another word or into several arguments
-// is not literal: a `(` or `{` token, a token holding `$`, a backtick, `{`, `(` or a glob
-// character and, in PowerShell, one holding `,` or `@`, or equal to `--%`.
+// is not literal: a `(` or `{` token, a NOT_LITERAL token and, in PowerShell, one holding
+// `,` or `@`, or equal to `--%`.
 function isLiteral(token, shell) {
   if (typeof token !== 'string') return false;
-  if (/[$`{(*?[]/.test(token)) return false;
+  if (NOT_LITERAL.test(token)) return false;
   return !(shell === 'powershell' && (/[,@]/.test(token) || token === '--%'));
 }
 

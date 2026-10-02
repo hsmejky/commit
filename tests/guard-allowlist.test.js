@@ -56,6 +56,8 @@ const allowed = [
   'git commit --quiet --fixup=HEAD~1',
   'git commit --no-edit 2>&1 >/dev/null',
   '(git commit --no-edit)',
+  '!(git commit --no-edit)',
+  '! git commit --no-edit',
   'cd sub && git commit --no-edit',
 ];
 for (const command of allowed) {
@@ -171,9 +173,11 @@ test('Seam 3: a second `git commit` in the same segment is classified too', (t) 
 // An argument-appending wrapper before `git` in the segment (`xargs`, `gxargs`, `parallel`) can
 // add any option or message to an allowlisted form (`printf -- -n | xargs git commit --no-edit`
 // skips the hooks), so the form is denied there (C:guard step 3, fail closed). A token before
-// `git` holding a glob or brace character (`*`, `?`, `[`, `{`) may expand to a wrapper's name
-// (`/usr/bin/x[a]rgs`, `xargs{,}`), so it counts as one and is named as written. Its row ranks
-// just above the bare row: a form already outside the allowlist keeps its own, more specific row.
+// `git` that is not literal by step 4 (`$`, a backtick, `{`, `(`, `*`, `?`, `[`) or holds a
+// tilde expansion may expand to a wrapper's name (`/usr/bin/x[a]rgs`, `xargs{,}`, `x@(a)rgs`,
+// `$W`, `~-`), so it counts as one, named as it reads after quote removal; so does a `)`
+// token, which ends an extglob split at its `|`. Its row ranks just above the bare row: a form
+// already outside the allowlist keeps its own, more specific row.
 const wrapper = (name) => `git commit run by ${name} is not allowed: it can append arguments. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
 const wrapperRow = [
   ['xargs git commit --no-edit', 'xargs'],
@@ -197,9 +201,26 @@ const wrapperRow = [
   ['xargs{,} git commit --no-edit', 'xargs{,}'],
   ['{xargs,} git commit --amend --no-edit', '{xargs,}'],
   ['x{a,}rgs git commit', 'x{a,}rgs'],
+  // Extglob (with `shopt -s extglob` on an earlier line), variable and tilde expansion in the
+  // wrapper's name (review GRD-04 round 3). `x@(z|a)rgs` is split at its `|`, so git's segment
+  // holds only the `)` that closes the pattern.
+  ['/usr/bin/x@(a)rgs.exe git commit --no-edit', '/usr/bin/x@('],
+  ['x+(a)rgs git commit --no-edit', 'x+('],
+  ['x!(z)args git commit --fixup=1a2b3c4', 'x!('],
+  ['x@(z|a)rgs git commit --no-edit', ')'],
+  ['!(z) git commit --no-edit', ')'],
+  ['W=xargs; printf -- -n | $W git commit --no-edit', '$W'],
+  ["printf -- -n | \"$W\" git commit --no-edit", '$W'],
+  ["$'xargs' git commit --no-edit", 'xargs'],
+  ['OLDPWD=/usr/bin/xargs; printf -- -n | ~- git commit --no-edit', '~-'],
+  ['~+ git commit --amend --no-edit', '~+'],
+  ['a=~- git commit --no-edit', 'a=~-'],
   // Fail closed: any such token counts, even one that cannot name a wrapper.
   ["a='*' git commit --no-edit", 'a=*'],
   ['nice -n 5 [x] git commit --no-edit', '[x]'],
+  ['GIT_AUTHOR_DATE=$d git commit --no-edit', 'GIT_AUTHOR_DATE=$d'],
+  ['case x in a) git commit --no-edit;; esac', ')'],
+  ['case $x in a) git commit --no-edit;; esac', '$x'],
 ];
 for (const [command, name] of wrapperRow) {
   test(`Seam 3: ${JSON.stringify(command)} is denied naming the wrapper ${name}`, (t) => {
@@ -219,6 +240,40 @@ test('Seam 3: a lone `{` (the brace-group keyword) before `git` is not a possibl
   assert.deepEqual(hook(c, '{ git commit --no-edit; }'), { stdout: '', stderr: '' });
   assert.deepEqual(hook(c, '{ xargs git commit --no-edit; }'), { stdout: denyJson(wrapper('xargs')), stderr: '' });
 });
+
+// A substitution before `git` never reaches step 3: the blanket rule denies the command
+// (C:guard step 2).
+const substitutionBeforeGit = [
+  '$(echo xargs) git commit --no-edit',
+  '`echo xargs` git commit --no-edit',
+  '${W} git commit --no-edit',
+  'x=$(date) git commit --no-edit',
+];
+for (const command of substitutionBeforeGit) {
+  test(`Seam 3: ${JSON.stringify(command)} is denied by the blanket rule`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: denyJson(MESSAGES.blanket), stderr: '' });
+  });
+}
+
+// Common shapes that put a glob, a test bracket or a subshell near `git` but not before it in
+// its segment stay allowed: `;`, `&&`, `then` and `do` end the segment, a `(` token is not
+// a possible wrapper, and neither is a lone `!(` (the `!` keyword before a subshell).
+const allowedNearGit = [
+  'for f in *.md; do git commit --no-edit; done',
+  '[ -f a ] && git commit --no-edit',
+  'if [ -f a ]; then git commit --no-edit; fi',
+  '(cd sub && git commit --no-edit)',
+  '(git commit --no-edit)',
+  'time -p git commit --no-edit',
+  '{ echo; } > f; git commit --no-edit',
+];
+for (const command of allowedNearGit) {
+  test(`Seam 3: ${JSON.stringify(command)} has no output (nothing before git may name a wrapper)`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });
+  });
+}
 
 test('Seam 3: `find -exec git commit … {} +` is denied by the `{` of its placeholder (step 4)', (t) => {
   const c = createCase(t, { repo: false });
