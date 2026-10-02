@@ -170,14 +170,12 @@ test('Seam 3: a second `git commit` in the same segment is classified too', (t) 
   assert.deepEqual(hook(c, 'git commit --no-edit; xargs git commit -a'), { stdout: denyJson(generic('-a')), stderr: '' });
 });
 
-// An argument-appending wrapper before `git` in the segment (`xargs`, `gxargs`, `parallel`) can
-// add any option or message to an allowlisted form (`printf -- -n | xargs git commit --no-edit`
-// skips the hooks), so the form is denied there (C:guard step 3, fail closed). A token before
-// `git` that is not literal by step 4 (`$`, a backtick, `{`, `(`, `*`, `?`, `[`) or holds a
-// tilde expansion may expand to a wrapper's name (`/usr/bin/x[a]rgs`, `xargs{,}`, `x@(a)rgs`,
-// `$W`, `~-`), so it counts as one, named as it reads after quote removal; so does a `)`
-// token, which ends an extglob split at its `|`. Its row ranks just above the bare row: a form
-// already outside the allowlist keeps its own, more specific row.
+// C:guard step 3 (fail closed): every token before `git` in its command must fit the prefix
+// allowlist (reserved words and `(`, literal `NAME=value` assignments, then the runners
+// `nice`, `nohup`, `command` and `env` with their fixed option grammars). Any other token is a
+// possible wrapper, which may append arguments (`printf -- -n | xargs git commit --no-edit`
+// skips the hooks), named as it reads after quote removal. Its row ranks just above the bare
+// row: a form already outside the allowlist keeps its own, more specific row.
 const wrapper = (name) => `git commit run by ${name} is not allowed: it can append arguments. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
 const wrapperRow = [
   ['xargs git commit --no-edit', 'xargs'],
@@ -185,13 +183,14 @@ const wrapperRow = [
   ['xargs -0 git commit --fixup=1a2b3c4', 'xargs'],
   ['xargs git commit -q --amend --no-edit', 'xargs'],
   ['xargs nice git commit --no-edit', 'xargs'],
-  ['/usr/bin/xargs git commit --no-edit', 'xargs'],
-  ['XArgs.exe git commit --no-edit', 'xargs'],
+  ['/usr/bin/xargs git commit --no-edit', '/usr/bin/xargs'],
+  ['XArgs.exe git commit --no-edit', 'XArgs.exe'],
   ['gxargs git commit --no-edit', 'gxargs'],
   ['parallel git commit --no-edit', 'parallel'],
-  ['busybox xargs git commit --no-edit', 'xargs'],
+  ['busybox xargs git commit --no-edit', 'busybox'],
   ['xargs git commit', 'xargs'],
   ['xargs git commit -m x', 'xargs'],
+  ['xargs -a <(echo -n) git commit --no-edit', 'xargs'],
   // A glob or brace expansion in the wrapper's own name (review GRD-04 round 2).
   ['/usr/bin/x[a]rgs.exe git commit --no-edit', '/usr/bin/x[a]rgs.exe'],
   ["printf '%s\\n' \"-n -m 'feat: x'\" | /usr/bin/x[a]rgs.exe git commit --no-edit", '/usr/bin/x[a]rgs.exe'],
@@ -203,24 +202,51 @@ const wrapperRow = [
   ['x{a,}rgs git commit', 'x{a,}rgs'],
   // Extglob (with `shopt -s extglob` on an earlier line), variable and tilde expansion in the
   // wrapper's name (review GRD-04 round 3). `x@(z|a)rgs` is split at its `|`, so git's segment
-  // holds only the `)` that closes the pattern.
+  // starts with `a`.
   ['/usr/bin/x@(a)rgs.exe git commit --no-edit', '/usr/bin/x@('],
   ['x+(a)rgs git commit --no-edit', 'x+('],
   ['x!(z)args git commit --fixup=1a2b3c4', 'x!('],
-  ['x@(z|a)rgs git commit --no-edit', ')'],
-  ['!(z) git commit --no-edit', ')'],
+  ['x@(z|a)rgs git commit --no-edit', 'a'],
+  ['!(z) git commit --no-edit', '!('],
   ['W=xargs; printf -- -n | $W git commit --no-edit', '$W'],
   ["printf -- -n | \"$W\" git commit --no-edit", '$W'],
   ["$'xargs' git commit --no-edit", 'xargs'],
   ['OLDPWD=/usr/bin/xargs; printf -- -n | ~- git commit --no-edit', '~-'],
   ['~+ git commit --amend --no-edit', '~+'],
   ['a=~- git commit --no-edit', 'a=~-'],
-  // Fail closed: any such token counts, even one that cannot name a wrapper.
+  // A runner that splits a string into words (review GRD-04 round 4), and other runners
+  // outside the list (accepted false denies, `sudo` among them).
+  ['printf -- -n | env -Sxargs git commit --amend --no-edit', '-Sxargs'],
+  ["printf -- -n | env -S 'xargs -r' git commit --amend --no-edit", '-S'],
+  ['env --split-string=xargs git commit --no-edit', '--split-string=xargs'],
+  ['env -C sub git commit --no-edit', '-C'],
+  ['env A=1 -i git commit --no-edit', '-i'],
+  ["watch 'xargs -r' git commit --no-edit", 'watch'],
+  ['rush git commit --no-edit', 'rush'],
+  ['sudo git commit --no-edit', 'sudo'],
+  ['timeout 5 git commit --no-edit', 'timeout'],
+  ['command -v git commit --no-edit', '-v'],
+  ['nice -n git commit --no-edit', '-n'],
+  ['A=1 if git commit --no-edit; then :; fi', 'if'],
+  ['nice A=1 git commit --no-edit', 'A=1'],
+  ['!(xargs git commit --no-edit)', 'xargs'],
+  ['(xargs git commit --no-edit)', 'xargs'],
+  ['{ xargs git commit --no-edit; }', 'xargs'],
+  // Inside a process substitution the allowlist applies from its `(` (review GRD-04 round 4).
+  ['diff <(xargs git commit --no-edit) f', 'xargs'],
+  ['echo -n | tee >(xargs git commit --no-edit)', 'xargs'],
+  ['tee >(echo git commit --no-edit)', 'echo'],
+  // Fail closed: any other token counts, even one that cannot name a wrapper (documented
+  // false denies).
   ["a='*' git commit --no-edit", 'a=*'],
   ['nice -n 5 [x] git commit --no-edit', '[x]'],
   ['GIT_AUTHOR_DATE=$d git commit --no-edit', 'GIT_AUTHOR_DATE=$d'],
-  ['case x in a) git commit --no-edit;; esac', ')'],
-  ['case $x in a) git commit --no-edit;; esac', '$x'],
+  ['GIT_DIR=~/r/.git git commit --no-edit', 'GIT_DIR=~/r/.git'],
+  ['case x in a) git commit --no-edit;; esac', 'case'],
+  ['case $x in a) git commit --no-edit;; esac', 'case'],
+  ['f() { git commit --no-edit; }', 'f'],
+  ['function f { git commit --no-edit; }', 'function'],
+  ['>!(z) git commit --no-edit', 'z'],
 ];
 for (const [command, name] of wrapperRow) {
   test(`Seam 3: ${JSON.stringify(command)} is denied naming the wrapper ${name}`, (t) => {
@@ -235,19 +261,16 @@ test('Seam 3: under a wrapper a form outside the allowlist keeps its own row', (
   assert.deepEqual(hook(c, 'xargs git commit --fixup $s'), { stdout: denyJson(MESSAGES.literalArguments), stderr: '' });
 });
 
-test('Seam 3: a lone `{` (the brace-group keyword) before `git` is not a possible wrapper', (t) => {
-  const c = createCase(t, { repo: false });
-  assert.deepEqual(hook(c, '{ git commit --no-edit; }'), { stdout: '', stderr: '' });
-  assert.deepEqual(hook(c, '{ xargs git commit --no-edit; }'), { stdout: denyJson(wrapper('xargs')), stderr: '' });
-});
-
-// A substitution before `git` never reaches step 3: the blanket rule denies the command
-// (C:guard step 2).
+// A command substitution, before `git` or around it, never reaches step 3: the blanket rule
+// denies the command (C:guard step 2), even when `git` is its first word.
 const substitutionBeforeGit = [
   '$(echo xargs) git commit --no-edit',
   '`echo xargs` git commit --no-edit',
   '${W} git commit --no-edit',
   'x=$(date) git commit --no-edit',
+  'echo $(git commit --no-edit)',
+  'echo `git commit --no-edit`',
+  'echo $(xargs git commit --no-edit)',
 ];
 for (const command of substitutionBeforeGit) {
   test(`Seam 3: ${JSON.stringify(command)} is denied by the blanket rule`, (t) => {
@@ -256,20 +279,45 @@ for (const command of substitutionBeforeGit) {
   });
 }
 
-// Common shapes that put a glob, a test bracket or a subshell near `git` but not before it in
-// its segment stay allowed: `;`, `&&`, `then` and `do` end the segment, a `(` token is not
-// a possible wrapper, and neither is a lone `!(` (the `!` keyword before a subshell).
+// Shapes whose tokens before `git` all fit the prefix allowlist stay allowed. A `;` or `&&`
+// ends the segment; `then`, `do`, `!`, `{`, `(` and `time [-p]` are reserved words; a `(`
+// still open at `git` (a subshell, `<(…)`, `>(…)` or `!(`) starts a new command.
 const allowedNearGit = [
   'for f in *.md; do git commit --no-edit; done',
   '[ -f a ] && git commit --no-edit',
   'if [ -f a ]; then git commit --no-edit; fi',
+  'if git commit --no-edit; then :; fi',
+  'while false; do git commit --no-edit; done',
   '(cd sub && git commit --no-edit)',
   '(git commit --no-edit)',
+  '{ git commit --no-edit; }',
   'time -p git commit --no-edit',
+  'time (git commit --no-edit)',
+  '! git commit --no-edit',
   '{ echo; } > f; git commit --no-edit',
+  'diff <(git commit --no-edit) f',
+  'diff <(nice git commit --no-edit) f',
+  'echo -n | tee >(git commit --no-edit)',
+  'tee >(GIT_EDITOR=: git commit --no-edit) < f',
+  'f() (git commit --no-edit)',
+  'x=1 y=2 git commit --no-edit',
+  'GIT_EDITOR=: git commit --no-edit',
+  'LC_ALL=C.UTF-8 git commit --amend --no-edit',
+  "x=$'a' git commit --no-edit",
+  '>out.txt git commit --no-edit',
+  '2>&1 git commit --no-edit',
+  'nice git commit --no-edit',
+  'nice -n 5 git commit --no-edit',
+  'nice -5 git commit --no-edit',
+  'nohup git commit --no-edit',
+  'command git commit --no-edit',
+  'env git commit --no-edit',
+  'env GIT_EDITOR=: git commit --no-edit',
+  'env -i -u HOME A=1 B=2 git commit --fixup=1a2b3c4',
+  'A=1 nice -n 5 nohup env B=2 command git commit --no-edit',
 ];
 for (const command of allowedNearGit) {
-  test(`Seam 3: ${JSON.stringify(command)} has no output (nothing before git may name a wrapper)`, (t) => {
+  test(`Seam 3: ${JSON.stringify(command)} has no output (every token before git fits the prefix allowlist)`, (t) => {
     const c = createCase(t, { repo: false });
     assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });
   });

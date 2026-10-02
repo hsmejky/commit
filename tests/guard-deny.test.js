@@ -17,12 +17,18 @@ const seedCases = JSON.parse(fs.readFileSync(SEED, 'utf8')).cases;
 
 let runHook;
 let mentionsCommit;
+let classify;
 let MESSAGES;
+let ROUTE;
+let PERSONAL_SKILL_LINE;
 
 beforeEach(async () => {
   ({ runHook, mentionsCommit } = await loadLib('hook-io'));
-  ({ MESSAGES } = await loadLib('command-classifier'));
+  ({ classify, MESSAGES, ROUTE, PERSONAL_SKILL_LINE } = await loadLib('command-classifier'));
 });
+
+// The wrapper row (C:guard step 3) naming a token before `git` outside the prefix allowlist.
+const wrapper = (name) => `git commit run by ${name} is not allowed: it can append arguments. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
 
 function denyJson(message) {
   return JSON.stringify({
@@ -61,7 +67,6 @@ const bareDenies = [
   'a\ngit commit -m x',
   "git co''mmit -m x",
   'git commit -m "a\\"b"',
-  'echo git commit',
   "echo $'\\'' ; git commit -m x",
   "git $'commit' -m x",
   "git $'commit\\0x' -m x",
@@ -76,6 +81,11 @@ for (const command of bareDenies) {
     assert.deepEqual({ ...hook(c, command) }, { stdout: denyJson(MESSAGES.bare), stderr: '' });
   });
 }
+
+test('Seam 3: Bash `echo git commit` is denied by the wrapper row naming echo (documented false positive)', (t) => {
+  const c = createCase(t, { repo: false });
+  assert.deepEqual({ ...hook(c, 'echo git commit') }, { stdout: denyJson(wrapper('echo')), stderr: '' });
+});
 
 test('Seam 3: the comment form `# git commit -m x` is denied by the blanket rule', (t) => {
   const c = createCase(t, { repo: false });
@@ -102,14 +112,28 @@ for (const s of seedCases.filter((x) => x.segments.length === 0)) {
 
 // Every tokenized `bypass` seed case (GRD-03 review): a command bash runs as `git commit`
 // through a quoting, escaped-newline, carriage-return, NUL or `{name}` redirection edge is
-// denied with the bare-commit message.
+// denied with the bare-commit message. In `b-bypass-escaped-cr` the first reading's segment
+// `echo git commit -m x` comes first and is the wrapper row naming `echo` (C:guard step 3);
+// the second reading's `git commit -m x` is checked on its own below.
+const bypassMessage = { 'b-bypass-escaped-cr': () => wrapper('echo') };
 for (const s of seedCases.filter((x) => x.topic === 'bypass' && x.segments.length > 0)) {
   test(`Seam 3: bypass seed ${s.id} → deny`, (t) => {
     const c = createCase(t, { repo: false });
     assert.equal(s.decision, 'deny');
-    assert.deepEqual({ ...hook(c, s.command) }, { stdout: denyJson(MESSAGES.bare), stderr: '' });
+    const message = Object.hasOwn(bypassMessage, s.id) ? bypassMessage[s.id]() : MESSAGES.bare;
+    assert.deepEqual({ ...hook(c, s.command) }, { stdout: denyJson(message), stderr: '' });
   });
 }
+
+test('G3: in `b-bypass-escaped-cr` the second reading\'s segments alone are the bare-commit deny', () => {
+  const seed = seedCases.find((x) => x.id === 'b-bypass-escaped-cr');
+  assert.deepEqual(seed.segments[0], ['echo', 'git', 'commit', '-m', 'x']);
+  assert.deepEqual(classify(seed.segments.slice(1), { shell: 'bash' }), {
+    decision: 'deny',
+    message: MESSAGES.bare,
+    scriptCalls: [],
+  });
+});
 
 test('Seam 3: the step 1 mention text drops NULs and carriage returns', () => {
   assert.equal(mentionsCommit('git com\rmit'), true);

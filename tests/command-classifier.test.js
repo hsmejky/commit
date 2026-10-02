@@ -64,7 +64,6 @@ test('a blanket result is the blanket deny with no script calls', () => {
 const denyTable = [
   [['git', 'commit', '-m', 'x']],
   [['cd', 'x'], ['git', 'commit', '-m', 'x']],
-  [['echo', 'git', 'commit']],
   [['git', 'COMMIT', '-m', 'x']],
   [['/usr/bin/Git.exe', 'commit']],
   [['git', { redir: '2>&1', target: null }, 'commit']],
@@ -74,6 +73,17 @@ for (const parsed of denyTable) {
     assert.deepEqual(classify(parsed, { shell: 'bash' }), { decision: 'deny', message: MESSAGES.bare, scriptCalls: [] });
   });
 }
+
+// A token before `git` outside the prefix allowlist (C:guard step 3) is a possible wrapper;
+// its row outranks the bare row, so `echo git commit` (a documented false positive) is denied
+// naming `echo`.
+test('classify([["echo","git","commit"]]) is the wrapper row naming echo', () => {
+  assert.deepEqual(classify([['echo', 'git', 'commit']], { shell: 'bash' }), {
+    decision: 'deny',
+    message: `git commit run by echo is not allowed: it can append arguments. ${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
+    scriptCalls: [],
+  });
+});
 
 const noneTable = [
   [],
@@ -90,8 +100,10 @@ for (const parsed of noneTable) {
 }
 
 // GRD-04 at G3 directly: where `commit`'s arguments end and which are not literal, per
-// shell (C:guard step 4). The PowerShell rows are reached through `runHook` once its
-// tokenizer lands (GRD-06).
+// shell (C:guard step 4), and the prefix allowlist before `git` (step 3: in PowerShell it is
+// empty, but a `(` or `{` still open at `git` starts a new command, so `if (…) { git … }`,
+// `&{ git … }` and `. { git … }` fit). The PowerShell rows are reached through `runHook` once
+// its tokenizer lands (GRD-06).
 const commitArgTable = [
   ['bash', [['git', 'commit', '--no-edit', { op: ')' }, '-m', 'x']], 'none'],
   ['powershell', [['git', 'commit', '--no-edit', { op: '}' }, '-m', 'x']], 'none'],
@@ -103,12 +115,28 @@ const commitArgTable = [
   ['powershell', [['git', 'commit', '--fixup', { op: '(' }, 'HEAD', { op: ')' }]], 'literalArguments'],
   ['bash', [['git', 'commit', '--fixup', '@~1']], 'none'],
   ['bash', [['git', 'commit', '--no-edit', 'a,b']], 'generic:a,b'],
+  ['powershell', [['if', { op: '(' }, '$ok', { op: ')' }, { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
+  ['powershell', [['if', { op: '(' }, 'Test-Path', 'a', { op: ')' }, { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
+  ['powershell', [['foreach', { op: '(' }, '$f', 'in', '$a', { op: ')' }, { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
+  ['powershell', [['.', { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
+  ['powershell', [['&', { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
+  ['powershell', [['xargs', 'git', 'commit', '--no-edit']], 'wrapper:xargs'],
+  ['powershell', [['&', 'xargs', 'git', 'commit', '--no-edit']], 'wrapper:&'],
+  ['powershell', [['&', { op: '(' }, 'xargs', { op: ')' }, 'git', 'commit', '--no-edit']], 'wrapper:&'],
+  ['powershell', [['&', 'git', 'commit', '--no-edit']], 'wrapper:&'],
+  ['powershell', [['.', 'git', 'commit', '--no-edit']], 'wrapper:.'],
+  ['powershell', [['env', 'git', 'commit', '--no-edit']], 'wrapper:env'],
+  ['powershell', [['if', { op: '(' }, '$ok', { op: ')' }, { op: '{' }, 'xargs', 'git', 'commit', '--no-edit', { op: '}' }]], 'wrapper:xargs'],
+  ['bash', [['nice', 'git', 'commit', '--no-edit']], 'none'],
+  ['bash', [['xargs', 'git', 'commit', '-m', 'x']], 'wrapper:xargs'],
 ];
 for (const [shell, parsed, expected] of commitArgTable) {
   test(`classify(${JSON.stringify(parsed)}, ${shell}) → ${expected}`, () => {
     const message = expected === 'none' ? undefined
       : expected.startsWith('generic:') ? `git commit ${expected.slice(8)} is not allowed here. ${ROUTE_TEXT}\n${PERSONAL_TEXT}`
-        : MESSAGES[expected];
+        : expected.startsWith('wrapper:')
+          ? `git commit run by ${expected.slice(8)} is not allowed: it can append arguments. ${ROUTE_TEXT}\n${PERSONAL_TEXT}`
+          : MESSAGES[expected];
     const want = message === undefined ? { decision: 'none', scriptCalls: [] } : { decision: 'deny', message, scriptCalls: [] };
     assert.deepEqual(classify(parsed, { shell }), want);
   });

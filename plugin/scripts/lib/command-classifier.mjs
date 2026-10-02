@@ -4,12 +4,12 @@
 // A blanket result (G2) is the blanket deny. In each segment, a `git` token directly followed
 // by a `commit` token is a commit: its arguments, read up to where git's arguments end, are
 // checked to be literal, expanded and matched against the Q4 allowlist; every other flag or
-// argument is the generic row naming it. An argument-appending wrapper (`xargs`, `gxargs`,
-// `parallel`, or a possible wrapper: a token the shell may expand into one, or a `)` token)
-// before `git` in the segment denies what would otherwise be allowed (the wrapper row), and
-// the bare/`-m`/`-F`/`--message`/`--file` row applies only when nothing else matches. Git's
-// own options before the subcommand, the specific rows and script calls (S2) follow in later
-// slices.
+// argument is the generic row naming it. A token before `git` in its command that is outside
+// the prefix allowlist (C:guard step 3: shell keywords, literal assignments and a few runners
+// with fixed option grammars) is a possible wrapper, which may append arguments: it denies
+// what would otherwise be allowed (the wrapper row), and the bare/`-m`/`-F`/`--message`/
+// `--file` row applies only when nothing else matches. Git's own options before the
+// subcommand, the specific rows and script calls (S2) follow in later slices.
 
 /** C:guard `<route>`. It never names the `/commit` skill, which the model cannot invoke (Q2, Q8). */
 export const ROUTE =
@@ -41,9 +41,10 @@ function genericMessage(flag) {
 }
 
 /**
- * The wrapper row (C:guard step 3): an argument-appending wrapper before `git` in the segment.
+ * The wrapper row (C:guard step 3): a possible wrapper before `git` in its command.
  *
- * @param {string} wrapper its lower-case basename, or a possible wrapper's token as written.
+ * @param {string} wrapper the first token outside the prefix allowlist, as it reads after
+ *   quote removal (an operator token as its operator, `)`).
  * @returns {string}
  */
 function wrapperMessage(wrapper) {
@@ -53,37 +54,73 @@ function wrapperMessage(wrapper) {
 // A `git` token: basename `git` or `git.exe` after the last `/` or `\`, case-insensitive.
 const GIT = /(?:^|[/\\])git(?:\.exe)?$/i;
 const COMMIT = /^commit$/i;
-// An argument-appending wrapper (C:guard step 3): basename `xargs`, `gxargs` or `parallel`,
-// optionally `.exe`, case-insensitive. It appends words from its input (or its own
-// arguments) to the command it runs, so an allowlisted form under it may carry `-n` or `-m`.
-const WRAPPER = /(?:^|[/\\])(xargs|gxargs|parallel)(?:\.exe)?$/i;
 // C:guard step 4: a token holding `$`, a backtick, `{`, `(` or a glob character may turn
 // into another word or into several arguments.
 const NOT_LITERAL = /[$`{(*?[]/;
 // A tilde expansion: `~` at the start of a word or after `=` or `:` (`~-` is `$OLDPWD`).
 const TILDE = /(?:^|[=:])~/;
+const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const isOp = (token, op) => typeof token === 'object' && token.op === op;
 
-// The first wrapper among the tokens before `end`: its lower-case basename, or a possible
-// wrapper as written; undefined when there is none. A possible wrapper (C:guard step 3, fail
-// closed) is a token that is not literal by step 4 or holds a tilde expansion, since the
-// shell may expand it to a wrapper's name (`/usr/bin/x[a]rgs`, `xargs{,}`, extglob `x@(a)rgs`,
-// `$W`, `~-`), or a `)` token, which ends an extglob split at its `|` (`x@(z|a)rgs`). Two
-// tokens are exempt: a lone `{` is the brace-group keyword, which expands to nothing, and a
-// lone `!(` is the `!` keyword before a subshell (`!(git commit --no-edit)`) or, with
-// extglob on, a pattern whose closing `)` token counts when it precedes `git` (`!(z) git …`).
-const NEVER_A_WRAPPER = new Set(['{', '!(']);
-function wrapperBefore(tokens, end) {
-  for (let i = 0; i < end; i += 1) {
-    const token = tokens[i];
-    if (isOp(token, ')')) return ')';
-    if (typeof token !== 'string') continue;
-    const match = WRAPPER.exec(token);
-    if (match !== null) return match[1].toLowerCase();
-    if (!NEVER_A_WRAPPER.has(token) && (NOT_LITERAL.test(token) || TILDE.test(token))) return token;
+// C:guard step 3, the prefix allowlist (fail closed). Bash reserved words and the subshell
+// `(` that may start a command, `time` taking an optional `-p`.
+const BASH_KEYWORDS = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do']);
+// A literal assignment `NAME=value`: a value holding a character step 4 does not call
+// literal, or a tilde expansion, may expand to anything (`a='*'`, `GIT_DIR=~/r/.git`).
+const isLiteralAssignment = (token) => typeof token === 'string' && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)
+  && !NOT_LITERAL.test(token) && !TILDE.test(token);
+// Each runner with a fixed option grammar, given the index after its name and the `git`
+// token's index: the index of the command it runs (its options never reach `git`).
+const RUNNERS = new Map([
+  ['nice', (tokens, i, end) => {
+    if (tokens[i] === '-n' && i + 1 < end && /^[+-]?\d+$/.test(tokens[i + 1])) return i + 2;
+    return i < end && /^-\d+$/.test(tokens[i]) ? i + 1 : i;
+  }],
+  ['nohup', (tokens, i) => i],
+  ['command', (tokens, i) => i],
+  ['env', (tokens, i, end) => {
+    let at = i;
+    for (;;) {
+      if (at < end && tokens[at] === '-i') at += 1;
+      else if (tokens[at] === '-u' && at + 1 < end && NAME.test(tokens[at + 1])) at += 2;
+      else break;
+    }
+    while (at < end && isLiteralAssignment(tokens[at])) at += 1;
+    return at;
+  }],
+]);
+
+// Where `git`'s command starts: after the innermost bracket still open at `git` (Bash: a `(`
+// token, a subshell, `<(…)`, `>(…)` or an extglob; PowerShell: a `(` or `{` token, a
+// grouping expression, a subexpression or a script block), which starts a new command, or
+// the segment's start.
+function commandStart(tokens, at, shell) {
+  const open = [];
+  for (let i = 0; i < at; i += 1) {
+    if (isOp(tokens[i], '(') || (shell === 'powershell' && isOp(tokens[i], '{'))) open.push(i);
+    else if (isOp(tokens[i], ')') || (shell === 'powershell' && isOp(tokens[i], '}'))) open.pop();
   }
-  return undefined;
+  return open.length === 0 ? 0 : open[open.length - 1] + 1;
+}
+
+// The first token before `git` (at `end`) in its command outside the prefix allowlist (C:guard
+// step 3), as it reads after quote removal; undefined when every token fits. In Bash the
+// prefix is: reserved words and `(`, then literal assignments, then runners, each with its
+// options; in PowerShell it is empty.
+function wrapperBefore(tokens, end, shell) {
+  let i = commandStart(tokens, end, shell);
+  if (shell !== 'powershell') {
+    for (;;) {
+      if (i < end && (isOp(tokens[i], '(') || BASH_KEYWORDS.has(tokens[i]))) i += 1;
+      else if (i < end && tokens[i] === 'time') i += i + 1 < end && tokens[i + 1] === '-p' ? 2 : 1;
+      else break;
+    }
+    while (i < end && isLiteralAssignment(tokens[i])) i += 1;
+    while (i < end && RUNNERS.has(tokens[i])) i = RUNNERS.get(tokens[i])(tokens, i + 1, end);
+  }
+  if (i >= end) return undefined;
+  return typeof tokens[i] === 'string' ? tokens[i] : tokens[i].op;
 }
 
 // C:guard step 4: git's arguments end at the segment's end, a `cut` token, a `)` token or,
@@ -194,8 +231,8 @@ const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument ||
 
 // One `git commit` invocation, its `git` token at `at` and its arguments starting at `start`
 // (after `commit`): the deny message, or null when allowed. Every argument read must be
-// literal (C:guard step 4). A wrapper before `git` denies what would otherwise be allowed or
-// the bare row; its row ranks just above the bare row (C:guard Precedence).
+// literal (C:guard step 4). A possible wrapper before `git` denies what would otherwise be
+// allowed or the bare row; its row ranks just above the bare row (C:guard Precedence).
 function commitDecision(tokens, at, start, shell) {
   const args = [];
   for (let i = start; i < tokens.length && !endsArguments(tokens[i], shell); i += 1) {
@@ -204,7 +241,7 @@ function commitDecision(tokens, at, start, shell) {
   }
   const message = allowlistDecision(expandCommitArgs(args));
   if (message !== null && message !== MESSAGES.bare) return message;
-  const wrapper = wrapperBefore(tokens, at);
+  const wrapper = wrapperBefore(tokens, at, shell);
   return wrapper === undefined ? message : wrapperMessage(wrapper);
 }
 
