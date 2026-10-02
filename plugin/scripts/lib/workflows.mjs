@@ -9,9 +9,11 @@
 // only as far as a clean tree needs); GIT-01 adds step 2's first rows (`env`, `state`
 // outside a usable repo). CFG-02 adds step 1's M4 `loadConfig` (repo layer only, from the
 // worktree) and step 2's `config` row, ahead of `state` (C:plan step 2 order). CFG-04 widens
-// step 1 to also load the user layer, read regardless of repo state. Later slices
-// insert the other rows (3 run folder and lock peek, 5 snapshot and scan, 7 store and lock,
-// 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
+// step 1 to also load the user layer, read regardless of repo state. GIT-02 widens step 1 to
+// store the HEAD state and expected HEAD on `ctx` and queue the detached-HEAD notice, and adds
+// `state`/`expectedHead` to `plan`'s output. Later slices insert the other rows (3 run folder
+// and lock peek, 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in
+// their place in PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
@@ -30,9 +32,26 @@ import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 
-/** Step 1: probe the repo state, git and Node versions (M3). Shared with `release`. */
+// GIT-02: the detached-HEAD warning (Q21, story 183). No verbatim text is recorded for it in
+// C:cli-and-exit-codes (only refusal texts and the guard/signing notices are), so this is a
+// fresh notice text; tests assert it names "detached", not an exact string.
+const DETACHED_HEAD_NOTICE = 'HEAD is detached: this commit will not be on any branch';
+
+/**
+ * Step 1: probe the repo state, git and Node versions (M3). Shared with `release`/`commit`.
+ * GIT-02: inside a worktree, also stores the HEAD state and the expected HEAD on `ctx`, and
+ * (`plan` only, which alone threads a `notices` array) queues the detached-HEAD notice.
+ */
 async function probeRepo(ctx) {
   ctx.probe = await probe({ cwd: ctx.cwd, env: ctx.injected.env, now: ctx.injected.now });
+  const { repo } = ctx.probe;
+  if (repo !== null && repo.kind === 'worktree') {
+    ctx.state = { kind: repo.state.kind, branch: repo.state.branch, unborn: repo.state.unborn };
+    ctx.expectedHead = repo.state.head;
+    if (repo.state.kind === 'detached' && Array.isArray(ctx.notices)) {
+      ctx.notices.push(DETACHED_HEAD_NOTICE);
+    }
+  }
   return undefined;
 }
 
@@ -183,8 +202,9 @@ export async function plan(values, injected, { cwd }) {
   if (unbuilt.length > 0) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
-  const ctx = { injected, cwd, provisional: null };
-  const notices = [];
+  // GIT-02: `notices` lives on `ctx` from the start, so `probeRepo` (step 1) can queue the
+  // detached-HEAD notice before any later step runs.
+  const ctx = { injected, cwd, provisional: null, notices: [] };
   let facts;
   try {
     facts = await runSteps(PLAN_STEPS, ctx);
@@ -194,7 +214,7 @@ export async function plan(values, injected, { cwd }) {
     // throws: a removal error becomes a notice and never changes the outcome. Only a reply
     // carries notices so far; a refusal or `internal` drops it (KD-R64).
     const notice = ctx.provisional === null ? null : ctx.provisional.discard();
-    if (notice !== null) notices.push(notice);
+    if (notice !== null) ctx.notices.push(notice);
   }
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return {
@@ -204,7 +224,11 @@ export async function plan(values, injected, { cwd }) {
       // With no mode flag an empty index resolves to `split` (C:plan `mode`); a clean tree
       // has an empty index. M15 `resolveMode` replaces this at step 4.
       mode: 'split',
-      reply: await finalReply({ ...facts, notices }, ctx),
+      // GIT-02: `state` (C:plan `state.kind`) and `expectedHead` (`null` when unborn; stored
+      // for GIT-09/EXE's later head-moved checks, ahead of CHG-03b's own `state.json` write).
+      state: ctx.state,
+      expectedHead: ctx.expectedHead,
+      reply: await finalReply({ ...facts, notices: ctx.notices }, ctx),
       hunks: null,
     },
   };

@@ -2,8 +2,11 @@
 // about repository state, as typed results. Effectful, read-only; spawns only through M2.
 //
 // INT-01 built where the working tree is; GIT-01 adds the git and Node versions and the
-// not-a-repo and bare-repo states. GIT-02 adds the HEAD state from one porcelain v2
-// `--branch` status, GIT-03/GIT-04 the refused states.
+// not-a-repo and bare-repo states. GIT-02 adds the HEAD state (branch, detached, unborn) from
+// one porcelain v2 `--branch` status call, pinned `--untracked-files=no
+// --ignore-submodules=all` (Q21), plus standalone `head()` and `headTree()` for later slices
+// (GIT-09's reword facts, EXE's head-moved and backstop tree checks). GIT-03/GIT-04 add the
+// refused states, read from the same status call's `u` lines and from `gitPath`.
 
 import { gitVersion, run, toplevel } from './process-adapter.mjs';
 
@@ -49,6 +52,71 @@ async function classifyNoWorkTree({ cwd, env, now }) {
   return bare ? { kind: 'bare' } : { kind: 'not-a-repo' };
 }
 
+// Porcelain v2 `--branch` header lines (Q21): `# branch.oid <sha>` or `(initial)` on an
+// unborn HEAD; `# branch.head <name>` or `(detached)`. Order between the two is not relied
+// on; each is matched by its own prefix.
+const BRANCH_OID_PREFIX = '# branch.oid ';
+const BRANCH_HEAD_PREFIX = '# branch.head ';
+
+/**
+ * Reads branch, detached and unborn HEAD from one porcelain v2 `--branch` status call,
+ * pinned `--untracked-files=no --ignore-submodules=all` (Q21: no untracked scan runs here,
+ * and a dirty submodule is never read as a status line). GIT-04 reads the same call's `u`
+ * lines for unmerged entries; this function only parses the two branch headers.
+ *
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<{ kind: 'branch' | 'detached', branch: string | null, unborn: boolean,
+ *   head: string | null }>} `head`: the HEAD SHA from `branch.oid`, `null` when unborn.
+ * @throws {Error} when the status call exits non-zero.
+ */
+async function headState({ cwd, env, now }) {
+  const result = await run('git', [
+    'status', '--porcelain=v2', '--branch', '--untracked-files=no', '--ignore-submodules=all',
+  ], { cwd, env, now });
+  if (result.code !== 0) throw new Error(`git status failed (${result.code}): ${result.stderr}`);
+  let head = null;
+  let unborn = false;
+  let kind = 'branch';
+  let branch = null;
+  for (const line of result.stdout.toString('utf8').split('\n')) {
+    if (line.startsWith(BRANCH_OID_PREFIX)) {
+      const value = line.slice(BRANCH_OID_PREFIX.length);
+      if (value === '(initial)') unborn = true;
+      else head = value;
+    } else if (line.startsWith(BRANCH_HEAD_PREFIX)) {
+      const value = line.slice(BRANCH_HEAD_PREFIX.length);
+      if (value === '(detached)') kind = 'detached';
+      else branch = value;
+    }
+  }
+  return { kind, branch, unborn, head };
+}
+
+/**
+ * The current HEAD SHA (`git rev-parse HEAD`), read on its own (GIT-09's reword facts, EXE's
+ * `head-moved` check against a run's stored expected HEAD) rather than from the status call
+ * `headState` already parsed for the initial probe.
+ *
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<string | null>} the SHA, or `null` on an unborn HEAD (`rev-parse HEAD`
+ *   exits non-zero there; that failure is expected, never thrown).
+ */
+export async function head({ cwd, env, now }) {
+  const result = await run('git', ['rev-parse', 'HEAD'], { cwd, env, now });
+  return result.code === 0 ? result.stdout.toString('utf8').trim() : null;
+}
+
+/**
+ * The tree ID of `HEAD^{tree}` (GIT-02; consumed by EXE's backstop tree comparison).
+ *
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<string | null>} the tree ID, or `null` on an unborn HEAD.
+ */
+export async function headTree({ cwd, env, now }) {
+  const result = await run('git', ['rev-parse', 'HEAD^{tree}'], { cwd, env, now });
+  return result.code === 0 ? result.stdout.toString('utf8').trim() : null;
+}
+
 /**
  * Probes the repository `plan` runs in.
  *
@@ -59,10 +127,12 @@ async function classifyNoWorkTree({ cwd, env, now }) {
  *   git: { status: 'ok', version: { major: number, minor: number, patch: number, text: string } }
  *     | { status: 'unreadable', output: string } | { status: 'missing' } | { status: 'timed-out' },
  *   node: { major: number, minor: number, patch: number, text: string },
- *   repo: { kind: 'worktree', toplevel: string } | { kind: 'bare' } | { kind: 'not-a-repo' }
- *     | { kind: 'timed-out' } | null,
+ *   repo: { kind: 'worktree', toplevel: string, state: { kind: 'branch' | 'detached',
+ *       branch: string | null, unborn: boolean, head: string | null } }
+ *     | { kind: 'bare' } | { kind: 'not-a-repo' } | { kind: 'timed-out' } | null,
  * }>} `repo` is `null` when git is missing or its version check timed out (no repo question
- *   can be asked).
+ *   can be asked). `repo.state` (GIT-02) is read from one porcelain v2 `--branch` status call
+ *   against the toplevel.
  */
 export async function probe({ cwd, env, now }) {
   const git = probeGit({ cwd, env });
@@ -70,8 +140,10 @@ export async function probe({ cwd, env, now }) {
   if (git.status === 'missing' || git.status === 'timed-out') return { git, node, repo: null };
   const top = toplevel(cwd, { env });
   let repo;
-  if (top.status === 'ok') repo = { kind: 'worktree', toplevel: top.toplevel };
-  else if (top.status === 'none') repo = await classifyNoWorkTree({ cwd, env, now });
+  if (top.status === 'ok') {
+    const state = await headState({ cwd: top.toplevel, env, now });
+    repo = { kind: 'worktree', toplevel: top.toplevel, state };
+  } else if (top.status === 'none') repo = await classifyNoWorkTree({ cwd, env, now });
   else if (top.status === 'timed-out') repo = { kind: 'timed-out' };
   else return { git: { status: 'missing' }, node, repo: null };
   return { git, node, repo };
