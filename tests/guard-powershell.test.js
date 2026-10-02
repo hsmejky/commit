@@ -21,6 +21,7 @@ const ROUTE =
   'Spawn the commit:commit-worker agent (model: sonnet; pass intent: <what you changed and why>). Edit no files until it replies.';
 const PERSONAL_SKILL_LINE = 'If a personal commit skill sent you here, remove it (see the commit plugin README).';
 const TEXTS = {
+  noVerify: '--no-verify is not allowed. Fix the hook or signing setup instead.',
   bare: `Direct git commit is blocked. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   literalArguments: `Write git's arguments literally. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   blanket: 'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
@@ -111,6 +112,8 @@ const table = [
   // Start-Process builds git's arguments from its own parameters: denied like `sudo git commit`.
   ['Start-Process git -ArgumentList "commit --fixup HEAD"', 'wrapper:Start-Process'],
   ['saps git commit,--fixup,HEAD', 'wrapper:saps'],
+  // A row above the wrapper row keeps precedence (C:guard Precedence).
+  ['saps git commit --no-verify', 'noVerify'],
   ['start git -ArgumentList commit', 'wrapper:start'],
   ["Start-Process -FilePath git.exe -ArgumentList 'commit --fixup HEAD'", 'wrapper:Start-Process'],
   ['& Microsoft.PowerShell.Management\\Start-Process git commit', 'wrapper:Microsoft.PowerShell.Management\\Start-Process'],

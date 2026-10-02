@@ -377,17 +377,18 @@ export function classify(parsed, context = {}) {
       const token = tokens[i];
       if (typeof token !== 'string' || !GIT.test(token)) continue;
       starts ??= commandStarts(tokens, shell);
-      if (shell === 'powershell') {
-        const starter = startProcessAt(tokens, starts[i], i);
-        if (starter !== undefined) return { decision: 'deny', message: wrapperMessage(starter), scriptCalls: [] };
-      }
       // Windows PowerShell 5.1 drops an empty argument, so `git '' commit` runs a commit.
       let next = i + 1;
       while (shell === 'powershell' && tokens[next] === '') next += 1;
-      if (typeof tokens[next] !== 'string' || !COMMIT.test(tokens[next])) continue;
-      if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
-      const message = commitDecision(tokens, starts[i], i, next + 1, shell);
-      if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
+      if (typeof tokens[next] === 'string' && COMMIT.test(tokens[next])) {
+        if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
+        const message = commitDecision(tokens, starts[i], i, next + 1, shell);
+        if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
+      } else if (shell === 'powershell') {
+        // `git commit` itself already gets the wrapper row (C:guard Precedence) via commitDecision.
+        const starter = startProcessAt(tokens, starts[i], i);
+        if (starter !== undefined) return { decision: 'deny', message: wrapperMessage(starter), scriptCalls: [] };
+      }
     }
   }
   return { decision: 'none', scriptCalls: [] };
