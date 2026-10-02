@@ -378,16 +378,30 @@ function takeCallLock(runDir, planId, { now, pid, host, isAlive }) {
  * M12 `run.close()` (RUN-04; `release` RUN-02 and `commit`'s `finally`, GIT-08's signal
  * handler): removes the call's own `call.lock`, idempotent and `ENOENT`-tolerant (the folder
  * already deleted by the release itself, by a takeover, or by a second `close()` call) and
- * never through a link.
+ * never through a link. Only removes a `call.lock` that still holds this call's own
+ * `{ pid, host }` (`process.pid`/`os.hostname()` by default): one a takeover already
+ * replaced, or that cannot be read right now (a file-in-use error), is left alone rather than
+ * deleted out from under its new owner (review-RUN-04 findings 9, 13).
  *
- * @param {{ toplevel: string, planId: string }} options
+ * @param {{ toplevel: string, planId: string, pid?: number, host?: string }} options
  * @returns {void}
  */
-export function close({ toplevel, planId }) {
+export function close({ toplevel, planId, pid = process.pid, host = os.hostname() }) {
   const runDir = runDirOf(toplevel);
   if (!isPlainDirectory(insideRunDir(runDir, planId))) return;
+  const callLock = insideRunDir(runDir, `${planId}/call.lock`);
+  let judged;
   try {
-    fs.rmSync(insideRunDir(runDir, `${planId}/call.lock`), { force: true });
+    judged = readLockFile(callLock);
+  } catch (err) {
+    if (err instanceof InUse) return; // can't verify ownership right now; leave it
+    throw err;
+  }
+  if (judged === null) return; // already gone
+  const content = parseCallLock(judged.bytes);
+  if (content === null || content.pid !== pid || content.host !== host) return; // not ours
+  try {
+    fs.rmSync(callLock, { force: true });
   } catch (err) {
     if (!IN_USE.has(err.code)) throw err;
   }
@@ -452,7 +466,7 @@ export function releaseById({
     fs.rmSync(aside, { force: true });
     return { ok: true, released: true };
   } finally {
-    if (call.path !== null) close({ toplevel, planId });
+    if (call.path !== null) close({ toplevel, planId, pid, host });
   }
 }
 

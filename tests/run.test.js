@@ -702,10 +702,24 @@ test('close: idempotent — called twice, and after the folder is deleted, never
   const f = runFixture(t, planId);
   writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
 
-  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId }));
+  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId, pid: 4242, host: HOST }));
   assert.equal(fs.existsSync(f.callLock), false);
-  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId }), 'second close() is a no-op');
+  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId, pid: 4242, host: HOST }), 'second close() is a no-op');
 
   fs.rmSync(f.folder, { recursive: true, force: true });
-  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId }), 'close() after the folder is gone');
+  assert.doesNotThrow(() => run.close({ toplevel: f.toplevel, planId, pid: 4242, host: HOST }), 'close() after the folder is gone');
+});
+
+// review-RUN-04 findings 9+13: close() only removes a call.lock holding this call's own
+// { pid, host }; a call.lock written by someone else (a takeover, or a second call that
+// somehow raced in) is left in place.
+test('close: a call.lock held by a different { pid, host } is left alone', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, { pid: 4242, host: HOST }, T0);
+
+  run.close({ toplevel: f.toplevel, planId, pid: 7, host: 'other-host' });
+
+  assert.equal(fs.existsSync(f.callLock), true, 'not ours: left alone');
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.callLock, 'utf8')), { pid: 4242, host: HOST });
 });
