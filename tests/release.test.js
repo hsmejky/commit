@@ -33,13 +33,13 @@ function seedCommit(c) {
   c.git(['commit', '-q', '-m', 'seed']);
 }
 
-// A repo with one commit and the `/.commit-plan/` exclude line `plan` adds before it first
+// A repo with one commit and the `/.commit-plan` exclude line `plan` adds before it first
 // creates the run-folder directory (C:run-folder), so the fixture's run files leave the
-// working tree clean.
+// working tree clean, also with a `.commit-plan` link or plain file in its place.
 function createRepo(t) {
   const c = createCase(t);
   seedCommit(c);
-  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '/.commit-plan/\n');
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '/.commit-plan\n');
   return c;
 }
 
@@ -217,11 +217,6 @@ test('a lock naming a traversal or absolute path deletes nothing outside .commit
 // deletes nothing (C:run-folder, story 206).
 test('release does not follow a .commit-plan link to a directory outside the repo', async (t) => {
   const c = createRepo(t);
-  // Git reads a POSIX symlink as a file, which the run folder's `/.commit-plan/` exclude
-  // line (directories only, C:run-folder) does not match: the link would be an untracked
-  // file, and the "N files left" tree state is not built yet (RPL). Exclude it here too so
-  // the tree stays clean and this test checks only that the link is not followed.
-  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '/.commit-plan\n');
   const target = path.join(c.root, 'elsewhere');
   const planId = crypto.randomUUID();
   writeLock(target, { planId, created: CREATED });
@@ -274,10 +269,6 @@ test('release deletes a link nested inside <planId>/ without descending into its
 test('release --plan X when .commit-plan is a regular file is a no-op', async (t) => {
   const c = createRepo(t);
   const planId = crypto.randomUUID();
-  // The `/.commit-plan/` exclude line (C:run-folder) only matches the directory form; ignore
-  // the plain-file form too so the tree stays clean and this test isolates finding 2's
-  // no-op case, not finding 3's separate dirty-tree gap.
-  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '.commit-plan\n');
   fs.writeFileSync(runDirOf(c), 'not a directory\n');
 
   const result = await runCommit(c, ['release', '--plan', planId]);

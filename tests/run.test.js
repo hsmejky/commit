@@ -785,3 +785,47 @@ test('close: a linked .commit-plan (junction) → left alone, nothing removed th
 
   assert.equal(fs.existsSync(callLock), true, 'nothing was removed through the link');
 });
+
+// RUN-05 (docs/roadmap/09-runs.md): M12 `create` mints the `planId` and creates the
+// provisional run folder; `runDir` is absolute, `path.resolve`d from the toplevel, with
+// forward slashes even on Windows (C:run-folder); `discard` removes the folder.
+
+test('create: runDir is the provisional folder, absolute, resolved from the toplevel, forward slashes', (t) => {
+  const toplevel = tempDir(t);
+  const excludePath = path.join(toplevel, 'git', 'info', 'exclude');
+
+  const created = run.create({ toplevel, excludePath });
+
+  assert.equal(created.ok, true);
+  const { planId, runDir } = created.provisional;
+  assert.equal(run.isValidPlanId(planId), true);
+  assert.equal(runDir, path.resolve(toplevel, '.commit-plan', planId).split(path.sep).join('/'));
+  assert.equal(path.isAbsolute(runDir), true);
+  assert.equal(runDir.includes('\\'), false);
+  assert.equal(fs.statSync(runDir).isDirectory(), true);
+  assert.equal(fs.readFileSync(excludePath, 'utf8'), '/.commit-plan\n');
+});
+
+test('create: the exclude line is appended on its own line, and not again when present', (t) => {
+  const toplevel = tempDir(t);
+  const excludePath = path.join(toplevel, 'exclude');
+  fs.writeFileSync(excludePath, '# git ls-files --others --exclude-from=.git/info/exclude\n*.log');
+
+  run.create({ toplevel, excludePath }).provisional.discard();
+  run.create({ toplevel, excludePath }).provisional.discard();
+
+  assert.equal(fs.readFileSync(excludePath, 'utf8'),
+    '# git ls-files --others --exclude-from=.git/info/exclude\n*.log\n/.commit-plan\n');
+});
+
+test('discard: removes the provisional folder and only it', (t) => {
+  const toplevel = tempDir(t);
+  const excludePath = path.join(toplevel, 'exclude');
+  const kept = run.create({ toplevel, excludePath }).provisional;
+  const { provisional } = run.create({ toplevel, excludePath });
+  fs.writeFileSync(path.join(provisional.runDir, 'git-index'), 'x');
+
+  provisional.discard();
+
+  assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [kept.planId]);
+});

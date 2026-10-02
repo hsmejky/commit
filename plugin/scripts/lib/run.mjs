@@ -473,6 +473,47 @@ export function releaseById({
   }
 }
 
+/** The `info/exclude` line that keeps the run-folder directory out of git (C:run-folder). */
+export const EXCLUDE_LINE = `/${RUN_DIR_NAME}`;
+
+// Appends `EXCLUDE_LINE` to the common dir's `info/exclude` unless a line already holds it
+// (git ignores trailing blanks, so a line is compared without them).
+function ensureExcludeLine(excludePath) {
+  let text = '';
+  try {
+    text = fs.readFileSync(excludePath, 'utf8');
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  if (text.split(/\r?\n/).some((line) => line.replace(/[ \t]+$/, '') === EXCLUDE_LINE)) return;
+  fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+  const separator = text === '' || text.endsWith('\n') ? '' : '\n';
+  fs.appendFileSync(excludePath, `${separator}${EXCLUDE_LINE}\n`);
+}
+
+/**
+ * M12 `Run.create` (RUN-05, `plan` step 3): adds the exclude line once, mints the `planId`
+ * and creates the provisional run folder `<toplevel>/.commit-plan/<planId>/`.
+ *
+ * @param {{ toplevel: string, excludePath: string }} options `excludePath`: the common
+ *   dir's `info/exclude` (M2 `gitPath`).
+ * @returns {{ ok: true, provisional: { planId: string, runDir: string, discard: () => void } }}
+ *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
+ *   slashes (C:run-folder); `discard()` deletes it (every outcome that takes no lock).
+ */
+export function create({ toplevel, excludePath }) {
+  const runDir = runDirOf(toplevel);
+  ensureExcludeLine(excludePath);
+  const planId = crypto.randomUUID();
+  fs.mkdirSync(runDir, { recursive: true });
+  const folder = insideRunDir(runDir, planId);
+  fs.mkdirSync(folder);
+  const discard = () => {
+    fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  };
+  return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), discard } };
+}
+
 /**
  * M12 `open` (RUN-04): `commit`'s first step, wired as the whole call's own lock check. In
  * order (Q22 "reads the lock, checks it holds its planId", then the state `version`, then

@@ -26,13 +26,13 @@ function seedCommit(c) {
   c.git(['commit', '-q', '-m', 'seed']);
 }
 
-// A repo with one commit and the `/.commit-plan/` exclude line `plan` adds before it first
+// A repo with one commit and the `/.commit-plan` exclude line `plan` adds before it first
 // creates the run-folder directory (C:run-folder), so the fixture's run files leave the
-// working tree clean.
+// working tree clean, also with a `.commit-plan` link or plain file in its place.
 function createRepo(t) {
   const c = createCase(t);
   seedCommit(c);
-  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '/.commit-plan/\n');
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '/.commit-plan\n');
   return c;
 }
 

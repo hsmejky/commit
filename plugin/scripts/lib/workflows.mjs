@@ -23,7 +23,8 @@
 
 import { probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
-import { releaseById, open, close } from './run.mjs';
+import { releaseById, open, close, create } from './run.mjs';
+import { gitPath } from './process-adapter.mjs';
 import { reply } from './reply.mjs';
 import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
@@ -59,6 +60,19 @@ async function preFolderRefusals(ctx) {
   return undefined;
 }
 
+/**
+ * Step 3 (RUN-05): M12 `create` adds the exclude line to the common dir's `info/exclude`,
+ * mints the `planId` and creates the provisional run folder. `plan` discards it on every
+ * outcome that takes no lock (`plan`'s `finally`). RUN-07 adds the lock `peek` here.
+ */
+async function createRunFolder(ctx) {
+  const { env, now } = ctx.injected;
+  const [excludePath] = await gitPath(['info/exclude'], { cwd: ctx.toplevel, env, now });
+  const created = create({ toplevel: ctx.toplevel, excludePath });
+  ctx.provisional = created.provisional;
+  return undefined;
+}
+
 /** Step 4: inventory. Thin: the tree state stands in until CHG-03 builds M10 `inventory`. */
 async function inventory(ctx) {
   ctx.inventory = await treeState({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
@@ -72,7 +86,9 @@ async function postScanRefusals(ctx) {
   throw new Error('plan on a working tree with changes is not built yet');
 }
 
-const PLAN_STEPS = Object.freeze([probeRepo, loadConfigLayers, preFolderRefusals, inventory, postScanRefusals]);
+const PLAN_STEPS = Object.freeze([
+  probeRepo, loadConfigLayers, preFolderRefusals, createRunFolder, inventory, postScanRefusals,
+]);
 
 /**
  * `release`/`commit` step 2: the probe's `env` refusal, the only refusal either shares with
@@ -163,8 +179,15 @@ export async function plan(values, injected, { cwd }) {
   if (unbuilt.length > 0) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
-  const ctx = { injected, cwd };
-  const facts = await runSteps(PLAN_STEPS, ctx);
+  const ctx = { injected, cwd, provisional: null };
+  let facts;
+  try {
+    facts = await runSteps(PLAN_STEPS, ctx);
+  } finally {
+    // No outcome built yet takes the lock (step 7, CHG-03b), so every one discards the
+    // provisional folder, a thrown `internal` included (C:run-folder).
+    if (ctx.provisional !== null) ctx.provisional.discard();
+  }
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return {
     output: {

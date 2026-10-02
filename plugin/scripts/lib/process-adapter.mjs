@@ -3,10 +3,11 @@
 //
 // INT-01 built `toplevel` and an asynchronous `run`; GIT-01 adds `gitVersion`, the fixed
 // short timeout of the two start-up `spawnSync` calls, typed start-up results (git missing,
-// timed out) and `run`'s `timedOut` and `spawnedAt`. GIT-05 adds the `GIT_*` environment
+// timed out) and `run`'s `timedOut` and `spawnedAt`. RUN-05 adds `gitPath`. GIT-05 adds the `GIT_*` environment
 // hygiene and `-c` pins, GIT-07 the deadline-driven timeout and process-tree kill.
 
 import { spawn, spawnSync } from 'node:child_process';
+import path from 'node:path';
 
 /** The fixed timeout of each start-up `spawnSync` call (`toplevel`, `gitVersion`). */
 export const STARTUP_TIMEOUT_MS = 10_000;
@@ -66,6 +67,27 @@ export function gitVersion({ cwd, env }) {
     return { status: 'failed', code: result.code, output: (result.stderr || result.stdout || '').trim() };
   }
   return { status: 'ok', output: result.stdout.split(/\r?\n/)[0].trim() };
+}
+
+/**
+ * Resolves paths inside the git directory with one `git rev-parse --git-path` call (RUN-05:
+ * `info/exclude`, which git resolves to the common dir, so every linked worktree shares it).
+ *
+ * @param {string[]} names the paths to resolve, such as `info/exclude`.
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<string[]>} one absolute path per name, in order (git prints a path
+ *   relative to `cwd` for the main worktree's own git directory; it is resolved here).
+ * @throws {Error} when git exits non-zero or prints a different number of lines.
+ */
+export async function gitPath(names, { cwd, env, now }) {
+  const args = ['rev-parse'];
+  for (const name of names) args.push('--git-path', name);
+  const result = await run('git', args, { cwd, env, now });
+  const lines = result.stdout.toString('utf8').split(/\r?\n/).filter((line) => line !== '');
+  if (result.code !== 0 || lines.length !== names.length) {
+    throw new Error(`git rev-parse --git-path failed (${result.code}): ${result.stderr}`);
+  }
+  return lines.map((line) => path.resolve(cwd, line));
 }
 
 /**

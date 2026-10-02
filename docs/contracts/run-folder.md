@@ -1,8 +1,11 @@
 # Run folder
 
 `<toplevel>/.commit-plan/`; per worktree. Before creating it the first time, the script
-appends a `/.commit-plan/` line to `$(git rev-parse --git-common-dir)/info/exclude` (once;
-Node writes it). Not under `.git`: the harness treats every `.git` path as a sensitive
+appends a `/.commit-plan` line to `$(git rev-parse --git-common-dir)/info/exclude` (once;
+Node writes it). The line has no trailing slash, so it matches `.commit-plan` whatever it
+is, a directory, a plain file or a symlink: git reads a POSIX symlink as a file, which a
+directory-only `/.commit-plan/` would leave as an untracked path in every reply's tree state
+(RUN-05). Not under `.git`: the harness treats every `.git` path as a sensitive
 file, so the worker's `Write` would ask on every run (Q9, spike).
 
 Before its first write the script `lstat`s `<toplevel>/.commit-plan`: a symlink, a

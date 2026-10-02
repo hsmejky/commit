@@ -136,7 +136,7 @@ exclusively when the call starts and removed when it ends by M12 `run.close()` (
 
 **What to build:** M12 `create` at `plan` step 3. It `lstat`s `.commit-plan` (a symlink,
 junction, non-directory or tracked path → `run-folder`, checked again after `mkdir`). It
-adds the `/.commit-plan/` exclude line once to the common dir's `info/exclude`, mints the
+adds the `/.commit-plan` exclude line once to the common dir's `info/exclude`, mints the
 `planId`, and creates the provisional folder. `discard` removes the folder on every outcome
 that takes no lock.
 
@@ -151,7 +151,7 @@ check), M12 `create`/`discard`, M18 `plan` step 3, stories 196, 207.
       plain file, and (Windows) `.commit-plan` as a junction → exit 6 `state` with the
       "`.commit-plan` is tracked or not a plain directory; remove it by hand" text, and
       nothing is written through the link or junction.
-- [ ] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan/` line, also
+- [ ] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan` line, also
       after a second `plan` (no duplicate line), `git status --porcelain -uall` shows no
       `.commit-plan` path, and `.gitignore` is unchanged (absent stays absent); the same
       holds in a linked worktree, whose exclude line goes to the common dir (story 196).
@@ -299,7 +299,7 @@ shares.
 
 - [ ] Seam 1: two linked worktrees of one repo each run `plan` with work → both are kept,
       each with its own lock and folder, and neither gets `lock`.
-- [ ] Seam 1: the common `info/exclude` holds one `/.commit-plan/` line.
+- [ ] Seam 1: the common `info/exclude` holds one `/.commit-plan` line.
 
 
 ## RUN-12: `plan` has a 540-second deadline

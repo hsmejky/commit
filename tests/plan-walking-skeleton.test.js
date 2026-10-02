@@ -50,8 +50,9 @@ for (const [name, setUp] of CLEAN_REPOS) {
     assert.equal(typeof reply.text, 'string');
     assert.match(reply.text, /working tree clean$/);
 
-    // No lock or run folder left, and the repo itself untouched.
-    assert.equal(fs.existsSync(path.join(c.repoDir, '.commit-plan')), false);
+    // No lock or run folder left (RUN-05: the run-folder directory itself stays, empty),
+    // and the repo itself untouched.
+    assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), []);
     assert.equal(c.git(['status', '--porcelain', '--untracked-files=all']), statusBefore);
   });
 }

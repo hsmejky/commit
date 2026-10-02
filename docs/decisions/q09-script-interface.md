@@ -8,7 +8,7 @@
   run keeps its files in one run folder, `<toplevel>/.commit-plan/<planId>/`
   ([contracts](../contracts/run-folder.md)): the state file, the hunk text, the temporary index
   (Q11) and the worker plan. Before it creates the folder the first time, the script
-  appends a `/.commit-plan/` line to `$(git rev-parse --git-common-dir)/info/exclude`
+  appends a `/.commit-plan` line to `$(git rev-parse --git-common-dir)/info/exclude`
   (Node writes it, so no prompt), so it never shows up as an untracked file; the hidden
   rule (Q16) would keep it from the worker anyway. Each worktree gets its own folder,
   since it sits in the worktree's top level. `plan` and `plan --hunks` print its
