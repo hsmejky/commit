@@ -9,6 +9,7 @@ const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCase, runGuard } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib');
+const { noVerifyText } = require('./helpers/no-verify-text.js');
 
 let runHook;
 let MESSAGES;
@@ -47,7 +48,6 @@ const route = 'Spawn the commit:commit-worker agent (model: sonnet; pass intent:
 const line = 'If a personal commit skill sent you here, remove it (see the commit plugin README).';
 const amendText = `To reword the last commit: ${route} Ask it to reword. To add changes, make a new commit the same way.\n${line}`;
 const squashText = `git commit --squash opens an editor. ${route}\n${line}`;
-const noVerifyText = (flag) => `${flag} is not allowed. Fix the hook or signing setup instead.`;
 const fixupKindText = (kind) => `--fixup=${kind}: opens an editor. Use plain --fixup=<commit>, or: ${route}\n${line}`;
 const genericText = (flag) => `git commit ${flag} is not allowed here. ${route}\n${line}`;
 const wrapperText = (name) => `git commit run by ${name} is not allowed: it can append arguments. ${route}\n${line}`;
@@ -183,6 +183,10 @@ const precedence = [
   // exactly as written, never the row of the option it abbreviates.
   ['git commit --amen', genericText('--amen')],
   ['git commit --no-veri', genericText('--no-veri')],
+  // An abbreviation of a value-taking option (`--auth` of `--author`) does not match that
+  // full name, so it does not consume `-n` either: the `-n` row wins, even though git itself
+  // reads `-n` as `--author`'s value. Denied either way (C:contracts/guard.md step 5).
+  ['git commit --auth -n', noVerifyText('-n')],
   // ... and the literal-arguments row outranks every row of commit's arguments.
   ['git commit --amend -m "feat(x): y"', MESSAGES_LITERAL],
 ];

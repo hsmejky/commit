@@ -13,6 +13,7 @@ const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCase, runGuard } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib');
+const { noVerifyText } = require('./helpers/no-verify-text.js');
 
 let runHook;
 let segments;
@@ -46,7 +47,7 @@ function hook(c, command) {
 // generic row's flag.
 function messageOf(row) {
   if (row === 'bare') return MESSAGES.bare;
-  if (row === '-n') return '-n is not allowed. Fix the hook or signing setup instead.';
+  if (row === '-n') return noVerifyText('-n');
   const tail = `${ROUTE}\n${PERSONAL_SKILL_LINE}`;
   if (row.startsWith('wrapper ')) return `git commit run by ${row.slice(8)} is not allowed: it can append arguments. ${tail}`;
   return `git commit ${row} is not allowed here. ${tail}`;

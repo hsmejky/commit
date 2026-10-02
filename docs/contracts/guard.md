@@ -491,7 +491,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    never matches a row of its own (`--author -n --no-edit` → the generic row naming
    `--author`; `-m --amend` → the bare row). Long options match by their full name: an
    abbreviation git accepts (`--amen`) gets the generic row naming it, and a value it takes
-   is read as an argument of its own (denied either way). `--amend` or `--no-verify` given a
+   is read as an argument of its own (denied either way). An abbreviation of an option with
+   a required value (`--auth` of `--author`) does not match that full name, so it does not
+   consume the next token either: `--auth -n` gives the `-n` row, not the generic row, even
+   though git itself reads `-n` as `--author`'s value. Denied either way. `--amend` or
+   `--no-verify` given a
    value (`--amend=x`) keeps its row; `--no-edit=x` is not `--no-edit`.
    PowerShell reading (Windows PowerShell 5.1 and PowerShell 7, verified with a node argv
    echo): an unquoted argument of a native command that starts with a single `-` is split

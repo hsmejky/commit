@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createCase, runGuard } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib');
+const { noVerifyText } = require('./helpers/no-verify-text.js');
 
 let runHook;
 let MESSAGES;
@@ -40,12 +41,10 @@ function hook(c, command) {
 }
 
 const generic = (flag) => `git commit ${flag} is not allowed here. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
-// The `-n` row (GRD-05): no route, no personal-skill line.
-const noVerify = (flag) => `${flag} is not allowed. Fix the hook or signing setup instead.`;
 // The deny text of a row named in a fixture table: `bare`, `-n` or the generic row's flag.
 const rowText = (row) => {
   if (row === 'bare') return MESSAGES.bare;
-  return row === '-n' ? noVerify(row) : generic(row);
+  return row === '-n' ? noVerifyText(row) : generic(row);
 };
 
 const allowed = [
@@ -393,7 +392,7 @@ test('Seam 2: a `!(` after `time --` is denied by the real hook process', async 
   const c = createCase(t);
   const result = await runGuard(c, { command: 'time -- !(git commit -n --allow-empty -m bypass1)' });
   assert.equal(result.exitCode, 0);
-  assert.equal(result.stdout, denyJson(noVerify('-n')));
+  assert.equal(result.stdout, denyJson(noVerifyText('-n')));
 });
 
 // After an assignment, a function's name or a second `--` after `time` the pattern is an
