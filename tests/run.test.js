@@ -446,6 +446,27 @@ test('releaseById: a live call.lock (genuine busy, not file-in-use) keeps the he
 // (matching `STATE_VERSION`), so these tests only need to vary the lock, the state version
 // or the call.lock on top of that fixture.
 
+// review-RUN-04 finding 12: a `.commit-plan` that is a link (a junction on Windows, a
+// directory symlink elsewhere) is not a run-folder directory: `open` must not follow it,
+// mirroring the `isPlainDirectory` check `releaseById` already does on the same path.
+test('open: a linked .commit-plan (junction) → ended, nothing written through the link', (t) => {
+  const toplevel = tempDir(t);
+  const target = tempDir(t);
+  const planId = crypto.randomUUID();
+  const folder = path.join(target, planId);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, 'state.json'), '{"version":1}\n');
+  fs.writeFileSync(path.join(target, 'lock'), JSON.stringify({ planId, created: '2026-01-01T00:00:00.000Z' }));
+  fs.symlinkSync(target, path.join(toplevel, '.commit-plan'), 'junction');
+  const before = fs.readdirSync(target);
+
+  const result = run.open(planId, { toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'ended');
+  assert.deepEqual(fs.readdirSync(target), before, 'nothing was written through the link');
+});
+
 test('open: the lock holds a different, well-formed planId → taken-over', (t) => {
   const holder = crypto.randomUUID();
   const planId = crypto.randomUUID();
@@ -484,10 +505,15 @@ test('open: the lock matches but state.json\'s version differs from this build\'
   const planId = crypto.randomUUID();
   const f = runFixture(t, planId);
   fs.writeFileSync(path.join(f.folder, 'state.json'), '{"version":2}\n');
+  const lockPath = path.join(f.runDir, 'lock');
+  fs.utimesSync(lockPath, new Date(T0 - MINUTE), new Date(T0 - MINUTE));
 
   const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
 
   assert.equal(result.code, 'ended');
+  // review-RUN-04 findings 4+5: the version check runs before the mtime touch, so a build
+  // mismatch never refreshes a lock it is about to refuse.
+  assert.equal(fs.statSync(lockPath).mtimeMs, T0 - MINUTE, "a version mismatch does not touch the lock's mtime");
 });
 
 // review-RUN-04 finding 1: state.json routinely exceeds the run lock's 64 KB cap (it holds

@@ -460,15 +460,20 @@ export function releaseById({
  * M12 `open` (RUN-04): `commit`'s first step, wired as the whole call's own lock check. In
  * order (Q22 "reads the lock, checks it holds its planId, then refreshes the mtime", then
  * the state `version`, then the call.lock for the whole call):
+ * 0. The run-folder directory itself must be a plain directory, never a link (mirroring
+ *    `releaseById`'s own check): a `.commit-plan` junction is never followed → `ended`,
+ *    nothing read or written through it (review-RUN-04 finding 12).
  * 1. Reads the run lock. No lock, or one that does not parse to a minted `planId` → `ended`.
  * 2. A lock holding a different, well-formed `planId` → `taken-over`.
- * 3. The lock holds `planId`: refreshes its mtime (`touched`). A lock that vanishes in that
- *    gap (a takeover completed between the read and the touch) → `taken-over`, not the
- *    lenient "nothing to guard" `release` uses on a holder mismatch, because the lock was
+ * 3. The lock holds `planId`. `<planId>/state.json`'s `version` must match this build's
+ *    `STATE_VERSION`; a mismatch (including unreadable) → `ended` (a run started by another
+ *    plugin build), never a cleanup of someone else's possibly-live state. Checked before the
+ *    mtime touch below, so a build mismatch never refreshes a lock it is about to refuse
+ *    (review-RUN-04 findings 4, 5).
+ * 4. Refreshes the lock's mtime (`touched`). A lock that vanishes in that gap (a takeover, or
+ *    a concurrent `release`, completed between the read and the touch) → `taken-over`, not
+ *    the lenient "nothing to guard" `release` uses on a holder mismatch, because the lock was
  *    just confirmed to hold `planId` moments ago.
- * 4. `<planId>/state.json`'s `version` must match this build's `STATE_VERSION`; a mismatch
- *    (including unreadable) → `ended` (a run started by another plugin build), never a
- *    cleanup of someone else's possibly-live state.
  * 5. Takes `call.lock` for the whole call (`takeCallLock`): `busy` on a live one; a folder
  *    that is missing or not a plain directory by now → `taken-over` (the lock matched
  *    moments ago, so a folder gone by now means a takeover raced this call, not a peaceful
@@ -486,6 +491,7 @@ export function open(planId, {
   toplevel, now = Date.now, pid = process.pid, host = os.hostname(), isAlive = isPidAlive,
 }) {
   const runDir = runDirOf(toplevel);
+  if (!isPlainDirectory(runDir)) return ended();
   let lockFile;
   try {
     lockFile = readLockFile(insideRunDir(runDir, 'lock'));
@@ -497,15 +503,6 @@ export function open(planId, {
   if (holder === null) return ended();
   if (holder !== planId) return takenOver();
 
-  try {
-    const d = new Date(now());
-    fs.utimesSync(insideRunDir(runDir, 'lock'), d, d);
-  } catch (err) {
-    if (err.code === 'ENOENT') return takenOver();
-    if (IN_USE.has(err.code)) return busy(true);
-    throw err;
-  }
-
   let version;
   try {
     version = readStateVersion(runDir, planId);
@@ -514,6 +511,15 @@ export function open(planId, {
     throw err;
   }
   if (version !== STATE_VERSION) return ended();
+
+  try {
+    const d = new Date(now());
+    fs.utimesSync(insideRunDir(runDir, 'lock'), d, d);
+  } catch (err) {
+    if (err.code === 'ENOENT') return takenOver();
+    if (IN_USE.has(err.code)) return busy(true);
+    throw err;
+  }
 
   const call = takeCallLock(runDir, planId, { now, pid, host, isAlive });
   if (!call.ok) return call;

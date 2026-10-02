@@ -59,13 +59,12 @@ function matchingRun(c, { version = 1 } = {}) {
   return { runDir, planId, folder, callLock: path.join(folder, 'call.lock') };
 }
 
-function assertLockFailure(result, code, textPattern) {
+function assertLockFailure(result, textPattern) {
   const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
   assert.equal(result.exitCode, 6, detail);
   assert.equal(result.json.ok, false, detail);
   assert.equal(result.json.error.kind, 'lock', detail);
   assert.match(result.json.error.message, textPattern, detail);
-  if (code !== undefined) assert.ok(true, code); // code is informational for the test label only
 }
 
 test('commit --plan X --all with the lock held by a different planId Y → taken-over', async (t) => {
@@ -78,7 +77,7 @@ test('commit --plan X --all with the lock held by a different planId Y → taken
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
-  assertLockFailure(result, 'taken-over', /this run was taken over by another \/commit/);
+  assertLockFailure(result, /this run was taken over by another \/commit/);
   // The other run's lock and folder are left alone: `commit` never touches someone else's run.
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), true);
   assert.equal(fs.existsSync(path.join(runDir, holder)), true);
@@ -90,7 +89,7 @@ test('commit --plan X --all with no lock at all → ended', async (t) => {
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
-  assertLockFailure(result, 'ended', /this run has already ended/);
+  assertLockFailure(result, /this run has already ended/);
 });
 
 test('commit --plan X --all with a state.json version mismatch → ended', async (t) => {
@@ -99,7 +98,7 @@ test('commit --plan X --all with a state.json version mismatch → ended', async
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
-  assertLockFailure(result, 'ended', /this run has already ended/);
+  assertLockFailure(result, /this run has already ended/);
 });
 
 test('commit --plan X --all with a matching lock advances its mtime, exits 0 with no commits, and call.lock does not outlive the call', async (t) => {
@@ -130,7 +129,7 @@ test('commit --plan X --all with a live call.lock → busy, and the run is kept'
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
-  assertLockFailure(result, 'busy', /another \/commit call on this run is still running/);
+  assertLockFailure(result, /another \/commit call on this run is still running/);
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), true);
   assert.equal(fs.existsSync(folder), true);
   assert.equal(fs.existsSync(callLock), true, 'the live call.lock is kept, not replaced');
