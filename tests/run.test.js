@@ -477,6 +477,8 @@ test('open: the lock holds a different, well-formed planId → taken-over', (t) 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'taken-over');
   assert.match(result.message, /this run was taken over by another \/commit/);
+  assert.equal(fs.existsSync(path.join(f.runDir, 'lock')), true, "the holder's lock is left alone");
+  assert.equal(fs.existsSync(f.folder), true, "the holder's folder is left alone");
 });
 
 test('open: no lock at all → ended', (t) => {
@@ -488,17 +490,20 @@ test('open: no lock at all → ended', (t) => {
   assert.equal(result.ok, false);
   assert.equal(result.code, 'ended');
   assert.match(result.message, /this run has already ended/);
+  assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan')), false, 'nothing was created');
 });
 
 test('open: an unparseable lock → ended', (t) => {
   const toplevel = tempDir(t);
   const planId = crypto.randomUUID();
   fs.mkdirSync(path.join(toplevel, '.commit-plan'), { recursive: true });
-  fs.writeFileSync(path.join(toplevel, '.commit-plan', 'lock'), '{"planId":');
+  const lockPath = path.join(toplevel, '.commit-plan', 'lock');
+  fs.writeFileSync(lockPath, '{"planId":');
 
   const result = run.open(planId, { toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
 
   assert.equal(result.code, 'ended');
+  assert.equal(fs.readFileSync(lockPath, 'utf8'), '{"planId":', 'the unparseable lock is left alone');
 });
 
 test('open: the lock matches but state.json\'s version differs from this build\'s → ended', (t) => {
@@ -533,11 +538,13 @@ test('open: the lock matches but state.json is missing (no folder at all) → en
   const planId = crypto.randomUUID();
   const runDir = path.join(toplevel, '.commit-plan');
   fs.mkdirSync(runDir, { recursive: true });
-  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId, created: '2026-01-01T00:00:00.000Z' }));
+  const lockPath = path.join(runDir, 'lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ planId, created: '2026-01-01T00:00:00.000Z' }));
 
   const result = run.open(planId, { toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
 
   assert.equal(result.code, 'ended');
+  assert.equal(fs.existsSync(lockPath), true, 'the lock is left alone');
 });
 
 test('open: a matching lock and version advance the lock\'s mtime and take call.lock', (t) => {
@@ -585,6 +592,8 @@ test('open: the lock vanishes between the read and the mtime touch (ENOENT) → 
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'taken-over');
+  assert.equal(fs.existsSync(f.folder), true, 'the folder is left alone');
+  assert.equal(fs.existsSync(f.callLock), false, 'no call.lock was taken');
 });
 
 // The `<planId>` folder vanishes after the lock and state-version checks already passed (a
@@ -607,6 +616,7 @@ test('open: the folder vanishes just before call.lock is taken → taken-over, n
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'taken-over');
+  assert.equal(fs.existsSync(path.join(f.runDir, 'lock')), true, 'the lock is left alone');
 });
 
 // The same race, but caught at the call.lock create itself (`writeFileSync` meets `ENOENT`
@@ -629,6 +639,60 @@ test('open: call.lock\'s own create meets ENOENT (folder vanished mid-call) → 
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'taken-over');
+});
+
+// review-RUN-04 finding 10: a file-in-use error on the mtime touch maps to `busy`, not
+// `internal`, like every other lock operation.
+for (const code of FAULT_CODES) {
+  test(`open: ${code} on the mtime touch maps to busy (finding 10)`, (t) => {
+    const planId = crypto.randomUUID();
+    const f = runFixture(t, planId);
+    const lockPath = path.join(f.runDir, 'lock');
+    withFsFault(t, 'utimesSync', (args) => args[0] === lockPath, code);
+
+    const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'busy');
+    assert.equal(result.message, run.BUSY_FILE_IN_USE_MESSAGE);
+  });
+}
+
+// review-RUN-04 finding 10: `readStateVersion` throwing `InUse` (a file-in-use error on the
+// state.json read) maps to `busy`, not a thrown error.
+test('open: a file-in-use error reading state.json maps to busy (finding 10)', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  const statePath = path.join(f.folder, 'state.json');
+  withFsFault(t, 'readFileSync', (args) => args[0] === statePath, 'EBUSY');
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'busy');
+  assert.equal(result.message, run.BUSY_FILE_IN_USE_MESSAGE);
+});
+
+// review-RUN-04 finding 10: a state.json whose `version` is not a number, or missing
+// entirely, is treated the same as a mismatched version → `ended`.
+test('open: state.json with a non-numeric version → ended (finding 10)', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  fs.writeFileSync(path.join(f.folder, 'state.json'), '{"version":"1"}\n');
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.code, 'ended');
+});
+
+test('open: state.json with no version field at all → ended (finding 10)', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  fs.writeFileSync(path.join(f.folder, 'state.json'), '{}\n');
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.code, 'ended');
 });
 
 // M12 test row (RUN-04): `run.close()` called twice, and after the folder was deleted,
