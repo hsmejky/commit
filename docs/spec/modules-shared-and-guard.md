@@ -75,7 +75,9 @@ pattern read so is also tokenized as a command text, nested patterns included, i
 segments right after the segment holding the word (defense in depth, review GRD-04 round
 8); an unquoted `<(` or `>(`
 inside such a pattern makes G2 return the blanket kind `substitution` instead of segments
-(fail closed, review GRD-04 round 6); the word after `function` is read as a first word,
+(fail closed, review GRD-04 round 6), and an unquoted `(` opening its bracket level 17
+(`MAX_PATTERN_DEPTH` 16) the blanket kind `nesting`, which bounds the body walk (review
+GRD-04 round 9); the word after `function` is read as a first word,
 and a reserved word that opens a command (`!`, `{`, `if`, `while`, `until`, `time`, …)
 keeps a command's first position after `function NAME`, `coproc` or `coproc NAME`, as
 does a `--` after `time` or `time -p` (review GRD-04 round 7), and `then`, `do`, `else`

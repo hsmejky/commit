@@ -206,7 +206,13 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `[[ x == @(a|>(git commit -m x)) ]]`,
    `echo @(<(git commit -m x))`, `case x in @(a|>(git commit -m x))) ;; esac` and
    `cat >@(>(git commit -m x))` are denied; a quoted or escaped `<(` inside a pattern is a
-   plain character. An opener with no matching `)` (or
+   plain character. Such a pattern whose unquoted brackets nest more than 16 deep (an
+   unquoted `(` that opens level 17, plain brackets counted, quoted or escaped ones not) is
+   the blanket kind `nesting` (fail closed, the blanket deny): it bounds the body walk below,
+   which reads a body once for each pattern around it, to at most 17 readings of any
+   character and 16 nested levels, so deep or long input neither overflows the stack nor
+   runs past the hook's timeout, each of which fails open (review GRD-04 round 9; real
+   patterns nest a few levels). An opener with no matching `)` (or
    an unterminated quote inside the pattern) ends the word right after the `(`, with no `(`
    token following it, and the rest of the command is tokenized normally from there: an
    unbalanced extglob such as `xargs echo @(a | git commit --no-edit` gives no guard output,

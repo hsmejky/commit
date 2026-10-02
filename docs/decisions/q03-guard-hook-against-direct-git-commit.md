@@ -318,6 +318,9 @@
     position cannot hide a `git commit` (`echo a !(git commit -m x)` denies). A body that
     is a denied form denies even where bash only matches a glob
     (`[[ $m == @(git commit -m x) ]]`): an accepted false deny (review GRD-04 round 8).
+    A pattern whose brackets nest more than 16 deep is the blanket deny instead (kind
+    `nesting`): it bounds that walk, since a stack overflow or a hook timeout fails open
+    (review GRD-04 round 9).
     `@(git) commit -m x` joins the command-position gap.
   - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
     pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
