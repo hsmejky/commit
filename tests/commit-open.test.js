@@ -11,12 +11,14 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 
 const CREATED = '2026-01-01T00:00:00.000Z';
+const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 
 function seedCommit(c) {
   c.writeFile('README.md', 'hello\n');
@@ -133,6 +135,21 @@ test('commit --plan X --all with a live call.lock → busy, and the run is kept'
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), true);
   assert.equal(fs.existsSync(folder), true);
   assert.equal(fs.existsSync(callLock), true, 'the live call.lock is kept, not replaced');
+});
+
+// AC 5 (docs/roadmap/09-runs.md RUN-04): a `call.lock`/folder that vanishes with `ENOENT`
+// mid-call maps to `taken-over`, not `internal`. Seam 1 only: the other races for this AC
+// live in tests/run.test.js as in-process M12 tests; this one goes through the shipped
+// entry point, injecting the ENOENT at the mtime touch (`fs.utimesSync` on the lock file)
+// rather than monkeypatching `node:fs` in-process.
+test('commit --plan X --all: the lock vanishes with ENOENT at the mtime touch (real process seam) → taken-over, not internal', async (t) => {
+  const c = createRepo(t);
+  const { planId } = matchingRun(c);
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_UTIMES_BASENAME: 'lock', COMMIT_TEST_FAULT_UTIMES_CODE: 'ENOENT' },
+  });
+  assertLockFailure(result, /this run was taken over by another \/commit/);
 });
 
 test('commit without --plan is a usage refusal and creates nothing', async (t) => {

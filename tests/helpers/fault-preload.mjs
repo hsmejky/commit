@@ -22,6 +22,12 @@
 //                                       fs.renameSync/fs.rename/fs.promises.rename).
 //   COMMIT_TEST_FAULT_RENAME_CODE       default errno code for a failed rename call whose
 //                                       matching entry has no `=code` (default EIO).
+//   COMMIT_TEST_FAULT_UTIMES_BASENAME   same shape as COMMIT_TEST_FAULT_LINK_BASENAME, for
+//                                       the path given to fs.utimesSync (utimes has no
+//                                       separate source/target, so the one path plays both
+//                                       roles in the injected error).
+//   COMMIT_TEST_FAULT_UTIMES_CODE       default errno code for a failed utimes call whose
+//                                       matching entry has no `=code` (default EIO).
 //   COMMIT_TEST_FAULT_LOG               a file path; every intercepted link/rename call
 //                                       (whether or not it is made to fail) appends its
 //                                       target path to this file, one per line, in call
@@ -90,6 +96,8 @@ const LINK_BASENAMES = parseBasenameList(process.env.COMMIT_TEST_FAULT_LINK_BASE
 const LINK_CODE = process.env.COMMIT_TEST_FAULT_LINK_CODE || 'EIO';
 const RENAME_BASENAMES = parseBasenameList(process.env.COMMIT_TEST_FAULT_RENAME_BASENAME);
 const RENAME_CODE = process.env.COMMIT_TEST_FAULT_RENAME_CODE || 'EIO';
+const UTIMES_BASENAMES = parseBasenameList(process.env.COMMIT_TEST_FAULT_UTIMES_BASENAME);
+const UTIMES_CODE = process.env.COMMIT_TEST_FAULT_UTIMES_CODE || 'EIO';
 const LOG_FILE = process.env.COMMIT_TEST_FAULT_LOG || null;
 
 function logCall(targetPath) {
@@ -192,6 +200,18 @@ fs.promises.rename = function rename(oldPath, newPath) {
   const code = matchFault(RENAME_BASENAMES, newPath, RENAME_CODE);
   if (code) return Promise.reject(makeFault(code, 'rename', oldPath, newPath));
   return originalRenamePromise.call(this, oldPath, newPath);
+};
+
+// --- fs.utimesSync --------------------------------------------------------------------------
+// utimes has no separate source/target (just one path), so `path_` plays both roles in the
+// injected error.
+
+const originalUtimesSync = fs.utimesSync;
+fs.utimesSync = function utimesSync(path_, ...rest) {
+  logCall(path_);
+  const code = matchFault(UTIMES_BASENAMES, path_, UTIMES_CODE);
+  if (code) throw makeFault(code, 'utimes', path_, path_);
+  return originalUtimesSync.call(this, path_, ...rest);
 };
 
 nodeModule.syncBuiltinESMExports();
