@@ -325,13 +325,20 @@
     arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
     scripts that wrap git, and tools other than `xargs`, `gxargs` and `parallel` that append
     arguments to the command they run (such as `rush` or `xe`): an allowlisted form under
-    them passes. `xargs git commit` is denied in every form: unquoted, it tokenizes to
+    them passes. `xargs`, `gxargs` or `parallel` before `git` in its segment denies
+    `git commit` in every spelling of that name, quoted, escaped or one an expansion may
+    produce; a shell alias or function standing for one is an unrecognized wrapper, the
+    class above. Unquoted, `xargs git commit` tokenizes to
     separate `git` and `commit` tokens, and an `xargs`, `gxargs` or `parallel` token before
     `git` in the segment denies the allowlisted forms too, since the wrapper can append `-n`
     or `-m` from its input (`printf -- -n | xargs git commit --no-edit` skips the hooks;
-    C:guard step 3, fail closed). A token before `git` that holds `*`, `?`, `[` or `{` counts
-    as a possible wrapper too, since a glob or brace expansion may turn it into one
-    (`/usr/bin/x[a]rgs git commit --no-edit`, `xargs{,} git commit --no-edit`). `find … -exec git commit … {} +` is denied by its `{`
+    C:guard step 3, fail closed). A token before `git` that is not literal by C:guard step 4
+    (`$`, a backtick, `{`, `(`, `*`, `?`, `[`) or holds a tilde expansion counts as a
+    possible wrapper too, since a glob, brace, extglob, variable or tilde expansion may turn
+    it into one (`/usr/bin/x[a]rgs git commit --no-edit`, `xargs{,} git commit --no-edit`,
+    `x@(a)rgs …`, `$W …`, `~- …`), and so does a `)` token, which closes an extglob split
+    at its `|` (`x@(z|a)rgs …`); a lone `{` or `!(` is exempt. False denies stay closed
+    (`GIT_AUTHOR_DATE=$d git commit --no-edit`, a `case … in pat) git commit` arm). `find … -exec git commit … {} +` is denied by its `{`
     (C:guard step 4).
   - Expansion in the command position: what a variable holds there (Bash
     `$GIT commit -m x`, PowerShell `& $g commit -m x`; a variable holding the whole command,

@@ -128,7 +128,7 @@ stories 13, 14.
 - [ ] Seam 3: PowerShell `git commit --no-edit # done` and `<# git commit -m x #> git status` → the blanket message (documented false positive), no other row.
 - [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` `` git commit`0 --no-edit `` and `` git commit`u{00} --no-edit `` → denied: a PowerShell NUL ends the token's value and git's arguments (a `cut` token), as the native command line is cut there.
 - [ ] Seam 3: `` Write-Output x`0 (git commit -m x) `` `` if ("x`0") {git commit -m x} `` and `` git commit --no-edit`0 (git commit -m x) `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
-- [ ] Seam 3: PowerShell spellings of an argument-appending wrapper (C:guard step 3) → the wrapper row naming `xargs`: `'-n' | xargs git commit --no-edit`, `` xar`gs git commit --no-edit ``, `& 'xargs' git commit --no-edit` and `& ('xargs') git commit --no-edit` (review-GRD-04 round 2, finding 3).
+- [ ] Seam 3: PowerShell spellings of an argument-appending wrapper (C:guard step 3) → the wrapper row naming `xargs`: `'-n' | xargs git commit --no-edit`, `` xar`gs git commit --no-edit ``, `& 'xargs' git commit --no-edit` and `& ('xargs') git commit --no-edit` (review-GRD-04 round 2, finding 3); `if ($ok) { git commit --no-edit }` and `if (Test-Path a) { git commit --no-edit }` → the wrapper row naming `$ok` and `)` (documented false positives, review-GRD-04 round 3).
 - [ ] Seam 2: one PowerShell deny case end to end.
 - [ ] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
 
