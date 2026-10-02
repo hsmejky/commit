@@ -1,5 +1,5 @@
 {
- "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*). Round 8 (2026-09-29, user decision): after seven review rounds of bypasses, step 2 opens with a blanket fail-closed rule (C:guard) that denies, before any tokenizing, any command mentioning commit whose text holds a substitution, heredoc, here-string, comment or (Bash) typographic quote anywhere, in or out of quotes; a case classified by the `blanket` oracle-skip class has no segments (the guard never tokenizes it). Round 8 review set these by hand from C:guard: Bash extglob openers (b-extglob-*), the pinned quote readings (b-locale-quote, b-cont-*, p-mixed-*), and the script-call exemption (b-exempt-*, p-exempt-*). GRD-04 review round 8 (defense in depth): the body of an extglob pattern read as one word in an argument is also read as a command text, its segments after the segment holding the word (b-extglob-at, -bang, -plus, -star, -qmark).",
+ "note": "PRE-03 spike seed for the G2 segments golden fixtures (GRD-03). segments and decision are the prototype of C:guard as written on 2026-09-29, amended by hand to the Q3 amendment of the same day that settled the spike findings F1-F7: a case with a `finding` has the expected output set by that finding's Q3 decision (C:guard Parsing). Oracle: bash printf words per segment span; PowerShell parser API (5.1 and 7) pipeline elements. Non-match values name the oracle-skip class (C:guard, Oracle-skip classes). A {\"op\":\"cut\"} token marks a PowerShell NUL cut (C:guard Parsing step 2). An oracle value may be a list of classes when several apply. Cases added by the review of the amendment (p-nul-*, p-paren-*, p-array-fixup, p-scriptblock-arg, p-call-expr-gap, b-brace-*-value) were set by hand from C:guard, not run through the prototype. Round 5 of the review set these by hand from C:guard: substitution bodies read as segments of their own after the segment holding them (b-subst-*, b-bt-*, b-heredoc-subst*, b-param-subst, p-subexpr-*, p-hs-subexpr), PowerShell commas (p-comma-*), stop-parsing (p-stop-*), and non-literal values (b-fixup-var, b-opt-value-var-quoted, p-fixup-*, p-call-var-gap). Round 6 set these by hand from C:guard: Bash 5.3 ${ …; } and ${| …; } substitutions (b-funsub-*) and a backtick-escaped --% (p-stop-escaped-*). Round 8 (2026-09-29, user decision): after seven review rounds of bypasses, step 2 opens with a blanket fail-closed rule (C:guard) that denies, before any tokenizing, any command mentioning commit whose text holds a substitution, heredoc, here-string, comment or (Bash) typographic quote anywhere, in or out of quotes; a case classified by the `blanket` oracle-skip class has no segments (the guard never tokenizes it). Round 8 review set these by hand from C:guard: Bash extglob openers (b-extglob-*), the pinned quote readings (b-locale-quote, b-cont-*, p-mixed-*), and the script-call exemption (b-exempt-*, p-exempt-*). GRD-04 review round 8 (defense in depth): the body of an extglob pattern read as one word in an argument is also read as a command text, its segments after the segment holding the word (b-extglob-at, -bang, -plus, -star, -qmark). GRD-06 (2026-10-03): the PowerShell call operator `&` at a command's start is the word \"&\" (C:guard step 3), so p-call-op, p-call-op-path, p-call-expr-gap, p-scriptblock-call, p-call-var-gap and p-exempt-hash start with it; the PowerShell oracle drops it, as the parser reads it as the invocation operator, not a command element.",
  "cases": [
   {
    "id": "b-plain",
@@ -1838,6 +1838,7 @@
    "command": "& git commit -m x",
    "segments": [
     [
+     "&",
      "git",
      "commit",
      "-m",
@@ -1857,6 +1858,7 @@
    "command": "& \"C:\\Program Files\\Git\\cmd\\git.exe\" commit -m x",
    "segments": [
     [
+     "&",
      "C:\\Program Files\\Git\\cmd\\git.exe",
      "commit",
      "-m",
@@ -2253,6 +2255,7 @@
    "command": "& ('git') commit -m x",
    "segments": [
     [
+     "&",
      {
       "op": "("
      },
@@ -2678,6 +2681,7 @@
    "command": "&{git commit -m x}",
    "segments": [
     [
+     "&",
      {
       "op": "{"
      },
@@ -3792,6 +3796,7 @@
    "command": "& $g commit -m x",
    "segments": [
     [
+     "&",
      "$g",
      "commit",
      "-m",
@@ -4390,6 +4395,7 @@
    "command": "& node \"C:/a#b/commit.cjs\" check --plan 3f9a1c2e-0000-4000-8000-000000000000",
    "segments": [
     [
+     "&",
      "node",
      "C:/a#b/commit.cjs",
      "check",

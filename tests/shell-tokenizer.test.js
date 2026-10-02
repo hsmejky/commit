@@ -53,6 +53,7 @@ for (const c of seedCases.filter((x) => x.shell === 'powershell')) {
       assert.deepEqual(segments(c.command, 'powershell'), { blanket: kind });
     } else {
       assert.equal(kind, null);
+      assert.deepEqual(segments(c.command, 'powershell'), c.segments);
     }
   });
 }
@@ -268,4 +269,39 @@ test('Seam 3: the blanket rule also checks the carriage-return-kept Bash reading
 
 test('Seam 3: segmentSpans of a blanket command is null', () => {
   assert.equal(segmentSpans('echo $(x) commit', 'bash'), null);
+});
+
+// GRD-06: PowerShell readings the slice names (C:guard step 2, PowerShell column).
+const cut = { op: 'cut' };
+const powershellTable = [
+  ['git commit -m "a`"b"', [['git', 'commit', '-m', 'a"b']]],
+  ['git commit`0x -m x', [['git', 'commit', cut, '-m', 'x']]],
+  ['git "commit`0" --no-edit', [['git', 'commit', cut, '--no-edit']]],
+  ['git commit`u{000000} --no-edit', [['git', 'commit', cut, '--no-edit']]],
+  ['git co`u{6D}mit -m x', [['git', 'commit', '-m', 'x']]],
+  ['echo a`tb`nc', [['echo', 'a\tb\nc']]],
+  ['& git commit -m x', [['&', 'git', 'commit', '-m', 'x']]],
+  ['git status & git commit -m x', [['git', 'status'], ['git', 'commit', '-m', 'x']]],
+  ['(& git commit)', [[{ op: '(' }, '&', 'git', 'commit', { op: ')' }]]],
+  ['!(1)', [['!', { op: '(' }, '1', { op: ')' }]]],
+  ['echo a2>b x', [['echo', 'a2>b', 'x']]],
+  ['git commit -m x 2>&1 *>> log.txt', [['git', 'commit', '-m', 'x', { redir: '2>&1', target: null }, { redir: '*>>', target: 'log.txt' }]]],
+  ['git commit -m ‘it’’s’', [['git', 'commit', '-m', 'it’s']]],
+  ['git commit -m “a„', [['git', 'commit', '-m', 'a']]],
+  ['git commit -m x', [['git', 'commit', '-m', 'x']]],
+  ['git commit\r-m x', [['git', 'commit'], ['-m', 'x']]],
+  ['git --% "a b" c|git commit -m x', [['git', '--%', '"a', 'b"', 'c'], ['git', 'commit', '-m', 'x']]],
+  ['git --% a\ngit commit', [['git', '--%', 'a'], ['git', 'commit']]],
+  ['Start-Process -ArgumentList { git commit -m x }', [['Start-Process', '-ArgumentList', { op: '{' }, 'git', 'commit', '-m', 'x', { op: '}' }]]],
+  ['git commit -m "x\ngit status', [['git', 'commit', '-m', 'x'], ['git', 'status']]],
+  ['git commit -m x`', [['git', 'commit', '-m', 'x']]],
+];
+for (const [command, expected] of powershellTable) {
+  test(`Seam 3: PowerShell segments(${JSON.stringify(command)})`, () => {
+    assert.deepEqual(segments(command, 'powershell'), expected);
+  });
+}
+
+test('Seam 3: PowerShell segmentSpans are indices in the command, the call operator included', () => {
+  assert.deepEqual(segmentSpans('& git commit -m x; git `\nstatus', 'powershell'), [[0, 17], [19, 31]]);
 });

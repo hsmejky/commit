@@ -3,8 +3,7 @@
 // First the script-call exemption, then the blanket rule (fail closed): a command holding a
 // construct whose end the tokenizer does not model is not tokenized, and the caller gets the
 // trigger kind instead of segments. Otherwise the command is tokenized with the quoting
-// rules of its shell and split into segments. Bash only for now; the PowerShell tokenizer
-// is GRD-06.
+// rules of its shell and split into segments.
 
 // The longest command G2 reads, in UTF-16 code units (256 Ki, about 256 KiB of ASCII): a
 // longer one is the blanket kind 'size' (C:guard step 2, fail closed), exempt form or not.
@@ -114,7 +113,7 @@ export function segmentSpans(command, shell) {
 }
 
 function tokenize(command, shell) {
-  if (shell !== 'bash') throw new Error('the PowerShell tokenizer is not built yet (GRD-06)');
+  if (shell !== 'bash') return tokenizePowerShell(command);
   const out = { segments: [], spans: [], blanket: null };
   for (const reading of bashReadings(command)) {
     const { text, origin } = join(reading);
@@ -522,4 +521,229 @@ function ansiEscape(s, p) {
     return { text: String.fromCharCode(code), end: p + 1 + skip };
   }
   return { text: `\\${c}`, end: p + 1 };
+}
+
+// PowerShell (C:guard step 2, PowerShell column). Whitespace splits words: space, tab, form
+// feed, vertical tab, U+0085 and every Unicode separator (Zs, Zl, Zp, among them U+00A0 and
+// U+2028), as PowerShell's tokenizer reads them; a carriage return or a newline ends the
+// line, a lone carriage return included.
+const PS_SPACE = /[ \t\f\v\x85\p{Z}]/u;
+const isPsSpace = (c) => c === ' ' || PS_SPACE.test(c);
+const isPsNewline = (c) => c === '\n' || c === '\r';
+// Characters that end an unquoted word besides whitespace and newlines. `>` and `<` do not:
+// PowerShell reads `a2>b` as one word and a redirection only at a token's start.
+const PS_WORD_END = new Set([';', '|', '&', '(', ')', '{', '}']);
+// The quote classes, written as the characters themselves: `"` and U+201C-U+201E, `'` and
+// U+2018-U+201B. Any character of a class closes a string opened by any of them; two of them
+// in a row inside it are one escaped quote, the second of the two.
+const PS_DOUBLE = new Set(['"', '“', '”', '„']);
+const PS_SINGLE = new Set(["'", '‘', '’', '‚', '‛']);
+// The backtick escapes with a meaning of their own (PowerShell 7); any other escaped
+// character is itself. `` `0 `` (a NUL) is handled by `psEscape`.
+const PS_ESCAPES = { a: '\x07', b: '\b', e: '\x1B', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+// A redirection at a token's start: a stream duplication (`2>&1`, `*>&1`), an output
+// redirection with an optional stream (`>`, `>>`, `2>`, `*>>`), or `<` (reserved in
+// PowerShell, which then runs nothing).
+const PS_REDIRECTION = /[1-6*]>&[12]|[1-6*]?>>?|</y;
+
+// The backtick escape at `i`: its value and end, `nul` for a NUL (`` `0 `` or a zero
+// `` `u{…} ``). A backtick before a newline (optionally after a carriage return) is an
+// escaped newline and removed; a trailing backtick at the command's end is dropped.
+function psEscape(s, i) {
+  const n = s[i + 1];
+  if (n === undefined) return { value: '', end: i + 1 };
+  if (n === '\n') return { value: '', end: i + 2 };
+  if (n === '\r' && s[i + 2] === '\n') return { value: '', end: i + 3 };
+  if (n === '0') return { value: '', end: i + 2, nul: true };
+  if (n === 'u') {
+    const braces = /\{([0-9A-Fa-f]{1,6})\}/y;
+    braces.lastIndex = i + 2;
+    const hex = braces.exec(s);
+    if (hex) {
+      const code = parseInt(hex[1], 16);
+      const end = i + 2 + hex[0].length;
+      if (code === 0) return { value: '', end, nul: true };
+      // Past U+10FFFF PowerShell rejects the command and runs nothing.
+      return { value: code <= 0x10ffff ? String.fromCodePoint(code) : '', end };
+    }
+  }
+  return { value: Object.hasOwn(PS_ESCAPES, n) ? PS_ESCAPES[n] : n, end: i + 2 };
+}
+
+// The end of the quoted string whose content starts at `from` (`kind`: PS_SINGLE or
+// PS_DOUBLE): after the closing quote, found lexically (two quote characters of the class
+// in a row are one escaped quote; in double quotes a backtick pairs with the next
+// character). An unterminated string is the rest of its line (C:guard step 2): it ends
+// before the first unescaped newline.
+function psQuoteEnd(s, from, kind) {
+  const double = kind === PS_DOUBLE;
+  for (let i = from; i < s.length; i += 1) {
+    if (double && s[i] === '`') {
+      i += 1;
+    } else if (kind.has(s[i])) {
+      if (!kind.has(s[i + 1])) return { end: i + 1, closed: true };
+      i += 1;
+    }
+  }
+  for (let i = from; i < s.length; i += 1) {
+    if (isPsNewline(s[i])) return { end: i, closed: false };
+    if (double && s[i] === '`') i += s[i + 1] === '\r' && s[i + 2] === '\n' ? 2 : 1;
+  }
+  return { end: s.length, closed: false };
+}
+
+// A quoted string's value, end and `nul` (its value holds a NUL, which ends the value
+// there: what follows the NUL is dropped).
+function psQuote(s, from, kind) {
+  const { end, closed } = psQuoteEnd(s, from, kind);
+  const stop = closed ? end - 1 : end;
+  let value = '';
+  for (let i = from; i < stop;) {
+    let part;
+    if (kind === PS_DOUBLE && s[i] === '`') {
+      part = psEscape(s, i);
+      if (part.end > stop) part = { value: '', end: stop };
+    } else if (kind.has(s[i])) {
+      part = { value: s[i + 1], end: i + 2 };
+    } else {
+      part = { value: s[i], end: i + 1, nul: s[i] === '\0' };
+    }
+    if (part.nul) return { value, end, nul: true };
+    value += part.value;
+    i = part.end;
+  }
+  return { value, end, nul: false };
+}
+
+// Reads one PowerShell word from `i` up to unquoted whitespace, a newline or a PS_WORD_END
+// character, with escape and quote removal. `quoted` marks a word with a quoted part (a
+// quoted `'--%'` does not stop parsing); `cut` marks a NUL in its value, which ends the
+// value there (the rest of the word is read and dropped).
+function readPsWord(s, i) {
+  let value = '';
+  let quoted = false;
+  let cut = false;
+  while (i < s.length) {
+    const c = s[i];
+    if (isPsSpace(c) || isPsNewline(c) || PS_WORD_END.has(c)) break;
+    let part;
+    if (c === '`') {
+      part = psEscape(s, i);
+    } else if (PS_SINGLE.has(c) || PS_DOUBLE.has(c)) {
+      quoted = true;
+      part = psQuote(s, i + 1, PS_SINGLE.has(c) ? PS_SINGLE : PS_DOUBLE);
+    } else {
+      part = { value: c, end: i + 1, nul: c === '\0' };
+    }
+    if (!cut) value += part.value;
+    cut ||= part.nul === true;
+    i = part.end;
+  }
+  return { value, end: i, quoted, cut };
+}
+
+// The words after a stop-parsing `--%` (C:guard step 2): the rest of the line up to the next
+// `|`, `&&` or `||`, split on whitespace only; every other character is a character of its
+// word. Returns the index of the newline, `|` or `&&` that ends it, or the command's end.
+function readStopParsing(s, i, push) {
+  const ends = (at) => isPsNewline(s[at]) || s[at] === '|' || (s[at] === '&' && s[at + 1] === '&');
+  while (i < s.length) {
+    if (isPsSpace(s[i])) {
+      i += 1;
+    } else if (ends(i)) {
+      return i;
+    } else {
+      const from = i;
+      while (i < s.length && !isPsSpace(s[i]) && !ends(i)) i += 1;
+      push(s.slice(from, i), from, i);
+    }
+  }
+  return i;
+}
+
+// Splits a PowerShell command into segments on `&&`, `||`, `;`, `|`, a lone `&` and
+// newlines outside quotes. An unquoted `(`, `)`, `{` or `}` is an operator token of its own,
+// a script block passed as data included (`Start-Process -ArgumentList { … }`: its `{`
+// starts a command, fail closed). The `&` call operator at a command's start (the segment's
+// start or right after a `(` or `{` token) is the word `'&'` (C:guard step 3). A NUL in a
+// word's value is followed by a `{ op: 'cut' }` token. Spans are indices in `s`.
+function tokenizePowerShell(s) {
+  const out = { segments: [], spans: [], blanket: null };
+  let seg = [];
+  let start = 0;
+  let end = 0;
+  // Whether the next token is at a command's start, where `&` is the call operator.
+  let first = true;
+  const push = (token, from, to) => {
+    if (seg.length === 0) start = from;
+    seg.push(token);
+    end = to;
+  };
+  const close = () => {
+    if (seg.length > 0) {
+      out.segments.push(seg);
+      out.spans.push([start, end]);
+    }
+    seg = [];
+    first = true;
+  };
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '`' && (i + 1 === s.length || s[i + 1] === '\n' || (s[i + 1] === '\r' && s[i + 2] === '\n'))) {
+      i = psEscape(s, i).end;
+    } else if (isPsSpace(c)) {
+      i += 1;
+    } else if (isPsNewline(c) || c === ';') {
+      close();
+      i += 1;
+    } else if (c === '|') {
+      close();
+      i += s[i + 1] === '|' ? 2 : 1;
+    } else if (c === '&' && s[i + 1] !== '&' && first) {
+      push('&', i, i + 1);
+      first = false;
+      i += 1;
+    } else if (c === '&') {
+      close();
+      i += s[i + 1] === '&' ? 2 : 1;
+    } else if (c === '(' || c === ')' || c === '{' || c === '}') {
+      push({ op: c }, i, i + 1);
+      first = c === '(' || c === '{';
+      i += 1;
+    } else {
+      PS_REDIRECTION.lastIndex = i;
+      const redir = PS_REDIRECTION.exec(s);
+      if (redir === null) {
+        const w = readPsWord(s, i);
+        push(w.value, i, w.end);
+        if (w.cut) push({ op: 'cut' }, w.end, w.end);
+        first = false;
+        i = w.end;
+        if (!w.quoted && !w.cut && w.value === '--%') i = readStopParsing(s, i, push);
+      } else {
+        i = psRedirection(s, i, redir[0], push);
+      }
+    }
+  }
+  close();
+  return out;
+}
+
+// Pushes the redirection `op` at `from` with its target word (null for a stream duplication
+// such as `2>&1`, or when no word follows); returns the index after it.
+function psRedirection(s, from, op, push) {
+  let i = from + op.length;
+  if (op.includes('&')) {
+    push({ redir: op, target: null }, from, i);
+    return i;
+  }
+  while (i < s.length && isPsSpace(s[i])) i += 1;
+  if (i < s.length && !isPsNewline(s[i]) && !PS_WORD_END.has(s[i])) {
+    const w = readPsWord(s, i);
+    push({ redir: op, target: w.value }, from, w.end);
+    return w.end;
+  }
+  push({ redir: op, target: null }, from, from + op.length);
+  return from + op.length;
 }
