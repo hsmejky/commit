@@ -100,9 +100,9 @@ release has already completed.
 **What to build:** M12 `open`, wired as the first step of M18 `commit`. It verifies that
 the lock holds the `planId`, refreshes `touched` (the lock mtime), checks the state
 `version`, and holds `call.lock` for the whole call. It refuses `taken-over` (the lock
-holds another `planId`), `ended` (no lock, or a state `version` mismatch) and `busy` (a
-live `call.lock`, or a `call.lock` or folder that vanishes with `ENOENT` → `taken-over`).
-State writes use a temporary name, then a rename. With no group-commit behaviour built
+holds another `planId`, or its own lock/`call.lock`/folder vanishes mid-call with a late
+`ENOENT`), `ended` (no lock, or a state `version` mismatch) and `busy` (only a live
+`call.lock`). State writes use a temporary name, then a rename. With no group-commit behaviour built
 yet, a matched lock's call falls through to a stub that ends the call at once, exit 0,
 with no commits; EXE-02 replaces the stub with the real loop. `call.lock` is created
 exclusively when the call starts and removed when it ends by M12 `run.close()` (idempotent,

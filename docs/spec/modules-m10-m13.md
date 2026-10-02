@@ -195,17 +195,19 @@ forward slashes.
 - `run.finishTakeover()`: after M18's repair, deletes every folder on the chains first,
   then the renamed lock files; a no-op without a takeover; not called after a failed
   repair.
-- `Run.open(planId, { now })` (typed: `taken-over`, `ended`, `busy`).
-- `run.close()`: removes the call's own `call.lock`; idempotent and `ENOENT`-tolerant (a
-  folder already deleted by `release` or a takeover is not an error). Called from M18's
-  `finally` for every call with `--plan` and from the entry point's signal handler.
+- `open(planId, { toplevel, now, pid, host, isAlive })` (typed: `taken-over`, `ended`,
+  `busy`), returning `{ ok: true, run: { toplevel, planId, callLockPath } }` on success —
+  a plain function, not a method on a run object.
+- `close({ toplevel, planId, pid, host })`: a free function (not a method), removing the
+  call's own `call.lock` only when it still holds this call's `{ pid, host }`; idempotent
+  and `ENOENT`-tolerant (a folder already deleted by `release` or a takeover is not an
+  error). Called from M18's `finally` for every call with `--plan` and from the entry
+  point's signal handler (once GIT-08 builds it).
 - `run.state`, `run.write(name, data)`, `run.readWorkerPlan()`, `run.touch()`,
   `run.release()`, `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
   false` for the no-op when the lock does not hold `planId`; `{ ok: false, code: 'busy' }`
-  on a live `call.lock`, RUN-02), `Run.sweep(now)`. Every M12 static entry that has no open run to read
-  `toplevel` from (`create`, `open`, `releaseById`) takes it explicitly, alongside its own
-  arguments, since M18 already holds it from the probe (Q9); `Run.create({ now })` and
-  `Run.open(planId, { now })` above will take `toplevel` the same way once built.
+  on a live `call.lock`, RUN-02), `Run.sweep(now)`. Every M12 static entry takes `toplevel`
+  explicitly, alongside its own arguments, since M18 already holds it from the probe (Q9).
 Sources: Q9, Q22, C:run-folder.
 
 **M13 Hunk index renderer.** Presentation only: the summary-only reason per unit; the body

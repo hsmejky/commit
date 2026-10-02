@@ -205,20 +205,21 @@ export async function release(values, injected, { cwd }) {
  * Runs `commit --plan <planId> --all` (C:commit-release `commit`, M12 `open`).
  *
  * `open` is the whole call's own lock check (RUN-04): `taken-over` (the lock holds another
- * `planId`), `ended` (no lock, or a state `version` mismatch) and `busy` (a live `call.lock`,
- * or a `call.lock`/folder that vanishes mid-call) are refused before any group-commit work.
- * With no group-commit behaviour built yet (M14/M16), a matched lock's call falls straight
- * through to a stub that ends it at once, exit 0, with no commits; EXE-02 replaces the stub
- * with the real per-group loop. `run.close()` always runs for a call that reached a
- * successful `open` (success or a later failure alike), never when `open` itself failed
- * (there is then no call.lock to close).
+ * `planId`, or its own lock/`call.lock`/folder vanishes mid-call with a late `ENOENT`) and
+ * `ended` (no lock, or a state `version` mismatch) are refused before any group-commit work;
+ * `busy` covers only a live `call.lock`. With no group-commit behaviour built yet (M14/M16),
+ * a matched lock's call falls straight through to a stub that ends it at once, exit 0, with
+ * no commits; EXE-02 replaces the stub with the real per-group loop. `run.close()` always
+ * runs for a call that reached a successful `open` (success or a later failure alike), never
+ * when `open` itself failed (there is then no call.lock to close).
  *
  * The success envelope is kept bare on purpose: the full `commits`/`failed`/`remaining`/
  * `reply` shape (C:commit-release, C:reply-and-handback) needs a real `reply.status` the
  * stub cannot honestly report (`"committed"` requires at least one commit; `"nothing"`'s
- * `reason` union does not yet have an entry for this stub). EXE-02, which replaces the stub
- * with the real loop, is the natural place to build that reply surface instead of inventing
- * a placeholder here that it would have to reconcile or rip out.
+ * `reason` union does not yet have an entry for this stub). The `reply` with
+ * `status: "committed"` is asserted first in INT-02 (docs/roadmap/12-integration.md), which
+ * is the natural place to build that reply surface instead of inventing a placeholder here
+ * that it would have to reconcile or rip out; EXE-02 builds the per-group loop itself.
  *
  * @param {{ plan: string }} values the parsed and validated `commit` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.
