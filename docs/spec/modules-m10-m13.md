@@ -178,7 +178,8 @@ outcome: it becomes a notice and the sweep removes the leftovers later. Typed st
 (C:run-folder plus the stored-facts rows above), written atomically with a `version` field
 (Versioned run state); `open` refuses `ended` on a `version` mismatch. Paths absolute with
 forward slashes.
-- `Run.create({ now }) → provisional`; `provisional.peek()` (typed, `held` with holder, or
+- `Run.create({ toplevel, excludePath, tracked }) → provisional` or `run-folder`
+  (`excludePath` from M2 `gitPath`, `tracked` from M3 `isTracked`: M12 spawns nothing); `provisional.peek()` (typed, `held` with holder, or
   ok when no live lock, carrying the stale holder when there is one, and the orphan
   renamed locks when there is no lock, which M18 treats like a stale lock; read-only);
   `provisional.acquire({ takeOver? })` (typed, `held` with holder, `busy`, `taken-over`,

@@ -50,6 +50,10 @@ fixed, delete it here; IDs are never reused.
 - **KD-R18.** EXE-14's "(with no extra commit — this is EXE-06's case)" reads backwards.
   Reword (see KD-R41).
 - **KD-R19.** MSG-01's header-mismatch criterion lacks its seam ("Seam 3 table").
+- **KD-R63.** RUN-05's `runDir` criterion (absolute, `path.resolve`d, forward slashes)
+  names Seam 1, but the only `plan` outcome RUN-05 builds is a clean tree, whose output
+  carries `runDir: null`; RUN-05 asserts the form on M12 `create`'s result in-process.
+  Fix: INT-02 (or CHG-03b) asserts `runDir`'s form in `plan`'s output at Seam 1.
 
 ## Test mechanisms
 

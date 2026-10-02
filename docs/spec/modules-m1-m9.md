@@ -38,8 +38,8 @@ handler.
 
 `run(cmd, args, { cwd, env, now, index?, input?, timeoutMs, readOnly?, commit?, onStdout? }) →
 { code, stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`);
-`toplevel(fromCwd, { env })`; `gitVersion({ cwd, env })`; `gitPath(names)` (one
-`rev-parse --git-path` call); `killActive()`. Sources: Q9, Q18.
+`toplevel(fromCwd, { env })`; `gitVersion({ cwd, env })`; `gitPath(names, { cwd, env, now })` (one
+`rev-parse --git-path` call, absolute paths); `killActive()`. Sources: Q9, Q18.
 
 **M3 Repo-state probe.** Every question about repository state, as typed results: not a
 repo or bare; unborn, detached and current HEAD from one porcelain v2 `--branch` status
@@ -53,7 +53,7 @@ commit it by hand, or drop it with `git reset --merge`"); `i18n.commitEncoding` 
 compared case-insensitively with `utf-8` and `utf8` (story 186); git and Node versions; for
 `reword`, unborn, merge commit, root commit and pushed (one `for-each-ref --contains` over
 remote-tracking refs, skipped when unborn); `head()`; `headTree()` (the tree ID of
-`HEAD^{tree}`, which M16 compares with the tree its backstop scanned); history reads (`recentSubjects`,
+`HEAD^{tree}`, which M16 compares with the tree its backstop scanned); `isTracked(name, { cwd, env, now })` (one `ls-files --cached` call with a literal pathspec: whether the index holds `name` or a path under it, which M18 passes to M12 `create` for the `.commit-plan` check); history reads (`recentSubjects`,
 `oldMessage`, and the last 200 non-merge messages for `infer`). Its refusal texts (`head-moved`, the merge-commit reword, the in-progress states, `unmerged`) are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, Q20, Q21, C:plan, C:commit-release, C:cli-and-exit-codes.
 
 **M4 Config loader.** Read the user layer from the Claude home and the repo layer from the
