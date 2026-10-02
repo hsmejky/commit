@@ -5,7 +5,7 @@
 // a deny or nothing (C:guard Output); a crash or unreadable input fails open.
 
 import { Buffer } from 'node:buffer';
-import { blanketTrigger, segments } from './shell-tokenizer.mjs';
+import { segments } from './shell-tokenizer.mjs';
 import { classify } from './command-classifier.mjs';
 
 const NO_OUTPUT = Object.freeze({ stdout: '', stderr: '' });
@@ -69,15 +69,7 @@ export function runHook(stdinText, context = {}) {
     }
     if (!mentionsCommit(command)) return NO_OUTPUT;
     const shell = SHELL_OF[toolName];
-    // The PowerShell tokenizer is GRD-06; until it exists, only the blanket rule applies there.
-    let parsed;
-    if (shell === 'powershell') {
-      const kind = blanketTrigger(command, shell);
-      if (kind === null) return NO_OUTPUT;
-      parsed = { blanket: kind };
-    } else {
-      parsed = segments(command, shell);
-    }
+    const parsed = segments(command, shell);
     const result = classify(parsed, { agentType: payload.agent_type, shell });
     if (result.decision === 'deny') return { stdout: denyOutput(result.message), stderr: '' };
     return NO_OUTPUT;

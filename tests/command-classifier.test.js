@@ -119,8 +119,8 @@ for (const parsed of noneTable) {
 // GRD-04 at G3 directly: where `commit`'s arguments end and which are not literal, per
 // shell (C:guard step 4), and the prefix allowlist before `git` (step 3: in PowerShell it is
 // the `&` call operator alone, and a `(` or `{` still open at `git` starts a new command, so
-// `if (…) { git … }`, `&{ git … }` and `. { git … }` fit). The PowerShell rows are reached through `runHook` once
-// its tokenizer lands (GRD-06).
+// `if (…) { git … }`, `&{ git … }` and `. { git … }` fit). The PowerShell spellings are also reached through
+// `runHook` (GRD-06, tests/guard-powershell.test.js).
 const commitArgTable = [
   ['bash', [['git', 'commit', '--no-edit', { op: ')' }, '-m', 'x']], 'none'],
   ['powershell', [['git', 'commit', '--no-edit', { op: '}' }, '-m', 'x']], 'none'],
