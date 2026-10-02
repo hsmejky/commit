@@ -303,10 +303,13 @@
     is a syntax error): `git @(commit) -m x` gives `git`, `@(commit)`, `-m`, `x`, the word
     not literal (step 4), which GRD-12's literal-subcommand row will deny; until then it
     gives no output (review GRD-04 round 5). An unquoted `<(` or `>(` inside such a pattern
-    runs, so it is the blanket deny (fail closed, review GRD-04 round 6). A `{` keeps
-    command position after `function NAME`, `coproc` and `coproc NAME`, so
-    `coproc { !(git commit -m x); }` denies. `@(git) commit -m x` joins the
-    command-position gap.
+    runs, so it is the blanket deny (fail closed, review GRD-04 round 6). Any reserved
+    word that opens a command (`!`, `{`, `if`, `while`, `until`, `time`, …) keeps
+    command position after `function NAME`, `coproc` and `coproc NAME`, as does a `--`
+    after `time` or `time -p`, and the word after `function` is read as a first word, so
+    `coproc { !(git commit -m x); }`, `function f if !(git commit -m x); then :; fi`,
+    `time -- !(git commit -m x)` and `function !(git commit -m x)` deny (review GRD-04
+    round 7). `@(git) commit -m x` joins the command-position gap.
   - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
     pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
     double quotes or escaped opens nothing); in PowerShell two characters of one quote

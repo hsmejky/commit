@@ -178,9 +178,13 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    In Bash `{` and `}` stay in their word (brace expansion, step 4). In Bash an unquoted `(`
    directly after an unquoted `@`, `!`, `+`, `*` or `?` (an extglob opener), in a command's
    first word (the segment's start, right after a `(`/`)` token, after a reserved word
-   that may start a command, or after a `{` that follows `function NAME`, `coproc` or
-   `coproc NAME`; an assignment does not keep first position, nor a `{` after an
-   argument), ends that word
+   that may start a command: `!`, `{`, `if`, `then`, `elif`, `else`, `while`, `until`,
+   `do`, `time`, `time -p`, a `--` after `time` or `time -p`, `function` (its name is
+   read as a first word, so `function !(git commit -m x); \!` denies) and `coproc`; after
+   `function NAME`, `coproc` and `coproc NAME` bash still takes a reserved word, and any of
+   those words keeps first position there: `function f if !(git commit -m x); then :; fi`
+   and `coproc C while !(…)` deny; an assignment does not keep first position, nor a
+   reserved word after an argument), ends that word
    with the `(` kept in it, and is also a `(` token of its own: with `extglob` on (which an
    earlier line can set, like `expand_aliases`) bash reads an extglob pattern that may match
    a file named `commit`; with `extglob` off bash rejects the pattern, except a `!(` that
