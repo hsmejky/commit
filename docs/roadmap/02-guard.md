@@ -114,7 +114,7 @@ text.
 ## GRD-06: PowerShell tokenizer
 
 **What to build:** G2 for PowerShell (backtick escapes, among them the NUL escape `` `0 ``
-/ a zero `` `u{…} ``, `''` and `""`, the `&` call operator emitted as a word token `'&'`
+and `` `e `` / `` `u{…} ``, which 5.1 and 7 read differently (the blanket kind `escape`), `''` and `""`, the `&` call operator emitted as a word token `'&'`
 rather than an operator — the classifier already accepts either shape — and every unquoted
 `{`/`}` a token, a script block passed as data such as `Start-Process -ArgumentList { … }`
 included, so its commands are classified like any script block's (fail closed; a denied form
@@ -123,19 +123,19 @@ hold for PowerShell commands.
 
 **Blocked by:** GRD-03, GRD-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, Q3 (PRE-03 amendment), Q15, C:guard (Parsing step 2 PowerShell column),
 stories 13, 14.
 
-- [ ] Seam 3: ``git commit -m "a`"b"``, `& git commit -m x`, a compound PowerShell command → denied; a here-string holding `git commit` piped into another command → denied by the blanket rule (documented false positive).
-- [ ] Seam 3: PowerShell `git commit --no-edit # done` and `<# git commit -m x #> git status` → the blanket message (documented false positive), no other row.
-- [ ] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` `` git commit`0 --no-edit `` and `` git commit`u{00} --no-edit `` → denied: a PowerShell NUL ends the token's value and git's arguments (a `cut` token), as the native command line is cut there.
-- [ ] Seam 3: `` Write-Output x`0 (git commit -m x) `` `` if ("x`0") {git commit -m x} `` and `` git commit --no-edit`0 (git commit -m x) `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
-- [ ] Seam 3: PowerShell spellings of a possible wrapper (C:guard step 3) → the wrapper row: `'-n' | xargs git commit --no-edit`, `` xar`gs git commit --no-edit `` and `& 'xargs' git commit --no-edit` naming `xargs` (review-GRD-04 round 2, finding 3), `& ('xargs') git commit --no-edit` naming `(`, and `. git commit --no-edit` naming `.` (documented false positive); `if ($ok) { git commit --no-edit }`, `if (Test-Path a) { git commit --no-edit }` and `& git commit --no-edit` → no output (the bracket reset and the `&` call operator, emitted as the word token `'&'`, of the prefix allowlist, review-GRD-04 round 4).
-- [ ] `Start-Process -ArgumentList { git commit --amend --no-edit }` → no output (the `{` token starts a command, so `git commit --amend --no-edit` is classified as an allowed form; review-GRD-04 round 5, nit 2).
-- [ ] Seam 2: one PowerShell deny case end to end.
-- [ ] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
+- [x] Seam 3: ``git commit -m "a`"b"``, `& git commit -m x`, a compound PowerShell command → denied; a here-string holding `git commit` piped into another command → denied by the blanket rule (documented false positive).
+- [x] Seam 3: PowerShell `git commit --no-edit # done` and `<# git commit -m x #> git status` → the blanket message (documented false positive), no other row.
+- [x] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` and `` git commit`0 --no-edit `` → denied: a PowerShell NUL ends the token's value and git's arguments (a `cut` token), as the native command line is cut there; `` git commit`u{00} --no-edit `` → denied by the `escape` blanket row (5.1 and 7 read `` `u{…} `` differently).
+- [x] Seam 3: `` Write-Output x`0 (git commit -m x) `` `` if ("x`0") {git commit -m x} `` and `` git commit --no-edit`0 (git commit -m x) `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
+- [x] Seam 3: PowerShell spellings of a possible wrapper (C:guard step 3) → the wrapper row: `'-n' | xargs git commit --no-edit`, `` xar`gs git commit --no-edit `` and `& 'xargs' git commit --no-edit` naming `xargs` (review-GRD-04 round 2, finding 3), `& ('xargs') git commit --no-edit` naming `(`, and `. git commit --no-edit` naming `.` (documented false positive); `if ($ok) { git commit --no-edit }`, `if (Test-Path a) { git commit --no-edit }` and `& git commit --no-edit` → no output (the bracket reset and the `&` call operator, emitted as the word token `'&'`, of the prefix allowlist, review-GRD-04 round 4).
+- [x] `Start-Process -ArgumentList { git commit --amend --no-edit }` → no output (the `{` token starts a command, so `git commit --amend --no-edit` is classified as an allowed form; review-GRD-04 round 5, nit 2).
+- [x] Seam 2: one PowerShell deny case end to end.
+- [x] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
 
 
 ## GRD-07: Escaped newlines and unterminated quotes
