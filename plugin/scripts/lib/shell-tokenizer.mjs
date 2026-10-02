@@ -200,6 +200,9 @@ function quoteEnd(s, from, kind) {
 const WORD_END = new Set([' ', '\t', '\n', ';', '&', '|', '(', ')', '<', '>']);
 // An unquoted `(` right after one of these opens an extglob pattern (C:guard step 2).
 const EXTGLOB = new Set(['@', '!', '+', '*', '?']);
+// Reserved words after which the next word is still in a command's first position, where
+// `!` is the reserved word `!` (C:guard step 2). `time` may take `-p`.
+const COMMAND_PREFIX = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do', 'time']);
 // A `{name}` or `{name[subscript]}` word right before `<` or `>` names a descriptor variable
 // (bash 4.1+), a redirection prefix like descriptor digits.
 const VARIABLE_FD = /^\{[A-Za-z_][A-Za-z0-9_]*(?:\[[^]*\])?\}$/;
@@ -210,10 +213,20 @@ function tokenizeBash(s) {
   let seg = [];
   let start = 0;
   let end = 0;
+  // Whether the next word is in a command's first position: true, false, or 'time' right
+  // after a `time` there (so a `-p` keeps it). A redirection leaves it as it is.
+  let first = true;
   const push = (token, from, to) => {
     if (seg.length === 0) start = from;
     seg.push(token);
     end = to;
+    if (typeof token === 'string') {
+      if (first === 'time' && token === '-p') first = true;
+      else if (first !== false && COMMAND_PREFIX.has(token)) first = token === 'time' ? 'time' : true;
+      else first = false;
+    } else if (Object.hasOwn(token, 'op')) {
+      first = true;
+    }
   };
   const endSegment = () => {
     if (seg.length > 0) {
@@ -221,6 +234,7 @@ function tokenizeBash(s) {
       out.spans.push([start, end]);
     }
     seg = [];
+    first = true;
   };
   let i = 0;
   while (i < s.length) {
@@ -253,7 +267,7 @@ function tokenizeBash(s) {
       if (m) {
         i = redirection(s, i, m[0], push);
       } else {
-        const w = readWord(s, i);
+        const w = readWord(s, i, first === false);
         const raw = s.slice(i, w.end);
         if (VARIABLE_FD.test(raw) && (s[w.end] === '<' || s[w.end] === '>')) {
           i = redirection(s, i, raw, push);
@@ -273,7 +287,8 @@ function tokenizeBash(s) {
 const REDIRECTION_OPS = ['&>>', '&>', '<<<', '<&', '<>', '<', '>>', '>&', '>|', '>'];
 
 // Reads a redirection at `from` (after its descriptor prefix `fd`: digits or `{name}`) and
-// its target word; pushes one token; returns the index after it.
+// its target word, never a command's first word; pushes one token; returns the index after
+// it.
 function redirection(s, from, fd, push) {
   let i = from + fd.length;
   const op = REDIRECTION_OPS.find((candidate) => s.startsWith(candidate, i));
@@ -282,37 +297,42 @@ function redirection(s, from, fd, push) {
   while (s[j] === ' ' || s[j] === '\t') j += 1;
   let target = null;
   let to = i;
-  let extglob = false;
   if (j < s.length && !WORD_END.has(s[j])) {
-    const w = readWord(s, j);
+    const w = readWord(s, j, true);
     target = w.value;
     to = w.end;
-    extglob = w.extglob;
   }
   if (op.endsWith('&') && target !== null && /^(?:\d+|-)$/.test(target)) {
     push({ redir: `${fd}${op}${target}`, target: null }, from, to);
   } else {
     push({ redir: `${fd}${op}`, target }, from, to);
   }
-  if (extglob) push({ op: '(' }, to - 1, to);
   return to;
 }
 
 // Reads one Bash word from `i` (not a word-ending character) up to an unquoted word-ending
-// character, with quote removal. `extglob` marks a word ended by an extglob `(`, which is
-// kept in the word and is also a `(` token. Its quote and `$`-run tracking mirrors `join`'s:
-// change them together.
-function readWord(s, i) {
+// character, with quote removal. An extglob `(` (C:guard step 2) in a command's first word
+// ends the word, kept in it, and `extglob` marks it (it is also a `(` token: `!(…)` there is
+// `!` and a subshell when `extglob` is off). In an argument (`argument`), the pattern is read
+// on to its matching unquoted `)` as part of the word, its separators, spaces and brackets
+// included, as bash reads it with `extglob` on (with it off the pattern is a syntax error);
+// with no matching `)` (or an unterminated quote inside), the word ends after the `(` and no
+// `(` token follows. Its quote and `$`-run tracking mirrors `join`'s: change them together.
+function readWord(s, i, argument) {
   let value = '';
   let prev = null; // the previous character, when it was an unquoted literal
   let dollars = 0; // the run of unquoted literal `$` right before `i`
+  let depth = 0; // the extglob brackets open in an argument
+  let opener = null; // the word up to the outermost extglob `(` in an argument
   while (i < s.length) {
     const c = s[i];
-    if (WORD_END.has(c)) {
-      if (c === '(' && prev !== null && EXTGLOB.has(prev)) {
-        return { value: `${value}(`, end: i + 1, extglob: true };
-      }
-      break;
+    if (depth > 0 && (c === '(' || c === ')')) {
+      depth += c === '(' ? 1 : -1;
+    } else if (WORD_END.has(c) && depth === 0) {
+      if (c !== '(' || prev === null || !EXTGLOB.has(prev)) break;
+      if (!argument) return { value: `${value}(`, end: i + 1, extglob: true };
+      opener = { value: `${value}(`, end: i + 1, extglob: false };
+      depth = 1;
     }
     let q = null;
     if (c === '\\') {
@@ -329,22 +349,23 @@ function readWord(s, i) {
       dollars = c === '$' ? dollars + 1 : 0;
       i += 1;
     } else {
+      if (depth > 0 && !q.closed) return opener;
       value += q.value;
       prev = null;
       dollars = 0;
       i = q.end;
     }
   }
-  return { value, end: i, extglob: false };
+  return depth > 0 ? opener : { value, end: i, extglob: false };
 }
 
-// A quote span's value and end: the span is found first (`quoteEnd`), then its content is
-// decoded on its own.
+// A quote span's value, end and whether it is closed: the span is found first (`quoteEnd`),
+// then its content is decoded on its own.
 function readQuote(s, from, kind) {
   const { end, closed } = quoteEnd(s, from, kind);
   const content = s.slice(from, closed ? end - 1 : end);
-  if (kind === 'single') return { value: content, end };
-  return { value: kind === 'double' ? decodeDouble(content) : decodeAnsiC(content), end };
+  if (kind === 'single') return { value: content, end, closed };
+  return { value: kind === 'double' ? decodeDouble(content) : decodeAnsiC(content), end, closed };
 }
 
 // Double quotes: `\` escapes only `"`, `\`, `$` and a backtick; any other `\` stays. (An

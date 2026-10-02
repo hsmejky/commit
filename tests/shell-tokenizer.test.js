@@ -171,6 +171,19 @@ const bashTable = [
     { redir: '<', target: 'in' }, '{1x}', { redir: '>', target: 'o' }, 'x']]],
   ['git com\u0000mit', [['git', 'commit']]],
   ['a\rb', [['ab'], ['a\rb']]],
+  // GRD-04 review round 5: an extglob pattern in an argument (or a redirection target) is one
+  // word up to its matching `)`, separators and quotes inside it included; in a command's
+  // first word (after reserved words such as `!`, `if` or `time -p`) its `(` is still a token.
+  ["xargs env -S A=@( git commit --fixup=HEAD'\\c')", [['xargs', 'env', '-S', 'A=@( git commit --fixup=HEAD\\c)']]],
+  ["xargs env -S A=@(x| git commit --fixup=HEAD'\\c')", [['xargs', 'env', '-S', 'A=@(x| git commit --fixup=HEAD\\c)']]],
+  ['echo @(a;b\nc&d) x', [['echo', '@(a;b\nc&d)', 'x']]],
+  ["echo !(a|+(b)|')') *(c)d \\@(e) '@'(f)", [['echo', "!(a|+(b)|))", '*(c)d', '@', { op: '(' }, 'e', { op: ')' }, '@', { op: '(' }, 'f', { op: ')' }]]],
+  ['>!(z) git commit', [[{ redir: '>', target: '!(z)' }, 'git', 'commit']]],
+  ['echo @(a | git commit', [['echo', '@(', 'a'], ['git', 'commit']]],
+  ["echo @(a 'b\n) c", [['echo', '@(', 'a', 'b'], [{ op: ')' }, 'c']]],
+  ['if ! time -p !(git commit); then :; fi', [['if', '!', 'time', '-p', '!(', { op: '(' }, 'git', 'commit', { op: ')' }], ['then', ':'], ['fi']]],
+  ['A=1 !(x) | { @(y)', [['A=1', '!(x)'], ['{', '@(', { op: '(' }, 'y', { op: ')' }]]],
+  ['case a in @(a|b)) !(c);; esac', [['case', 'a', 'in', '@(a|b)', { op: ')' }, '!(', { op: '(' }, 'c', { op: ')' }], ['esac']]],
 ];
 for (const [command, expected] of bashTable) {
   test(`Seam 3: Bash segments(${JSON.stringify(command)})`, () => {

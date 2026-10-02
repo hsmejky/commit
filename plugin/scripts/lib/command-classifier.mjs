@@ -59,7 +59,10 @@ const COMMIT = /^commit$/i;
 const NOT_LITERAL = /[$`{(*?[]/;
 // A tilde expansion: `~` at the start of a word or after `=` or `:` (`~-` is `$OLDPWD`).
 const TILDE = /(?:^|[=:])~/;
-const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// A shell variable name; `NAME` is one in full, `ASSIGNMENT` starts with one and `=`.
+const NAME_GRAMMAR = '[A-Za-z_][A-Za-z0-9_]*';
+const NAME = new RegExp(`^${NAME_GRAMMAR}$`);
+const ASSIGNMENT = new RegExp(`^${NAME_GRAMMAR}=`);
 
 const isOp = (token, op) => typeof token === 'object' && token.op === op;
 
@@ -68,7 +71,7 @@ const isOp = (token, op) => typeof token === 'object' && token.op === op;
 const BASH_KEYWORDS = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do']);
 // A literal assignment `NAME=value`: a value holding a character step 4 does not call
 // literal, or a tilde expansion, may expand to anything (`a='*'`, `GIT_DIR=~/r/.git`).
-const isLiteralAssignment = (token) => typeof token === 'string' && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)
+const isLiteralAssignment = (token) => typeof token === 'string' && ASSIGNMENT.test(token)
   && !NOT_LITERAL.test(token) && !TILDE.test(token);
 // Each runner with a fixed option grammar, given the index after its name and the `git`
 // token's index: the index of the command it runs (its options never reach `git`).
@@ -92,9 +95,10 @@ const RUNNERS = new Map([
 ]);
 
 // Where `git`'s command starts: after the innermost bracket still open at `git` (Bash: a `(`
-// token, a subshell, `<(…)`, `>(…)` or an extglob; PowerShell: a `(` or `{` token, a
-// grouping expression, a subexpression or a script block), which starts a new command, or
-// the segment's start.
+// token, a subshell, `<(…)`, `>(…)` or an extglob opener in a command's first word, since
+// G2 reads a pattern in an argument as one word with no `(` token; PowerShell: a `(` or `{`
+// token, a grouping expression, a subexpression or a script block), which starts a new
+// command, or the segment's start.
 function commandStart(tokens, at, shell) {
   const open = [];
   for (let i = 0; i < at; i += 1) {

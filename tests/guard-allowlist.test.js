@@ -230,6 +230,12 @@ const wrapperRow = [
   ['A=1 if git commit --no-edit; then :; fi', 'if'],
   ['nice A=1 git commit --no-edit', 'A=1'],
   ['!(xargs git commit --no-edit)', 'xargs'],
+  // An extglob pattern in an argument is one word up to its matching `)`, separators
+  // included: it opens no command, so the wrapper before it stays (review GRD-04 round 5).
+  ['printf -- -n | xargs env -S A=@(x) git commit --fixup=HEAD', 'xargs'],
+  ['xargs echo @(a|b) git commit --no-edit', 'xargs'],
+  ['xargs echo @(a;b) git commit --no-edit', 'xargs'],
+  ['xargs echo !(a|b\nc) git commit --no-edit', 'xargs'],
   ['(xargs git commit --no-edit)', 'xargs'],
   ['{ xargs git commit --no-edit; }', 'xargs'],
   // Inside a process substitution the allowlist applies from its `(` (review GRD-04 round 4).
@@ -246,12 +252,30 @@ const wrapperRow = [
   ['case $x in a) git commit --no-edit;; esac', 'case'],
   ['f() { git commit --no-edit; }', 'f'],
   ['function f { git commit --no-edit; }', 'function'],
-  ['>!(z) git commit --no-edit', 'z'],
 ];
 for (const [command, name] of wrapperRow) {
   test(`Seam 3: ${JSON.stringify(command)} is denied naming the wrapper ${name}`, (t) => {
     const c = createCase(t, { repo: false });
     assert.deepEqual(hook(c, command), { stdout: denyJson(wrapper(name)), stderr: '' });
+  });
+}
+
+// A `git commit` inside an extglob pattern in an argument is no git token: like a string a
+// runner splits into words (`env -S 'git commit …'`), it is the documented interpreter gap
+// (C:guard step 3, Out of Scope), no output. Verified end to end in Git Bash 5.3 with
+// `shopt -s extglob` on the line before: `env -S` splits the word, `\c` drops the rest,
+// xargs appends `-n` and the commit lands without its pre-commit hook, exactly as the
+// `env -S` form does (review GRD-04 round 5, finding 1).
+const interpreterGap = [
+  "printf -- -n | xargs env -S 'git commit --fixup=HEAD'",
+  String.raw`printf -- -n | xargs env -S A=@( git commit --fixup=HEAD'\c')`,
+  String.raw`printf -- -n | xargs env -S A=@(x| git commit --fixup=HEAD'\c')`,
+  String.raw`printf -- -n | xargs env -S A=@(x; git commit --fixup=HEAD'\c')`,
+];
+for (const command of interpreterGap) {
+  test(`Seam 3: ${JSON.stringify(command)} has no output (interpreter gap: no git token)`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });
   });
 }
 
@@ -305,6 +329,8 @@ const allowedNearGit = [
   'LC_ALL=C.UTF-8 git commit --amend --no-edit',
   "x=$'a' git commit --no-edit",
   '>out.txt git commit --no-edit',
+  // An extglob pattern as a redirection target is one word (review GRD-04 round 5).
+  '>!(z) git commit --no-edit',
   '2>&1 git commit --no-edit',
   'nice git commit --no-edit',
   'nice -n 5 git commit --no-edit',
