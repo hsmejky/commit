@@ -8,10 +8,16 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { test } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+
+let repoProbe;
+beforeEach(async () => {
+  repoProbe = await loadLib('repo-probe');
+});
 
 const EXCLUDE_LINE = '/.commit-plan';
 
@@ -90,6 +96,11 @@ test('plan on a clean tree leaves no <planId> folder and no lock', async (t) => 
 // AC1: the run-folder directory check (C:run-folder, story 207).
 const REFUSAL_TEXT = '`.commit-plan` is tracked or not a plain directory; remove it by hand';
 
+// A refusal returns before the exclude line is added (review-RUN-05 finding 11).
+function excludeText(c) {
+  return fs.readFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), 'utf8');
+}
+
 function assertRunFolderRefusal(result) {
   const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
   assert.equal(result.exitCode, 6, detail);
@@ -114,9 +125,11 @@ test('a tracked .commit-plan path refuses plan with state, and the directory is 
   c.writeFile('.commit-plan/notes.txt', 'tracked\n');
   c.git(['add', '-f', '.commit-plan/notes.txt']);
   c.git(['commit', '-q', '-m', 'track it']);
+  const before = excludeText(c);
 
   assertRunFolderRefusal(await runCommit(c, ['plan']));
   assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), ['notes.txt']);
+  assert.equal(excludeText(c), before);
 });
 
 // A link in place of `.commit-plan` to a directory outside the repo: the refusal writes
@@ -133,9 +146,11 @@ async function assertLinkRefused(t, type) {
     if (err.code === 'EPERM' && type === 'dir') return t.skip('creating a directory symlink needs privileges here');
     throw err;
   }
+  const before = excludeText(c);
 
   assertRunFolderRefusal(await runCommit(c, ['plan']));
   assert.deepEqual(fs.readdirSync(target), []);
+  assert.equal(excludeText(c), before);
 }
 
 test('a symlinked .commit-plan refuses plan with state, and nothing is written through it', async (t) => {
@@ -148,3 +163,68 @@ test('a .commit-plan junction refuses plan with state, and nothing is written th
   async (t) => {
     await assertLinkRefused(t, 'junction');
   });
+
+// review-RUN-05 finding 1: a case-variant tracked `.commit-plan` (`.Commit-Plan/...`) is the
+// same directory on a case-insensitive filesystem (Windows, macOS), so it refuses `plan` on
+// every platform. The index entry is added without a working-tree file, so this case runs the
+// same on a case-sensitive and a case-insensitive filesystem.
+function trackWithoutFile(c, relPath) {
+  const blob = c.git(['rev-parse', 'HEAD:README.md']).trim();
+  c.git(['update-index', '--add', '--cacheinfo', `100644,${blob},${relPath}`]);
+}
+
+test('a case-variant tracked .Commit-Plan path refuses plan with state, info/exclude untouched', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  trackWithoutFile(c, '.Commit-Plan/notes.txt');
+  const before = excludeText(c);
+
+  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assert.equal(excludeText(c), before);
+});
+
+test('isTracked matches .commit-plan and paths under it in any ASCII case, nothing else', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  for (const relPath of ['x/.commit-plan', '.commit-planner/a', '.commit-plan.bak']) trackWithoutFile(c, relPath);
+  const ask = () => repoProbe.isTracked('.commit-plan', { cwd: c.repoDir, env: c.env });
+
+  assert.equal(await ask(), false);
+  trackWithoutFile(c, '.COMMIT-PLAN');
+  assert.equal(await ask(), true);
+  c.git(['rm', '-q', '--cached', '.COMMIT-PLAN']);
+  trackWithoutFile(c, '.Commit-Plan/deep/notes.txt');
+  assert.equal(await ask(), true);
+});
+
+// review-RUN-05 finding 6: the tracked check reads the index without a pathspec, so an
+// inherited `GIT_LITERAL_PATHSPECS` (which GIT-05 also pins) cannot hide a tracked path.
+test('an exported GIT_LITERAL_PATHSPECS=1 still refuses a tracked .commit-plan', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  trackWithoutFile(c, '.commit-plan/notes.txt');
+
+  assertRunFolderRefusal(await runCommit(c, ['plan'], { env: { GIT_LITERAL_PATHSPECS: '1' } }));
+});
+
+// Whether the filesystem under `dir` folds case (Windows and macOS defaults).
+function foldsCase(dir) {
+  fs.writeFileSync(path.join(dir, 'case-probe'), '');
+  return fs.existsSync(path.join(dir, 'CASE-PROBE'));
+}
+
+// review-RUN-05 finding 1 as the threat itself: on a case-insensitive filesystem the tracked
+// `.Commit-Plan/` directory is what `.commit-plan` resolves to, and nothing is written into it.
+test('on a case-insensitive filesystem a checked-out .Commit-Plan/ refuses plan, nothing written into it', async (t) => {
+  const c = createCase(t);
+  if (!foldsCase(c.root)) return t.skip('the filesystem here is case-sensitive');
+  seedCommit(c);
+  c.writeFile('.Commit-Plan/notes.txt', 'tracked\n');
+  c.git(['add', '-f', '.Commit-Plan/notes.txt']);
+  c.git(['commit', '-q', '-m', 'track it']);
+  const before = excludeText(c);
+
+  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.Commit-Plan')), ['notes.txt']);
+  assert.equal(excludeText(c), before);
+});

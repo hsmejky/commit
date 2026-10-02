@@ -102,6 +102,10 @@ alternate index; history reads additionally pin `log.showSignature=false` and
 - [ ] Seam 1: decoy `GIT_DIR` and `GIT_INDEX_FILE` exported to the entry point → `plan` inventories and diffs the real repo (units as without the decoys). The `GIT_ATTR_SOURCE` decoy is checked in CHG-10, once `check-attr` is wired.
 - [ ] Seam 1: `GIT_CONFIG_SYSTEM` pointing at a file that sets a key is honoured (the keep-set survives; the signing-probe case is in GIT-10).
 - [ ] Seam 1: a path containing `[id]` and `*` is inventoried literally (literal pathspecs).
+- [ ] Seam 1: decoy `GIT_ICASE_PATHSPECS`, `GIT_GLOB_PATHSPECS` and `GIT_NOGLOB_PATHSPECS`
+      exported to the entry point are removed (not in the keep-set), and a tracked
+      `.commit-plan` still refuses `plan` with the pinned `GIT_LITERAL_PATHSPECS=1` (M3
+      `isTracked` reads the index without a pathspec, review-RUN-05 finding 6).
 - [ ] `GIT_OPTIONAL_LOCKS=0` is set on read-only calls and never on staging calls (observable by an argument/env-recording PATH git shim fixture).
 
 

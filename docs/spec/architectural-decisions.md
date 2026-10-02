@@ -48,7 +48,8 @@
 - **The run-folder directory is checked before use.** Before its first write, M12 `lstat`s
   `<toplevel>/.commit-plan`: a symlink, a junction, a non-directory, or a path tracked in the
   index refuses `plan` with `state` ("`.commit-plan` is tracked or not a plain directory;
-  remove it by hand"); after `mkdir` it checks again (story 207).
+  remove it by hand"); after `mkdir` it checks again (story 207). The tracked check ignores
+  ASCII case, so a tracked `.Commit-Plan/` refuses on a case-insensitive filesystem too.
 - **One call per run at a time.** Every call with `--plan` creates `<planId>/call.lock`
   exclusively, and `plan --take-over` creates the `call.lock` of the old run it takes over
   (the old run's `planId`), so a call still running on that run and the takeover end in

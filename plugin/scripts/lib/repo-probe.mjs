@@ -77,10 +77,21 @@ export async function probe({ cwd, env, now }) {
   return { git, node, repo };
 }
 
+// ASCII-only lowercase: a case-insensitive filesystem folds `.Commit-Plan` to `.commit-plan`,
+// and no non-ASCII character folds to one of that name's characters.
+function asciiLower(text) {
+  return text.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
+}
+
 /**
- * Whether the index holds a path, or any path under it (RUN-05: a tracked `.commit-plan`
- * refuses `plan`, C:run-folder). One `git ls-files --cached` call with a literal pathspec,
- * run from the toplevel.
+ * Whether the index holds a path, or any path under it, compared ASCII-case-insensitively
+ * (RUN-05: a tracked `.commit-plan` refuses `plan`, C:run-folder). A case variant such as
+ * `.Commit-Plan/notes.txt` counts on every platform: on a case-insensitive filesystem
+ * (Windows, macOS) it is the same directory (review-RUN-05 finding 1).
+ *
+ * One `git ls-files -z --cached` call with no pathspec, run from the toplevel, matched here:
+ * no pathspec magic, so neither git's version nor an inherited or pinned
+ * `GIT_*_PATHSPECS` variable changes the answer (GIT-05 pins `GIT_LITERAL_PATHSPECS=1`).
  *
  * @param {string} name the path, relative to the toplevel, such as `.commit-plan`.
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
@@ -88,7 +99,12 @@ export async function probe({ cwd, env, now }) {
  * @throws {Error} when git exits non-zero.
  */
 export async function isTracked(name, { cwd, env, now }) {
-  const result = await run('git', ['ls-files', '-z', '--cached', '--', `:(literal)${name}`], { cwd, env, now });
+  const result = await run('git', ['ls-files', '-z', '--cached'], { cwd, env, now });
   if (result.code !== 0) throw new Error(`git ls-files failed (${result.code}): ${result.stderr}`);
-  return result.stdout.length > 0;
+  const wanted = asciiLower(name);
+  // `latin1` maps every byte to one character, so a non-UTF-8 path still splits and compares.
+  return result.stdout.toString('latin1').split('\0').some((entry) => {
+    const lower = asciiLower(entry);
+    return lower === wanted || lower.startsWith(`${wanted}/`);
+  });
 }

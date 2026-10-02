@@ -11,7 +11,9 @@ file, so the worker's `Write` would ask on every run (Q9, spike).
 Before its first write the script `lstat`s `<toplevel>/.commit-plan`: a symlink, a
 junction, a non-directory, or a path tracked in the index refuses `plan` with exit 6
 `state` (`run-folder`: "`.commit-plan` is tracked or not a plain directory; remove it by
-hand"); after `mkdir` it checks again (Q22).
+hand"); after `mkdir` it checks again (Q22). The tracked check compares index paths in any
+ASCII case (`.Commit-Plan/x` counts) on every platform: on a case-insensitive filesystem
+that is the same directory.
 
 `planId` is `crypto.randomUUID()` output. Every `planId` the script reads (`--plan`,
 `--take-over`, a lock's content) must be exactly that form (lowercase UUID v4): a malformed
