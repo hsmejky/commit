@@ -13,7 +13,9 @@
 // step right after the shared probe (`readHeadState`, review-GIT-02 finding 5): it stores the
 // HEAD state and expected HEAD on `ctx` and queues the detached-HEAD notice, so `release` and
 // `commit`, which share `probeRepo` but not this step, never spawn the extra status call; it
-// also adds `state`/`expectedHead` to `plan`'s output. Later slices insert the other rows (3 run folder
+// also adds `state`/`expectedHead` to `plan`'s output. GIT-03 widens the same step to also
+// read the in-progress state (M3 `inProgressState`) and store it as `ctx.inProgress`, read by
+// step 2's `planRefusal`. Later slices insert the other rows (3 run folder
 // and lock peek, 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in
 // their place in PLAN_STEPS, and widen these.
 //
@@ -49,10 +51,12 @@ async function probeRepo(ctx) {
 
 /**
  * `plan`-only step, right after `probeRepo`: reads the HEAD state (M3 `headState`) and stores
- * it, and the expected HEAD, on `ctx`; a detached HEAD queues the notice. `release` and
- * `commit` run `probeRepo` but never this step, so they never spawn this status call
- * (review-GIT-02 finding 5); since only `plan` calls it, no duck-typing of `ctx.notices` is
- * needed to tell the subcommands apart (review-GIT-02 finding 11).
+ * it, and the expected HEAD, on `ctx`; a detached HEAD queues the notice. Also reads the
+ * in-progress state (M3 `inProgressState`, GIT-03) and stores it as `ctx.inProgress`, for step
+ * 2's `planRefusal` (`preFolderRefusals`) to refuse on. `release` and `commit` run `probeRepo`
+ * but never this step, so they never spawn either status call (review-GIT-02 finding 5);
+ * since only `plan` calls it, no duck-typing of `ctx.notices` is needed to tell the
+ * subcommands apart (review-GIT-02 finding 11).
  */
 async function readHeadState(ctx) {
   const { repo } = ctx.probe;
