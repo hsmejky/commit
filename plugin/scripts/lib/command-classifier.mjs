@@ -190,7 +190,7 @@ function isLiteral(token, shell) {
 
 // `commit`'s short options that take a value: attached (`-mfoo`) or the next argument
 // (`-U <n>` in recent git; older git rejects it as unknown, denied either way).
-const SHORT_WITH_VALUE = new Set(['m', 'F', 'C', 'c', 't', 'U']);
+export const SHORT_WITH_VALUE = new Set(['m', 'F', 'C', 'c', 't', 'U']);
 // Short options whose optional value can only be attached (`-S<keyid>`, `-u<mode>`).
 const SHORT_WITH_ATTACHED_VALUE = new Set(['S', 'u']);
 // Long options whose value is the next argument when it is not attached with `=` (git
@@ -198,7 +198,7 @@ const SHORT_WITH_ATTACHED_VALUE = new Set(['S', 'u']);
 // row (`--author -n` is the generic row naming `--author`, not the `-n` row). An
 // abbreviated long option (`--reuse`) is not expanded: the generic row names it, and a value
 // it takes is read as an argument of its own (denied either way, C:guard step 5).
-const LONG_WITH_VALUE = new Set([
+export const LONG_WITH_VALUE = new Set([
   '--message', '--file', '--fixup', '--squash', '--reuse-message', '--reedit-message', '--author',
   '--date', '--trailer', '--template', '--cleanup', '--pathspec-from-file', '--unified',
   '--inter-hunk-context',

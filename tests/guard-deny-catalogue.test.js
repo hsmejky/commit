@@ -14,10 +14,12 @@ let runHook;
 let MESSAGES;
 let ROUTE;
 let PERSONAL_SKILL_LINE;
+let SHORT_WITH_VALUE;
+let LONG_WITH_VALUE;
 
 beforeEach(async () => {
   ({ runHook } = await loadLib('hook-io'));
-  ({ MESSAGES, ROUTE, PERSONAL_SKILL_LINE } = await loadLib('command-classifier'));
+  ({ MESSAGES, ROUTE, PERSONAL_SKILL_LINE, SHORT_WITH_VALUE, LONG_WITH_VALUE } = await loadLib('command-classifier'));
 });
 
 function hook(c, command) {
@@ -165,8 +167,22 @@ const precedence = [
   ['git commit --reedit-message --amend', genericText('--reedit-message')],
   ['git commit --author -n --no-edit', genericText('--author')],
   ['git commit --trailer --squash=HEAD --no-edit', genericText('--trailer')],
+  ['git commit --date -n', genericText('--date')],
+  ['git commit --template --amend', genericText('--template')],
+  ['git commit --cleanup -n', genericText('--cleanup')],
+  ['git commit --pathspec-from-file --amend', genericText('--pathspec-from-file')],
+  ['git commit --unified -n', genericText('--unified')],
+  ['git commit --inter-hunk-context --amend', genericText('--inter-hunk-context')],
+  ['git commit -U -n', genericText('-U')],
+  // `--squash` itself outranks `-n`/`--amend`, so its value is never read as either, even
+  // when the value spells a higher-row flag.
+  ['git commit --squash --amend', squashText],
   ['git commit -m --amend', bareText],
   ['git commit --message --no-verify', bareText],
+  // An abbreviation git accepts is not expanded (C:guard step 5): the generic row names it
+  // exactly as written, never the row of the option it abbreviates.
+  ['git commit --amen', genericText('--amen')],
+  ['git commit --no-veri', genericText('--no-veri')],
   // ... and the literal-arguments row outranks every row of commit's arguments.
   ['git commit --amend -m "feat(x): y"', MESSAGES_LITERAL],
 ];
@@ -182,6 +198,20 @@ test('Seam 3: precedence: `--amend -m x`, `-n -m x` and `--squash -m x` never gi
   const c = createCase(t, { repo: false });
   for (const command of ['git commit --amend -m x', 'git commit -n -m x', 'git commit --squash -m x']) {
     assert.ok(!reasonOf(c, command).includes('Direct git commit is blocked'), command);
+  }
+});
+
+test('Seam 3: fail-closed: no value-taking option other than --fixup stays allowed beside --no-edit --amend or --fixup=x', (t) => {
+  const c = createCase(t, { repo: false });
+  const options = [
+    ...[...SHORT_WITH_VALUE].map((letter) => `-${letter}`),
+    ...LONG_WITH_VALUE,
+  ].filter((flag) => flag !== '--fixup');
+  for (const flag of options) {
+    for (const neighbours of ['--no-edit --amend', '--fixup=x']) {
+      const command = `git commit ${neighbours} ${flag} v`;
+      assert.notEqual(reasonOf(c, command), null, command);
+    }
   }
 });
 
