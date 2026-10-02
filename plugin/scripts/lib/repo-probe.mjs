@@ -66,18 +66,26 @@ async function classifyNoWorkTree({ cwd, env, now }) {
 const BRANCH_OID_PREFIX = '# branch.oid ';
 const BRANCH_HEAD_PREFIX = '# branch.head ';
 
+// Porcelain v2 unmerged entries (Q21, GIT-04): a line's first field is `u`, followed by a
+// space (`u <XY> <sub> <mH> <mI> <mW> <hH> <h1> <h2> <h3> <path>`); checked as a prefix so
+// nothing else (the header lines, an ordinary `1 `/`2 ` change line, a `?` untracked line,
+// though none is ever produced here) is mistaken for one.
+const UNMERGED_PREFIX = 'u ';
+
 /**
- * Reads branch, detached and unborn HEAD from one porcelain v2 `--branch` status call,
- * pinned `--untracked-files=no --ignore-submodules=all --no-ahead-behind` (Q21: no untracked
- * scan runs here, a dirty submodule is never read as a status line, and the upstream
- * ahead/behind counts, a revision walk that can be expensive, are never computed). GIT-04
- * reads the same call's `u` lines for unmerged entries; this function only parses the two
- * branch headers. Called only from `plan`'s own plan-only step (`workflows.mjs`), never from
- * `probe()` itself, so `release`/`commit` never spawn this call (review-GIT-02 finding 5).
+ * Reads branch, detached, unborn HEAD and unmerged entries from one porcelain v2 `--branch`
+ * status call, pinned `--untracked-files=no --ignore-submodules=all --no-ahead-behind` (Q21:
+ * no untracked scan runs here, a dirty submodule is never read as a status line, and the
+ * upstream ahead/behind counts, a revision walk that can be expensive, are never computed).
+ * GIT-04 adds the `unmerged` read, from the same call's `u` lines (such as a conflicted
+ * `git stash pop` with no in-progress marker left): a repo's unmerged-ness never costs a
+ * second status call. Called only from `plan`'s own plan-only step (`workflows.mjs`), never
+ * from `probe()` itself, so `release`/`commit` never spawn this call (review-GIT-02 finding 5).
  *
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
  * @returns {Promise<{ kind: 'branch' | 'detached', branch: string | null, unborn: boolean,
- *   head: string | null }>} `head`: the HEAD SHA from `branch.oid`, `null` when unborn.
+ *   head: string | null, unmerged: boolean }>} `head`: the HEAD SHA from `branch.oid`, `null`
+ *   when unborn; `unmerged`: whether any `u` line was found.
  * @throws {Error} when the status call exits non-zero.
  */
 export async function headState({ cwd, env, now }) {
@@ -90,6 +98,7 @@ export async function headState({ cwd, env, now }) {
   let unborn = false;
   let kind = 'branch';
   let branch = null;
+  let unmerged = false;
   for (const line of result.stdout.toString('utf8').split('\n')) {
     if (line.startsWith(BRANCH_OID_PREFIX)) {
       const value = line.slice(BRANCH_OID_PREFIX.length);
@@ -99,9 +108,31 @@ export async function headState({ cwd, env, now }) {
       const value = line.slice(BRANCH_HEAD_PREFIX.length);
       if (value === '(detached)') kind = 'detached';
       else branch = value;
+    } else if (line.startsWith(UNMERGED_PREFIX)) {
+      unmerged = true;
     }
   }
-  return { kind, branch, unborn, head };
+  return { kind, branch, unborn, head, unmerged };
+}
+
+/**
+ * Reads `i18n.commitEncoding` (Q21, GIT-04): `plan` writes commit messages as UTF-8 only, so
+ * any other configured encoding would get the commit labelled with the wrong one. One
+ * `git config --get` call, over the merged config (system, global, local, worktree), the
+ * same layering `commit`/`plan` would otherwise see.
+ *
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<string | null>} the trimmed configured value, or `null` when the key is
+ *   unset (git's own default is UTF-8).
+ * @throws {Error} on any exit code other than 0 (set) or 1 (unset or ambiguous).
+ */
+export async function commitEncoding({ cwd, env, now }) {
+  const result = await run('git', ['config', '--get', 'i18n.commitEncoding'], { cwd, env, now });
+  if (result.code === 1) return null;
+  if (result.code !== 0) {
+    throw new Error(`git config --get i18n.commitEncoding failed (${result.code}): ${result.stderr}`);
+  }
+  return result.stdout.toString('utf8').trim();
 }
 
 // Git-path names `inProgressState` checks, each paired with the kind it reports. `rebase-merge`

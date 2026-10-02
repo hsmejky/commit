@@ -7,7 +7,10 @@
 // call, M2, past its fixed short timeout; GIT-07 brings the 540 s deadline). Node older than
 // 22 stays enforced by the entry point (`commit.cjs`), before M15 ever loads. CFG-02 adds
 // `config` (C:plan step 2 order: `env`, `config`, `state`); GIT-02 onward adds the other
-// `state` rows; RUN-14 completes their order.
+// `state` rows; GIT-04 adds `unmerged` (recorded text) and `encoding` (no recorded text,
+// only a message naming the state), both ahead of the not-a-repo/bare rows (moot in
+// practice: `unmerged`/`commitEncoding` are only ever facts inside a worktree); RUN-14
+// completes their order.
 //
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 
@@ -49,6 +52,18 @@ const IN_PROGRESS_MESSAGES = Object.freeze({
   bisect: 'a bisect is in progress; finish it, or run `git bisect reset`',
 });
 
+// GIT-04 (Q21, C:cli-and-exit-codes recorded texts): verbatim, unlike `encoding` below, which
+// has no recorded text.
+const UNMERGED_MESSAGE = 'resolve the conflicts first';
+
+// GIT-04 (Q21): `i18n.commitEncoding` compared case-insensitively against these two spellings;
+// anything else refuses. `null`/`undefined` (the key unset, git's own default) always passes.
+const UTF8_ENCODINGS = new Set(['utf-8', 'utf8']);
+
+function isUtf8Encoding(value) {
+  return UTF8_ENCODINGS.has(value.trim().toLowerCase());
+}
+
 /**
  * The pre-folder refusals of `plan` (C:plan step 2), in order: `env`, then `config` (M4's
  * result, already loaded by M18 step 1: M15 stays pure, so it never reads a layer itself),
@@ -56,12 +71,15 @@ const IN_PROGRESS_MESSAGES = Object.freeze({
  * folder exists).
  *
  * @param {{ git: object, node: object, repo: object|null, config?: { error: string } | null,
- *   inProgress?: { kind: string } | null }}
+ *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null }}
  *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (`null` or
  *   omitted when no layer error was found; the user layer is checked even outside a
  *   worktree, so this can hold a user-layer error there too, CFG-04), plus M3
  *   `inProgressState()`'s result under `inProgress` (GIT-03; `null` or omitted outside a
- *   worktree, or when nothing is in progress).
+ *   worktree, or when nothing is in progress), plus M3 `headState()`'s `unmerged` (GIT-04;
+ *   `false`, `null` or omitted outside a worktree, or when the index holds no unmerged
+ *   entry), plus M3 `commitEncoding()`'s result under `commitEncoding` (GIT-04; `null` or
+ *   omitted outside a worktree, or when the key is unset).
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */
@@ -71,6 +89,13 @@ export function planRefusal(facts) {
   if (facts.config != null) return { code: 'config', message: facts.config.error };
   if (facts.inProgress != null) {
     return { code: 'in-progress', message: IN_PROGRESS_MESSAGES[facts.inProgress.kind] };
+  }
+  if (facts.unmerged === true) return { code: 'unmerged', message: UNMERGED_MESSAGE };
+  if (facts.commitEncoding != null && !isUtf8Encoding(facts.commitEncoding)) {
+    return {
+      code: 'encoding',
+      message: `i18n.commitEncoding is set to \`${facts.commitEncoding}\`, not UTF-8: commits would be labelled with the wrong encoding`,
+    };
   }
   if (facts.repo !== null && Object.hasOwn(STATE_MESSAGES, facts.repo.kind)) {
     return { code: facts.repo.kind, message: STATE_MESSAGES[facts.repo.kind] };

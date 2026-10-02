@@ -30,7 +30,7 @@
 // shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
-import { headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
+import { commitEncoding, headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
 import { assignIds, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
 import { bucketOf } from './path-classifier.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME } from './run.mjs';
@@ -57,19 +57,24 @@ async function probeRepo(ctx) {
  * `plan`-only step, right after `probeRepo`: reads the HEAD state (M3 `headState`) and stores
  * it, and the expected HEAD, on `ctx`; a detached HEAD queues the notice. Also reads the
  * in-progress state (M3 `inProgressState`, GIT-03) and stores it as `ctx.inProgress`, for step
- * 2's `planRefusal` (`preFolderRefusals`) to refuse on. `release` and `commit` run `probeRepo`
- * but never this step, so they never spawn either status call (review-GIT-02 finding 5);
- * since only `plan` calls it, no duck-typing of `ctx.notices` is needed to tell the
- * subcommands apart (review-GIT-02 finding 11).
+ * 2's `planRefusal` (`preFolderRefusals`) to refuse on. GIT-04 widens it to also store
+ * `ctx.unmerged` (from the same `headState` call's `u` lines) and `ctx.commitEncoding` (M3
+ * `commitEncoding`), both read for the same `planRefusal` call. `release` and `commit` run
+ * `probeRepo` but never this step, so they never spawn either status call or the config call
+ * (review-GIT-02 finding 5); since only `plan` calls it, no duck-typing of `ctx.notices` is
+ * needed to tell the subcommands apart (review-GIT-02 finding 11).
  */
 async function readHeadState(ctx) {
   const { repo } = ctx.probe;
   if (repo !== null && repo.kind === 'worktree') {
-    const result = await headState({ cwd: repo.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+    const { env, now } = ctx.injected;
+    const result = await headState({ cwd: repo.toplevel, env, now });
     ctx.state = { kind: result.kind, branch: result.branch, unborn: result.unborn };
     ctx.expectedHead = result.head;
     if (result.kind === 'detached') ctx.notices.push(DETACHED_HEAD_NOTICE);
-    ctx.inProgress = await inProgressState({ cwd: repo.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+    ctx.unmerged = result.unmerged;
+    ctx.inProgress = await inProgressState({ cwd: repo.toplevel, env, now });
+    ctx.commitEncoding = await commitEncoding({ cwd: repo.toplevel, env, now });
   }
   return undefined;
 }
@@ -92,7 +97,13 @@ async function loadConfigLayers(ctx) {
 
 /** Step 2: pre-folder refusals (M15 `planRefusal`); none of them creates the run folder. */
 async function preFolderRefusals(ctx) {
-  const refusal = planRefusal({ ...ctx.probe, config: ctx.config, inProgress: ctx.inProgress });
+  const refusal = planRefusal({
+    ...ctx.probe,
+    config: ctx.config,
+    inProgress: ctx.inProgress,
+    unmerged: ctx.unmerged,
+    commitEncoding: ctx.commitEncoding,
+  });
   if (refusal !== null) return { refusal };
   ctx.toplevel = ctx.probe.repo.toplevel;
   return undefined;
