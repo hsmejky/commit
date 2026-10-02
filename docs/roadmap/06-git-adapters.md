@@ -62,14 +62,14 @@ text, before the run folder is created.
 
 **Blocked by:** GIT-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q21, C:plan (step 2, `state.kind`), story 184, M3.
 
-- [ ] Seam 1, one fixture each: merge with a conflict, cherry-pick, revert, rebase stopped at `edit`, bisect, a multi-pick cherry-pick paused after a conflicted pick was committed by hand (no `CHERRY_PICK_HEAD`, only `sequencer/`) → exit 6 `state` with the Q21 text for that row.
-- [ ] Seam 1: `git merge --squash` pending → `state` with "a squashed merge is staged: commit it by hand, or drop it with `git reset --merge`".
-- [ ] The `git-path` lookups use one `rev-parse --git-path` call (M2 `gitPath(names)`), so linked worktrees resolve their own paths.
-- [ ] No run folder exists after any of these refusals.
+- [x] Seam 1, one fixture each: merge with a conflict, cherry-pick, revert, rebase stopped at `edit`, bisect, a multi-pick cherry-pick paused after a conflicted pick was committed by hand (no `CHERRY_PICK_HEAD`, only `sequencer/`) → exit 6 `state` with the Q21 text for that row.
+- [x] Seam 1: `git merge --squash` pending → `state` with "a squashed merge is staged: commit it by hand, or drop it with `git reset --merge`".
+- [x] The `git-path` lookups use one `rev-parse --git-path` call (M2 `gitPath(names)`), so linked worktrees resolve their own paths.
+- [x] No run folder exists after any of these refusals.
 
 
 ## GIT-04: Unmerged entries and non-UTF-8 commit encoding refused
