@@ -15,7 +15,10 @@ and the module sections point here, and the README states it in full.
   --no-edit`, `--fixup=<commit>`) commits the current index unscanned, and aliases,
   interpreters and constructs that evaluate a string as code (`sh -c '…'`, `pwsh -c`,
   `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
-  `Start-Process`),
+  `Start-Process`, a runner that re-splits one string argument into a new command line such
+  as `env -S 'git commit --fixup=HEAD'`, and a `git commit` carried inside a balanced
+  extglob pattern in an argument, which is no `git` token either
+  (`env -S A=@( git commit --fixup=HEAD'\c')`, C:guard step 2, review GRD-04 round 5)),
   shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
   `Set-Alias g git`), a wrapper reached through a word the prefix allowlist lets
   through (a Bash alias for one, a function or a `PATH` script named `nice`, `nohup` or

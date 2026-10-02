@@ -294,12 +294,14 @@
     non-interactive shell but not relied on) excluded, a Bash `\` can escape only another
     `\`: the command can run nothing but that one `node` call. Anything more
     (`; git commit -m x`, a newline, `# note`) is not exempt.
-  - **Extglob.** In Bash a `(` directly after `@`, `!`, `+`, `*` or `?` ends that word with
-    the `(` kept (not literal, step 4) and is also a `(` token: `git @(commit) -m x` with
-    `extglob` on (settable on an earlier line) may run `git commit -m x` when a file
-    `commit` exists, and with `extglob` off `!(git commit -m x)` is a negated subshell that
-    runs the commit, so both readings deny. `@(git) commit -m x` joins the command-position
-    gap.
+  - **Extglob.** In Bash a `(` directly after `@`, `!`, `+`, `*` or `?`, in a command's first
+    word, ends that word with the `(` kept (not literal, step 4) and is also a `(` token:
+    with `extglob` off `!(git commit -m x)` is a negated subshell that runs the commit, so
+    it denies. Elsewhere — an argument or a redirection target — the pattern reads through
+    its matching `)` as one word, no `(` token, no segment split inside it (with `extglob`
+    off the pattern is a syntax error, so the command never runs): `git @(commit) -m x`
+    gives `git`, `@(commit)`, `-m`, `x`, the word not literal (step 4), so it denies too (review
+    GRD-04 round 5). `@(git) commit -m x` joins the command-position gap.
   - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
     pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
     double quotes or escaped opens nothing); in PowerShell two characters of one quote
@@ -323,13 +325,18 @@
     code: `sh -c '…'`, `bash -c '…'`, `cmd /c`, `pwsh -c`, `eval`, Bash `${x@P}` prompt
     expansion and array-subscript evaluation (a variable holding `a[$(…)]` read in an
     arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
-    and scripts that wrap git: an allowlisted form under them passes. A program that runs
+    a runner that re-splits one string argument into a new command line
+    (`env -S 'git commit --fixup=HEAD'`), a `git commit` carried inside a balanced extglob
+    pattern in an argument (no `git` token there, C:guard step 2;
+    `env -S A=@( git commit --fixup=HEAD'\c')`, review GRD-04 round 5), and scripts that wrap
+    git: an allowlisted form under them passes. A program that runs
     git may append words from its input or its own arguments (`printf -- -n | xargs git
     commit --no-edit` skips the hooks), so every token before `git` in its command must fit
     a structural prefix allowlist (C:guard step 3, fail closed): Bash reserved words and `(`,
     literal `NAME=value` assignments, then the runners `nice`, `nohup`, `command` and `env`
     with fixed option grammars; in PowerShell only the `&` call operator. A bracket still
-    open at `git` (a subshell, `<(…)`, `>(…)`, an extglob; PowerShell `(` or `{`) starts a new
+    open at `git` (a subshell, `<(…)`, `>(…)`, an extglob opener in a command's first word —
+    elsewhere the pattern is one word with no `(` token; PowerShell `(` or `{`) starts a new
     command, so `(git commit --no-edit)` and `if ($ok) { git commit --no-edit }` pass. Any
     other token is the wrapper row, named as it reads after quote removal. This replaced a
     denylist (`xargs`, `gxargs`, `parallel` and tokens an expansion may turn into one) that

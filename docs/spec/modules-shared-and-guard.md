@@ -66,8 +66,11 @@ kind instead of segments, and G3 maps it to the blanket deny with no segments an
 calls (so no heartbeat and no worker-only rule). Otherwise tokenise per `tool_name` with the
 rules of
 C:guard (Bash: `\` escapes, literal single quotes, `\"` `\\` `\$` in double quotes, `$"…"`
-read as `"…"`, a `(` directly after `@`, `!`, `+`, `*` or `?` kept in that word and also a
-`(` token (extglob), `$'…'`
+read as `"…"`, a `(` directly after `@`, `!`, `+`, `*` or `?` in a command's first word kept
+in that word and also a `(` token (extglob); elsewhere (an argument or a redirection
+target) the same opener reads the pattern through its matching `)` as one word, no `(`
+token, no segment split inside it — unbalanced, the word ends after the `(` with no `(`
+token, and the rest tokenizes normally (review GRD-04 round 5), `$'…'`
 with its backslash escapes decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends
 the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
 `$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `` `u{…} `` read as its code point
@@ -114,7 +117,9 @@ step 4): a `(` or (in PowerShell) `{` token, a token holding `$`, a backtick, `{
 glob character (`*`, `?`, `[`), and in PowerShell a token holding `,` or `@` or equal to
 `--%`, with the literal-subcommand text in the subcommand position; expand commit arguments and apply
 the Q4 allowlist; deny what it would allow (or give the bare row) when a token before `git` in
-its command (which starts after a bracket still open at `git`) is outside the prefix allowlist
+its command (which starts after a bracket still open at `git`: a `(` token, or an extglob
+opener's `(` token in a command's first word only — elsewhere the pattern is one word with
+no `(` token) is outside the prefix allowlist
 (Bash reserved words and `(`, literal assignments, then `nice`, `nohup`, `command`, `env` with
 fixed option grammars; PowerShell `&`), naming the first such token (the wrapper row, C:guard
 step 3); a segment is denied when any of its `git` tokens is;

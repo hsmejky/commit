@@ -159,7 +159,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    backtick) at the very end of the command, with nothing after it, is dropped rather than
    read as a literal character (C:guard oracle class `unterminated`). Tokenise with the
    quoting rules of `tool_name`, then split into segments on `&&`, `||`, `;`, `|`, `&` and
-   newlines outside quotes. A word matching `{name}` or `{name[subscript]}` (bash 4.1+'s
+   newlines outside quotes. A PowerShell call operator `&` at a command's start is a word
+   (step 3's prefix token `'&'`), not a separator there (GRD-06). A word matching `{name}` or `{name[subscript]}` (bash 4.1+'s
    named file-descriptor form) immediately followed by `<` or `>` is read as that
    redirection's descriptor prefix, like leading digits, so the redirection and its target
    are dropped together and never read as commit arguments. Redirection operators (`>`, `>>`, `<`, `2>&1`, `>&` and the like)
@@ -175,16 +176,31 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    (not dropped), so a script block glued to its first word (`&{git commit -m x}`,
    `if ($true) {git commit -m x}`) is denied and a `}` token ends git's arguments like `)`.
    In Bash `{` and `}` stay in their word (brace expansion, step 4). In Bash an unquoted `(`
-   directly after an unquoted `@`, `!`, `+`, `*` or `?` (an extglob opener) ends that word
+   directly after an unquoted `@`, `!`, `+`, `*` or `?` (an extglob opener), in a command's
+   first word (the segment's start, right after a `(`/`)` token, or after a reserved word
+   that may start a command; an assignment does not keep first position), ends that word
    with the `(` kept in it, and is also a `(` token of its own: with `extglob` on (which an
-   earlier line can set,
-   like `expand_aliases`) bash reads an extglob pattern that may match a file named
-   `commit`, so the word holds `(` and is not literal (step 4; `git @(commit) -m x` gives
-   `git`, `@(`, `(`, `commit`, `)`, `-m`, `x` and is denied with the literal-subcommand
-   message); with `extglob` off bash rejects the pattern, except a `!(` that starts a
-   command, which is `!` plus a subshell (`!(git commit -m x)` runs the commit), and the
-   `(` token keeps step 3 finding that `git`. In PowerShell a `!` or `+` before `(` is a
-   word of its own (`!(1)` passes `!` and `1`). In PowerShell a word
+   earlier line can set, like `expand_aliases`) bash reads an extglob pattern that may match
+   a file named `commit`; with `extglob` off bash rejects the pattern, except a `!(` that
+   starts a command, which is `!` plus a subshell (`!(git commit -m x)` runs the commit),
+   and the `(` token keeps step 3 finding that `git`. Elsewhere — an argument or a
+   redirection target — the same opener reads the pattern through its matching unquoted `)`
+   as one word (nested `(` counted, quotes and `\` respected), its spaces, `|`, `;`, `&` and
+   newlines included, with no `(` token and no segment split inside it: bash reads it so
+   with `extglob` on, so the word holds `(` and is not literal (step 4; `git @(commit) -m x`
+   gives `git`, `@(commit)`, `-m`, `x`, denied with the literal-subcommand message, not by a
+   `(` token among git's arguments); with `extglob` off the pattern is a syntax error, so the
+   whole command never runs and no reading of it matters. An opener with no matching `)` (or
+   an unterminated quote inside the pattern) ends the word right after the `(`, with no `(`
+   token following it, and the rest of the command is tokenized normally from there: an
+   unbalanced extglob such as `xargs echo @(a | git commit --no-edit` gives no guard output,
+   because bash itself rejects the whole command as a syntax error (`extglob` on) and git
+   never runs — the reading differs from bash only where nothing executes either way. A
+   `git commit` carried inside a balanced pattern in an argument is no `git` token at all,
+   the same interpreter gap as `env -S 'git commit …'` (step 3, known gap; Q3; Out of
+   Scope): `xargs env -S A=@( git commit --fixup=HEAD'\c')` gives no output, since no `git`
+   token is there for step 3 to find. In PowerShell a `!` or `+` before `(` is a word of its
+   own (`!(1)` passes `!` and `1`). In PowerShell a word
    equal to `--%` after escape removal, not inside quotes (`--%`, `` `--% ``, `` -`-% ``),
    stops parsing: the rest of its line, up to the next `|`, `&&` or `||`, is split into
    words on whitespace only, so quotes, backticks, `$`, brackets, `;`, `&` and redirection
@@ -277,8 +293,12 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    missing some (`env -S`, `watch`, `rush`, a function), so only known-safe prefixes pass.
    `git`'s command starts at the segment's start or, when a bracket is still open at `git`,
    right after the innermost one: in Bash a `(` token (a subshell, `<(…)`, `>(…)` or an
-   extglob opener), in PowerShell a `(` or `{` token (a grouping expression, a
-   subexpression or a script block). Redirections are dropped before this step (step 2).
+   extglob opener in a command's first word — elsewhere the pattern is one word with no `(`
+   token, so it never resets this), in PowerShell a `(` or `{` token (a grouping expression, a
+   subexpression or a script block; a script block passed as data, such as
+   `Start-Process -ArgumentList { git commit -m x }`, is stringified and lies inside the
+   Start-Process interpreter gap, not this reset — to a native exe pwsh passes a script
+   block as `-encodedCommand`, GRD-06). Redirections are dropped before this step (step 2).
    The prefix allowlist:
    - Bash, in this order: reserved words that may start a command (`!`, `{`, `if`, `then`,
      `elif`, `else`, `while`, `until`, `do`), a `(` token and `time` with an optional `-p`,
@@ -307,7 +327,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    option such as `env -C`); a function definition (`f() { git commit --no-edit; }` naming
    `f`, `function f { … }` naming `function`); a `case … in pat) git commit --no-edit;;` arm
    (naming `case`); an assignment whose value may expand (`a='*' git …`,
-   `GIT_AUTHOR_DATE=$d git …`, `GIT_DIR=~/r/.git git …`); `>!(z) git …` (naming `z`); and in
+   `GIT_AUTHOR_DATE=$d git …`, `GIT_DIR=~/r/.git git …`); and in
    PowerShell `. git commit --no-edit` (naming `.`), an environment prefix and
    `& ('xargs') git …` (naming `(`).
    Fixtures: `xargs git commit --no-edit`, `printf -- -n | xargs git commit --no-edit`,
@@ -333,7 +353,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `[ -f a ] && git commit --no-edit`, `time -p git commit --no-edit`,
    `diff <(git commit --no-edit) f`, `tee >(git commit --no-edit)`,
    `f() (git commit --no-edit)`, `GIT_EDITOR=: git commit --no-edit`,
-   `>out.txt git commit --no-edit`, `nice -n 5 git commit --no-edit`,
+   `>out.txt git commit --no-edit`, `>!(z) git commit --no-edit` (a redirection target's
+   extglob pattern is one word, not a reset), `nice -n 5 git commit --no-edit`,
    `env -i -u HOME A=1 git commit --fixup=1a2b3c4`,
    `A=1 nice -n 5 nohup env B=2 command git commit --no-edit`, and PowerShell
    `if ($ok) { git commit --no-edit }`, `&{ git commit --no-edit }` and
@@ -343,8 +364,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    earlier on `PATH` named `nice`, `nohup` or `env` (`command` skips aliases and functions,
    not `PATH`); and since the tokenizer drops quoting, a quoted reserved word or assignment
    (`'!'`, `'{'`, `'if'`, `"A"=x`), which bash runs as a command of that name, fits too.
-   A wrapper that runs git from a string (`sh -c '…'`, `eval`, a script) holds no `git`
-   token: the interpreter gap (Q3).
+   A wrapper that runs git from a string (`sh -c '…'`, `eval`, a script, or a runner that
+   re-splits one string argument into a new command line, `env -S 'git commit --fixup=HEAD'`)
+   holds no `git` token: the interpreter gap (Q3). A `git commit` carried inside a balanced
+   extglob pattern in an argument is no `git` token either, the same gap (step 2;
+   `env -S A=@( git commit --fixup=HEAD'\c')`).
    Known gap: expansion or aliasing in the command position, where no token is `git` until
    the shell expands it, passes with no output (Q3): Bash brace expansion
    `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` or an extglob
@@ -450,7 +474,7 @@ deliberately differs from the shell and the check is skipped:
 | `splat` | PowerShell | `@name` is a word; the parser yields a splatted variable |
 | `ps-stop-parsing` | PowerShell | the rest of the line after a `--%` word (after escape removal, not inside quotes) is split into words on whitespace (step 2); the parser yields it as one verbatim element |
 | `ps-array-comma` | PowerShell | a `,` stays in its word or is a word of its own; the parser yields one array-literal element for the words it joins |
-| `extglob` | Bash | a `(` directly after `@`, `!`, `+`, `*` or `?` ends that word with the `(` kept and is also a `(` token; bash (`extglob` off) rejects the pattern as a syntax error, or runs `!(…)` at a command's start as a negated subshell |
+| `extglob` | Bash | a `(` directly after `@`, `!`, `+`, `*` or `?` in a command's first word ends that word with the `(` kept and is also a `(` token; elsewhere it reads the whole pattern through its matching `)` as one word, no `(` token; bash (`extglob` off) rejects the pattern as a syntax error, or runs `!(…)` at a command's start as a negated subshell |
 | `escaped-newline-in-word` | PowerShell | a backtick plus newline inside a word is removed (step 2); PowerShell keeps the newline in the word |
 | `ps-nul` | PowerShell | a NUL escape (`` `0 ``, a zero `` `u{…} ``) ends its token's value and a `cut` token follows it, ending git's arguments while the later tokens stay in the segment; the parser keeps the NUL and the rest in the word and has no `cut` there (the native command line is cut only when the command runs); Windows PowerShell 5.1 reads `` `u{…} `` as `u` and a script block |
 | `carriage-return` | Bash | a carriage return is a character of its word in one reading; the Windows (Cygwin) bash drops every carriage return in the other, not only ones before a newline |
