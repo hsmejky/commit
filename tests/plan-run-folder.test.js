@@ -15,8 +15,10 @@ const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 
 let repoProbe;
+let workflows;
 beforeEach(async () => {
   repoProbe = await loadLib('repo-probe');
+  workflows = await loadLib('workflows');
 });
 
 const EXCLUDE_LINE = '/.commit-plan';
@@ -227,4 +229,46 @@ test('on a case-insensitive filesystem a checked-out .Commit-Plan/ refuses plan,
   assertRunFolderRefusal(await runCommit(c, ['plan']));
   assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.Commit-Plan')), ['notes.txt']);
   assert.equal(excludeText(c), before);
+});
+
+// review-RUN-05 finding 4: `plan` discards the provisional folder in its `finally`; a removal
+// error there never changes the outcome or replaces the original error (C:run-folder). In
+// process, so `fs.rmSync` can fail the way a Windows file lock past its retries does.
+function failRemoval(t) {
+  const fsModule = require('node:fs');
+  t.mock.method(fsModule, 'rmSync', () => {
+    throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+  });
+}
+
+function planInProcess(c) {
+  const injected = { env: c.env, now: () => Date.UTC(2026, 0, 1), claudeHome: c.claudeHome, cwd: c.repoDir };
+  return workflows.plan({}, injected, { cwd: c.repoDir });
+}
+
+test('a discard that cannot remove the folder keeps the nothing outcome and adds a notice', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  failRemoval(t);
+
+  const result = await planInProcess(c);
+  t.mock.restoreAll();
+
+  assert.equal(result.output.reply.status, 'nothing');
+  const [planId] = fs.readdirSync(path.join(c.repoDir, '.commit-plan'));
+  assert.deepEqual(result.output.reply.notices, [
+    `run folder .commit-plan/${planId} was not removed (EBUSY); a later /commit removes it`,
+  ]);
+});
+
+test('a discard that cannot remove the folder never replaces the original error of plan', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  c.writeFile('README.md', 'changed\n');
+  failRemoval(t);
+
+  const thrown = await planInProcess(c).then(() => null, (err) => err);
+  t.mock.restoreAll();
+
+  assert.match(String(thrown && thrown.message), /plan on a working tree with changes is not built yet/);
 });

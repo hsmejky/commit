@@ -865,3 +865,72 @@ test('create: a link swapped in for .commit-plan by the time of its mkdir refuse
   assert.deepEqual(created, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
   assert.deepEqual(fs.readdirSync(target), []);
 });
+
+// review-RUN-05 finding 2: a link swapped in for `.commit-plan` after the post-mkdir check
+// but before `<planId>/` is made: the check after that last mkdir refuses, so no later write
+// of the run lands behind the link. The fresh empty `<planId>/` the mkdir made through the
+// link is left alone (no deletion ever goes through a link).
+test('create: a link swapped in for .commit-plan just before the <planId> mkdir refuses', (t) => {
+  const toplevel = tempDir(t);
+  const target = tempDir(t);
+  const runDir = path.join(toplevel, '.commit-plan');
+  const realMkdir = fs.mkdirSync;
+  t.mock.method(fs, 'mkdirSync', (dir, options) => {
+    if (path.dirname(path.resolve(dir)) === runDir) {
+      fs.rmdirSync(runDir);
+      fs.symlinkSync(target, runDir, process.platform === 'win32' ? 'junction' : 'dir');
+    }
+    return realMkdir(dir, options);
+  });
+
+  const created = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+
+  assert.deepEqual(created, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+  const [planId, ...rest] = fs.readdirSync(target);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(fs.readdirSync(path.join(target, planId)), []);
+});
+
+// review-RUN-05 finding 3: `discard` checks `.commit-plan` is still a plain directory, like
+// `releaseById`, `open` and `close`: nothing is removed through a link swapped in after
+// `create`.
+test('discard: a link swapped in for .commit-plan after create → nothing removed through it', (t) => {
+  const toplevel = tempDir(t);
+  const target = tempDir(t);
+  const runDir = path.join(toplevel, '.commit-plan');
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  fs.rmSync(runDir, { recursive: true });
+  fs.mkdirSync(path.join(target, provisional.planId));
+  fs.writeFileSync(path.join(target, provisional.planId, 'theirs'), 'x');
+  fs.symlinkSync(target, runDir, process.platform === 'win32' ? 'junction' : 'dir');
+
+  provisional.discard();
+
+  assert.deepEqual(fs.readdirSync(path.join(target, provisional.planId)), ['theirs']);
+});
+
+// review-RUN-05 finding 4: a removal error (a Windows file lock past `rmSync`'s retries)
+// never throws out of `discard`, so it cannot replace `plan`'s outcome or original error:
+// `discard` returns the notice and leaves the folder for the 24-hour sweep (C:run-folder).
+test('discard: a removal error returns a notice, never throws, and keeps the folder', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  t.mock.method(fs, 'rmSync', () => {
+    throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+  });
+
+  const notice = provisional.discard();
+
+  assert.equal(notice, run.discardNotice(provisional.planId, 'EBUSY'));
+  assert.equal(notice, `run folder .commit-plan/${provisional.planId} was not removed (EBUSY); a later /commit removes it`);
+  t.mock.restoreAll();
+  assert.equal(fs.statSync(provisional.runDir).isDirectory(), true);
+});
+
+test('discard: a removed folder returns no notice', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+
+  assert.equal(provisional.discard(), null);
+  assert.equal(fs.existsSync(provisional.runDir), false);
+});

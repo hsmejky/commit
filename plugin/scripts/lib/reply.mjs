@@ -37,7 +37,9 @@ const NOTHING_LINES = Object.freeze({
  * Builds a reply from the facts of the output that ends the worker's part.
  *
  * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended',
- *   treeState: { clean: true } | { count: number, paths: string[] } | undefined }} facts
+ *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
+ *   notices?: string[] }} facts `notices`: the call's notices (RUN-05: a provisional run
+ *   folder `plan` could not remove); RPL-05 repeats them in `text`.
  *   `treeState`: `undefined` when it was never read (`release` past its 45 s
  *   `releaseDeadline`, or a case with no working tree to read) — the tree-state line is then
  *   left off `text` entirely, not rendered as if clean (C:reply-and-handback).
@@ -56,7 +58,7 @@ export function reply(facts) {
     planId: null,
     text,
     commits: [],
-    notices: [],
+    notices: facts.notices === undefined ? [] : [...facts.notices],
     callerRule: BASE_CALLER_RULE,
     handback: null,
   };

@@ -506,6 +506,18 @@ function isAbsent(dir) {
   }
 }
 
+/**
+ * The notice for a provisional run folder `discard` could not remove; the 24-hour sweep
+ * removes it later (C:run-folder).
+ *
+ * @param {string} planId
+ * @param {string} code the error's `code`, such as `EBUSY`.
+ * @returns {string}
+ */
+export function discardNotice(planId, code) {
+  return `run folder ${RUN_DIR_NAME}/${planId} was not removed (${code}); a later /commit removes it`;
+}
+
 function runFolderRefusal() {
   return { ok: false, code: 'run-folder', message: RUN_FOLDER_TEXT };
 }
@@ -537,8 +549,21 @@ export function create({ toplevel, excludePath, tracked }) {
   if (!isPlainDirectory(runDir)) return runFolderRefusal();
   const folder = insideRunDir(runDir, planId);
   fs.mkdirSync(folder);
+  // A link swapped in between the check above and this mkdir is caught here, before any
+  // later write of the run; the `<planId>/` made through it is left (nothing is deleted
+  // through a link). Node has no `openat`, so the window narrows but cannot close.
+  if (!isPlainDirectory(runDir) || !isPlainDirectory(folder)) return runFolderRefusal();
+  // Never throws: a removal error must not replace the call's outcome or original error.
+  // Nothing is removed through a `.commit-plan` swapped for a link after `create`, like
+  // `releaseById`, `open` and `close` (review-RUN-05 findings 3, 4).
   const discard = () => {
-    fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    try {
+      if (!isPlainDirectory(runDir)) return null;
+      fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      return null;
+    } catch (err) {
+      return discardNotice(planId, err.code || 'error');
+    }
   };
   return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), discard } };
 }

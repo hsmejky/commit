@@ -92,6 +92,10 @@ fixed, delete it here; IDs are never reused.
   fires the mismatch notice.
 - **KD-R33.** RUN-12's `internal`-throw path to `cleanupDeadline` is untested; combine an
   FND-10 `EIO` on the `plan.json` rename with a clock step past 540 s.
+- **KD-R64.** RUN-05's `plan` turns a provisional folder it cannot discard into a notice,
+  but only the `nothing` reply carries notices yet: a refusal after step 3 or an `internal`
+  throw drops it (the outcome stays right). Fix: RUN-12 (`internal` with notices) and the
+  first refusal after step 3 pass `plan`'s collected notices into their output.
 
 ## Design sync
 

@@ -184,13 +184,17 @@ export async function plan(values, injected, { cwd }) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
   const ctx = { injected, cwd, provisional: null };
+  const notices = [];
   let facts;
   try {
     facts = await runSteps(PLAN_STEPS, ctx);
   } finally {
     // No outcome built yet takes the lock (step 7, CHG-03b), so every one discards the
-    // provisional folder, a thrown `internal` included (C:run-folder).
-    if (ctx.provisional !== null) ctx.provisional.discard();
+    // provisional folder, a thrown `internal` included (C:run-folder). `discard` never
+    // throws: a removal error becomes a notice and never changes the outcome. Only a reply
+    // carries notices so far; a refusal or `internal` drops it (KD-R64).
+    const notice = ctx.provisional === null ? null : ctx.provisional.discard();
+    if (notice !== null) notices.push(notice);
   }
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return {
@@ -200,7 +204,7 @@ export async function plan(values, injected, { cwd }) {
       // With no mode flag an empty index resolves to `split` (C:plan `mode`); a clean tree
       // has an empty index. M15 `resolveMode` replaces this at step 4.
       mode: 'split',
-      reply: await finalReply(facts, ctx),
+      reply: await finalReply({ ...facts, notices }, ctx),
       hunks: null,
     },
   };
