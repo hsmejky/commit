@@ -55,8 +55,10 @@ created between groups are both caught:
     with `ignored: true` in a separate `git add -N -f`); never built from HEAD. It
     recomputes the diff against it with the pinned options, and each unit's hash: hash of
     (path, the `-` and `+` lines without context, occurrence index among identical hunks in
-    the same file). Whole-file units hash as in Q11 (old/new path, mode, symlink target, gitlink
-    commit ID, blob IDs for binaries, the cleaned form for filtered files).
+    the same file; a `\` no-newline marker counts toward the hash only when it directly
+    follows a `-`/`+` line, not a context line). Whole-file units hash as in Q11 (old/new
+    path, mode, symlink target, gitlink commit ID, blob IDs for binaries, the cleaned form
+    for filtered files).
   - Every unit's ID is mapped to its hash through the state file and matched against the
     current hunks. A missing hash → exit 6, `diff-changed`. The message is "files changed
     since plan, run /commit again", or, when the state file has

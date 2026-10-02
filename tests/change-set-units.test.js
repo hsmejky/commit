@@ -178,6 +178,42 @@ test('snapshot: a newline-at-EOF edit hashes differently from the same lines wit
   assert.notEqual(u1.hash, u2.hash);
 });
 
+test('snapshot: a "\\ No newline" marker after a context line does not change the hash', async (t) => {
+  // 'end' is unchanged context in both cases; only whether it has a trailing newline differs,
+  // so only case A gets a `\ No newline at end of file` marker after that context line.
+  const c1 = createCase(t);
+  seed(c1, { 'f.txt': 'keep\nchange\nend' });
+  c1.writeFile('f.txt', 'keep\nCHANGE\nend');
+  const c2 = createCase(t);
+  seed(c2, { 'f.txt': 'keep\nchange\nend\n' });
+  c2.writeFile('f.txt', 'keep\nCHANGE\nend\n');
+
+  const [u1] = await snapshot(c1);
+  const [u2] = await snapshot(c2);
+
+  assert.match(u1.body.toString('utf8'), /\\ No newline at end of file/);
+  assert.doesNotMatch(u2.body.toString('utf8'), /\\ No newline/);
+  assert.equal(u1.hash, u2.hash);
+});
+
+test('snapshot: a count mismatch between raw records and patch sections is internal', () => {
+  // Hand-built `git diff -z --raw -p` bytes (KD-R1 style): two raw `M` records but only one
+  // patch section, exercising the pairing check directly without spawning git.
+  const sha = '0'.repeat(40);
+  const raw = Buffer.concat([
+    Buffer.from(`:100644 100644 ${sha} ${sha} M\0a.txt\0`, 'latin1'),
+    Buffer.from(`:100644 100644 ${sha} ${sha} M\0b.txt\0`, 'latin1'),
+    Buffer.from([0]),
+    Buffer.from(
+      'diff --git a/a.txt b/a.txt\nindex 0000000..1111111 100644\n--- a/a.txt\n+++ b/a.txt\n'
+      + '@@ -1,1 +1,1 @@\n-old\n+new\n',
+      'latin1',
+    ),
+  ]);
+
+  assert.throws(() => changeSet.unitsFromDiff(raw), /the diff has 1 patch sections for 2 raw records/);
+});
+
 test('snapshot: the hash uses raw bytes, so Latin-1 bytes that decode alike still differ', async (t) => {
   const c1 = createCase(t);
   seed(c1, { 'f.txt': Buffer.from('caf\xe9\n', 'latin1') });
