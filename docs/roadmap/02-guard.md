@@ -78,16 +78,16 @@ it.
 
 **Blocked by:** GRD-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q4, Q21, C:guard (Parsing step 5, Deny messages), stories 23, 24, 25, 26, 29, 33.
 
-- [ ] No output for `git commit --no-edit`, `--amend --no-edit`, `--no-edit -q`, `--no-edit --quiet`, `--fixup=<sha>`, `--fixup=<sha> -q`, and reordered flag forms of these.
-- [ ] `Direct git commit is blocked. <route>` (the bare/`-m` row, already asserted for plain `-m` in GRD-03): bare `git commit`, `-F`, `--message`, `--file`, `-mfoo` (expanded to `-m foo`, no other flag present).
-- [ ] Denied, naming the flag, the generic row `git commit <flag> is not allowed here. <route>`: `-t`, `-a`, `--allow-empty`, `--allow-empty-message`, a pathspec, `--`.
-- [ ] Precedence per C:guard (D2): `-am x` (expanded to `-a -m`) → the generic row naming `-a`, not the bare/`-m` text, since the generic "any other flag or argument" row outranks the bare/`-m`/`-F`/`--message`/`--file` row, which applies only when nothing else matches.
-- [ ] Seam 3: `git commit --no-edit # done` is denied by the blanket rule (a `#`, Q3 as amended by PRE-03 round 8), while `git commit --no-edit` alone has no output.
-- [ ] A deny case run with `COMMIT_GUARD=off` and similar variables set is still denied (no env switch).
+- [x] No output for `git commit --no-edit`, `--amend --no-edit`, `--no-edit -q`, `--no-edit --quiet`, `--fixup=<sha>`, `--fixup=<sha> -q`, and reordered flag forms of these.
+- [x] `Direct git commit is blocked. <route>` (the bare/`-m` row, already asserted for plain `-m` in GRD-03): bare `git commit`, `-F`, `--message`, `--file`, `-mfoo` (expanded to `-m foo`, no other flag present).
+- [x] Denied, naming the flag, the generic row `git commit <flag> is not allowed here. <route>`: `-t`, `-a`, `--allow-empty`, `--allow-empty-message`, a pathspec, `--`.
+- [x] Precedence per C:guard (D2): `-am x` (expanded to `-a -m`) → the generic row naming `-a`, not the bare/`-m` text, since the generic "any other flag or argument" row outranks the bare/`-m`/`-F`/`--message`/`--file` row, which applies only when nothing else matches.
+- [x] Seam 3: `git commit --no-edit # done` is denied by the blanket rule (a `#`, Q3 as amended by PRE-03 round 8), while `git commit --no-edit` alone has no output.
+- [x] A deny case run with `COMMIT_GUARD=off` and similar variables set is still denied (no env switch).
 
 
 ## GRD-05: Deny catalogue: the specific rows
