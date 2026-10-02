@@ -95,8 +95,9 @@ fixed, delete it here; IDs are never reused.
   FND-10 `EIO` on the `plan.json` rename with a clock step past 540 s.
 - **KD-R64.** RUN-05's `plan` turns a provisional folder it cannot discard into a notice,
   but only the `nothing` reply carries notices yet: a refusal after step 3 or an `internal`
-  throw drops it (the outcome stays right). Fix: RUN-12 (`internal` with notices) and the
-  first refusal after step 3 pass `plan`'s collected notices into their output.
+  throw drops it (the outcome stays right). Fix: RUN-12 (`internal` with notices) and RUN-07
+  (the first refusal after step 3) pass `plan`'s collected notices into their output; both
+  slices point here.
 
 ## Design sync
 
@@ -161,7 +162,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 ## Suggested order
 
 1. KD-R1 (on both critical paths).
-2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35 and KD-R33.
+2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35, KD-R33 and KD-R64.
 3. KD-R28, KD-R37, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
 4. The CHG-03b area: KD-R24, KD-R40, KD-R60, KD-R63.
 5. KD-R5, KD-R6.

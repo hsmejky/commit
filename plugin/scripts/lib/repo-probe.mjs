@@ -77,11 +77,15 @@ export async function probe({ cwd, env, now }) {
   return { git, node, repo };
 }
 
-// ASCII-only lowercase: a case-insensitive filesystem folds `.Commit-Plan` to `.commit-plan`,
-// and no non-ASCII character folds to one of that name's characters.
-function asciiLower(text) {
-  return text.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
+// ASCII-only lowercase byte: folds 'A'-'Z' (0x41-0x5A) to 'a'-'z' (0x61-0x7A); every other
+// byte, ASCII or not, is left alone. No non-ASCII character folds onto one of these bytes,
+// so a multi-byte UTF-8 path (bytes 0x80 and up) can never be mistaken for a fold.
+function lowerByte(byte) {
+  return byte >= 0x41 && byte <= 0x5a ? byte + 0x20 : byte;
 }
+
+const SLASH = 0x2f;
+const BOUND_LAST_BYTE = 0x30; // '0': the byte right after '/' (0x2F) in ASCII order.
 
 /**
  * Whether the index holds a path, or any path under it, compared ASCII-case-insensitively
@@ -93,18 +97,67 @@ function asciiLower(text) {
  * no pathspec magic, so neither git's version nor an inherited or pinned
  * `GIT_*_PATHSPECS` variable changes the answer (GIT-05 pins `GIT_LITERAL_PATHSPECS=1`).
  *
- * @param {string} name the path, relative to the toplevel, such as `.commit-plan`.
+ * The index is sorted bytewise (memcmp of each full path). An ASCII uppercase byte always
+ * sorts before its lowercase form, and `/` (0x2F) sorts before `0` (0x30), so every case
+ * variant of `name` and every path under it (`name/…`, any case) sorts strictly before
+ * `${name}0`. The scan below stops the moment an entry's raw bytes reach that bound
+ * (review-RUN-05 finding 7): nothing sorted after it can still match. It also returns the
+ * moment it finds a match, so a hit near the top of the index costs almost nothing either.
+ * It scans the buffer in place (`Buffer#indexOf` plus byte comparisons), never
+ * materializing the full entry list as strings or regexes.
+ *
+ * Left for later, if the remaining cost still matters (neither blocks this slice): passing
+ * `--sparse` on git >= 2.35 to avoid expanding a sparse index before this scan runs, and a
+ * streaming read that stops at the bound without collecting the rest of the output at all
+ * (needs a kill path, GIT-07).
+ *
+ * @param {string} name the path, relative to the toplevel, such as `.commit-plan`. ASCII only.
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
- * @returns {Promise<boolean>}
+ * @returns {Promise<string | null>} the matched entry's leading `name`-length segment, in the
+ *   case the index actually holds (for example `.Commit-Plan`), or `null` when nothing in
+ *   the index names `name` or a path under it.
  * @throws {Error} when git exits non-zero.
  */
 export async function isTracked(name, { cwd, env, now }) {
   const result = await run('git', ['ls-files', '-z', '--cached'], { cwd, env, now });
   if (result.code !== 0) throw new Error(`git ls-files failed (${result.code}): ${result.stderr}`);
-  const wanted = asciiLower(name);
-  // `latin1` maps every byte to one character, so a non-UTF-8 path still splits and compares.
-  return result.stdout.toString('latin1').split('\0').some((entry) => {
-    const lower = asciiLower(entry);
-    return lower === wanted || lower.startsWith(`${wanted}/`);
-  });
+  const buf = result.stdout;
+  const wantedLen = name.length;
+  const wantedBytes = Buffer.from(name.toLowerCase(), 'latin1');
+
+  let offset = 0;
+  while (offset < buf.length) {
+    let end = buf.indexOf(0, offset);
+    if (end === -1) end = buf.length;
+    const len = end - offset;
+
+    if (len >= wantedLen) {
+      let matches = true;
+      for (let i = 0; i < wantedLen; i += 1) {
+        if (lowerByte(buf[offset + i]) !== wantedBytes[i]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches && (len === wantedLen || buf[offset + wantedLen] === SLASH)) {
+        return buf.toString('latin1', offset, offset + wantedLen);
+      }
+    }
+
+    // Bound check on the raw (un-folded) bytes against `${name}0`: stop once an entry sorts
+    // at or after it, since every match sorts strictly before it (see above).
+    let cmp = 0;
+    for (let i = 0; i <= wantedLen; i += 1) {
+      const a = i < len ? buf[offset + i] : -1;
+      const b = i < wantedLen ? wantedBytes[i] : BOUND_LAST_BYTE;
+      if (a !== b) {
+        cmp = a < b ? -1 : 1;
+        break;
+      }
+    }
+    if (cmp >= 0) break;
+
+    offset = end + 1;
+  }
+  return null;
 }

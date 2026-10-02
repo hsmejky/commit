@@ -516,11 +516,20 @@ function isAbsent(dir) {
  * @returns {string}
  */
 export function discardNotice(planId, code) {
-  return `run folder ${RUN_DIR_NAME}/${planId} was not removed (${code}); a later /commit removes it`;
+  return `run folder \`${RUN_DIR_NAME}/${planId}\` was not removed (${code}); the 24-hour sweep removes it`;
 }
 
-function runFolderRefusal() {
-  return { ok: false, code: 'run-folder', message: RUN_FOLDER_TEXT };
+/** The `run-folder` refusal text naming the tracked variant actually found (finding 5). */
+function trackedRunFolderText(trackedAs) {
+  return `\`${trackedAs}\` is tracked; remove it by hand`;
+}
+
+// `trackedAs`: the case-variant path the index holds, when known (M3 `isTracked`), to name
+// it in the message instead of the generic text; omitted (or a plain `true`/`false`) when
+// the caller does not have it, or the cause is not tracking at all (a link or non-directory).
+function runFolderRefusal(trackedAs) {
+  const message = typeof trackedAs === 'string' ? trackedRunFolderText(trackedAs) : RUN_FOLDER_TEXT;
+  return { ok: false, code: 'run-folder', message };
 }
 
 /**
@@ -530,13 +539,16 @@ function runFolderRefusal() {
  *
  * Before its first write it `lstat`s `<toplevel>/.commit-plan`: a symlink, a junction, a
  * non-directory, or a path tracked in the index (`tracked`, which M18 asks git for: M12
- * spawns nothing) refuses with `run-folder`; after `mkdir` it checks again (C:run-folder,
- * story 207), so a link swapped in meanwhile is never written through.
+ * spawns nothing) refuses with `run-folder`; after `mkdir` it checks again, and once more
+ * after creating `<planId>/` (C:run-folder, story 207), so a link swapped in meanwhile is
+ * never written through.
  *
- * @param {{ toplevel: string, excludePath: string, tracked: boolean }} options
- *   `excludePath`: the common dir's `info/exclude` (M2 `gitPath`); `tracked`: whether the
- *   index holds `.commit-plan` or any path under it (M3 `isTracked`).
- * @returns {{ ok: true, provisional: { planId: string, runDir: string, discard: () => void } }
+ * @param {{ toplevel: string, excludePath: string, tracked: string | boolean }} options
+ *   `excludePath`: the common dir's `info/exclude` (M2 `gitPath`); `tracked`: the case-variant
+ *   path the index holds under `.commit-plan`, such as `.Commit-Plan` (M3 `isTracked`), or
+ *   `null`/`false` when it holds none, or `true` when the caller knows it is tracked but not
+ *   which variant.
+ * @returns {{ ok: true, provisional: { planId: string, runDir: string, discard: () => string | null } }
  *   | { ok: false, code: 'run-folder', message: string }}
  *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
  *   slashes (C:run-folder); `discard()` deletes it (every outcome that takes no lock).
@@ -545,7 +557,8 @@ function runFolderRefusal() {
  */
 export function create({ toplevel, excludePath, tracked }) {
   const runDir = runDirOf(toplevel);
-  if (tracked || !(isAbsent(runDir) || isPlainDirectory(runDir))) return runFolderRefusal();
+  if (tracked) return runFolderRefusal(tracked);
+  if (!(isAbsent(runDir) || isPlainDirectory(runDir))) return runFolderRefusal();
   ensureExcludeLine(excludePath);
   const planId = crypto.randomUUID();
   fs.mkdirSync(runDir, { recursive: true });

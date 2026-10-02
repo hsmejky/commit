@@ -98,17 +98,23 @@ test('plan on a clean tree leaves no <planId> folder and no lock', async (t) => 
 // AC1: the run-folder directory check (C:run-folder, story 207).
 const REFUSAL_TEXT = '`.commit-plan` is tracked or not a plain directory; remove it by hand';
 
+// review-RUN-05 finding 5: the tracked case names the actual variant found, not always
+// `.commit-plan` itself.
+function trackedRefusalText(variant) {
+  return `\`${variant}\` is tracked; remove it by hand`;
+}
+
 // A refusal returns before the exclude line is added (review-RUN-05 finding 11).
 function excludeText(c) {
   return fs.readFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), 'utf8');
 }
 
-function assertRunFolderRefusal(result) {
+function assertRunFolderRefusal(result, expectedMessage = REFUSAL_TEXT) {
   const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
   assert.equal(result.exitCode, 6, detail);
   assert.equal(result.json.ok, false, detail);
   assert.equal(result.json.error.kind, 'state', detail);
-  assert.equal(result.json.error.message, REFUSAL_TEXT, detail);
+  assert.equal(result.json.error.message, expectedMessage, detail);
 }
 
 test('.commit-plan as a plain file refuses plan with state, and the file is unchanged', async (t) => {
@@ -129,7 +135,7 @@ test('a tracked .commit-plan path refuses plan with state, and the directory is 
   c.git(['commit', '-q', '-m', 'track it']);
   const before = excludeText(c);
 
-  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assertRunFolderRefusal(await runCommit(c, ['plan']), trackedRefusalText('.commit-plan'));
   assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), ['notes.txt']);
   assert.equal(excludeText(c), before);
 });
@@ -181,7 +187,7 @@ test('a case-variant tracked .Commit-Plan path refuses plan with state, info/exc
   trackWithoutFile(c, '.Commit-Plan/notes.txt');
   const before = excludeText(c);
 
-  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assertRunFolderRefusal(await runCommit(c, ['plan']), trackedRefusalText('.Commit-Plan'));
   assert.equal(excludeText(c), before);
 });
 
@@ -191,12 +197,30 @@ test('isTracked matches .commit-plan and paths under it in any ASCII case, nothi
   for (const relPath of ['x/.commit-plan', '.commit-planner/a', '.commit-plan.bak']) trackWithoutFile(c, relPath);
   const ask = () => repoProbe.isTracked('.commit-plan', { cwd: c.repoDir, env: c.env });
 
-  assert.equal(await ask(), false);
+  assert.equal(await ask(), null);
   trackWithoutFile(c, '.COMMIT-PLAN');
-  assert.equal(await ask(), true);
+  assert.equal(await ask(), '.COMMIT-PLAN');
   c.git(['rm', '-q', '--cached', '.COMMIT-PLAN']);
   trackWithoutFile(c, '.Commit-Plan/deep/notes.txt');
-  assert.equal(await ask(), true);
+  assert.equal(await ask(), '.Commit-Plan');
+});
+
+// review-RUN-05 finding 7: the index is sorted bytewise, so every case variant and every
+// `.commit-plan/…` path sorts strictly before `.commit-plan0`; the scan stops there without
+// missing one. An upper-case variant and a subpath are both planted past that bound.
+test('isTracked early exit does not miss a case variant or a subpath past the bound', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  trackWithoutFile(c, '.commit-plan0'); // sorts just past the bound; not a match
+  trackWithoutFile(c, '.commit-planZ'); // sorts well past the bound; not a match
+  const ask = () => repoProbe.isTracked('.commit-plan', { cwd: c.repoDir, env: c.env });
+
+  assert.equal(await ask(), null);
+  trackWithoutFile(c, '.Commit-Plan'); // an upper-case variant, sorting before the bound
+  assert.equal(await ask(), '.Commit-Plan');
+  c.git(['rm', '-q', '--cached', '.Commit-Plan']);
+  trackWithoutFile(c, '.commit-plan/x'); // a subpath, also sorting before the bound
+  assert.equal(await ask(), '.commit-plan');
 });
 
 // review-RUN-05 finding 6: the tracked check reads the index without a pathspec, so an
@@ -206,7 +230,10 @@ test('an exported GIT_LITERAL_PATHSPECS=1 still refuses a tracked .commit-plan',
   seedCommit(c);
   trackWithoutFile(c, '.commit-plan/notes.txt');
 
-  assertRunFolderRefusal(await runCommit(c, ['plan'], { env: { GIT_LITERAL_PATHSPECS: '1' } }));
+  assertRunFolderRefusal(
+    await runCommit(c, ['plan'], { env: { GIT_LITERAL_PATHSPECS: '1' } }),
+    trackedRefusalText('.commit-plan'),
+  );
 });
 
 // Whether the filesystem under `dir` folds case (Windows and macOS defaults).
@@ -226,7 +253,7 @@ test('on a case-insensitive filesystem a checked-out .Commit-Plan/ refuses plan,
   c.git(['commit', '-q', '-m', 'track it']);
   const before = excludeText(c);
 
-  assertRunFolderRefusal(await runCommit(c, ['plan']));
+  assertRunFolderRefusal(await runCommit(c, ['plan']), trackedRefusalText('.Commit-Plan'));
   assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.Commit-Plan')), ['notes.txt']);
   assert.equal(excludeText(c), before);
 });
@@ -257,7 +284,7 @@ test('a discard that cannot remove the folder keeps the nothing outcome and adds
   assert.equal(result.output.reply.status, 'nothing');
   const [planId] = fs.readdirSync(path.join(c.repoDir, '.commit-plan'));
   assert.deepEqual(result.output.reply.notices, [
-    `run folder .commit-plan/${planId} was not removed (EBUSY); a later /commit removes it`,
+    `run folder \`.commit-plan/${planId}\` was not removed (EBUSY); the 24-hour sweep removes it`,
   ]);
 });
 

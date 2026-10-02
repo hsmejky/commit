@@ -147,10 +147,11 @@ that takes no lock.
 **Sources:** Q9, Q22, C:run-folder, architectural decisions (run-folder directory
 check), M12 `create`/`discard`, M18 `plan` step 3, stories 196, 207.
 
-- [ ] Seam 1: a symlinked `.commit-plan`, a tracked `.commit-plan` (in any ASCII case), `.commit-plan` as a
-      plain file, and (Windows) `.commit-plan` as a junction → exit 6 `state` with the
-      "`.commit-plan` is tracked or not a plain directory; remove it by hand" text, and
-      nothing is written through the link or junction.
+- [ ] Seam 1: a symlinked `.commit-plan`, `.commit-plan` as a plain file, and (Windows)
+      `.commit-plan` as a junction → exit 6 `state` with the "`.commit-plan` is tracked or
+      not a plain directory; remove it by hand" text; a tracked `.commit-plan` (in any ASCII
+      case) → the same exit 6 `state`, naming the actual tracked variant. Nothing is written
+      through the link or junction.
 - [ ] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan` line, also
       after a second `plan` (no duplicate line), `git status --porcelain -uall` shows no
       `.commit-plan` path, and `.gitignore` is unchanged (absent stays absent); the same
@@ -205,6 +206,9 @@ handback itself is built by INT-05.
 **Status:** ready-for-agent
 
 **Sources:** Q22, C:plan step 3, M12 `peek`, M17 `lock` rule, stories 188, 191.
+
+KD-R64: this is `plan`'s first refusal after step 3; its `lock` output carries `plan`'s
+collected notices (the provisional-folder discard notice included) instead of dropping them.
 
 - [ ] Seam 1: a fresh lock held by another `planId` → exit 6 `lock` with the "another
       /commit run is in progress (started HH:MM, last active N s ago)" text. No new
@@ -322,6 +326,9 @@ file-system calls and take no `timeoutMs`.
 **Sources:** Q9, Q18, M15 `deadline`/`cleanupDeadline`, C:plan (deadline text),
 C:cli-and-exit-codes (`timeout` and `internal` rows), C:commit-release (budget text),
 domain-code table (`timed-out`).
+
+KD-R64: the `internal` output built here carries `plan`'s collected notices (the
+provisional-folder discard notice included) instead of dropping them.
 
 - [ ] Seam 1: the stepping clock crosses 540 s before the provisional folder exists →
       exit 5 `timeout`, and no folder and no lock are left (the provisional run is

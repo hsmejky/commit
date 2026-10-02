@@ -119,6 +119,7 @@ assert the domain code and that the state is named, not an exact text.
 | `in-progress` (`state`): paused sequence (`sequencer/`) | M3 via M15 (`plan`) | continue or abort it by hand | Q21 |
 | `in-progress` (`state`): pending `merge --squash` (`SQUASH_MSG`) | M3 via M15 (`plan`) | a squashed merge is staged: commit it by hand, or drop it with `git reset --merge` | Q21 |
 | `unmerged` (`state`) | M3 via M15 (`plan`) | resolve the conflicts first | Q21 |
+| discard-failure notice (no kind; the outcome is unchanged) | M12 `discard` (`plan`, every outcome that takes no lock) | run folder `` `.commit-plan/<planId>` `` was not removed (<code>); the 24-hour sweep removes it | C:run-folder |
 | guard notice (no kind; `env.guard: "not-seen"`, the run goes on) | M18 (`plan`, stored as a notice) | Guard hook did not run: `node` missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct `git commit` is not blocked. | Q23 |
 | signing prompt notice (no kind; `signing.ready: "prompt"`, the run goes on) | M18 (`plan`, stored as a notice) | signing enabled; a passphrase prompt may appear | Q18 |
 

@@ -844,6 +844,21 @@ test('create: a tracked .commit-plan refuses with run-folder before any write', 
   assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan')), false);
 });
 
+// review-RUN-05 finding 5: when the caller names the actual tracked variant (M3
+// `isTracked`'s result), the refusal text names it instead of the generic text.
+test('create: a tracked .commit-plan names the actual tracked variant', (t) => {
+  const toplevel = tempDir(t);
+  const excludePath = path.join(toplevel, 'exclude');
+
+  const created = run.create({ toplevel, excludePath, tracked: '.Commit-Plan' });
+
+  assert.deepEqual(created, {
+    ok: false,
+    code: 'run-folder',
+    message: '`.Commit-Plan` is tracked; remove it by hand',
+  });
+});
+
 test('create: a link swapped in for .commit-plan by the time of its mkdir refuses, nothing written through it', (t) => {
   const toplevel = tempDir(t);
   const target = tempDir(t);
@@ -891,6 +906,33 @@ test('create: a link swapped in for .commit-plan just before the <planId> mkdir 
   assert.deepEqual(fs.readdirSync(path.join(target, planId)), []);
 });
 
+// review-RUN-05 finding 6: the `<planId>/` half of the post-mkdir recheck
+// (`!isPlainDirectory(folder)`). Here `.commit-plan` itself stays a plain directory
+// throughout, so only swapping the `<planId>/` folder for a link can trip the check.
+test('create: the <planId> folder swapped for a link just after its mkdir refuses, nothing written through it', (t) => {
+  const toplevel = tempDir(t);
+  const target = tempDir(t);
+  const runDir = path.join(toplevel, '.commit-plan');
+  const realMkdir = fs.mkdirSync;
+  t.mock.method(fs, 'mkdirSync', (dir, options) => {
+    const resolved = path.resolve(dir);
+    if (resolved !== runDir && path.dirname(resolved) === runDir) {
+      realMkdir(resolved, options);
+      fs.rmdirSync(resolved);
+      fs.symlinkSync(target, resolved, process.platform === 'win32' ? 'junction' : 'dir');
+      return undefined;
+    }
+    return realMkdir(dir, options);
+  });
+
+  const created = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+
+  assert.deepEqual(created, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+  assert.equal(fs.lstatSync(runDir).isDirectory(), true);
+  assert.equal(fs.lstatSync(runDir).isSymbolicLink(), false);
+  assert.deepEqual(fs.readdirSync(target), []);
+});
+
 // review-RUN-05 finding 3: `discard` checks `.commit-plan` is still a plain directory, like
 // `releaseById`, `open` and `close`: nothing is removed through a link swapped in after
 // `create`.
@@ -922,7 +964,10 @@ test('discard: a removal error returns a notice, never throws, and keeps the fol
   const notice = provisional.discard();
 
   assert.equal(notice, run.discardNotice(provisional.planId, 'EBUSY'));
-  assert.equal(notice, `run folder .commit-plan/${provisional.planId} was not removed (EBUSY); a later /commit removes it`);
+  assert.equal(
+    notice,
+    `run folder \`.commit-plan/${provisional.planId}\` was not removed (EBUSY); the 24-hour sweep removes it`,
+  );
   t.mock.restoreAll();
   assert.equal(fs.statSync(provisional.runDir).isDirectory(), true);
 });

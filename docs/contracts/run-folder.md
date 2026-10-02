@@ -9,11 +9,13 @@ directory-only `/.commit-plan/` would leave as an untracked path in every reply'
 file, so the worker's `Write` would ask on every run (Q9, spike).
 
 Before its first write the script `lstat`s `<toplevel>/.commit-plan`: a symlink, a
-junction, a non-directory, or a path tracked in the index refuses `plan` with exit 6
-`state` (`run-folder`: "`.commit-plan` is tracked or not a plain directory; remove it by
-hand"); after `mkdir` it checks again, and once more after creating `<planId>/` (Q22). The
-tracked check compares index paths in any ASCII case (`.Commit-Plan/x` counts) on every
-platform: on a case-insensitive filesystem that is the same directory.
+junction or a non-directory refuses `plan` with exit 6 `state` (`run-folder`: "`.commit-plan`
+is tracked or not a plain directory; remove it by hand"); after `mkdir` it checks again, and
+once more after creating `<planId>/` (Q22). A path the index tracks also refuses
+`run-folder`, naming the actual tracked variant instead of `.commit-plan` itself (for
+example "`.Commit-Plan` is tracked; remove it by hand"). The tracked check compares index
+paths in any ASCII case (`.Commit-Plan/x` counts) on every platform: on a case-insensitive
+filesystem that is the same directory.
 
 `planId` is `crypto.randomUUID()` output. Every `planId` the script reads (`--plan`,
 `--take-over`, a lock's content) must be exactly that form (lowercase UUID v4): a malformed
@@ -163,7 +165,8 @@ failed call whose unstage did not happen keeps its run, below):
 - A cleanup error after a successful commit (for example a Windows file lock on a temporary
   file) never changes the outcome: it becomes a notice, and the sweep removes the leftovers.
   The same holds when `plan` cannot discard its provisional folder: the notice is "run folder
-  `.commit-plan/<planId>` was not removed (<code>); a later /commit removes it".
+  `` `.commit-plan/<planId>` `` was not removed (<code>); the 24-hour sweep removes it"
+  (C:cli-and-exit-codes recorded texts; the backticks are literal, part of the printed text).
 - After a failed run, too, a cleanup call (the unstage, the HEAD re-read, the tree-state
   read, the release) that fails or is skipped past `cleanupDeadline` never changes the
   outcome: the exit code and kind come from the original cause, and the cleanup error
