@@ -84,6 +84,9 @@ calls and take no `timeoutMs`; RUN-12 puts the reply's tree-state read on
 **Sources:** Q9, Q22, C:run-folder (`lock`, `state.json` and `plan.json` rows),
 C:cli-and-exit-codes (`internal` row), C:plan (step 7), M12.
 
+KD-R63: if `plan`'s output carries a non-null `runDir` from this slice on, assert its form
+(absolute, `path.resolve`d, forward slashes) at Seam 1 here rather than waiting for INT-02.
+
 - [ ] Seam 1: after a `plan` call that reaches step 7, `.commit-plan/lock` exists (not
       inside the `<planId>/` run folder) holding `{ planId, created }`.
 - [ ] Seam 1: two modified tracked files → `plan` stdout `hunks.hunks` lists `h1`, `h2` with path, status `M`, kind `text`, `offset`/`lines` pointing at their `### h<n> M text …` blocks in `hunks.txt`.

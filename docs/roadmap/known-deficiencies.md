@@ -53,7 +53,8 @@ fixed, delete it here; IDs are never reused.
 - **KD-R63.** RUN-05's `runDir` criterion (absolute, `path.resolve`d, forward slashes)
   names Seam 1, but the only `plan` outcome RUN-05 builds is a clean tree, whose output
   carries `runDir: null`; RUN-05 asserts the form on M12 `create`'s result in-process.
-  Fix: INT-02 (or CHG-03b) asserts `runDir`'s form in `plan`'s output at Seam 1.
+  Fix: INT-02 (or CHG-03b) asserts `runDir`'s form in `plan`'s output at Seam 1; both
+  slices point here.
 
 ## Test mechanisms
 
@@ -162,7 +163,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 1. KD-R1 (on both critical paths).
 2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35 and KD-R33.
 3. KD-R28, KD-R37, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
-4. The CHG-03b area: KD-R24, KD-R40, KD-R60.
+4. The CHG-03b area: KD-R24, KD-R40, KD-R60, KD-R63.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R49, KD-R50, KD-R45.

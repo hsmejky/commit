@@ -64,6 +64,9 @@ C:run-folder, C:reply-and-handback, stories 40, 70, 194.
 - [ ] Seam 1: `plan --split` on two modified tracked files exits 0 with one JSON object
       (`version: 1`), a lowercase UUID v4 `planId`, the hunk index listing two whole-file
       units, and a run folder holding `state.json`, `plan.json` and `hunks.txt` plus the lock
+- [ ] Seam 1: that `plan`'s `runDir` is absolute, `path.resolve`d from the toplevel, and uses
+      forward slashes even on Windows (C:run-folder; RUN-05's criterion, asserted there only
+      in-process, KD-R63).
 - [ ] Parser oracle: per-file added and removed counts in the hunk index equal
       `git diff --numstat -z` on the fixture
 - [ ] The real index is byte-identical before and after `plan` (story 70)
