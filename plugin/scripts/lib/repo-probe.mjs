@@ -9,10 +9,14 @@
 // standalone `head()` and `headTree()` for later slices (GIT-09's reword facts, EXE's
 // head-moved and backstop tree checks). `probe()` itself never calls `headState()`: only
 // `plan` reads HEAD state, from its own plan-only step (review-GIT-02 finding 5), so
-// `release`/`commit` never spawn the extra status call. GIT-03/GIT-04 add the refused
-// states, read from the same status call's `u` lines and from `gitPath`.
+// `release`/`commit` never spawn the extra status call. GIT-03 adds `inProgressState()`:
+// merge, cherry-pick, revert, rebase, bisect, a paused sequence and a pending
+// `merge --squash`, from one M2 `gitPath` call. GIT-04 adds the `unmerged` read, from the
+// same status call's `u` lines, and the encoding check.
 
-import { gitVersion, run, toplevel } from './process-adapter.mjs';
+import { existsSync } from 'node:fs';
+
+import { gitPath, gitVersion, run, toplevel } from './process-adapter.mjs';
 
 // `git version 2.47.1`, `git version 2.47.1.windows.1`, `git version 2.39.3 (Apple Git-145)`.
 const GIT_VERSION_LINE = /^git version (\d+)\.(\d+)(?:\.(\d+))?/;
@@ -98,6 +102,40 @@ export async function headState({ cwd, env, now }) {
     }
   }
   return { kind, branch, unborn, head };
+}
+
+// Git-path names `inProgressState` checks, in Q21's own order, each paired with the kind it
+// reports. `MERGE_HEAD`/`CHERRY_PICK_HEAD`/`REVERT_HEAD` are checked before `sequencer`, so a
+// paused multi-pick cherry-pick or revert (its own head marker already committed by hand,
+// only `sequencer/` left) is told apart from one still active (whose head marker exists):
+// the first marker found, in this order, wins.
+const IN_PROGRESS_PATHS = Object.freeze([
+  ['MERGE_HEAD', 'merge'],
+  ['CHERRY_PICK_HEAD', 'cherry-pick'],
+  ['REVERT_HEAD', 'revert'],
+  ['rebase-merge', 'rebase'],
+  ['rebase-apply', 'rebase'],
+  ['BISECT_LOG', 'bisect'],
+  ['sequencer', 'sequence'],
+  ['SQUASH_MSG', 'squash'],
+]);
+
+/**
+ * Detects an in-progress merge, cherry-pick, revert, rebase, bisect, paused sequence or
+ * pending `merge --squash` (Q21, GIT-03), from one M2 `gitPath` call over every marker's
+ * name (so a linked worktree resolves its own paths), then an `existsSync` check per path.
+ *
+ * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
+ * @returns {Promise<{ kind: 'merge' | 'cherry-pick' | 'revert' | 'rebase' | 'bisect' |
+ *   'sequence' | 'squash' } | null>} `null` when nothing is in progress.
+ */
+export async function inProgressState({ cwd, env, now }) {
+  const names = IN_PROGRESS_PATHS.map(([name]) => name);
+  const paths = await gitPath(names, { cwd, env, now });
+  for (let i = 0; i < IN_PROGRESS_PATHS.length; i += 1) {
+    if (existsSync(paths[i])) return { kind: IN_PROGRESS_PATHS[i][1] };
+  }
+  return null;
 }
 
 /**
