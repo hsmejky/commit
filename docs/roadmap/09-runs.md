@@ -142,25 +142,25 @@ that takes no lock.
 
 **Blocked by:** RUN-01, INT-01, GIT-01, CFG-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q22, C:run-folder, architectural decisions (run-folder directory
 check), M12 `create`/`discard`, M18 `plan` step 3, stories 196, 207.
 
-- [ ] Seam 1: a symlinked `.commit-plan`, `.commit-plan` as a plain file, and (Windows)
+- [x] Seam 1: a symlinked `.commit-plan`, `.commit-plan` as a plain file, and (Windows)
       `.commit-plan` as a junction → exit 6 `state` with the "`.commit-plan` is tracked or
       not a plain directory; remove it by hand" text; a tracked `.commit-plan` (in any ASCII
       case) → the same exit 6 `state`, naming the actual tracked variant. Nothing is written
       through the link or junction.
-- [ ] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan` line, also
+- [x] Seam 1: after `plan`, `info/exclude` holds exactly one `/.commit-plan` line, also
       after a second `plan` (no duplicate line), `git status --porcelain -uall` shows no
       `.commit-plan` path, and `.gitignore` is unchanged (absent stays absent); the same
       holds in a linked worktree, whose exclude line goes to the common dir (story 196).
-- [ ] Seam 1: `runDir` in `plan`'s output is absolute, `path.resolve`d from the toplevel,
+- [x] Seam 1: `runDir` in `plan`'s output is absolute, `path.resolve`d from the toplevel,
       and uses forward slashes even on Windows (C:run-folder). RUN-05 asserts it in-process
       on M12 `create` only (a clean tree prints `runDir: null`); the Seam-1 check is deferred
       to INT-02 or CHG-03b (KD-R63).
-- [ ] Seam 1: `plan` on a clean tree → no `<planId>/` folder and no lock remain.
+- [x] Seam 1: `plan` on a clean tree → no `<planId>/` folder and no lock remain.
 
 
 ## RUN-06: step 7's re-reads, `held`, the reword lock and `release`
