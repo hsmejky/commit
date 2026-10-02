@@ -281,9 +281,11 @@ export const STATE_VERSION = 1;
  * ended" (missing, non-regular, unparseable, or no numeric `version`): `null`. A genuine
  * file-in-use error (lstat/read `EPERM`/`EBUSY`/`EACCES`) throws `InUse` instead, so `open`
  * maps it to `busy` like every other lock operation, not to `ended` (review-RUN-02 finding 4
- * applied here too). Mirrors `readLockFile`'s lstat/ENOENT/non-regular handling rather than
- * reusing it directly: `state.json` has its own size cap note (RUN-04 handoff) rather than
- * silently inheriting `readLockFile`'s 64 KB lock-file cap semantics.
+ * applied here too). Mirrors `readLockFile`'s lstat/ENOENT/non-regular handling, but with no
+ * size cap of its own beyond the regular-file check that already stops a FIFO: unlike the
+ * run lock (a small `{planId,created}` object capped at `LOCK_MAX_BYTES`), state.json holds
+ * the full unit table and routinely exceeds that for a sizeable change set (C:run-folder,
+ * review-RUN-04 finding 1).
  *
  * @param {string} runDir
  * @param {string} planId
@@ -298,7 +300,7 @@ function readStateVersion(runDir, planId) {
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
     throw inUse(err);
   }
-  if (!stats.isFile() || stats.size > LOCK_MAX_BYTES) return null;
+  if (!stats.isFile()) return null;
   let bytes;
   try {
     bytes = fs.readFileSync(file);

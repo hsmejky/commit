@@ -44,7 +44,10 @@ absolute in the same form, because `Read` and `Write` need absolute paths.
   another plugin build) is refused with exit 6 `lock` (`ended`), as a run that has already
   ended.
   The run folder is writable without a prompt under the README `Edit` rule; a tamper
-  digest is deferred past 0.1.0 (an accepted gap).
+  digest is deferred past 0.1.0 (an accepted gap). Reading `state.json`'s `version`
+  (`open`, RUN-04) has no size cap of its own beyond the regular-file check that already
+  stops a FIFO: unlike the run lock's 64 KB cap (a small fixed-shape object), state.json's
+  size depends on the unit table and routinely exceeds that for a sizeable change set.
 - Created by `plan` after the pre-folder refusals (`env`, `config`, `state`, and with
   `--reword` unborn, merge-commit and `pushed`; [plan](plan.md) steps), before the scan:
   `plan` mints the `planId` first, because the `split` scan builds the temporary index in

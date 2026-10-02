@@ -490,6 +490,18 @@ test('open: the lock matches but state.json\'s version differs from this build\'
   assert.equal(result.code, 'ended');
 });
 
+// review-RUN-04 finding 1: state.json routinely exceeds the run lock's 64 KB cap (it holds
+// the full unit table), so it must not inherit that cap.
+test('open: state.json well past 64 KB is still read, not treated as oversized', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  fs.writeFileSync(path.join(f.folder, 'state.json'), JSON.stringify({ version: 1, padding: 'x'.repeat(100_000) }));
+
+  const result = run.open(planId, { toplevel: f.toplevel, now: () => T0, pid: 7, host: HOST, isAlive: alive });
+
+  assert.equal(result.ok, true);
+});
+
 test('open: the lock matches but state.json is missing (no folder at all) → ended', (t) => {
   const toplevel = tempDir(t);
   const planId = crypto.randomUUID();
