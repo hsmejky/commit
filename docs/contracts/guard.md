@@ -169,13 +169,19 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    read as a literal character (C:guard oracle class `unterminated`). Tokenise with the
    quoting rules of `tool_name`, then split into segments on `&&`, `||`, `;`, `|`, `&` and
    newlines outside quotes. A PowerShell call operator `&` at a command's start is a word
-   (step 3's prefix token `'&'`), not a separator there (GRD-06). A word matching `{name}` or `{name[subscript]}` (bash 4.1+'s
+   (step 3's prefix token `'&'`), not a separator there (GRD-06); a lone `&` after a word
+   is a separator. A raw NUL character in an unquoted PowerShell word or string reads like
+   the `` `0 `` escape (step 2 table): it ends the token's value and a `cut` token follows,
+   since PowerShell 5.1 and 7 cut the native command line there (`git commit` plus a NUL plus
+   `x -m x` passes git only `commit`). A word matching `{name}` or `{name[subscript]}` (bash 4.1+'s
    named file-descriptor form) immediately followed by `<` or `>` is read as that
    redirection's descriptor prefix, like leading digits, so the redirection and its target
    are dropped together and never read as commit arguments. Redirection operators (`>`, `>>`, `<`, `2>&1`, `>&` and the like)
    outside quotes become tokens of their own, dropped together with their target, so they
    are never read as commit arguments or options; the `&` inside `2>&1` or `>&` is not a
-   separator. An unquoted `(` or `)` becomes a token of its own the same way (not dropped):
+   separator. In PowerShell a redirection operator starts only at a token's start: inside a
+   word it is a character of that word (`a2>b` is one word, as PowerShell passes it). An
+   unquoted `(` or `)` becomes a token of its own the same way (not dropped):
    step 3 then finds the `git` token of `(git commit -m x)`, a `(` among git's arguments is
    denied (step 4), and a `)` token ends git's arguments (steps 4 and 5), so
    `(git commit --no-edit)` stays allowed. Bash process substitution `<(` or `>(` outside
@@ -338,10 +344,13 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    right after the innermost one: in Bash a `(` token (a subshell, `<(…)`, `>(…)` or an
    extglob opener in a command's first word — elsewhere the pattern is one word with no `(`
    token, so it never resets this), in PowerShell a `(` or `{` token (a grouping expression, a
-   subexpression or a script block; a script block passed as data, such as
-   `Start-Process -ArgumentList { git commit -m x }`, is stringified and lies inside the
-   Start-Process interpreter gap, not this reset — to a native exe pwsh passes a script
-   block as `-encodedCommand`, GRD-06). Redirections are dropped before this step (step 2).
+   subexpression or a script block). G2 reads every unquoted `{` and `}` as a token, a script
+   block passed as data included, so the commands in it are classified like those of any
+   script block (fail closed, GRD-06): `Start-Process -ArgumentList { git commit --amend
+   --no-edit }` gives no output, and a denied form inside one
+   (`Start-Process git -ArgumentList { git commit -m x }`) is an accepted false deny below,
+   though PowerShell stringifies the block (to a native exe pwsh passes a script block as
+   `-encodedCommand`). Redirections are dropped before this step (step 2).
    The prefix allowlist:
    - Bash, in this order: reserved words that may start a command (`!`, `{`, `if`, `then`,
      `elif`, `else`, `while`, `until`, `do`), a `(` token and `time` with an optional `-p`,
@@ -371,8 +380,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `f`, `function f { … }` naming `function`); a `case … in pat) git commit --no-edit;;` arm
    (naming `case`); an assignment whose value may expand (`a='*' git …`,
    `GIT_AUTHOR_DATE=$d git …`, `GIT_DIR=~/r/.git git …`); and in
-   PowerShell `. git commit --no-edit` (naming `.`), an environment prefix and
-   `& ('xargs') git …` (naming `(`).
+   PowerShell `. git commit --no-edit` (naming `.`), an environment prefix,
+   `& ('xargs') git …` (naming `(`) and a denied form inside a script block passed as data
+   (`Start-Process git -ArgumentList { git commit -m x }`, the bare row).
    Fixtures: `xargs git commit --no-edit`, `printf -- -n | xargs git commit --no-edit`,
    `parallel git commit --no-edit`, `/usr/bin/xargs git commit --no-edit` (naming
    `/usr/bin/xargs`), `busybox xargs git commit --no-edit` (naming `busybox`),
@@ -500,12 +510,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    PowerShell reading (Windows PowerShell 5.1 and PowerShell 7, verified with a node argv
    echo): an unquoted argument of a native command that starts with a single `-` is split
    at a `.` into two arguments (`-x.y` → `-x`, `.y`; `-q.x` → `-q`, `.x`); one starting
-   with `--` is not (`--no-edit.x`, `--fixup=v1.0`). The tokenizer does not split it yet.
-   The classifier stays safe on its own flags (`-q.x` expands to `-q -. -x` and is denied);
-   the one mismatch is a `--fixup` value written as the next argument: `--fixup -x.y` is
+   with `--` is not (`--no-edit.x`, `--fixup=v1.0`). G2 leaves such a word unsplit on
+   purpose (GRD-06), since the classifier stays safe without the split: its own flags stay
+   denied (`-q.x` expands to `-q -. -x` and is denied), and the one mismatch is a `--fixup` value written as the next argument: `--fixup -x.y` is
    allowed while git receives `--fixup -x .y`. The split-off part starts with `.`, so git
-   reads it as a pathspec, never an option, and `-x` does not resolve to a commit. The
-   PowerShell tokenizer decides this reading on purpose (split it, or deny the form).
+   reads it as a pathspec, never an option, and `-x` does not resolve to a commit.
 
 **Oracle-skip classes:** the step 2 `segments` golden fixtures
 (`tests/fixtures/guard/segments-seed.json`, seeded by the tokenizer spike, Q3) are

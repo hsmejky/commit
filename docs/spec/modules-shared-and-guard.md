@@ -92,7 +92,8 @@ the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
 (PowerShell 7), where `` `0 `` and a zero `` `u{…} `` (`` `u{0} ``, `` `u{00} ``) are a NUL
 that ends the token's value there, as the native command line is cut at it, and a `cut`
 token follows the cut token, ending git's arguments while the later tokens stay in the
-segment (`` git commit`0x -m x `` is `git commit`), `''` and `""`, typographic quotes as
+segment (`` git commit`0x -m x `` is `git commit`; a raw NUL character reads the same),
+`''` and `""`, typographic quotes as
 quotes (‘ ’ ‚ ‛ single, “ ” „ double, so `git co‘’mmit` is `commit`; two of one class in a
 row inside a string of that class are one escaped quote, any one closes it; Q3 as
 amended)); escaped newlines (Bash `\` plus newline, PowerShell backtick plus newline)
@@ -105,7 +106,8 @@ that G3 and S2 drop together with their target, so they are never read as commit
 arguments or options; `<<<` is one of them. An unquoted `(` or `)` becomes a token of its
 own too (not dropped); so G3 finds the `git` of `(git commit -m x)`, and a `)` token ends
 git's arguments. Bash process substitution `<(` / `>(` becomes a `(` token (not a
-redirection), and in PowerShell an unquoted `{` or `}` becomes a token too, so G3 finds
+redirection), and in PowerShell an unquoted `{` or `}` becomes a token too (a script
+block passed as data, as to `Start-Process`, included: fail closed), so G3 finds
 the `git` of `diff <(git commit -m x) f` and `&{git commit -m x}`, and a PowerShell `}`
 token ends git's arguments like `)`. In PowerShell a `--%` word after escape removal, not
 inside quotes, makes the rest of its line, up to `|`, `&&` or `||`, words split on
