@@ -168,10 +168,12 @@ test('Seam 3: a second `git commit` in the same segment is classified too', (t) 
   assert.deepEqual(hook(c, 'git commit --no-edit; xargs git commit -a'), { stdout: denyJson(generic('-a')), stderr: '' });
 });
 
-// An argument-appending wrapper before `git` in the segment (`xargs`, `parallel`) can add any
-// option or message to an allowlisted form (`printf -- -n | xargs git commit --no-edit` skips
-// the hooks), so the form is denied there (C:guard step 3, fail closed). Its row ranks just
-// above the bare row: a form already outside the allowlist keeps its own, more specific row.
+// An argument-appending wrapper before `git` in the segment (`xargs`, `gxargs`, `parallel`) can
+// add any option or message to an allowlisted form (`printf -- -n | xargs git commit --no-edit`
+// skips the hooks), so the form is denied there (C:guard step 3, fail closed). A token before
+// `git` holding a glob or brace character (`*`, `?`, `[`, `{`) may expand to a wrapper's name
+// (`/usr/bin/x[a]rgs`, `xargs{,}`), so it counts as one and is named as written. Its row ranks
+// just above the bare row: a form already outside the allowlist keeps its own, more specific row.
 const wrapper = (name) => `git commit run by ${name} is not allowed: it can append arguments. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
 const wrapperRow = [
   ['xargs git commit --no-edit', 'xargs'],
@@ -186,6 +188,18 @@ const wrapperRow = [
   ['busybox xargs git commit --no-edit', 'xargs'],
   ['xargs git commit', 'xargs'],
   ['xargs git commit -m x', 'xargs'],
+  // A glob or brace expansion in the wrapper's own name (review GRD-04 round 2).
+  ['/usr/bin/x[a]rgs.exe git commit --no-edit', '/usr/bin/x[a]rgs.exe'],
+  ["printf '%s\\n' \"-n -m 'feat: x'\" | /usr/bin/x[a]rgs.exe git commit --no-edit", '/usr/bin/x[a]rgs.exe'],
+  ['/usr/bin/x[a]rgs git commit --no-edit', '/usr/bin/x[a]rgs'],
+  ['/usr/bin/xa*s git commit --no-edit', '/usr/bin/xa*s'],
+  ['x?rgs git commit --fixup=1a2b3c4', 'x?rgs'],
+  ['xargs{,} git commit --no-edit', 'xargs{,}'],
+  ['{xargs,} git commit --amend --no-edit', '{xargs,}'],
+  ['x{a,}rgs git commit', 'x{a,}rgs'],
+  // Fail closed: any such token counts, even one that cannot name a wrapper.
+  ["a='*' git commit --no-edit", 'a=*'],
+  ['nice -n 5 [x] git commit --no-edit', '[x]'],
 ];
 for (const [command, name] of wrapperRow) {
   test(`Seam 3: ${JSON.stringify(command)} is denied naming the wrapper ${name}`, (t) => {
@@ -200,6 +214,12 @@ test('Seam 3: under a wrapper a form outside the allowlist keeps its own row', (
   assert.deepEqual(hook(c, 'xargs git commit --fixup $s'), { stdout: denyJson(MESSAGES.literalArguments), stderr: '' });
 });
 
+test('Seam 3: a lone `{` (the brace-group keyword) before `git` is not a possible wrapper', (t) => {
+  const c = createCase(t, { repo: false });
+  assert.deepEqual(hook(c, '{ git commit --no-edit; }'), { stdout: '', stderr: '' });
+  assert.deepEqual(hook(c, '{ xargs git commit --no-edit; }'), { stdout: denyJson(wrapper('xargs')), stderr: '' });
+});
+
 test('Seam 3: `find -exec git commit … {} +` is denied by the `{` of its placeholder (step 4)', (t) => {
   const c = createCase(t, { repo: false });
   assert.deepEqual(hook(c, 'find . -exec git commit --no-edit {} +'), { stdout: denyJson(MESSAGES.literalArguments), stderr: '' });
@@ -211,6 +231,8 @@ const wrapperElsewhere = [
   'ls | xargs echo && git commit --no-edit',
   'xargs echo; git commit --fixup=1a2b3c4',
   'git commit --no-edit; parallel echo ::: a',
+  'ls *.md && git commit --no-edit',
+  'git commit --fixup=1a2b3c4 | xa*s echo',
 ];
 for (const command of wrapperElsewhere) {
   test(`Seam 3: ${JSON.stringify(command)} has no output (the wrapper is in another segment)`, (t) => {

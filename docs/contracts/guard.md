@@ -272,15 +272,23 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `gxargs` or `parallel`, denies a `commit` that steps 4 and 5 would allow or give the
    bare row, with the wrapper row naming it (fail closed): the wrapper appends words from its
    input or its own arguments, so `printf -- -n | xargs git commit --no-edit` runs
-   `git commit --no-edit -n` and skips the hooks. A form that steps 4 and 5 deny on another
+   `git commit --no-edit -n` and skips the hooks. A token before `git` in the segment that
+   holds `*`, `?`, `[` or `{` (other than a lone `{`, the brace-group keyword) counts as a
+   possible wrapper the same way, named as written: a glob or brace expansion may turn it
+   into a wrapper's name (`/usr/bin/x[a]rgs git commit --no-edit`, `xa*s …`,
+   `xargs{,} …`). Any such token counts, so `a='*' git commit --no-edit` is denied too
+   (fail closed). A form that steps 4 and 5 deny on another
    row keeps that row (Precedence). `find … -exec git commit … {} +` (or `-execdir`, or a
    `{}` anywhere in git's arguments) is denied by step 4: its placeholder holds `{`.
    Fixtures: `xargs git commit --no-edit`, `printf -- -n | xargs git commit --no-edit`,
    `parallel git commit --no-edit`, `/usr/bin/xargs git commit --no-edit`,
-   `xargs nice git commit --no-edit` and `xargs git commit` (the wrapper row),
+   `xargs nice git commit --no-edit`, `xargs git commit`,
+   `/usr/bin/x[a]rgs.exe git commit --no-edit`, `/usr/bin/xa*s git commit --no-edit` and
+   `xargs{,} git commit --no-edit` (the wrapper row),
    `xargs git commit -a` (the generic row naming `-a`),
-   `find . -exec git commit --no-edit {} +` (the literal-arguments row), and
-   `git commit --no-edit | xargs echo` (no output: the wrapper is in another segment).
+   `find . -exec git commit --no-edit {} +` (the literal-arguments row),
+   `git commit --no-edit | xargs echo` (no output: the wrapper is in another segment), and
+   `{ git commit --no-edit; }` (no output: a lone `{` is not a possible wrapper).
    Known gap: another tool or script that appends arguments to the command it runs (such as
    `rush`, `xe`, a shell function or a user script) is not recognized as a wrapper, and an
    allowlisted form under it passes with no output (Q3).
@@ -430,7 +438,7 @@ tokenized, so it gets the blanket row and no other.
 | `-n`, `--no-verify`, `--no-gpg-sign` | `<flag> is not allowed. Fix the hook or signing setup instead.` |
 | `--fixup=amend:` / `--fixup=reword:` | `--fixup=<kind>: opens an editor. Use plain --fixup=<commit>, or: <route>` |
 | any other flag or argument | `git commit <flag> is not allowed here. <route>` |
-| an argument-appending wrapper (`xargs`, `gxargs`, `parallel`) before `git` (step 3) | `git commit run by <wrapper> is not allowed: it can append arguments. <route>` (`<wrapper>` is its basename in lower case, without `.exe`) |
+| an argument-appending wrapper (`xargs`, `gxargs`, `parallel`, or a token holding `*`, `?`, `[` or `{`) before `git` (step 3) | `git commit run by <wrapper> is not allowed: it can append arguments. <route>` (`<wrapper>` is its basename in lower case, without `.exe`; a token holding `*`, `?`, `[` or `{` is named as written) |
 | `-c` / `--config-env` before `commit` | `git -c … commit is not allowed. <route>` |
 | subcommand that is not literal (step 4) | `Write the git subcommand literally. <route>` |
 | any other token among git's arguments that is not literal (step 4) | `Write git's arguments literally. <route>` |

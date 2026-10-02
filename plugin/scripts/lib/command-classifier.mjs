@@ -4,8 +4,9 @@
 // A blanket result (G2) is the blanket deny. In each segment, a `git` token directly followed
 // by a `commit` token is a commit: its arguments, read up to where git's arguments end, are
 // checked to be literal, expanded and matched against the Q4 allowlist; every other flag or
-// argument is the generic row naming it. An argument-appending wrapper (`xargs`, `parallel`)
-// before `git` in the segment denies what would otherwise be allowed (the wrapper row), and
+// argument is the generic row naming it. An argument-appending wrapper (`xargs`, `gxargs`,
+// `parallel`, or a token holding a glob or brace character that may expand to one) before
+// `git` in the segment denies what would otherwise be allowed (the wrapper row), and
 // the bare/`-m`/`-F`/`--message`/`--file` row applies only when nothing else matches. Git's
 // own options before the subcommand, the specific rows and script calls (S2) follow in later
 // slices.
@@ -42,7 +43,7 @@ function genericMessage(flag) {
 /**
  * The wrapper row (C:guard step 3): an argument-appending wrapper before `git` in the segment.
  *
- * @param {string} wrapper
+ * @param {string} wrapper its lower-case basename, or a possible wrapper's token as written.
  * @returns {string}
  */
 function wrapperMessage(wrapper) {
@@ -56,12 +57,20 @@ const COMMIT = /^commit$/i;
 // optionally `.exe`, case-insensitive. It appends words from its input (or its own
 // arguments) to the command it runs, so an allowlisted form under it may carry `-n` or `-m`.
 const WRAPPER = /(?:^|[/\\])(xargs|gxargs|parallel)(?:\.exe)?$/i;
+// A possible wrapper (C:guard step 3, fail closed): a token holding a glob or brace character
+// may expand to a wrapper's name (`/usr/bin/x[a]rgs`, `xargs{,}`). A lone `{` is the
+// brace-group keyword, which expands to nothing.
+const MAY_EXPAND = /[*?[{]/;
 
-// The first wrapper among the tokens before `end`, by its lower-case name, or undefined.
+// The first wrapper among the tokens before `end`: its lower-case basename, or a possible
+// wrapper as written; undefined when there is none.
 function wrapperBefore(tokens, end) {
   for (let i = 0; i < end; i += 1) {
-    const match = typeof tokens[i] === 'string' ? WRAPPER.exec(tokens[i]) : null;
+    const token = tokens[i];
+    if (typeof token !== 'string') continue;
+    const match = WRAPPER.exec(token);
     if (match !== null) return match[1].toLowerCase();
+    if (token !== '{' && MAY_EXPAND.test(token)) return token;
   }
   return undefined;
 }
