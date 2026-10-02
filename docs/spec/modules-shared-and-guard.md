@@ -46,7 +46,10 @@ object with the same keys, defining no new ones.
 `runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`; `formatDebugLine(fields)
 → string`. Sources: Q1, Q3, Q23, C:guard.
 
-**G2 Shell tokenizer.** First the script-call exemption (C:guard step 2, Q3 as amended): a
+**G2 Shell tokenizer.** First the size cap (C:guard step 2): a command longer than
+`MAX_COMMAND_LENGTH` (262,144 characters) is the blanket kind `size`, exempt form or not,
+so time and memory stay bounded (a heap exhaustion fails open; review GRD-04 round 10).
+Then the script-call exemption (C:guard step 2, Q3 as amended): a
 command that is, in full, one script call in the exempt form (optional surrounding spaces,
 in PowerShell an optional `& `, `node` or `node.exe`, a double-quoted path ending in
 `/commit.cjs` or `\commit.cjs` without `"`, U+201C-U+201E, `$`, backtick, `!` or a control
@@ -76,8 +79,8 @@ segments right after the segment holding the word (defense in depth, review GRD-
 8); an unquoted `<(` or `>(`
 inside such a pattern makes G2 return the blanket kind `substitution` instead of segments
 (fail closed, review GRD-04 round 6), and an unquoted `(` opening its bracket level 17
-(`MAX_PATTERN_DEPTH` 16) the blanket kind `nesting`, which bounds the body walk (review
-GRD-04 round 9); the word after `function` is read as a first word,
+(`MAX_PATTERN_DEPTH` 16) the blanket kind `nesting`, which bounds the body walk's depth
+(review GRD-04 round 9; the size cap bounds its memory); the word after `function` is read as a first word,
 and a reserved word that opens a command (`!`, `{`, `if`, `while`, `until`, `time`, …)
 keeps a command's first position after `function NAME`, `coproc` or `coproc NAME`, as
 does a `--` after `time` or `time -p` (review GRD-04 round 7), and `then`, `do`, `else`
@@ -108,8 +111,10 @@ token ends git's arguments like `)`. In PowerShell a `--%` word after escape rem
 inside quotes, makes the rest of its line, up to `|`, `&&` or `||`, words split on
 whitespace only. `segments(command, shell) → Token[][] | { blanket: <trigger kind> }`. G2
 also exports `blanketTrigger(command, shell) → <trigger kind> | null`, the trigger-kind check
-alone (used directly by G1's debug log, which names the trigger kind instead of the command
-for a blanket deny) and `isExemptScriptCall(command, shell) → boolean`, the script-call
+before tokenizing alone (the size cap `size` and the construct kinds; the kinds found only
+while tokenizing, `substitution` inside a pattern and `nesting`, come from `segments`, so
+G1's debug log, which names the trigger kind instead of the command for a blanket deny,
+takes it from the `segments` result) and `isExemptScriptCall(command, shell) → boolean`, the script-call
 exemption check alone (both reasonable to expose next to `segments`, which composes them);
 and, as a test seam only, `segmentSpans(command, shell) → [start, end][] | null`, each
 segment's span in the command text, feeding the oracle cross-check that lets the shell read
@@ -135,7 +140,8 @@ no `(` token) is outside the prefix allowlist
 (Bash reserved words and `(`, literal assignments, then `nice`, `nohup`, `command`, `env` with
 fixed option grammars; PowerShell `&`), naming the first such token (the wrapper row, C:guard
 step 3); a segment is denied when any of its `git` tokens is;
-a blanket result from G2 gives the blanket deny and nothing else;
+a blanket result from G2 gives the blanket deny and nothing else (the `nesting` and `size`
+kinds each their own row, every other kind the construct row);
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
 expansion and the trailing personal-skill line are data here; no text names `/commit`.

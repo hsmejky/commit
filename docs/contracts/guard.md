@@ -83,7 +83,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    variable set by an earlier, separately-guarded command is later read in an arithmetic
    context (Bash `((`, `$(())`) that runs it — the guard classifies one command's text at a
    time and does not track variables across calls (Q3, fail-open, Out of Scope).
-2. **Script-call exemption.** A command that is, in full, one script call of this form
+2. **Size cap (fail closed).** A command that passed step 1 and is longer than 262,144
+   characters (256 Ki UTF-16 code units, about 256 KiB of ASCII) is a blanket deny of kind
+   `size`, with its own row (deny table), exempt form or not: it is checked first and never
+   tokenized. The cap bounds the time and memory the readings and the pattern body walk
+   below can take; running the heap out crashes the guard, which fails open (review GRD-04
+   round 10: a carriage return, then 16 nested patterns around a 2.8 MB body, did). Real
+   commands stay far below it; a longer one that mentions `commit` is an accepted false
+   deny (write the long text to a file first).
+
+   **Script-call exemption.** A command that is, in full, one script call of this form
    skips the blanket rule below and is tokenized: optional leading and trailing spaces
    (U+0020 only); in PowerShell an optional `&` and one space; `node` or `node.exe`; one
    space; a path in ASCII double quotes that ends in `/commit.cjs` or `\commit.cjs`, does not
@@ -208,14 +217,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `cat >@(>(git commit -m x))` are denied; a quoted or escaped `<(` inside a pattern is a
    plain character. Such a pattern whose unquoted brackets nest more than 16 deep (an
    unquoted `(` that opens level 17, plain brackets counted, quoted or escaped ones not) is
-   the blanket kind `nesting` (fail closed, the blanket deny): it bounds the body walk below,
-   which reads a body once for each pattern around it, to at most 17 readings of any
-   character and 16 nested levels, so deep or long input neither overflows the stack nor
-   runs past the hook's timeout, each of which fails open (review GRD-04 round 9; real
-   patterns nest a few levels). An opener with no matching `)` (or
-   an unterminated quote inside the pattern) ends the word right after the `(`, with no `(`
-   token following it, and the rest of the command is tokenized normally from there: an
-   unbalanced extglob such as `xargs echo @(a | git commit --no-edit` gives no guard output,
+   the blanket kind `nesting` (fail closed, a blanket deny with its own row): it bounds the
+   body walk below, which reads a body once for each pattern around it, to at most 17
+   readings of any character and 16 nested levels, so deep input cannot overflow the stack,
+   which fails open (review GRD-04 round 9; real patterns nest a few levels). It does not
+   bound memory: each reading builds its own copy of the body, so a long enough body at
+   full depth runs the heap out; the size cap above keeps the input below that, and the
+   walk's time well under the hook's timeout (review GRD-04 round 10). An opener with no
+   matching `)` (or an unterminated quote inside the pattern) ends the word right after the
+   `(`, with no `(` token following it, and the rest of the command is tokenized normally
+   from there: an unbalanced extglob such as `xargs echo @(a | git commit --no-edit` gives no guard output,
    because bash itself rejects the whole command as a syntax error (`extglob` on) and git
    never runs — the reading differs from bash only where nothing executes either way.
    Defense in depth, whatever position the tokenizer gave the word: the body of each
@@ -524,7 +535,7 @@ Worker-only rule: when `agent_type` is `commit:commit-worker` and any segment is
 call with subcommand `commit` or `release`, deny with `The handback is for your caller:
 return the reply verbatim and stop.` (Q25). Everything else the worker runs is left to the
 normal rules. A blanket-denied command (parsing step 2) has no segments, so this rule does
-not apply to it; it gets the blanket message.
+not apply to it; it gets its blanket row.
 
 **Precedence:** when a `commit` segment's expanded arguments match more than one row below,
 the most specific wins, in this order: `-c` / `--config-env` before `commit`; the
@@ -537,7 +548,8 @@ goes to the first matching token in argv order. So `-am x` denies on `-a` (the g
 `git commit -a is not allowed here. <route>`), `--amend -m x` denies on `--amend`, `-n -m x`
 on `-n`, `--squash -m x` on `--squash`, `xargs git commit -a` on `-a`, and
 `xargs git commit -m x` and `echo git commit` on the wrapper. A blanket-denied command (step 2) is never
-tokenized, so it gets the blanket row and no other.
+tokenized, so it gets its blanket row (the `nesting` row, the `size` row, or the construct
+row for every other kind) and no other.
 
 | Case | Message |
 | --- | --- |
@@ -553,4 +565,6 @@ tokenized, so it gets the blanket row and no other.
 | any other token among git's arguments that is not literal (step 4) | `Write git's arguments literally. <route>` |
 | `-C` / `--reuse-message`, `-c` / `--reedit-message` (after `commit`) | `git commit <flag> is not allowed here. <route>` (the generic row) |
 | unknown global option | `Could not parse git options before 'commit'. <route>` |
-| a blanket-rule construct in a command that mentions `commit` (step 2) | `This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: <route>` |
+| a blanket-rule construct in a command that mentions `commit` (step 2; every blanket kind but `nesting` and `size`) | `This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: <route>` |
+| an extglob pattern nested more than 16 deep (step 2, blanket kind `nesting`) | `This command mentions commit and holds an extglob pattern nested more than 16 levels deep, which the guard does not parse. Keep it out of a command that mentions commit, or to commit: <route>` |
+| a command longer than 262,144 characters that mentions `commit` (step 2 size cap, blanket kind `size`) | `This command mentions commit and is longer than 262144 characters, which the guard does not parse. Keep a command that mentions commit shorter (write long text to a file first), or to commit: <route>` |

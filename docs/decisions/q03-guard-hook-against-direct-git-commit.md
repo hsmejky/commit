@@ -319,8 +319,10 @@
     is a denied form denies even where bash only matches a glob
     (`[[ $m == @(git commit -m x) ]]`): an accepted false deny (review GRD-04 round 8).
     A pattern whose brackets nest more than 16 deep is the blanket deny instead (kind
-    `nesting`): it bounds that walk, since a stack overflow or a hook timeout fails open
-    (review GRD-04 round 9).
+    `nesting`): it bounds that walk's depth, since a stack overflow fails open (review
+    GRD-04 round 9). A command longer than 262,144 characters that mentions `commit` is the
+    blanket deny too (kind `size`), exempt form or not: it bounds the walk's time and
+    memory, since a heap exhaustion fails open (review GRD-04 round 10).
     `@(git) commit -m x` joins the command-position gap.
   - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
     pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
