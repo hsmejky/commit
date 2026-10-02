@@ -16,10 +16,9 @@ and the module sections point here, and the README states it in full.
   interpreters and constructs that evaluate a string as code (`sh -c '…'`, `pwsh -c`,
   `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
   `Start-Process`, a runner that re-splits one string argument into a new command line such
-  as `env -S 'git commit --fixup=HEAD'`, and a `git commit` carried inside a balanced
-  extglob pattern in an argument, outside a `<(…)` or `>(…)` (denied), which is no `git`
-  token either
-  (`env -S A=@( git commit --fixup=HEAD'\c')`, C:guard step 2, review GRD-04 round 5)),
+  as `env -S 'git commit --fixup=HEAD'`, including one that re-splits an extglob pattern
+  in an argument whose body, read as a command (C:guard step 2), is an allowed form
+  (`env -S A=@( git commit --fixup=HEAD'\c')`, review GRD-04 rounds 5 and 8)),
   shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
   `Set-Alias g git`), a wrapper reached through a word the prefix allowlist lets
   through (a Bash alias for one, a function or a `PATH` script named `nice`, `nohup` or

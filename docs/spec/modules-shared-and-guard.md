@@ -70,12 +70,17 @@ read as `"…"`, a `(` directly after `@`, `!`, `+`, `*` or `?` in a command's f
 in that word and also a `(` token (extglob); elsewhere (an argument or a redirection
 target) the same opener reads the pattern through its matching `)` as one word, no `(`
 token, no segment split inside it — unbalanced, the word ends after the `(` with no `(`
-token, and the rest tokenizes normally (review GRD-04 round 5); an unquoted `<(` or `>(`
+token, and the rest tokenizes normally (review GRD-04 round 5); the body of each balanced
+pattern read so is also tokenized as a command text, nested patterns included, its
+segments right after the segment holding the word (defense in depth, review GRD-04 round
+8); an unquoted `<(` or `>(`
 inside such a pattern makes G2 return the blanket kind `substitution` instead of segments
 (fail closed, review GRD-04 round 6); the word after `function` is read as a first word,
 and a reserved word that opens a command (`!`, `{`, `if`, `while`, `until`, `time`, …)
 keeps a command's first position after `function NAME`, `coproc` or `coproc NAME`, as
-does a `--` after `time` or `time -p` (review GRD-04 round 7), `$'…'`
+does a `--` after `time` or `time -p` (review GRD-04 round 7), and `then`, `do`, `else`
+and `elif` open it after any word, an argument included (bash takes them after `]]`, `}`,
+`fi`, `done`, `esac`, `for NAME`; review GRD-04 round 8), `$'…'`
 with its backslash escapes decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends
 the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
 `$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `` `u{…} `` read as its code point

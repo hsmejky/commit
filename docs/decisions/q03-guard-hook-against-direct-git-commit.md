@@ -309,7 +309,16 @@
     after `time` or `time -p`, and the word after `function` is read as a first word, so
     `coproc { !(git commit -m x); }`, `function f if !(git commit -m x); then :; fi`,
     `time -- !(git commit -m x)` and `function !(git commit -m x)` deny (review GRD-04
-    round 7). `@(git) commit -m x` joins the command-position gap.
+    round 7). `then`, `do`, `else` and `elif` open a command's first position after any
+    word, an argument included, since bash takes them after `]]`, `}`, `fi`, `done`,
+    `esac` and (`do`) `for NAME` / `select NAME`: `if [[ x ]] then !(git commit -m x); fi`
+    denies. Defense in depth for the whole class: the body of each balanced pattern read
+    as one word in an argument or a redirection target is also read as a command text,
+    nested patterns included, and classified like any segment, so a missed command
+    position cannot hide a `git commit` (`echo a !(git commit -m x)` denies). A body that
+    is a denied form denies even where bash only matches a glob
+    (`[[ $m == @(git commit -m x) ]]`): an accepted false deny (review GRD-04 round 8).
+    `@(git) commit -m x` joins the command-position gap.
   - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
     pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
     double quotes or escaped opens nothing); in PowerShell two characters of one quote
@@ -334,9 +343,9 @@
     expansion and array-subscript evaluation (a variable holding `a[$(…)]` read in an
     arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
     a runner that re-splits one string argument into a new command line
-    (`env -S 'git commit --fixup=HEAD'`), a `git commit` carried inside a balanced extglob
-    pattern in an argument, outside a `<(…)` or `>(…)` (no `git` token there, C:guard step 2;
-    `env -S A=@( git commit --fixup=HEAD'\c')`, review GRD-04 round 5), and scripts that wrap
+    (`env -S 'git commit --fixup=HEAD'`), including one that re-splits an extglob pattern
+    in an argument whose body, read as a command (C:guard step 2), is an allowed form
+    (`env -S A=@( git commit --fixup=HEAD'\c')`, review GRD-04 rounds 5 and 8), and scripts that wrap
     git: an allowlisted form under them passes. A program that runs
     git may append words from its input or its own arguments (`printf -- -n | xargs git
     commit --no-edit` skips the hooks), so every token before `git` in its command must fit

@@ -193,7 +193,7 @@ behavior.
 - [ ] `cat <<'EOF' > f`, body line `git commit -m x`, `EOF` → denied by the blanket rule (documented false positive); `<<<` treated as a plain redirection.
 - [ ] `git “commit” -m x` (Bash) and PowerShell `git co‘’mmit -m x` → denied.
 - [ ] Bash typographic-quote fixtures are blanket cases (oracle `blanket`); PowerShell ones are cross-checked.
-- [ ] Bash extglob: `!(git commit -m x)` → denied (command position); `!(git commit --no-edit)` → no output. `git @(commit) -m x` tokenizes as `git`, `@(commit)`, `-m`, `x` (argument position, one word, no `(` token) and is denied once GRD-12's literal-subcommand rule lands.
+- [ ] Bash extglob: `!(git commit -m x)` → denied (command position); `!(git commit --no-edit)` → no output. `git @(commit) -m x` tokenizes as `git`, `@(commit)`, `-m`, `x` (argument position, one word, no `(` token), its body read as a segment `commit` of its own (review round 8), and is denied once GRD-12's literal-subcommand rule lands.
 
 
 ## GRD-10: Detecting `git` in every spelling

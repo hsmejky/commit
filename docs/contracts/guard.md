@@ -183,8 +183,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    read as a first word, so `function !(git commit -m x); \!` denies) and `coproc`; after
    `function NAME`, `coproc` and `coproc NAME` bash still takes a reserved word, and any of
    those words keeps first position there: `function f if !(git commit -m x); then :; fi`
-   and `coproc C while !(…)` deny; an assignment does not keep first position, nor a
-   reserved word after an argument), ends that word
+   and `coproc C while !(…)` deny; `then`, `do`, `else` and `elif` keep first position
+   after any word, an argument included, since bash takes them after `]]`, `}`, `fi`,
+   `done`, `esac` and (`do`) `for NAME` or `select NAME`: `if [[ x ]] then !(git commit -m
+   x); fi` and `for x do !(…); done` deny; an assignment does not keep first position, nor
+   any other reserved word after an argument), ends that word
    with the `(` kept in it, and is also a `(` token of its own: with `extglob` on (which an
    earlier line can set, like `expand_aliases`) bash reads an extglob pattern that may match
    a file named `commit`; with `extglob` off bash rejects the pattern, except a `!(` that
@@ -208,13 +211,22 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    token following it, and the rest of the command is tokenized normally from there: an
    unbalanced extglob such as `xargs echo @(a | git commit --no-edit` gives no guard output,
    because bash itself rejects the whole command as a syntax error (`extglob` on) and git
-   never runs — the reading differs from bash only where nothing executes either way. A
-   `git commit` carried inside a balanced pattern in an argument, outside a `<(…)` or
-   `>(…)`, is no `git` token at all (bash only matches it as a pattern),
-   the same interpreter gap as `env -S 'git commit …'` (step 3, known gap; Q3; Out of
-   Scope): `xargs env -S A=@( git commit --fixup=HEAD'\c')` gives no output, since no `git`
-   token is there for step 3 to find. In PowerShell a `!` or `+` before `(` is a word of its
-   own (`!(1)` passes `!` and `1`). In PowerShell a word
+   never runs — the reading differs from bash only where nothing executes either way.
+   Defense in depth, whatever position the tokenizer gave the word: the body of each
+   balanced pattern read as one word in an argument or a redirection target (between its
+   opener's `(` and its matching `)`) is also tokenized as a command text of its own,
+   nested patterns included, and its segments follow the segment holding the word, so
+   step 3 classifies any `git` the body would run as a command, as at a command's first
+   position: `echo a !(git commit -m x)` and `ls @(a|!(git commit -n))` deny, while
+   `ls @(git commit --no-edit)`, a quoted or escaped body (`echo @('git commit -m x')`,
+   `echo @(git\ commit -m x)`) and a plain glob (`ls !(*.txt)`, `rm @(git|svn)`) give no
+   output. A body that reads as a denied form denies even where bash only matches it as a
+   pattern (`[[ $m == @(git commit -m x) ]]`, `case $m in @(git commit -a)) ;; esac`,
+   `A=1 !(git commit -m x)`): an accepted false deny. A body that is an allowed form as a
+   command can still commit through a runner that re-splits the word:
+   `xargs env -S A=@( git commit --fixup=HEAD'\c')` gives no output, the `env -S`
+   interpreter gap (step 3, known gap; Q3; Out of Scope). In PowerShell a `!` or `+`
+   before `(` is a word of its own (`!(1)` passes `!` and `1`). In PowerShell a word
    equal to `--%` after escape removal, not inside quotes (`--%`, `` `--% ``, `` -`-% ``),
    stops parsing: the rest of its line, up to the next `|`, `&&` or `||`, is split into
    words on whitespace only, so quotes, backticks, `$`, brackets, `;`, `&` and redirection
@@ -380,10 +392,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    (`'!'`, `'{'`, `'if'`, `"A"=x`), which bash runs as a command of that name, fits too.
    A wrapper that runs git from a string (`sh -c '…'`, `eval`, a script, or a runner that
    re-splits one string argument into a new command line, `env -S 'git commit --fixup=HEAD'`)
-   holds no `git` token: the interpreter gap (Q3). A `git commit` carried inside a balanced
-   extglob pattern in an argument, outside a `<(…)` or `>(…)` (denied, step 2), is no `git`
-   token either, the same gap (step 2;
-   `env -S A=@( git commit --fixup=HEAD'\c')`).
+   holds no `git` token: the interpreter gap (Q3). An extglob pattern in an argument whose
+   body is an allowed form as a command (step 2 reads it as one), re-split by such a runner,
+   is the same gap (`env -S A=@( git commit --fixup=HEAD'\c')`).
    Known gap: expansion or aliasing in the command position, where no token is `git` until
    the shell expands it, passes with no output (Q3): Bash brace expansion
    `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` or an extglob
