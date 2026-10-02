@@ -1,10 +1,13 @@
 'use strict';
 
 // GIT-02 (docs/roadmap/06-git-adapters.md): M3 reads branch, detached and unborn HEAD from
-// one porcelain v2 `--branch` status call (Q21, stories 182/183); `plan` stores `state` and
-// the expected HEAD (`null` when unborn) and adds the detached-HEAD notice. Seam 1 only
-// (docs/spec/testing-seams.md): M3 spawns git, so it is exercised only through the shipped
-// entry point as a subprocess, like GIT-01's probe before it.
+// one porcelain v2 `--branch` status call pinned `--untracked-files=no
+// --ignore-submodules=all --no-ahead-behind` (Q21, stories 182/183); `plan` stores `state`
+// and the expected HEAD (`null` when unborn) and adds the detached-HEAD notice. Seam 1 only
+// (docs/spec/testing-seams.md) for this file: these cases go through `plan` as a subprocess,
+// like GIT-01's probe before it. `head()`/`headTree()` have no caller through `plan` yet
+// (GIT-09/EXE), so they get their own library-level tests in `repo-probe.test.js`
+// (review-GIT-02 finding 2).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -38,13 +41,22 @@ test('plan on a branch with one commit stores the branch state and the expected 
 
 test('plan on an unborn repo stores unborn: true and a null expected HEAD, with no error', async (t) => {
   const c = createCase(t);
+  const log = path.join(c.root, 'spawns.jsonl');
 
-  const result = await runCommit(c, ['plan']);
+  const result = await runCommit(c, ['plan'], {
+    nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
+    env: { COMMIT_TEST_SPAWN_LOG: log },
+  });
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   assert.deepEqual(result.json.state, { kind: 'branch', branch: 'main', unborn: true });
   assert.equal(result.json.expectedHead, null);
   assert.equal(result.json.reply.status, 'nothing');
+
+  // Story 182: config at HEAD is skipped on an unborn HEAD, so no `git show` call is made.
+  const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const showCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('show'));
+  assert.deepEqual(showCalls, [], JSON.stringify(entries));
 });
 
 test('plan on a detached HEAD stores state.kind detached and adds the detached-HEAD notice', async (t) => {
@@ -76,11 +88,20 @@ test('plan reads branch and HEAD from exactly one porcelain v2 status call', asy
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
-  const branchStatusCalls = entries.filter(
-    (e) => Array.isArray(e.args) && e.args.includes('--branch') && e.args.includes('--porcelain=v2'),
+  // Finding 10 (review-GIT-02): count every status call in porcelain v2, not only ones that
+  // ask for `--branch` — a later `u`-line read (GIT-04) would otherwise slip past this count.
+  const statusCalls = entries.filter(
+    (e) => Array.isArray(e.args) && e.args.includes('status') && e.args.includes('--porcelain=v2'),
   );
-  assert.equal(branchStatusCalls.length, 1, JSON.stringify(entries));
-  assert.deepEqual(branchStatusCalls[0].args, [
+  assert.equal(statusCalls.length, 1, JSON.stringify(entries));
+  assert.deepEqual(statusCalls[0].args, [
     'status', '--porcelain=v2', '--branch', '--untracked-files=no', '--ignore-submodules=all',
+    '--no-ahead-behind',
   ]);
+
+  // HEAD comes from this status call's `branch.oid`, not a separate `rev-parse HEAD`.
+  const revParseHead = entries.filter(
+    (e) => Array.isArray(e.args) && e.args[0] === 'rev-parse' && e.args.includes('HEAD'),
+  );
+  assert.deepEqual(revParseHead, [], JSON.stringify(entries));
 });

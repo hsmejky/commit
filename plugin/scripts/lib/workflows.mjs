@@ -9,9 +9,11 @@
 // only as far as a clean tree needs); GIT-01 adds step 2's first rows (`env`, `state`
 // outside a usable repo). CFG-02 adds step 1's M4 `loadConfig` (repo layer only, from the
 // worktree) and step 2's `config` row, ahead of `state` (C:plan step 2 order). CFG-04 widens
-// step 1 to also load the user layer, read regardless of repo state. GIT-02 widens step 1 to
-// store the HEAD state and expected HEAD on `ctx` and queue the detached-HEAD notice, and adds
-// `state`/`expectedHead` to `plan`'s output. Later slices insert the other rows (3 run folder
+// step 1 to also load the user layer, read regardless of repo state. GIT-02 adds a plan-only
+// step right after the shared probe (`readHeadState`, review-GIT-02 finding 5): it stores the
+// HEAD state and expected HEAD on `ctx` and queues the detached-HEAD notice, so `release` and
+// `commit`, which share `probeRepo` but not this step, never spawn the extra status call; it
+// also adds `state`/`expectedHead` to `plan`'s output. Later slices insert the other rows (3 run folder
 // and lock peek, 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in
 // their place in PLAN_STEPS, and widen these.
 //
@@ -23,7 +25,7 @@
 // shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
-import { isTracked, probe } from './repo-probe.mjs';
+import { headState, isTracked, probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME } from './run.mjs';
 import { gitPath } from './process-adapter.mjs';
@@ -32,25 +34,33 @@ import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 
-// GIT-02: the detached-HEAD warning (Q21, story 183). No verbatim text is recorded for it in
-// C:cli-and-exit-codes (only refusal texts and the guard/signing notices are), so this is a
-// fresh notice text; tests assert it names "detached", not an exact string.
-const DETACHED_HEAD_NOTICE = 'HEAD is detached: this commit will not be on any branch';
+// GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
+// C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
+const DETACHED_HEAD_NOTICE = 'HEAD is detached: new commits will not be on any branch';
 
 /**
- * Step 1: probe the repo state, git and Node versions (M3). Shared with `release`/`commit`.
- * GIT-02: inside a worktree, also stores the HEAD state and the expected HEAD on `ctx`, and
- * (`plan` only, which alone threads a `notices` array) queues the detached-HEAD notice.
+ * Step 1: probe the repo state, git and Node versions (M3). Shared with `release`/`commit`;
+ * never reads HEAD state itself (see `readHeadState`).
  */
 async function probeRepo(ctx) {
   ctx.probe = await probe({ cwd: ctx.cwd, env: ctx.injected.env, now: ctx.injected.now });
+  return undefined;
+}
+
+/**
+ * `plan`-only step, right after `probeRepo`: reads the HEAD state (M3 `headState`) and stores
+ * it, and the expected HEAD, on `ctx`; a detached HEAD queues the notice. `release` and
+ * `commit` run `probeRepo` but never this step, so they never spawn this status call
+ * (review-GIT-02 finding 5); since only `plan` calls it, no duck-typing of `ctx.notices` is
+ * needed to tell the subcommands apart (review-GIT-02 finding 11).
+ */
+async function readHeadState(ctx) {
   const { repo } = ctx.probe;
   if (repo !== null && repo.kind === 'worktree') {
-    ctx.state = { kind: repo.state.kind, branch: repo.state.branch, unborn: repo.state.unborn };
-    ctx.expectedHead = repo.state.head;
-    if (repo.state.kind === 'detached' && Array.isArray(ctx.notices)) {
-      ctx.notices.push(DETACHED_HEAD_NOTICE);
-    }
+    const result = await headState({ cwd: repo.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+    ctx.state = { kind: result.kind, branch: result.branch, unborn: result.unborn };
+    ctx.expectedHead = result.head;
+    if (result.kind === 'detached') ctx.notices.push(DETACHED_HEAD_NOTICE);
   }
   return undefined;
 }
@@ -110,7 +120,8 @@ async function postScanRefusals(ctx) {
 }
 
 const PLAN_STEPS = Object.freeze([
-  probeRepo, loadConfigLayers, preFolderRefusals, createRunFolder, inventory, postScanRefusals,
+  probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
+  postScanRefusals,
 ]);
 
 /**

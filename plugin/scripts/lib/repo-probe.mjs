@@ -2,11 +2,15 @@
 // about repository state, as typed results. Effectful, read-only; spawns only through M2.
 //
 // INT-01 built where the working tree is; GIT-01 adds the git and Node versions and the
-// not-a-repo and bare-repo states. GIT-02 adds the HEAD state (branch, detached, unborn) from
-// one porcelain v2 `--branch` status call, pinned `--untracked-files=no
-// --ignore-submodules=all` (Q21), plus standalone `head()` and `headTree()` for later slices
-// (GIT-09's reword facts, EXE's head-moved and backstop tree checks). GIT-03/GIT-04 add the
-// refused states, read from the same status call's `u` lines and from `gitPath`.
+// not-a-repo and bare-repo states. GIT-02 adds `headState()`: branch, detached and unborn
+// HEAD from one porcelain v2 `--branch` status call, pinned `--untracked-files=no
+// --ignore-submodules=all --no-ahead-behind` (Q21; `--no-ahead-behind` avoids the revision
+// walk `--branch` would otherwise do against the upstream, review-GIT-02 finding 8), plus
+// standalone `head()` and `headTree()` for later slices (GIT-09's reword facts, EXE's
+// head-moved and backstop tree checks). `probe()` itself never calls `headState()`: only
+// `plan` reads HEAD state, from its own plan-only step (review-GIT-02 finding 5), so
+// `release`/`commit` never spawn the extra status call. GIT-03/GIT-04 add the refused
+// states, read from the same status call's `u` lines and from `gitPath`.
 
 import { gitVersion, run, toplevel } from './process-adapter.mjs';
 
@@ -60,18 +64,22 @@ const BRANCH_HEAD_PREFIX = '# branch.head ';
 
 /**
  * Reads branch, detached and unborn HEAD from one porcelain v2 `--branch` status call,
- * pinned `--untracked-files=no --ignore-submodules=all` (Q21: no untracked scan runs here,
- * and a dirty submodule is never read as a status line). GIT-04 reads the same call's `u`
- * lines for unmerged entries; this function only parses the two branch headers.
+ * pinned `--untracked-files=no --ignore-submodules=all --no-ahead-behind` (Q21: no untracked
+ * scan runs here, a dirty submodule is never read as a status line, and the upstream
+ * ahead/behind counts, a revision walk that can be expensive, are never computed). GIT-04
+ * reads the same call's `u` lines for unmerged entries; this function only parses the two
+ * branch headers. Called only from `plan`'s own plan-only step (`workflows.mjs`), never from
+ * `probe()` itself, so `release`/`commit` never spawn this call (review-GIT-02 finding 5).
  *
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
  * @returns {Promise<{ kind: 'branch' | 'detached', branch: string | null, unborn: boolean,
  *   head: string | null }>} `head`: the HEAD SHA from `branch.oid`, `null` when unborn.
  * @throws {Error} when the status call exits non-zero.
  */
-async function headState({ cwd, env, now }) {
+export async function headState({ cwd, env, now }) {
   const result = await run('git', [
     'status', '--porcelain=v2', '--branch', '--untracked-files=no', '--ignore-submodules=all',
+    '--no-ahead-behind',
   ], { cwd, env, now });
   if (result.code !== 0) throw new Error(`git status failed (${result.code}): ${result.stderr}`);
   let head = null;
@@ -93,28 +101,36 @@ async function headState({ cwd, env, now }) {
 }
 
 /**
- * The current HEAD SHA (`git rev-parse HEAD`), read on its own (GIT-09's reword facts, EXE's
- * `head-moved` check against a run's stored expected HEAD) rather than from the status call
- * `headState` already parsed for the initial probe.
+ * The current HEAD SHA, read on its own (GIT-09's reword facts, EXE's `head-moved` check
+ * against a run's stored expected HEAD) rather than from the status call `headState` already
+ * parsed for the initial probe. Uses `--verify -q` (review-GIT-02 finding 6) so a real
+ * failure (corruption, a bad repo) throws instead of being read as "unborn": an unborn HEAD
+ * exits 1 with `--verify -q` (confirmed), never another code.
  *
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
- * @returns {Promise<string | null>} the SHA, or `null` on an unborn HEAD (`rev-parse HEAD`
- *   exits non-zero there; that failure is expected, never thrown).
+ * @returns {Promise<string | null>} the SHA, or `null` on an unborn HEAD (exit 1).
+ * @throws {Error} on any exit code other than 0 or 1.
  */
 export async function head({ cwd, env, now }) {
-  const result = await run('git', ['rev-parse', 'HEAD'], { cwd, env, now });
-  return result.code === 0 ? result.stdout.toString('utf8').trim() : null;
+  const result = await run('git', ['rev-parse', '--verify', '-q', 'HEAD'], { cwd, env, now });
+  if (result.code === 0) return result.stdout.toString('utf8').trim();
+  if (result.code === 1) return null;
+  throw new Error(`git rev-parse HEAD failed (${result.code}): ${result.stderr}`);
 }
 
 /**
- * The tree ID of `HEAD^{tree}` (GIT-02; consumed by EXE's backstop tree comparison).
+ * The tree ID of `HEAD^{tree}` (GIT-02; consumed by EXE's backstop tree comparison). Uses
+ * `--verify -q` for the same reason as `head()` (review-GIT-02 finding 6).
  *
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
- * @returns {Promise<string | null>} the tree ID, or `null` on an unborn HEAD.
+ * @returns {Promise<string | null>} the tree ID, or `null` on an unborn HEAD (exit 1).
+ * @throws {Error} on any exit code other than 0 or 1.
  */
 export async function headTree({ cwd, env, now }) {
-  const result = await run('git', ['rev-parse', 'HEAD^{tree}'], { cwd, env, now });
-  return result.code === 0 ? result.stdout.toString('utf8').trim() : null;
+  const result = await run('git', ['rev-parse', '--verify', '-q', 'HEAD^{tree}'], { cwd, env, now });
+  if (result.code === 0) return result.stdout.toString('utf8').trim();
+  if (result.code === 1) return null;
+  throw new Error(`git rev-parse HEAD^{tree} failed (${result.code}): ${result.stderr}`);
 }
 
 /**
@@ -127,12 +143,12 @@ export async function headTree({ cwd, env, now }) {
  *   git: { status: 'ok', version: { major: number, minor: number, patch: number, text: string } }
  *     | { status: 'unreadable', output: string } | { status: 'missing' } | { status: 'timed-out' },
  *   node: { major: number, minor: number, patch: number, text: string },
- *   repo: { kind: 'worktree', toplevel: string, state: { kind: 'branch' | 'detached',
- *       branch: string | null, unborn: boolean, head: string | null } }
+ *   repo: { kind: 'worktree', toplevel: string }
  *     | { kind: 'bare' } | { kind: 'not-a-repo' } | { kind: 'timed-out' } | null,
  * }>} `repo` is `null` when git is missing or its version check timed out (no repo question
- *   can be asked). `repo.state` (GIT-02) is read from one porcelain v2 `--branch` status call
- *   against the toplevel.
+ *   can be asked). `repo` never carries HEAD state: `probe()` is shared by `plan`, `release`
+ *   and `commit` (`workflows.mjs` `probeRepo`), and only `plan` needs it, from its own
+ *   plan-only step calling the exported `headState()` directly (review-GIT-02 finding 5).
  */
 export async function probe({ cwd, env, now }) {
   const git = probeGit({ cwd, env });
@@ -140,10 +156,8 @@ export async function probe({ cwd, env, now }) {
   if (git.status === 'missing' || git.status === 'timed-out') return { git, node, repo: null };
   const top = toplevel(cwd, { env });
   let repo;
-  if (top.status === 'ok') {
-    const state = await headState({ cwd: top.toplevel, env, now });
-    repo = { kind: 'worktree', toplevel: top.toplevel, state };
-  } else if (top.status === 'none') repo = await classifyNoWorkTree({ cwd, env, now });
+  if (top.status === 'ok') repo = { kind: 'worktree', toplevel: top.toplevel };
+  else if (top.status === 'none') repo = await classifyNoWorkTree({ cwd, env, now });
   else if (top.status === 'timed-out') repo = { kind: 'timed-out' };
   else return { git: { status: 'missing' }, node, repo: null };
   return { git, node, repo };
