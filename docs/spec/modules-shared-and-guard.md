@@ -70,7 +70,10 @@ read as `"…"`, a `(` directly after `@`, `!`, `+`, `*` or `?` in a command's f
 in that word and also a `(` token (extglob); elsewhere (an argument or a redirection
 target) the same opener reads the pattern through its matching `)` as one word, no `(`
 token, no segment split inside it — unbalanced, the word ends after the `(` with no `(`
-token, and the rest tokenizes normally (review GRD-04 round 5), `$'…'`
+token, and the rest tokenizes normally (review GRD-04 round 5); an unquoted `<(` or `>(`
+inside such a pattern makes G2 return the blanket kind `substitution` instead of segments
+(fail closed, review GRD-04 round 6); a `{` after `function NAME`, `coproc` or
+`coproc NAME` keeps a command's first position, `$'…'`
 with its backslash escapes decoded, a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends
 the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`,
 `$'ab\0cd'ef` is `abef`); PowerShell: backtick escapes, `` `u{…} `` read as its code point

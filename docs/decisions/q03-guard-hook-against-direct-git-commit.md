@@ -298,10 +298,15 @@
     word, ends that word with the `(` kept (not literal, step 4) and is also a `(` token:
     with `extglob` off `!(git commit -m x)` is a negated subshell that runs the commit, so
     it denies. Elsewhere — an argument or a redirection target — the pattern reads through
-    its matching `)` as one word, no `(` token, no segment split inside it (with `extglob`
-    off the pattern is a syntax error, so the command never runs): `git @(commit) -m x`
-    gives `git`, `@(commit)`, `-m`, `x`, the word not literal (step 4), so it denies too (review
-    GRD-04 round 5). `@(git) commit -m x` joins the command-position gap.
+    its matching `)` as one word, no `(` token, no segment split inside it (bash reads it so
+    with `extglob` on, and in `[[ … ]]` even with it off; elsewhere with it off the pattern
+    is a syntax error): `git @(commit) -m x` gives `git`, `@(commit)`, `-m`, `x`, the word
+    not literal (step 4), which GRD-12's literal-subcommand row will deny; until then it
+    gives no output (review GRD-04 round 5). An unquoted `<(` or `>(` inside such a pattern
+    runs, so it is the blanket deny (fail closed, review GRD-04 round 6). A `{` keeps
+    command position after `function NAME`, `coproc` and `coproc NAME`, so
+    `coproc { !(git commit -m x); }` denies. `@(git) commit -m x` joins the
+    command-position gap.
   - **Pinned readings.** Bash `$"…"` is `"…"` with the `$` removed; the escaped-newline
     pre-pass skips single quotes and `$'…'` spans as the tokenizer reads them (a `'` in
     double quotes or escaped opens nothing); in PowerShell two characters of one quote
@@ -327,7 +332,7 @@
     arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
     a runner that re-splits one string argument into a new command line
     (`env -S 'git commit --fixup=HEAD'`), a `git commit` carried inside a balanced extglob
-    pattern in an argument (no `git` token there, C:guard step 2;
+    pattern in an argument, outside a `<(…)` or `>(…)` (no `git` token there, C:guard step 2;
     `env -S A=@( git commit --fixup=HEAD'\c')`, review GRD-04 round 5), and scripts that wrap
     git: an allowlisted form under them passes. A program that runs
     git may append words from its input or its own arguments (`printf -- -n | xargs git

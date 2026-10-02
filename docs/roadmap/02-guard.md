@@ -248,7 +248,7 @@ would let `git commit --fixup $s` through; its Seam 3 cases are in
 `tests/guard-allowlist.test.js`. This slice adds the subcommand position and git's global
 options (with GRD-11), and the PowerShell forms (with GRD-06).
 
-- [ ] Denied with `Write the git subcommand literally. <route>`: `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `c=commit; git "$c" -m x`, each in a command mentioning `commit`.
+- [ ] Denied with `Write the git subcommand literally. <route>`: Bash `git @(commit) -m x` and `git !(x) commit -m x` (an extglob pattern in an argument is one word, GRD-04), `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `c=commit; git "$c" -m x`, each in a command mentioning `commit`.
 - [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
 - [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
 - [ ] `git COMMIT -m x` → denied as a commit.
