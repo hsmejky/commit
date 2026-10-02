@@ -25,7 +25,7 @@ beforeEach(async () => {
   ({ segments, blanketTrigger, isExemptScriptCall, segmentSpans } = await loadLib('shell-tokenizer'));
 });
 
-const BLANKET_KINDS = new Set(['substitution', 'heredoc', 'here-string', 'comment', 'typographic-quote']);
+const BLANKET_KINDS = new Set(['substitution', 'heredoc', 'here-string', 'comment', 'typographic-quote', 'nesting']);
 
 test('G2 is pure (no I/O, no ambient state, no imports)', () => {
   assertPureSource('shell-tokenizer');

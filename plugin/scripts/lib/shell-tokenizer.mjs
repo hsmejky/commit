@@ -70,7 +70,8 @@ function triggerIn(text, bash) {
 /**
  * G2 `segments`: the command's segments of tokens, or the blanket trigger kind. A Bash
  * `<(…)` or `>(…)` substitution inside an extglob pattern in an argument (C:guard step 2)
- * is the blanket kind 'substitution' too, found while tokenizing.
+ * is the blanket kind 'substitution' too, found while tokenizing, and such a pattern whose
+ * brackets nest deeper than `MAX_PATTERN_DEPTH` is the blanket kind 'nesting'.
  *
  * A token is a word (a string, after quote removal), `{ op }` for `(` and `)`, or
  * `{ redir, target }` for a redirection with its target word (null for a descriptor
@@ -110,7 +111,7 @@ function tokenize(command, shell) {
     const { text, origin } = join(reading);
     const result = tokenizeBash(text);
     out.blanket ??= result.blanket;
-    out.segments.push(...result.segments);
+    append(out.segments, result.segments);
     for (const [start, end] of result.spans) out.spans.push([origin[start], origin[end - 1] + 1]);
   }
   return out;
@@ -201,6 +202,21 @@ function quoteEnd(s, from, kind) {
   return { end: s.length, closed: false };
 }
 
+// Appends `items` to `target` one by one: `target.push(...items)` passes each item as an
+// argument and throws a RangeError past the engine's argument limit, which a long command
+// reaches (a crash fails the guard open).
+function append(target, items) {
+  for (const item of items) target.push(item);
+}
+
+// The deepest bracket nesting of an extglob pattern read as one word in an argument or a
+// redirection target (C:guard step 2): an unquoted `(` that would open level 17 makes G2
+// return the blanket kind 'nesting' (fail closed). It bounds the defense-in-depth body walk
+// (`tokenizeBash`), which reads a body again at each level it is nested in: at most 17
+// readings of any character, and at most 16 nested calls on the stack. Real patterns nest a
+// few levels at most.
+export const MAX_PATTERN_DEPTH = 16;
+
 // Characters that end an unquoted Bash word.
 const WORD_END = new Set([' ', '\t', '\n', ';', '&', '|', '(', ')', '<', '>']);
 // An unquoted `(` right after one of these opens an extglob pattern (C:guard step 2).
@@ -241,15 +257,19 @@ function nextPosition(at, token) {
 // (bash 4.1+), a redirection prefix like descriptor digits.
 const VARIABLE_FD = /^\{[A-Za-z_][A-Za-z0-9_]*(?:\[[^]*\])?\}$/;
 
-// Tokenizes one joined reading (no escaped newline outside single quotes and `$'…'`), or
-// the body of an extglob pattern read as a command text. `blanket` is 'substitution' when an
-// argument's extglob pattern holds a `<(…)` or `>(…)` substitution (`readWord`), else null.
+// Tokenizes one joined reading (no escaped newline outside single quotes and `$'…'`), or,
+// at nesting `level` 1 and up, the body of an extglob pattern read as a command text.
+// `blanket` is 'substitution' when an argument's extglob pattern holds a `<(…)` or `>(…)`
+// substitution, 'nesting' when its brackets nest deeper than `MAX_PATTERN_DEPTH`
+// (`readWord`), else null; tokenizing stops at the first blanket kind.
 // Defense in depth (C:guard step 2): the body of each extglob pattern read as one word in an
 // argument or a redirection target is also tokenized as a command text of its own, nested
 // patterns included, and its segments follow the segment holding that word, so a `git` the
 // body would run at a command's first position is a `git` token whatever position the
-// tokenizer gave the word.
-function tokenizeBash(s) {
+// tokenizer gave the word. A body sits inside each bracket of its enclosing patterns, so
+// `level` never passes `MAX_PATTERN_DEPTH`; the check on it only keeps the stack bounded
+// should that ever change.
+function tokenizeBash(s, level = 0) {
   const out = { segments: [], spans: [], blanket: null };
   let seg = [];
   let start = 0;
@@ -271,10 +291,12 @@ function tokenizeBash(s) {
   const word = (from, argument) => {
     const w = readWord(s, from, argument);
     if (w.procsub) out.blanket = 'substitution';
+    if (w.deep || (w.bodies && w.bodies.length > 0 && level >= MAX_PATTERN_DEPTH)) out.blanket ??= 'nesting';
+    if (out.blanket !== null) return w;
     for (const [bodyStart, bodyEnd] of w.bodies || []) {
-      const body = tokenizeBash(s.slice(bodyStart, bodyEnd));
+      const body = tokenizeBash(s.slice(bodyStart, bodyEnd), level + 1);
       out.blanket ??= body.blanket;
-      bodies.segments.push(...body.segments);
+      append(bodies.segments, body.segments);
       for (const [a, b] of body.spans) bodies.spans.push([a + bodyStart, b + bodyStart]);
     }
     return w;
@@ -284,14 +306,14 @@ function tokenizeBash(s) {
       out.segments.push(seg);
       out.spans.push([start, end]);
     }
-    out.segments.push(...bodies.segments);
-    out.spans.push(...bodies.spans);
+    append(out.segments, bodies.segments);
+    append(out.spans, bodies.spans);
     bodies = { segments: [], spans: [] };
     seg = [];
     first = true;
   };
   let i = 0;
-  while (i < s.length) {
+  while (i < s.length && out.blanket === null) {
     const c = s[i];
     const next = s[i + 1];
     if (c === ' ' || c === '\t') {
@@ -372,7 +394,8 @@ function redirection(s, from, fd, push, word) {
 // included, as bash reads it with `extglob` on, and in `[[ … ]]` even with it off; with no
 // matching `)` (or an unterminated quote inside), the word ends after the `(` and no `(`
 // token follows. An unquoted `<(` or `>(` inside the pattern, a substitution bash runs,
-// ends the word there and `procsub` marks it (the caller denies). `bodies` lists each
+// ends the word there and `procsub` marks it (the caller denies); so does an unquoted `(`
+// past `MAX_PATTERN_DEPTH` brackets, marked `deep`. `bodies` lists each
 // balanced outermost pattern's body, `[start, end)` in `s` between its `(` and its `)`. Its
 // quote and `$`-run tracking mirrors `join`'s: change them together.
 function readWord(s, i, argument) {
@@ -389,6 +412,7 @@ function readWord(s, i, argument) {
       return { value, end: i, extglob: false, procsub: true };
     }
     if (depth > 0 && (c === '(' || c === ')')) {
+      if (c === '(' && depth === MAX_PATTERN_DEPTH) return { value, end: i, extglob: false, deep: true };
       depth += c === '(' ? 1 : -1;
       if (depth === 0) bodies.push([opener.end, i]);
     } else if (WORD_END.has(c) && depth === 0) {

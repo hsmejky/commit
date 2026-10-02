@@ -94,26 +94,30 @@ const RUNNERS = new Map([
   }],
 ]);
 
-// Where `git`'s command starts: after the innermost bracket still open at `git` (Bash: a `(`
-// token, a subshell, `<(…)`, `>(…)` or an extglob opener in a command's first word, since
-// G2 reads a pattern in an argument as one word with no `(` token; PowerShell: a `(` or `{`
-// token, a grouping expression, a subexpression or a script block), which starts a new
-// command, or the segment's start.
-function commandStart(tokens, at, shell) {
+// Where the command of the token at each index starts: after the innermost bracket still
+// open there (Bash: a `(` token, a subshell, `<(…)`, `>(…)` or an extglob opener in a
+// command's first word, since G2 reads a pattern in an argument as one word with no `(`
+// token; PowerShell: a `(` or `{` token, a grouping expression, a subexpression or a script
+// block), which starts a new command, or the segment's start. One pass over the segment, so
+// a segment with many `git commit` pairs stays linear.
+function commandStarts(tokens, shell) {
+  const starts = [];
   const open = [];
-  for (let i = 0; i < at; i += 1) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    starts.push(open.length === 0 ? 0 : open[open.length - 1] + 1);
     if (isOp(tokens[i], '(') || (shell === 'powershell' && isOp(tokens[i], '{'))) open.push(i);
     else if (isOp(tokens[i], ')') || (shell === 'powershell' && isOp(tokens[i], '}'))) open.pop();
   }
-  return open.length === 0 ? 0 : open[open.length - 1] + 1;
+  return starts;
 }
 
-// The first token before `git` (at `end`) in its command outside the prefix allowlist (C:guard
-// step 3), as it reads after quote removal; undefined when every token fits. In Bash the
-// prefix is: reserved words and `(`, then literal assignments, then runners, each with its
-// options; in PowerShell it is the `&` call operator alone (a word or an operator token).
-function wrapperBefore(tokens, end, shell) {
-  let i = commandStart(tokens, end, shell);
+// The first token before `git` (at `end`) in its command, which starts at `from`
+// (`commandStarts`), outside the prefix allowlist (C:guard step 3), as it reads after quote
+// removal; undefined when every token fits. In Bash the prefix is: reserved words and `(`,
+// then literal assignments, then runners, each with its options; in PowerShell it is the `&`
+// call operator alone (a word or an operator token).
+function wrapperBefore(tokens, from, end, shell) {
+  let i = from;
   if (shell === 'powershell') {
     if (i < end && (tokens[i] === '&' || isOp(tokens[i], '&'))) i += 1;
   } else {
@@ -235,11 +239,12 @@ function allowlistDecision(items) {
 // The name the generic row gives an item: its flag, or the argument (an empty one as `""`).
 const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument || '""');
 
-// One `git commit` invocation, its `git` token at `at` and its arguments starting at `start`
-// (after `commit`): the deny message, or null when allowed. Every argument read must be
+// One `git commit` invocation, its `git` token at `at` in a command starting at `from`
+// and its arguments starting at `start` (after `commit`): the deny message, or null when
+// allowed. Every argument read must be
 // literal (C:guard step 4). A possible wrapper before `git` denies what would otherwise be
 // allowed or the bare row; its row ranks just above the bare row (C:guard Precedence).
-function commitDecision(tokens, at, start, shell) {
+function commitDecision(tokens, from, at, start, shell) {
   const args = [];
   for (let i = start; i < tokens.length && !endsArguments(tokens[i], shell); i += 1) {
     if (!isLiteral(tokens[i], shell)) return MESSAGES.literalArguments;
@@ -247,7 +252,7 @@ function commitDecision(tokens, at, start, shell) {
   }
   const message = allowlistDecision(expandCommitArgs(args));
   if (message !== null && message !== MESSAGES.bare) return message;
-  const wrapper = wrapperBefore(tokens, at, shell);
+  const wrapper = wrapperBefore(tokens, from, at, shell);
   return wrapper === undefined ? message : wrapperMessage(wrapper);
 }
 
@@ -265,10 +270,12 @@ export function classify(parsed, context = {}) {
     // Redirections are dropped with their target (C:guard step 2).
     const tokens = segment.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));
     // Every `git` token is classified; the segment is denied when any of them is (step 3).
+    let starts = null;
     for (let i = 0; i < tokens.length - 1; i += 1) {
       const [token, next] = [tokens[i], tokens[i + 1]];
       if (typeof token === 'string' && GIT.test(token) && typeof next === 'string' && COMMIT.test(next)) {
-        const message = commitDecision(tokens, i, i + 2, shell);
+        starts ??= commandStarts(tokens, shell);
+        const message = commitDecision(tokens, starts[i], i, i + 2, shell);
         if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
       }
     }
