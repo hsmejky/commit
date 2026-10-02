@@ -15,9 +15,12 @@
 // `commit`, which share `probeRepo` but not this step, never spawn the extra status call; it
 // also adds `state`/`expectedHead` to `plan`'s output. GIT-03 widens the same step to also
 // read the in-progress state (M3 `inProgressState`) and store it as `ctx.inProgress`, read by
-// step 2's `planRefusal`. Later slices insert the other rows (3 run folder
-// and lock peek, 5 snapshot and scan, 7 store and lock, 8 guard state and `plan --hunks`) in
-// their place in PLAN_STEPS, and widen these.
+// step 2's `planRefusal`. CHG-03 builds step 4's M10 `inventory` (tracked modifications
+// only), step 5's snapshot (M10 `snapshot` and `assignIds`: the units, the unit table, the
+// `id → hash` map and the `tracked` list with M9 `bucketOf`, all on `ctx`) and a step-7
+// stand-in that ends a tree with changes as `internal` until CHG-03b stores them. Later
+// slices insert the other rows (3 lock peek, 5 scan, 7 store and lock, 8 guard state and
+// `plan --hunks`) in their place in PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
@@ -28,7 +31,8 @@
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
 import { headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
-import { treeState } from './change-set.mjs';
+import { assignIds, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
+import { bucketOf } from './path-classifier.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME } from './run.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { reply } from './reply.mjs';
@@ -111,22 +115,51 @@ async function createRunFolder(ctx) {
   return undefined;
 }
 
-/** Step 4: inventory. Thin: the tree state stands in until CHG-03 builds M10 `inventory`. */
+/** Step 4: M10 `inventory`. CHG-03: tracked modifications only (other kinds throw). */
 async function inventory(ctx) {
-  ctx.inventory = await treeState({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+  ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+  return undefined;
+}
+
+/**
+ * Step 5 (snapshot part, CHG-03): M10 `snapshot` in `split` and `assignIds`. Puts on `ctx`
+ * the units (bodies included, for M13), the unit table rows CHG-03b stores in `state.json`
+ * (`{ id, hash, path, oldPath, status, kind }`), the `id → hash` map and `plan.json`'s
+ * `tracked` list (`bucket` from M9 `bucketOf`). A clean tree takes no snapshot. The scan
+ * part is CHG-16's.
+ */
+async function snapshotUnits(ctx) {
+  if (ctx.inventory.clean) return undefined;
+  const units = assignIds(await snapshot({
+    mode: 'split', toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now,
+  }));
+  ctx.units = units;
+  ctx.unitTable = units.map(({ id, hash, path, oldPath, status, kind }) => ({ id, hash, path, oldPath, status, kind }));
+  ctx.idMap = Object.fromEntries(units.map((unit) => [unit.id, unit.hash]));
+  ctx.tracked = units.map(({ path, oldPath, status, added, deleted }) => ({
+    path, oldPath, status, bucket: bucketOf(path), added, deleted,
+  }));
   return undefined;
 }
 
 /** Step 6: post-scan refusals. A clean tree ends the call with `nothing`. */
 async function postScanRefusals(ctx) {
   if (ctx.inventory.clean === true) return { status: 'nothing', reason: 'clean' };
-  // CHG-03 / INT-02 go on to steps 7-8 for a tree with changes.
-  throw new Error('plan on a working tree with changes is not built yet');
+  return undefined;
+}
+
+/**
+ * Step 7 (stand-in): CHG-03b takes the run lock here and stores the unit table, the
+ * `id → hash` map and `plan.json`; until then a tree with changes ends as `internal`, and
+ * `plan`'s `finally` discards the provisional folder.
+ */
+async function storeAndLock() {
+  throw new Error('plan on a working tree with changes is not built yet: step 7 (CHG-03b)');
 }
 
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
-  postScanRefusals,
+  snapshotUnits, postScanRefusals, storeAndLock,
 ]);
 
 /**
