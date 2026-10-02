@@ -13,8 +13,9 @@ and of the real index.
   A non-zero `git add` exit counts as failed even when some paths were added (`git-failed`,
   whichever subcommand ran the snapshot: `plan`, `plan --hunks`, `check` or `commit`). Runs the pinned diff
   (worktree, index versus HEAD, or HEAD's own diff against its parent or the empty tree for
-  a root commit) with exactly Q11's pinned options; `diff.renameLimit` stays the user's
-  (Q11). Paths and whole-file kinds come from a `--raw -z` pass, so no path is ever parsed out
+  a root commit) with exactly Q11's pinned options, including `diff.autoRefreshIndex=true`
+  and `--submodule=short`; `diff.renameLimit` stays the user's (Q11). Paths and whole-file
+  kinds come from a `--raw -z` pass, so no path is ever parsed out
   of patch text; the patch pass supplies only hunk bodies, ranges and the added lines the
   scan reads. A unit carries `addedLines: [{ line, text }]`, where `line` is the 1-based
   line number in the new file and `text` is the lossy UTF-8 decode of the line, without the

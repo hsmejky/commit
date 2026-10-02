@@ -12,11 +12,14 @@ import { run } from './process-adapter.mjs';
 
 // Q11's pinned options, every one of them, for every diff the script runs. Only M10 holds
 // them (M10: "the only owner of the pinned diff options").
-const PINNED_CONFIG = ['-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false'];
+const PINNED_CONFIG = [
+  '-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false',
+  '-c', 'diff.autoRefreshIndex=true',
+];
 const PINNED_DIFF_OPTIONS = [
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
-  '--ignore-submodules=dirty', '--src-prefix=a/', '--dst-prefix=b/',
+  '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
 ];
 
 const NUL = 0x00;
@@ -82,9 +85,11 @@ export async function inventory({ toplevel, env, now }) {
  * @returns {Promise<Array<{ path: string, oldPath: null, status: 'M', kind: 'text',
  *   hash: string, added: number, deleted: number, range: string, body: Buffer }>>} sorted
  *   by path in UTF-8 byte order (the user's `diff.orderFile` never decides the order, Q11).
- *   `hash`: SHA-256 hex over the path bytes, a NUL, then every hunk line starting `-`, `+`
- *   or `\` with its `\n` (no context, Q11; the `\ No newline at end of file` marker keeps a
- *   newline-at-EOF edit apart from the same lines with a newline). `added`/`deleted`: the
+ *   `hash`: SHA-256 hex over the path bytes, a NUL, then every hunk line starting `-` or `+`
+ *   with its `\n`, plus a following `\` (`\ No newline at end of file`) line only when it
+ *   follows one of those (no context, Q11; the `\` marker keeps a newline-at-EOF edit apart
+ *   from the same lines with a newline, but one that follows an unchanged context line is
+ *   excluded like the rest of that context). `added`/`deleted`: the
  *   `+`/`-` hunk lines. `range`: the hunk header's ranges for one hunk, else the span
  *   enclosing every hunk. `body`: the section's bytes from its first `@@` line on.
  * @throws {Error} when the diff fails, the sections do not pair with the records, or on a
@@ -100,8 +105,16 @@ export async function snapshot({ mode, toplevel, env, now }) {
   if (result.code !== 0) {
     throw new Error(`git diff failed (${result.code}): ${result.stderr}`);
   }
-  const { records, patchStart } = parseRaw(result.stdout);
-  const sections = splitSections(result.stdout, patchStart);
+  return unitsFromDiff(result.stdout);
+}
+
+// Pure: builds the sorted whole-file units from one `git diff -z --raw -p` call's raw
+// stdout bytes (the raw records and the patch sections, paired by position). Split out of
+// `snapshot` so the pairing and `unitOf` logic can be exercised directly with a crafted
+// buffer, without spawning git (KD-R1-style in-process test).
+export function unitsFromDiff(output) {
+  const { records, patchStart } = parseRaw(output);
+  const sections = splitSections(output, patchStart);
   if (sections.length !== records.length) {
     throw new Error(`the diff has ${sections.length} patch sections for ${records.length} raw records`);
   }
@@ -224,6 +237,10 @@ function unitOf({ oldMode, newMode, status, pathBytes }, section) {
   let added = 0;
   let deleted = 0;
   let bodyStart = 0;
+  // `\ No newline at end of file` (BACKSLASH) also follows an unchanged context line whose
+  // last line lacks a trailing newline on both sides; it is hashed only when it follows a
+  // `-`/`+` line, since context is otherwise excluded from the hash (Q11).
+  let prevLead = null;
   lines.forEach((line, i) => {
     if (i < first) {
       bodyStart += line.length;
@@ -234,11 +251,14 @@ function unitOf({ oldMode, newMode, status, pathBytes }, section) {
       const m = HUNK_HEADER.exec(line.toString('latin1'));
       if (m === null) throw new Error(`an unreadable hunk header in ${path}`);
       hunks.push({ old: side(m[1], m[2]), new: side(m[3], m[4]) });
-    } else if (lead === PLUS || lead === MINUS || lead === BACKSLASH) {
+    } else if (lead === PLUS || lead === MINUS) {
       hash.update(line);
       if (lead === PLUS) added += 1;
       if (lead === MINUS) deleted += 1;
+    } else if (lead === BACKSLASH && (prevLead === PLUS || prevLead === MINUS)) {
+      hash.update(line);
     }
+    prevLead = lead;
   });
   return {
     path,

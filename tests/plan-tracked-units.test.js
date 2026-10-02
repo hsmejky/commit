@@ -21,10 +21,11 @@ const SPAWN_RECORD_PRELOAD = pathToFileURL(
 
 // Q11's pinned list, spelled out here independently of M10.
 const PINNED_DIFF_CALL = [
-  '-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false', 'diff',
+  '-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false',
+  '-c', 'diff.autoRefreshIndex=true', 'diff',
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
-  '--ignore-submodules=dirty', '--src-prefix=a/', '--dst-prefix=b/',
+  '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
   '-z', '--raw', '-p', 'HEAD',
 ];
 

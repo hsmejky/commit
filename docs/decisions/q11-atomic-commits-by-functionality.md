@@ -100,9 +100,18 @@
     hunks (current ranges) and run `git apply --cached --whitespace=nowarn` on it (Q18).
   - Every diff the script runs uses pinned options: `--no-ext-diff --no-color --no-textconv
     --no-relative -U3 --inter-hunk-context=0 --indent-heuristic -M --diff-algorithm=myers
-    --ignore-submodules=dirty --src-prefix=a/ --dst-prefix=b/` and `-c core.quotePath=false
-    -c diff.suppressBlankEmpty=false`, from the toplevel (Q9). `--whitespace=nowarn` keeps
-    `apply.whitespace=error|fix` from rejecting or changing what was planned and scanned.
+    --ignore-submodules=dirty --submodule=short --src-prefix=a/ --dst-prefix=b/` and
+    `-c core.quotePath=false -c diff.suppressBlankEmpty=false -c diff.autoRefreshIndex=true`,
+    from the toplevel (Q9). `--whitespace=nowarn` keeps `apply.whitespace=error|fix` from
+    rejecting or changing what was planned and scanned. `diff.autoRefreshIndex=true` keeps a
+    merely stat-dirty tracked file (mtime touched, content unchanged) from leaving a raw
+    record with no patch section once a read-only call cannot refresh the index itself
+    (`GIT_OPTIONAL_LOCKS=0`, an `index.lock` held by another process); without the pin a
+    user's `diff.autoRefreshIndex=false` turns that into a raw-record/patch-section count
+    mismatch (`internal`). `--submodule=short` keeps a user's `diff.submodule=log` or `=diff`
+    from changing how a submodule pointer record's patch section renders (and, under `=diff`
+    with exactly one changed file inside, from a silent mis-pairing once submodule records
+    stop throwing, CHG-09): every record gets exactly one patch section under `short`.
     Left to the user's config because the script does not depend on it: `diff.orderFile`
     (every list is sorted by the script itself, Q19).
   - Path lists never go on argv: staging, attribute and index calls (`git add -N`,
@@ -198,6 +207,10 @@
     and built patches use the raw bytes; only presentation (the worker's hunk text, the
     reply) and the scanner decode, lossily, and none of them feeds a hash or a patch. A
     lossy decode in the hash would let a corrupted Latin-1 or CRLF commit pass the match.
+  - A `\ No newline at end of file` marker counts toward the hash only when it directly
+    follows a `-`/`+` line; the same marker can follow an unchanged context line whose last
+    line lacks a trailing newline on both sides, and that occurrence is excluded from the
+    hash like the rest of the context.
   - The patch pass is one `git diff -z --raw -p` call; its patch sections pair with its raw
     records by position, checked by counting `diff --git` header lines against the records
     (a mismatch is `internal`), so no path is parsed out of patch text and no call per path

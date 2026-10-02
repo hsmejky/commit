@@ -75,7 +75,9 @@ step-7 re-reads around the acquire are RUN-06's. It also builds the `internal` c
 these writes need: a throw before `acquire` deletes the provisional run folder; a throw
 after it releases the lock and deletes the folder. The release and delete are file-system
 calls and take no `timeoutMs`; RUN-12 puts the reply's tree-state read on
-`cleanupDeadline`, and RUN-27 generalises which endings release the run.
+`cleanupDeadline`, and RUN-27 generalises which endings release the run. Step 8 wires the
+in-process `plan --hunks` call that runs M13 `renderHunks` over the snapshot's units and
+writes `hunks.txt` (and the stdout `hunks` block) through M12, after the `plan.json` write.
 
 **Blocked by:** CHG-03, FND-10.
 
@@ -184,7 +186,7 @@ and sparse-checkout / `skip-worktree` entries handled with no code of their own.
 
 **Sources:** Q9, Q11 (Consequences, pass 9), other-repo-configurations, stories 74, 78.
 
-- [ ] Seam 1: `diff.relative=true` with `plan` run from a subfolder → changes outside it still listed; `diff.interHunkContext=10`, `diff.noprefix`, `color.diff=always`, an external diff driver → units unchanged.
+- [ ] Seam 1: `diff.relative=true` with `plan` run from a subfolder → changes outside it still listed; `diff.interHunkContext=10`, `diff.noprefix`, `color.diff=always`, `diff.autoRefreshIndex=false`, `diff.submodule=log`, an external diff driver → units unchanged.
 - [ ] Seam 1: paths `[id].tsx`, one with a space and one with a quote → units with the literal path.
 - [ ] Seam 1: a staged case-only `git mv` → one `R` unit.
 - [ ] Seam 1: cone-mode sparse checkout with an edit inside the cone, a path outside, and a `--skip-worktree` path whose file is removed → neither of the last two is a unit or in `notIncluded` (the commit-side half is asserted in CHG-20).
@@ -224,6 +226,7 @@ one whole-file unit (main and `--text` pass), and `dirtySubmodules` from
 - [ ] Seam 1: a file→symlink and a file→submodule change → one `T` unit each, no `internal`.
 - [ ] Seam 1: a pointer change in a submodule with untracked files inside → one `submodule` unit.
 - [ ] Seam 1: dirt without a pointer change → `dirtySubmodules: ["libs/x"]`, no unit, tree clean (`nothing` once RUN's clean-tree rule is wired).
+- [ ] Seam 1: a submodule with only inner dirt (status ` M`, no pointer change) → `inventory` lists it but the pinned diff finds no unit for it; the non-clean, zero-unit case throws "not built yet (CHG-09)" explicitly rather than a bare count-mismatch `internal`.
 
 
 ## CHG-10: Filtered files and `linguist-generated`
