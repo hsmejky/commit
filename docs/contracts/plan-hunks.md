@@ -51,7 +51,9 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   `<old> -> <new>` for a rename. The index is authoritative. `offset` is the 1-based line of
   the `###` line and `lines` the block's line count including it, so the worker can
   `Read` one hunk with `offset` / `limit`, or the whole file in pages. Both are `null` for
-  a unit without a block (below).
+  a unit without a block (below). A whole-file unit whose body holds several hunks has one
+  `range` enclosing them all: per side, the span from the first hunk's first line to the
+  last hunk's last line.
 - `body`: `file` (block in `hunks.txt`), `cap` (past the [cap](summary-only-files.md): no
   block, but its own ID, range and `added` / `deleted` counts, so the worker can still
   split the file by ranges or `Read` the working-tree file at a range), `none` (binary,
