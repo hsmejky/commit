@@ -365,9 +365,43 @@ for (const [command, row] of braceAfterReservedWord) {
   });
 }
 
-// After an assignment or a function's name the pattern is an argument, one word with no git
-// token: bash rejects both with `extglob` off, and with it on runs a glob, never git.
-for (const command of ['A=1 !(git commit -m x)', 'function f !(git commit -m x)']) {
+// Bash still takes any reserved word after `function NAME`, `coproc` and `coproc NAME`, and
+// reads `--` after `time [-p]` as part of `time`, so a `!(` after them is `!` plus a subshell;
+// a function named `!(…)` has a subshell body. Verified end to end in Git Bash 5.3: each
+// committed without its pre-commit hook and no guard output before the fix (review GRD-04
+// round 7, finding 1).
+const reservedWordAfterPrefix = [
+  ['time -- !(git commit -n --allow-empty -m bypass1)', '-n'],
+  ['time -p -- !(git commit -m x)', 'bare'],
+  ['function f if !(git commit -n --allow-empty -m bypass2); then :; fi; f', '-n'],
+  ['function f while !(git commit -m x); do break; done; f', 'bare'],
+  ['function f until !(git commit -m x); do break; done; f', 'bare'],
+  ['coproc while !(git commit -n --allow-empty -m bypass3); do break; done; wait', '-n'],
+  ['coproc if !(git commit -m x); then :; fi; wait', 'bare'],
+  ['coproc C if !(git commit -m x); then :; fi; wait', 'bare'],
+  ['coproc C while !(git commit -m x); do break; done; wait', 'bare'],
+  ['function !(git commit -n --allow-empty -m bypass4); \\!', '-n'],
+  ['function @(git commit -m x); \\@', 'bare'],
+];
+for (const [command, row] of reservedWordAfterPrefix) {
+  test(`Seam 3: ${JSON.stringify(command)} is denied with the ${row} row`, (t) => {
+    const c = createCase(t, { repo: false });
+    const message = row === 'bare' ? MESSAGES.bare : generic(row);
+    assert.deepEqual(hook(c, command), { stdout: denyJson(message), stderr: '' });
+  });
+}
+
+test('Seam 2: a `!(` after `time --` is denied by the real hook process', async (t) => {
+  const c = createCase(t);
+  const result = await runGuard(c, { command: 'time -- !(git commit -n --allow-empty -m bypass1)' });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdout, denyJson(generic('-n')));
+});
+
+// After an assignment, a function's name or a second `--` after `time` the pattern is an
+// argument, one word with no git token: bash rejects each with `extglob` off, and with it on
+// runs a glob, never git.
+for (const command of ['A=1 !(git commit -m x)', 'function f !(git commit -m x)', 'time -- -- !(git commit -m x)']) {
   test(`Seam 3: ${JSON.stringify(command)} has no output (no command runs git)`, (t) => {
     const c = createCase(t, { repo: false });
     assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });

@@ -206,20 +206,26 @@ const WORD_END = new Set([' ', '\t', '\n', ';', '&', '|', '(', ')', '<', '>']);
 // An unquoted `(` right after one of these opens an extglob pattern (C:guard step 2).
 const EXTGLOB = new Set(['@', '!', '+', '*', '?']);
 // Reserved words after which the next word is still in a command's first position, where
-// `!` is the reserved word `!` (C:guard step 2). `time` may take `-p`.
+// `!` is the reserved word `!` (C:guard step 2). `time` may take `-p`, then `--`.
 const COMMAND_PREFIX = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do', 'time']);
 
 // The position of the word after `token`, read at position `at` (see `tokenizeBash`): true
-// for a command's first word, 'time' right after a `time` there (a `-p` keeps it),
-// 'function' after a `function` there (its name follows), 'coproc' after a `coproc` there
-// (a `{`, or a name or the command), 'name' after that name (only a `{` opens a command
-// there), and false for an argument.
+// for a command's first word, 'time' right after a `time` there (a `-p` keeps it, a `--`
+// opens the command), 'function' after a `function` there (its name, read as a first word,
+// follows), 'coproc' after a `coproc` there (a name or the command follows), 'name' after
+// that name, and false for an argument. After `coproc` and after the name of `function NAME`
+// or `coproc NAME` bash still takes a reserved word: one that opens a command's first
+// position anywhere opens it there too (fail closed).
 function nextPosition(at, token) {
   if (at === false) return false;
   if (at === 'function') return 'name';
-  if (at === 'name') return token === '{';
-  if (at === 'coproc') return token === '{' ? true : 'name';
-  if (at === 'time' && token === '-p') return true;
+  if (at === 'coproc' || at === 'name') {
+    const opened = nextPosition(true, token);
+    if (opened !== false) return opened;
+    return at === 'coproc' ? 'name' : false;
+  }
+  if (at === 'time' && token === '-p') return 'time';
+  if (at === 'time' && token === '--') return true;
   if (token === 'function' || token === 'coproc') return token;
   if (COMMAND_PREFIX.has(token)) return token === 'time' ? 'time' : true;
   return false;
@@ -293,7 +299,7 @@ function tokenizeBash(s) {
       if (m) {
         i = redirection(s, i, m[0], push, word);
       } else {
-        const w = word(i, first === false || first === 'function' || first === 'name');
+        const w = word(i, first === false || first === 'name');
         const raw = s.slice(i, w.end);
         if (VARIABLE_FD.test(raw) && (s[w.end] === '<' || s[w.end] === '>')) {
           i = redirection(s, i, raw, push, word);

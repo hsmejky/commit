@@ -220,6 +220,19 @@ const bashTable = [
   ['coproc git commit { !(x)', [['coproc', 'git', 'commit', '{', '!(x)']]],
   ['xargs env -S { A=@( git commit --fixup=HEAD) }', [['xargs', 'env', '-S', '{', 'A=@( git commit --fixup=HEAD)', '}']]],
   ['echo function f { !(x)', [['echo', 'function', 'f', '{', '!(x)']]],
+  // GRD-04 review round 7: any reserved word that opens a command keeps the first position
+  // after `function NAME`, `coproc` and `coproc NAME`, so does a `--` after `time [-p]`, and
+  // the word after `function` is read as a first word.
+  ['time -- !(x)', [['time', '--', '!(', { op: '(' }, 'x', { op: ')' }]]],
+  ['time -p -- !(x)', [['time', '-p', '--', '!(', { op: '(' }, 'x', { op: ')' }]]],
+  ['time -- time -- !(x)', [['time', '--', 'time', '--', '!(', { op: '(' }, 'x', { op: ')' }]]],
+  ['time -- -- !(x)', [['time', '--', '--', '!(x)']]],
+  ['function f if !(x); then :; fi', [['function', 'f', 'if', '!(', { op: '(' }, 'x', { op: ')' }], ['then', ':'], ['fi']]],
+  ['function f until !(x); do :; done', [['function', 'f', 'until', '!(', { op: '(' }, 'x', { op: ')' }], ['do', ':'], ['done']]],
+  ['coproc while !(x); do :; done', [['coproc', 'while', '!(', { op: '(' }, 'x', { op: ')' }], ['do', ':'], ['done']]],
+  ['coproc C if !(x); then :; fi', [['coproc', 'C', 'if', '!(', { op: '(' }, 'x', { op: ')' }], ['then', ':'], ['fi']]],
+  ['function !(x); \\!',[['function', '!(', { op: '(' }, 'x', { op: ')' }], ['!']]],
+  ['coproc git commit if !(x)', [['coproc', 'git', 'commit', 'if', '!(x)']]],
 ];
 for (const [command, expected] of bashTable) {
   test(`Seam 3: Bash segments(${JSON.stringify(command)})`, () => {
