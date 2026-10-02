@@ -323,8 +323,14 @@
     code: `sh -c '…'`, `bash -c '…'`, `cmd /c`, `pwsh -c`, `eval`, Bash `${x@P}` prompt
     expansion and array-subscript evaluation (a variable holding `a[$(…)]` read in an
     arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
-    scripts that wrap git (`xargs git commit` is denied: unquoted, it tokenizes to separate
-    `git` and `commit` tokens).
+    scripts that wrap git, and tools other than `xargs`, `gxargs` and `parallel` that append
+    arguments to the command they run (such as `rush` or `xe`): an allowlisted form under
+    them passes. `xargs git commit` is denied in every form: unquoted, it tokenizes to
+    separate `git` and `commit` tokens, and an `xargs`, `gxargs` or `parallel` token before
+    `git` in the segment denies the allowlisted forms too, since the wrapper can append `-n`
+    or `-m` from its input (`printf -- -n | xargs git commit --no-edit` skips the hooks;
+    C:guard step 3, fail closed). `find … -exec git commit … {} +` is denied by its `{`
+    (C:guard step 4).
   - Expansion in the command position: what a variable holds there (Bash
     `$GIT commit -m x`, PowerShell `& $g commit -m x`; a variable holding the whole command,
     word-split at runtime, `x='git commit'; $x`; a substitution there,

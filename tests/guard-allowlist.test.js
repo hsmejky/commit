@@ -109,6 +109,20 @@ const genericRow = [
   ['git commit --no-edit=x', '--no-edit'],
   ['git commit --no-edit --quiet=x', '--quiet'],
   ['git commit --fixup=1a2b3c4 -q --amend=x', '--amend'],
+  // A trailing `--fixup` has no value, so it is not the plain form.
+  ['git commit --fixup', '--fixup'],
+  ['git commit --no-edit --fixup', '--fixup'],
+  // `amend:` / `reword:` open an editor: the generic row until GRD-05's specific row.
+  ['git commit --fixup=amend:1a2b3c4', '--fixup'],
+  ['git commit --fixup=reword:1a2b3c4 -q', '--fixup'],
+  // Attached optional values (`-S<keyid>`, `-u<mode>`) stay with their flag.
+  ['git commit --no-edit -Sfoo', '-S'],
+  ['git commit --no-edit -uno', '-u'],
+  // `--no-edit` does not exempt `--squash` (C:guard step 5).
+  ['git commit --no-edit --squash=HEAD', '--squash'],
+  // An empty argument is named as `""`, not as an empty flag.
+  ['git commit --no-edit ""', '""'],
+  ["git commit ''", '""'],
 ];
 for (const [command, flag] of genericRow) {
   test(`Seam 3: ${JSON.stringify(command)} is denied by the generic row naming ${flag}`, (t) => {
@@ -138,6 +152,9 @@ const notLiteral = [
   'git commit --fixup {HEAD,--no-verify}',
   'git commit --no-edit *',
   'git commit --fixup=HEAD~[1]',
+  // The most common direct attempt, a scoped Conventional Commits subject, holds `(`: it gets
+  // the literal-arguments text, which outranks the bare row (C:guard Precedence).
+  'git commit -m "feat(x): y"',
 ];
 for (const command of notLiteral) {
   test(`Seam 3: ${JSON.stringify(command)} is denied with the literal-arguments text`, (t) => {
@@ -150,6 +167,57 @@ test('Seam 3: a second `git commit` in the same segment is classified too', (t) 
   const c = createCase(t, { repo: false });
   assert.deepEqual(hook(c, 'git commit --no-edit; xargs git commit -a'), { stdout: denyJson(generic('-a')), stderr: '' });
 });
+
+// An argument-appending wrapper before `git` in the segment (`xargs`, `parallel`) can add any
+// option or message to an allowlisted form (`printf -- -n | xargs git commit --no-edit` skips
+// the hooks), so the form is denied there (C:guard step 3, fail closed). Its row ranks just
+// above the bare row: a form already outside the allowlist keeps its own, more specific row.
+const wrapper = (name) => `git commit run by ${name} is not allowed: it can append arguments. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
+const wrapperRow = [
+  ['xargs git commit --no-edit', 'xargs'],
+  ["printf '%s\n' -n | xargs git commit --no-edit", 'xargs'],
+  ['xargs -0 git commit --fixup=1a2b3c4', 'xargs'],
+  ['xargs git commit -q --amend --no-edit', 'xargs'],
+  ['xargs nice git commit --no-edit', 'xargs'],
+  ['/usr/bin/xargs git commit --no-edit', 'xargs'],
+  ['XArgs.exe git commit --no-edit', 'xargs'],
+  ['gxargs git commit --no-edit', 'gxargs'],
+  ['parallel git commit --no-edit', 'parallel'],
+  ['busybox xargs git commit --no-edit', 'xargs'],
+  ['xargs git commit', 'xargs'],
+  ['xargs git commit -m x', 'xargs'],
+];
+for (const [command, name] of wrapperRow) {
+  test(`Seam 3: ${JSON.stringify(command)} is denied naming the wrapper ${name}`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: denyJson(wrapper(name)), stderr: '' });
+  });
+}
+
+test('Seam 3: under a wrapper a form outside the allowlist keeps its own row', (t) => {
+  const c = createCase(t, { repo: false });
+  assert.deepEqual(hook(c, 'xargs git commit -a'), { stdout: denyJson(generic('-a')), stderr: '' });
+  assert.deepEqual(hook(c, 'xargs git commit --fixup $s'), { stdout: denyJson(MESSAGES.literalArguments), stderr: '' });
+});
+
+test('Seam 3: `find -exec git commit … {} +` is denied by the `{` of its placeholder (step 4)', (t) => {
+  const c = createCase(t, { repo: false });
+  assert.deepEqual(hook(c, 'find . -exec git commit --no-edit {} +'), { stdout: denyJson(MESSAGES.literalArguments), stderr: '' });
+  assert.deepEqual(hook(c, 'find . -execdir git commit --no-edit -m{} ;'), { stdout: denyJson(MESSAGES.literalArguments), stderr: '' });
+});
+
+const wrapperElsewhere = [
+  'git commit --no-edit | xargs echo',
+  'ls | xargs echo && git commit --no-edit',
+  'xargs echo; git commit --fixup=1a2b3c4',
+  'git commit --no-edit; parallel echo ::: a',
+];
+for (const command of wrapperElsewhere) {
+  test(`Seam 3: ${JSON.stringify(command)} has no output (the wrapper is in another segment)`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });
+  });
+}
 
 test('Seam 2: a deny with `COMMIT_GUARD=off` and similar variables set is still denied (no env switch, Q4)', async (t) => {
   const c = createCase(t);
@@ -182,14 +250,26 @@ test('Seam 2: `git commit --no-edit` has no output from the real hook process', 
 // get their decision.
 const SEED = path.join(__dirname, 'fixtures', 'guard', 'segments-seed.json');
 const seedCases = JSON.parse(fs.readFileSync(SEED, 'utf8')).cases;
-const GRD04_SEEDS = new Set(['b-fixup-q', 'b-fixup-separate', 'b-am', 'b-m-attached', 'b-pathspec', 'b-noedit-value', 'b-allow-empty']);
+// Each GRD-04 seed case with the message it gets (null: no output).
+const GRD04_SEEDS = new Map([
+  ['b-fixup-q', () => null],
+  ['b-fixup-separate', () => null],
+  ['b-am', () => generic('-a')],
+  ['b-m-attached', () => MESSAGES.bare],
+  ['b-pathspec', () => generic('--')],
+  ['b-noedit-value', () => generic('--no-edit')],
+  ['b-allow-empty', () => generic('--allow-empty')],
+  ['b-xargs', () => wrapper('xargs')],
+]);
 for (const s of seedCases.filter((x) => x.shell === 'bash' && x.segments.length > 0
   && (x.decision === 'none' || GRD04_SEEDS.has(x.id)))) {
   test(`Seam 3: seed ${s.id} → ${s.decision}`, (t) => {
     const c = createCase(t, { repo: false });
-    assert.equal(hook(c, s.command).stdout === '', s.decision === 'none');
+    const expected = GRD04_SEEDS.has(s.id) ? GRD04_SEEDS.get(s.id)() : null;
+    assert.equal(expected === null, s.decision === 'none');
+    assert.deepEqual(hook(c, s.command), { stdout: expected === null ? '' : denyJson(expected), stderr: '' });
   });
 }
 test('the GRD-04 seed cases are all in the seed', () => {
-  for (const id of GRD04_SEEDS) assert.ok(seedCases.some((x) => x.id === id), id);
+  for (const id of GRD04_SEEDS.keys()) assert.ok(seedCases.some((x) => x.id === id), id);
 });

@@ -267,6 +267,23 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    segment as a `commit` straight away, skipping steps 4 and 5's global-option and
    subcommand scan: the tokens after it are `commit`'s own args, expanded and checked
    against the allowlist as in step 5.
+   An argument-appending wrapper before the `git` token in the same segment, a token whose
+   basename (any directory, an optional `.exe`, compared case-insensitively) is `xargs`,
+   `gxargs` or `parallel`, denies a `commit` that steps 4 and 5 would allow or give the
+   bare row, with the wrapper row naming it (fail closed): the wrapper appends words from its
+   input or its own arguments, so `printf -- -n | xargs git commit --no-edit` runs
+   `git commit --no-edit -n` and skips the hooks. A form that steps 4 and 5 deny on another
+   row keeps that row (Precedence). `find … -exec git commit … {} +` (or `-execdir`, or a
+   `{}` anywhere in git's arguments) is denied by step 4: its placeholder holds `{`.
+   Fixtures: `xargs git commit --no-edit`, `printf -- -n | xargs git commit --no-edit`,
+   `parallel git commit --no-edit`, `/usr/bin/xargs git commit --no-edit`,
+   `xargs nice git commit --no-edit` and `xargs git commit` (the wrapper row),
+   `xargs git commit -a` (the generic row naming `-a`),
+   `find . -exec git commit --no-edit {} +` (the literal-arguments row), and
+   `git commit --no-edit | xargs echo` (no output: the wrapper is in another segment).
+   Known gap: another tool or script that appends arguments to the command it runs (such as
+   `rush`, `xe`, a shell function or a user script) is not recognized as a wrapper, and an
+   allowlisted form under it passes with no output (Q3).
    Known gap: expansion or aliasing in the command position, where no token is `git` until
    the shell expands it, passes with no output (Q3): Bash brace expansion
    `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` or an extglob
@@ -338,7 +355,17 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    apply the allowlist
    ([Q4](../decisions/q04-hook-allowlist-no-env-switch.md)); `--quiet` is allowed wherever `-q`
    is. `--squash` is denied in any form (`--no-edit` does not exempt it). Fixture:
-   `git commit --squash=HEAD --no-edit` → deny.
+   `git commit --squash=HEAD --no-edit` → deny. The generic row names an empty argument
+   (`git commit --no-edit ""`) as `""`.
+   PowerShell reading (Windows PowerShell 5.1 and PowerShell 7, verified with a node argv
+   echo): an unquoted argument of a native command that starts with a single `-` is split
+   at a `.` into two arguments (`-x.y` → `-x`, `.y`; `-q.x` → `-q`, `.x`); one starting
+   with `--` is not (`--no-edit.x`, `--fixup=v1.0`). The tokenizer does not split it yet.
+   The classifier stays safe on its own flags (`-q.x` expands to `-q -. -x` and is denied);
+   the one mismatch is a `--fixup` value written as the next argument: `--fixup -x.y` is
+   allowed while git receives `--fixup -x .y`. The split-off part starts with `.`, so git
+   reads it as a pathspec, never an option, and `-x` does not resolve to a commit. The
+   PowerShell tokenizer decides this reading on purpose (split it, or deny the form).
 
 **Oracle-skip classes:** the step 2 `segments` golden fixtures
 (`tests/fixtures/guard/segments-seed.json`, seeded by the tokenizer spike, Q3) are
@@ -387,10 +414,12 @@ the most specific wins, in this order: `-c` / `--config-env` before `commit`; th
 literal-subcommand row; the literal-arguments row; unknown global option; `--amend` without `--no-edit`; `--squash` in
 any form; `-n` / `--no-verify` / `--no-gpg-sign`; `--fixup=amend:` / `--fixup=reword:`; the
 generic "any other flag or argument" row (also covers `-C` / `-c` after `commit`); the
-bare/`-m`/`-F`/`--message`/`--file` row, only when no other row matches. A tie within one row
+argument-appending wrapper row (step 3); the bare/`-m`/`-F`/`--message`/`--file` row, only
+when no other row matches. A tie within one row
 goes to the first matching token in argv order. So `-am x` denies on `-a` (the generic row:
 `git commit -a is not allowed here. <route>`), `--amend -m x` denies on `--amend`, `-n -m x`
-on `-n`, and `--squash -m x` on `--squash`. A blanket-denied command (step 2) is never
+on `-n`, `--squash -m x` on `--squash`, `xargs git commit -a` on `-a`, and
+`xargs git commit -m x` on the wrapper. A blanket-denied command (step 2) is never
 tokenized, so it gets the blanket row and no other.
 
 | Case | Message |
@@ -401,6 +430,7 @@ tokenized, so it gets the blanket row and no other.
 | `-n`, `--no-verify`, `--no-gpg-sign` | `<flag> is not allowed. Fix the hook or signing setup instead.` |
 | `--fixup=amend:` / `--fixup=reword:` | `--fixup=<kind>: opens an editor. Use plain --fixup=<commit>, or: <route>` |
 | any other flag or argument | `git commit <flag> is not allowed here. <route>` |
+| an argument-appending wrapper (`xargs`, `gxargs`, `parallel`) before `git` (step 3) | `git commit run by <wrapper> is not allowed: it can append arguments. <route>` (`<wrapper>` is its basename in lower case, without `.exe`) |
 | `-c` / `--config-env` before `commit` | `git -c … commit is not allowed. <route>` |
 | subcommand that is not literal (step 4) | `Write the git subcommand literally. <route>` |
 | any other token among git's arguments that is not literal (step 4) | `Write git's arguments literally. <route>` |

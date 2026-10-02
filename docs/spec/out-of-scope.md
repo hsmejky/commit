@@ -17,7 +17,8 @@ and the module sections point here, and the README states it in full.
   `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
   `Start-Process`),
   shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
-  `Set-Alias g git`), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
+  `Set-Alias g git`), tools other than `xargs`, `gxargs` and `parallel` that append
+  arguments to the command they run (`rush`, `xe`, a user script; C:guard step 3), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
   blanket trigger and is read as a script call by basename, C:guard step 2), and expansion in the command position (`$GIT commit`,
   PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
   `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`; `$(echo git) commit` is denied by

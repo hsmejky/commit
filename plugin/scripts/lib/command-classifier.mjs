@@ -4,9 +4,11 @@
 // A blanket result (G2) is the blanket deny. In each segment, a `git` token directly followed
 // by a `commit` token is a commit: its arguments, read up to where git's arguments end, are
 // checked to be literal, expanded and matched against the Q4 allowlist; every other flag or
-// argument is the generic row naming it, and the bare/`-m`/`-F`/`--message`/`--file` row
-// applies only when nothing else matches. Git's own options before the subcommand, the
-// specific rows and script calls (S2) follow in later slices.
+// argument is the generic row naming it. An argument-appending wrapper (`xargs`, `parallel`)
+// before `git` in the segment denies what would otherwise be allowed (the wrapper row), and
+// the bare/`-m`/`-F`/`--message`/`--file` row applies only when nothing else matches. Git's
+// own options before the subcommand, the specific rows and script calls (S2) follow in later
+// slices.
 
 /** C:guard `<route>`. It never names the `/commit` skill, which the model cannot invoke (Q2, Q8). */
 export const ROUTE =
@@ -37,9 +39,32 @@ function genericMessage(flag) {
   return withPersonalLine(`git commit ${flag} is not allowed here. ${ROUTE}`);
 }
 
+/**
+ * The wrapper row (C:guard step 3): an argument-appending wrapper before `git` in the segment.
+ *
+ * @param {string} wrapper
+ * @returns {string}
+ */
+function wrapperMessage(wrapper) {
+  return withPersonalLine(`git commit run by ${wrapper} is not allowed: it can append arguments. ${ROUTE}`);
+}
+
 // A `git` token: basename `git` or `git.exe` after the last `/` or `\`, case-insensitive.
 const GIT = /(?:^|[/\\])git(?:\.exe)?$/i;
 const COMMIT = /^commit$/i;
+// An argument-appending wrapper (C:guard step 3): basename `xargs`, `gxargs` or `parallel`,
+// optionally `.exe`, case-insensitive. It appends words from its input (or its own
+// arguments) to the command it runs, so an allowlisted form under it may carry `-n` or `-m`.
+const WRAPPER = /(?:^|[/\\])(xargs|gxargs|parallel)(?:\.exe)?$/i;
+
+// The first wrapper among the tokens before `end`, by its lower-case name, or undefined.
+function wrapperBefore(tokens, end) {
+  for (let i = 0; i < end; i += 1) {
+    const match = typeof tokens[i] === 'string' ? WRAPPER.exec(tokens[i]) : null;
+    if (match !== null) return match[1].toLowerCase();
+  }
+  return undefined;
+}
 
 const isOp = (token, op) => typeof token === 'object' && token.op === op;
 
@@ -117,6 +142,12 @@ const QUIET = new Set(['-q', '--quiet']);
 // A `--fixup` value that opens an editor (`amend:`, `reword:`) is not the plain form.
 const isPlainFixup = (item) =>
   item.flag === '--fixup' && item.value !== undefined && !/^(?:amend|reword):/.test(item.value);
+// What each form allows besides itself. A flag that takes no value is outside the form when
+// given one (`--no-edit=x`, `--quiet=x`).
+const isQuiet = (item) => item.value === undefined && QUIET.has(item.flag);
+const fitsNoEdit = (item) =>
+  isQuiet(item) || (item.value === undefined && (item.flag === '--no-edit' || item.flag === '--amend'));
+const fitsFixup = (item) => isQuiet(item) || isPlainFixup(item);
 
 /**
  * The Q4 allowlist over expanded `commit` arguments: `--no-edit` with `--amend` and
@@ -134,27 +165,29 @@ function allowlistDecision(items) {
     const other = items.find((item) => !BARE_ROW.has(item.flag) && !QUIET.has(item.flag));
     return other === undefined ? MESSAGES.bare : genericMessage(nameOf(other));
   }
-  // A flag that takes no value is outside the form when given one (`--no-edit=x`).
-  const fits = (item) =>
-    isPlainFixup(item) ? form.flag === '--fixup'
-      : item.value === undefined
-        && (QUIET.has(item.flag) || (form.flag === '--no-edit' && (item.flag === '--no-edit' || item.flag === '--amend')));
+  const fits = form.flag === '--no-edit' ? fitsNoEdit : fitsFixup;
   const other = items.find((item) => !fits(item) && !BARE_ROW.has(item.flag));
   if (other !== undefined) return genericMessage(nameOf(other));
   return items.some((item) => BARE_ROW.has(item.flag)) ? MESSAGES.bare : null;
 }
 
-const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument);
+// The name the generic row gives an item: its flag, or the argument (an empty one as `""`).
+const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument || '""');
 
-// One `git commit` invocation, its arguments starting at `start` (after `commit`): the deny
-// message, or null when allowed. Every argument read must be literal (C:guard step 4).
-function commitDecision(tokens, start, shell) {
+// One `git commit` invocation, its `git` token at `at` and its arguments starting at `start`
+// (after `commit`): the deny message, or null when allowed. Every argument read must be
+// literal (C:guard step 4). A wrapper before `git` denies what would otherwise be allowed or
+// the bare row; its row ranks just above the bare row (C:guard Precedence).
+function commitDecision(tokens, at, start, shell) {
   const args = [];
   for (let i = start; i < tokens.length && !endsArguments(tokens[i], shell); i += 1) {
     if (!isLiteral(tokens[i], shell)) return MESSAGES.literalArguments;
     args.push(tokens[i]);
   }
-  return allowlistDecision(expandCommitArgs(args));
+  const message = allowlistDecision(expandCommitArgs(args));
+  if (message !== null && message !== MESSAGES.bare) return message;
+  const wrapper = wrapperBefore(tokens, at);
+  return wrapper === undefined ? message : wrapperMessage(wrapper);
 }
 
 /**
@@ -174,7 +207,7 @@ export function classify(parsed, context = {}) {
     for (let i = 0; i < tokens.length - 1; i += 1) {
       const [token, next] = [tokens[i], tokens[i + 1]];
       if (typeof token === 'string' && GIT.test(token) && typeof next === 'string' && COMMIT.test(next)) {
-        const message = commitDecision(tokens, i + 2, shell);
+        const message = commitDecision(tokens, i, i + 2, shell);
         if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
       }
     }

@@ -113,7 +113,8 @@ PowerShell) a `}` token, and deny any of them that is not literal (fail closed, 
 step 4): a `(` or (in PowerShell) `{` token, a token holding `$`, a backtick, `{`, `(` or a
 glob character (`*`, `?`, `[`), and in PowerShell a token holding `,` or `@` or equal to
 `--%`, with the literal-subcommand text in the subcommand position; expand commit arguments and apply
-the Q4 allowlist; a segment is denied when any of its `git` tokens is;
+the Q4 allowlist; deny what it would allow (or give the bare row) when an `xargs`, `gxargs`
+or `parallel` token precedes `git` in the segment (the wrapper row, C:guard step 3); a segment is denied when any of its `git` tokens is;
 a blanket result from G2 gives the blanket deny and nothing else;
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
