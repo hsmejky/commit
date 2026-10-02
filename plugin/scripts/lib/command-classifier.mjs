@@ -107,10 +107,12 @@ function commandStart(tokens, at, shell) {
 // The first token before `git` (at `end`) in its command outside the prefix allowlist (C:guard
 // step 3), as it reads after quote removal; undefined when every token fits. In Bash the
 // prefix is: reserved words and `(`, then literal assignments, then runners, each with its
-// options; in PowerShell it is empty.
+// options; in PowerShell it is the `&` call operator alone (a word or an operator token).
 function wrapperBefore(tokens, end, shell) {
   let i = commandStart(tokens, end, shell);
-  if (shell !== 'powershell') {
+  if (shell === 'powershell') {
+    if (i < end && (tokens[i] === '&' || isOp(tokens[i], '&'))) i += 1;
+  } else {
     for (;;) {
       if (i < end && (isOp(tokens[i], '(') || BASH_KEYWORDS.has(tokens[i]))) i += 1;
       else if (i < end && tokens[i] === 'time') i += i + 1 < end && tokens[i + 1] === '-p' ? 2 : 1;

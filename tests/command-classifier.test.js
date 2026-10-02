@@ -101,8 +101,8 @@ for (const parsed of noneTable) {
 
 // GRD-04 at G3 directly: where `commit`'s arguments end and which are not literal, per
 // shell (C:guard step 4), and the prefix allowlist before `git` (step 3: in PowerShell it is
-// empty, but a `(` or `{` still open at `git` starts a new command, so `if (…) { git … }`,
-// `&{ git … }` and `. { git … }` fit). The PowerShell rows are reached through `runHook` once
+// the `&` call operator alone, and a `(` or `{` still open at `git` starts a new command, so
+// `if (…) { git … }`, `&{ git … }` and `. { git … }` fit). The PowerShell rows are reached through `runHook` once
 // its tokenizer lands (GRD-06).
 const commitArgTable = [
   ['bash', [['git', 'commit', '--no-edit', { op: ')' }, '-m', 'x']], 'none'],
@@ -121,9 +121,12 @@ const commitArgTable = [
   ['powershell', [['.', { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
   ['powershell', [['&', { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
   ['powershell', [['xargs', 'git', 'commit', '--no-edit']], 'wrapper:xargs'],
-  ['powershell', [['&', 'xargs', 'git', 'commit', '--no-edit']], 'wrapper:&'],
-  ['powershell', [['&', { op: '(' }, 'xargs', { op: ')' }, 'git', 'commit', '--no-edit']], 'wrapper:&'],
-  ['powershell', [['&', 'git', 'commit', '--no-edit']], 'wrapper:&'],
+  ['powershell', [['&', 'xargs', 'git', 'commit', '--no-edit']], 'wrapper:xargs'],
+  ['powershell', [['&', { op: '(' }, 'xargs', { op: ')' }, 'git', 'commit', '--no-edit']], 'wrapper:('],
+  ['powershell', [['&', 'git', 'commit', '--no-edit']], 'none'],
+  ['powershell', [[{ op: '&' }, 'git', 'commit', '--no-edit']], 'none'],
+  ['powershell', [['&', '&', 'git', 'commit', '--no-edit']], 'wrapper:&'],
+  ['bash', [['&', 'git', 'commit', '--no-edit']], 'wrapper:&'],
   ['powershell', [['.', 'git', 'commit', '--no-edit']], 'wrapper:.'],
   ['powershell', [['env', 'git', 'commit', '--no-edit']], 'wrapper:env'],
   ['powershell', [['if', { op: '(' }, '$ok', { op: ')' }, { op: '{' }, 'xargs', 'git', 'commit', '--no-edit', { op: '}' }]], 'wrapper:xargs'],
