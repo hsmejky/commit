@@ -278,6 +278,9 @@ const powershellTable = [
   ['git commit`0x -m x', [['git', 'commit', cut, '-m', 'x']]],
   ['git "commit`0" --no-edit', [['git', 'commit', cut, '--no-edit']]],
   ['git commit`u{000000} --no-edit', [['git', 'commit', cut, '--no-edit']]],
+  // A raw NUL character cuts like `` `0 `` (pwsh and 5.1 pass git `commit` only).
+  ['git commit\0x -m x', [['git', 'commit', cut, '-m', 'x']]],
+  ['git "com\0mit" -m x', [['git', 'com', cut, '-m', 'x']]],
   ['git co`u{6D}mit -m x', [['git', 'commit', '-m', 'x']]],
   ['echo a`tb`nc', [['echo', 'a\tb\nc']]],
   ['& git commit -m x', [['&', 'git', 'commit', '-m', 'x']]],

@@ -64,6 +64,9 @@ const table = [
   ['git "commit`0" --no-edit', 'bare'],
   ['git commit`0 --no-edit', 'bare'],
   ['git commit`u{00} --no-edit', 'bare'],
+  // A raw NUL character cuts the native command line the same way (pwsh and 5.1 pass `commit`).
+  ['git commit\0x -m x', 'bare'],
+  ['git "commit\0x" -m x', 'bare'],
   // The tokens after a NUL stay in the segment: a nested command still runs.
   ['Write-Output x`0 (git commit -m x)', 'bare'],
   ['if ("x`0") {git commit -m x}', 'bare'],

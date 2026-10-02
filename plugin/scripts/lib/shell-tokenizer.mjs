@@ -632,8 +632,11 @@ function readPsWord(s, i) {
     } else if (PS_SINGLE.has(c) || PS_DOUBLE.has(c)) {
       quoted = true;
       part = psQuote(s, i + 1, PS_SINGLE.has(c) ? PS_SINGLE : PS_DOUBLE);
+    } else if (c === '\0') {
+      // A raw NUL cuts the native command line like `` `0 `` (verified with 5.1 and 7).
+      part = { value: '', end: i + 1, nul: true };
     } else {
-      part = { value: c, end: i + 1, nul: c === '\0' };
+      part = { value: c, end: i + 1 };
     }
     if (!cut) value += part.value;
     cut ||= part.nul === true;
