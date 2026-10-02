@@ -477,7 +477,8 @@ export function releaseById({
 export const EXCLUDE_LINE = `/${RUN_DIR_NAME}`;
 
 // Appends `EXCLUDE_LINE` to the common dir's `info/exclude` unless a line already holds it
-// (git ignores trailing blanks, so a line is compared without them).
+// (git strips only unescaped trailing spaces, not tabs, so a line is compared without its
+// trailing spaces; review-RUN-05 finding 7).
 function ensureExcludeLine(excludePath) {
   let text = '';
   try {
@@ -485,7 +486,7 @@ function ensureExcludeLine(excludePath) {
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
-  if (text.split(/\r?\n/).some((line) => line.replace(/[ \t]+$/, '') === EXCLUDE_LINE)) return;
+  if (text.split(/\r?\n/).some((line) => line.replace(/ +$/, '') === EXCLUDE_LINE)) return;
   fs.mkdirSync(path.dirname(excludePath), { recursive: true });
   const separator = text === '' || text.endsWith('\n') ? '' : '\n';
   fs.appendFileSync(excludePath, `${separator}${EXCLUDE_LINE}\n`);
@@ -539,6 +540,8 @@ function runFolderRefusal() {
  *   | { ok: false, code: 'run-folder', message: string }}
  *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
  *   slashes (C:run-folder); `discard()` deletes it (every outcome that takes no lock).
+ *   Inside M12 a local `runDir` is `.commit-plan` itself (`runDirOf`); only this output
+ *   field names the `<planId>/` folder, keeping C:plan's `runDir` (review-RUN-05 finding 8).
  */
 export function create({ toplevel, excludePath, tracked }) {
   const runDir = runDirOf(toplevel);

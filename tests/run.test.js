@@ -934,3 +934,20 @@ test('discard: a removed folder returns no notice', (t) => {
   assert.equal(provisional.discard(), null);
   assert.equal(fs.existsSync(provisional.runDir), false);
 });
+
+// review-RUN-05 finding 7: git strips only unescaped trailing spaces from an exclude line,
+// so `/.commit-plan<TAB>` does not match `.commit-plan` and the line is still added; a line
+// with trailing spaces does match and is not added again.
+test('create: an exclude line with a trailing tab is not the exclude line; trailing spaces are', (t) => {
+  const toplevel = tempDir(t);
+  const tabbed = path.join(toplevel, 'tabbed');
+  const spaced = path.join(toplevel, 'spaced');
+  fs.writeFileSync(tabbed, '/.commit-plan\t\n');
+  fs.writeFileSync(spaced, '/.commit-plan  \n');
+
+  run.create({ toplevel, excludePath: tabbed, tracked: false }).provisional.discard();
+  run.create({ toplevel, excludePath: spaced, tracked: false }).provisional.discard();
+
+  assert.equal(fs.readFileSync(tabbed, 'utf8'), '/.commit-plan\t\n/.commit-plan\n');
+  assert.equal(fs.readFileSync(spaced, 'utf8'), '/.commit-plan  \n');
+});
