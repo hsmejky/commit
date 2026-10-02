@@ -80,6 +80,8 @@ function triggerIn(text, bash) {
  * `<(…)` or `>(…)` substitution inside an extglob pattern in an argument (C:guard step 2)
  * is the blanket kind 'substitution' too, found while tokenizing, and such a pattern whose
  * brackets nest deeper than `MAX_PATTERN_DEPTH` is the blanket kind 'nesting'.
+ * A PowerShell `` `e `` or `` `u{ `` escape outside single quotes, which Windows PowerShell
+ * 5.1 and PowerShell 7 read differently, is the blanket kind 'escape', found while tokenizing.
  *
  * A token is a word (a string, after quote removal), `{ op }` for `(` and `)`, or
  * `{ redir, target }` for a redirection with its target word (null for a descriptor
@@ -538,35 +540,30 @@ const PS_WORD_END = new Set([';', '|', '&', '(', ')', '{', '}']);
 // in a row inside it are one escaped quote, the second of the two.
 const PS_DOUBLE = new Set(['"', '“', '”', '„']);
 const PS_SINGLE = new Set(["'", '‘', '’', '‚', '‛']);
-// The backtick escapes with a meaning of their own (PowerShell 7); any other escaped
-// character is itself. `` `0 `` (a NUL) is handled by `psEscape`.
-const PS_ESCAPES = { a: '\x07', b: '\b', e: '\x1B', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+// The backtick escapes with a meaning of their own in both Windows PowerShell 5.1 and
+// PowerShell 7; any other escaped character is itself. `` `0 `` (a NUL), `` `e `` and
+// `` `u{ `` are handled by `psEscape`.
+const PS_ESCAPES = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
 // A redirection at a token's start: a stream duplication (`2>&1`, `*>&1`), an output
 // redirection with an optional stream (`>`, `>>`, `2>`, `*>>`), or `<` (reserved in
 // PowerShell, which then runs nothing).
 const PS_REDIRECTION = /[1-6*]>&[12]|[1-6*]?>>?|</y;
 
-// The backtick escape at `i`: its value and end, `nul` for a NUL (`` `0 `` or a zero
-// `` `u{…} ``). A backtick before a newline (optionally after a carriage return) is an
-// escaped newline and removed; a trailing backtick at the command's end is dropped.
+// The backtick escape at `i`: its value and end, `nul` for a `` `0 `` (a NUL), `divergent`
+// for an escape PowerShell 7 reads and Windows PowerShell 5.1 does not: `` `e `` (ESC in 7,
+// `e` in 5.1) and `` `u{ `` (in 7 a code point, a NUL that cuts the native command line, or
+// a parse error; in 5.1 `u` and the braces as text in a string, a script block in a word).
+// G2 picks no reading: the command is the blanket kind 'escape' (fail closed), so the value
+// given for these is unused. A backtick before a newline (optionally after a carriage
+// return) is an escaped newline and removed; a trailing backtick at the command's end is
+// dropped.
 function psEscape(s, i) {
   const n = s[i + 1];
   if (n === undefined) return { value: '', end: i + 1 };
   if (n === '\n') return { value: '', end: i + 2 };
   if (n === '\r' && s[i + 2] === '\n') return { value: '', end: i + 3 };
   if (n === '0') return { value: '', end: i + 2, nul: true };
-  if (n === 'u') {
-    const braces = /\{([0-9A-Fa-f]{1,6})\}/y;
-    braces.lastIndex = i + 2;
-    const hex = braces.exec(s);
-    if (hex) {
-      const code = parseInt(hex[1], 16);
-      const end = i + 2 + hex[0].length;
-      if (code === 0) return { value: '', end, nul: true };
-      // Past U+10FFFF PowerShell rejects the command and runs nothing.
-      return { value: code <= 0x10ffff ? String.fromCodePoint(code) : '', end };
-    }
-  }
+  if (n === 'e' || (n === 'u' && s[i + 2] === '{')) return { value: n, end: i + 2, divergent: true };
   return { value: Object.hasOwn(PS_ESCAPES, n) ? PS_ESCAPES[n] : n, end: i + 2 };
 }
 
@@ -598,6 +595,7 @@ function psQuote(s, from, kind) {
   const { end, closed } = psQuoteEnd(s, from, kind);
   const stop = closed ? end - 1 : end;
   let value = '';
+  let divergent = false;
   for (let i = from; i < stop;) {
     let part;
     if (kind === PS_DOUBLE && s[i] === '`') {
@@ -608,11 +606,12 @@ function psQuote(s, from, kind) {
     } else {
       part = { value: s[i], end: i + 1, nul: s[i] === '\0' };
     }
-    if (part.nul) return { value, end, nul: true };
+    divergent ||= part.divergent === true;
+    if (part.nul) return { value, end, nul: true, divergent };
     value += part.value;
     i = part.end;
   }
-  return { value, end, nul: false };
+  return { value, end, nul: false, divergent };
 }
 
 // Reads one PowerShell word from `i` up to unquoted whitespace, a newline or a PS_WORD_END
@@ -623,6 +622,7 @@ function readPsWord(s, i) {
   let value = '';
   let quoted = false;
   let cut = false;
+  let divergent = false;
   while (i < s.length) {
     const c = s[i];
     if (isPsSpace(c) || isPsNewline(c) || PS_WORD_END.has(c)) break;
@@ -640,9 +640,10 @@ function readPsWord(s, i) {
     }
     if (!cut) value += part.value;
     cut ||= part.nul === true;
+    divergent ||= part.divergent === true;
     i = part.end;
   }
-  return { value, end: i, quoted, cut };
+  return { value, end: i, quoted, cut, divergent };
 }
 
 // The words after a stop-parsing `--%` (C:guard step 2): the rest of the line up to the next
@@ -721,6 +722,7 @@ function tokenizePowerShell(s) {
         const w = readPsWord(s, i);
         push(w.value, i, w.end);
         if (w.cut) push({ op: 'cut' }, w.end, w.end);
+        if (w.divergent) out.blanket ??= 'escape';
         first = false;
         i = w.end;
         if (!w.quoted && !w.cut && w.value === '--%') i = readStopParsing(s, i, push);

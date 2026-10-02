@@ -1974,20 +1974,11 @@
    "shell": "powershell",
    "topic": "quotes",
    "command": "git commit`u{00} --no-edit",
-   "segments": [
-    [
-     "git",
-     "commit",
-     {
-      "op": "cut"
-     },
-     "--no-edit"
-    ]
-   ],
+   "segments": [],
    "decision": "deny",
    "oracle": {
-    "ps51": "ps-nul",
-    "ps7": "ps-nul"
+    "ps51": "blanket",
+    "ps7": "blanket"
    }
   },
   {

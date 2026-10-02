@@ -44,11 +44,15 @@ export const MESSAGES = Object.freeze({
     'This command mentions commit and is longer than 262144 characters, which the guard does not parse. Keep a command that mentions commit shorter (write long text to a file first), or to commit: '
       + ROUTE,
   ),
+  escape: withPersonalLine(
+    'This command mentions commit and holds a `e or `u{…} escape, which Windows PowerShell 5.1 and PowerShell 7 read differently. Keep them out of a command that mentions commit, or to commit: '
+      + ROUTE,
+  ),
 });
 
 // The blanket row for each G2 blanket kind with a row of its own; every other kind gets
 // MESSAGES.blanket.
-const BLANKET_ROWS = Object.freeze({ nesting: MESSAGES.nesting, size: MESSAGES.size });
+const BLANKET_ROWS = Object.freeze({ nesting: MESSAGES.nesting, size: MESSAGES.size, escape: MESSAGES.escape });
 
 /**
  * The generic row (C:guard Deny messages, "any other flag or argument"), naming the flag.
@@ -151,6 +155,19 @@ function commandStarts(tokens, shell) {
   return starts;
 }
 
+// PowerShell's `Start-Process` (aliases `saps`, `start`) runs a program with arguments it
+// builds from its own parameters, so a `git` token anywhere after it in its command is
+// denied as run by a wrapper, like `sudo git commit` (C:guard step 3).
+const START_PROCESS = /^(?:Microsoft\.PowerShell\.Management\\)?(?:Start-Process|saps|start)$/i;
+
+// The Start-Process token (as written) heading the command of the `git` token at `at`, the
+// command starting at `from` after an optional `&`; undefined when there is none.
+function startProcessAt(tokens, from, at) {
+  let i = from;
+  if (i < at && (tokens[i] === '&' || isOp(tokens[i], '&'))) i += 1;
+  return i < at && typeof tokens[i] === 'string' && START_PROCESS.test(tokens[i]) ? tokens[i] : undefined;
+}
+
 // The first token before `git` (at `end`) in its command, which starts at `from`
 // (`commandStarts`), outside the prefix allowlist (C:guard step 3), as it reads after quote
 // removal; undefined when every token fits. In Bash the prefix is: reserved words and `(`,
@@ -181,11 +198,15 @@ function endsArguments(token, shell) {
 
 // C:guard step 4: a token the shell may turn into another word or into several arguments
 // is not literal: a `(` or `{` token, a NOT_LITERAL token and, in PowerShell, one holding
-// `,` or `@`, or equal to `--%`.
+// `,` or `@`, or equal to `--%`. In PowerShell also one that Windows PowerShell 5.1's legacy
+// native-argument passing does not hand to git as it reads: an empty one (dropped), one
+// holding `"` (not escaped, so git splits the argument there) or one ending in `\` (when 5.1
+// quotes it, the `\"` escapes the closing quote and the arguments after it run together).
 function isLiteral(token, shell) {
   if (typeof token !== 'string') return false;
   if (NOT_LITERAL.test(token)) return false;
-  return !(shell === 'powershell' && (/[,@]/.test(token) || token === '--%'));
+  if (shell !== 'powershell') return true;
+  return !(/[,@"]/.test(token) || token === '--%' || token === '' || token.endsWith('\\'));
 }
 
 // `commit`'s short options that take a value: attached (`-mfoo`) or the next argument
@@ -352,13 +373,21 @@ export function classify(parsed, context = {}) {
     const tokens = segment.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));
     // Every `git` token is classified; the segment is denied when any of them is (step 3).
     let starts = null;
-    for (let i = 0; i < tokens.length - 1; i += 1) {
-      const [token, next] = [tokens[i], tokens[i + 1]];
-      if (typeof token === 'string' && GIT.test(token) && typeof next === 'string' && COMMIT.test(next)) {
-        starts ??= commandStarts(tokens, shell);
-        const message = commitDecision(tokens, starts[i], i, i + 2, shell);
-        if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i];
+      if (typeof token !== 'string' || !GIT.test(token)) continue;
+      starts ??= commandStarts(tokens, shell);
+      if (shell === 'powershell') {
+        const starter = startProcessAt(tokens, starts[i], i);
+        if (starter !== undefined) return { decision: 'deny', message: wrapperMessage(starter), scriptCalls: [] };
       }
+      // Windows PowerShell 5.1 drops an empty argument, so `git '' commit` runs a commit.
+      let next = i + 1;
+      while (shell === 'powershell' && tokens[next] === '') next += 1;
+      if (typeof tokens[next] !== 'string' || !COMMIT.test(tokens[next])) continue;
+      if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
+      const message = commitDecision(tokens, starts[i], i, next + 1, shell);
+      if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
     }
   }
   return { decision: 'none', scriptCalls: [] };

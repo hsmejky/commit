@@ -49,6 +49,12 @@ test('the catalogue holds the bare-commit and blanket rows with their fixed text
     'This command mentions commit and is longer than 262144 characters, which the guard does not parse. Keep a command that mentions commit shorter (write long text to a file first), or to commit: '
       + `${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
   );
+  assert.equal(
+    MESSAGES.escape,
+    'This command mentions commit and holds a `e or `u{…} escape, which Windows PowerShell 5.1 and PowerShell 7 read differently. Keep them out of a command that mentions commit, or to commit: '
+      + `${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
+  );
+  assert.equal(MESSAGES.literalArguments, `Write git's arguments literally. ${ROUTE_TEXT}\n${PERSONAL_TEXT}`);
 });
 
 test('no deny text anywhere in the catalogue names /commit', () => {

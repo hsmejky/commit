@@ -97,13 +97,18 @@ test('Seam 3: `echo "$(date)" && git status` has no output (no `commit`, step 1)
   assert.deepEqual({ ...hook(c, 'echo "$(date)" && git status') }, { stdout: '', stderr: '' });
 });
 
-// Every blanket seed case: denied with the blanket message when it mentions `commit`, no
-// output otherwise; never a heartbeat.
+// The blanket seed cases denied by a blanket row of their own, with its fixed text.
+const ESCAPE_TEXT = 'This command mentions commit and holds a `e or `u{…} escape, which Windows PowerShell 5.1 and PowerShell 7 read differently. Keep them out of a command that mentions commit, or to commit: Spawn the commit:commit-worker agent (model: sonnet; pass intent: <what you changed and why>). Edit no files until it replies.\nIf a personal commit skill sent you here, remove it (see the commit plugin README).';
+const blanketRowText = { 'p-nul-u00': ESCAPE_TEXT };
+
+// Every blanket seed case: denied with the blanket message (or its own row) when it
+// mentions `commit`, no output otherwise; never a heartbeat.
 for (const s of seedCases.filter((x) => x.segments.length === 0)) {
   const toolName = s.shell === 'bash' ? 'Bash' : 'PowerShell';
   test(`Seam 3: blanket seed ${s.id} (${toolName}) → ${s.decision}`, (t) => {
     const c = createCase(t, { repo: false });
-    const expected = s.decision === 'deny' ? denyJson(MESSAGES.blanket) : '';
+    const message = Object.hasOwn(blanketRowText, s.id) ? blanketRowText[s.id] : MESSAGES.blanket;
+    const expected = s.decision === 'deny' ? denyJson(message) : '';
     assert.equal(mentionsCommit(s.command), s.decision === 'deny');
     assert.deepEqual({ ...hook(c, s.command, toolName) }, { stdout: expected, stderr: '' });
     assert.equal(fs.existsSync(path.join(c.claudeHome, 'commit-guard')), false);

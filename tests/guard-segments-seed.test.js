@@ -66,6 +66,8 @@ function triggerText(shell, s) {
   } else {
     if (/@\(/.test(s)) return true;
     if (/@['"\u2018-\u201E]/.test(s)) return true;
+    // A `e or `u{ escape (blanket kind 'escape'), not after an escaped backtick.
+    if (/(?<!`)`(?:e|u\{)/.test(s)) return true;
   }
   return false;
 }

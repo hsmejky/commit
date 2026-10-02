@@ -25,7 +25,7 @@ beforeEach(async () => {
   ({ segments, blanketTrigger, isExemptScriptCall, segmentSpans } = await loadLib('shell-tokenizer'));
 });
 
-const BLANKET_KINDS = new Set(['substitution', 'heredoc', 'here-string', 'comment', 'typographic-quote', 'nesting', 'size']);
+const BLANKET_KINDS = new Set(['substitution', 'heredoc', 'here-string', 'comment', 'typographic-quote', 'nesting', 'size', 'escape']);
 
 test('G2 is pure (no I/O, no ambient state, no imports)', () => {
   assertPureSource('shell-tokenizer');
@@ -45,12 +45,16 @@ for (const c of seedCases.filter((x) => x.shell === 'bash')) {
   });
 }
 
+// A PowerShell blanket result may come from tokenizing (the kind 'escape'), which the
+// pre-scan `blanketTrigger` does not see.
 for (const c of seedCases.filter((x) => x.shell === 'powershell')) {
   test(`Seam 3: PowerShell blanket rule on ${c.id}`, () => {
     const kind = blanketTrigger(c.command, 'powershell');
     if (c.segments.length === 0) {
-      assert.ok(BLANKET_KINDS.has(kind), `expected a trigger kind, got ${kind}`);
-      assert.deepEqual(segments(c.command, 'powershell'), { blanket: kind });
+      const result = segments(c.command, 'powershell');
+      assert.ok(!Array.isArray(result), `expected a blanket result, got ${JSON.stringify(result)}`);
+      assert.ok(BLANKET_KINDS.has(result.blanket), `unknown trigger kind ${result.blanket}`);
+      assert.ok(kind === null || kind === result.blanket, `pre-scan kind ${kind}`);
     } else {
       assert.equal(kind, null);
       assert.deepEqual(segments(c.command, 'powershell'), c.segments);
@@ -277,11 +281,18 @@ const powershellTable = [
   ['git commit -m "a`"b"', [['git', 'commit', '-m', 'a"b']]],
   ['git commit`0x -m x', [['git', 'commit', cut, '-m', 'x']]],
   ['git "commit`0" --no-edit', [['git', 'commit', cut, '--no-edit']]],
-  ['git commit`u{000000} --no-edit', [['git', 'commit', cut, '--no-edit']]],
+  // `u{…} and `e read differently in 5.1 and 7: the blanket kind 'escape'.
+  ['git commit`u{000000} --no-edit', { blanket: 'escape' }],
+  ['git commit -m a`e', { blanket: 'escape' }],
+  ['git commit -m "a`u{41}"', { blanket: 'escape' }],
+  // Not an escape: inside single quotes, after an escaped backtick, or upper case.
+  ["git commit -m '`e'", [['git', 'commit', '-m', '`e']]],
+  ['git commit -m "a``e"', [['git', 'commit', '-m', 'a`e']]],
+  ['git commit -m "a`E`U{41}"', [['git', 'commit', '-m', 'aEU{41}']]],
   // A raw NUL character cuts like `` `0 `` (pwsh and 5.1 pass git `commit` only).
   ['git commit\0x -m x', [['git', 'commit', cut, '-m', 'x']]],
   ['git "com\0mit" -m x', [['git', 'com', cut, '-m', 'x']]],
-  ['git co`u{6D}mit -m x', [['git', 'commit', '-m', 'x']]],
+  ['git co`u{6D}mit -m x', { blanket: 'escape' }],
   ['echo a`tb`nc', [['echo', 'a\tb\nc']]],
   ['& git commit -m x', [['&', 'git', 'commit', '-m', 'x']]],
   ['git status & git commit -m x', [['git', 'status'], ['git', 'commit', '-m', 'x']]],
