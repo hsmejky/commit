@@ -267,51 +267,84 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    segment as a `commit` straight away, skipping steps 4 and 5's global-option and
    subcommand scan: the tokens after it are `commit`'s own args, expanded and checked
    against the allowlist as in step 5.
-   An argument-appending wrapper before the `git` token in the same segment, a token whose
-   basename (any directory, an optional `.exe`, compared case-insensitively) is `xargs`,
-   `gxargs` or `parallel`, denies a `commit` that steps 4 and 5 would allow or give the
-   bare row, with the wrapper row naming it (fail closed): the wrapper appends words from its
-   input or its own arguments, so `printf -- -n | xargs git commit --no-edit` runs
-   `git commit --no-edit -n` and skips the hooks. A token before `git` in the segment that
-   is not literal by step 4's own character set (it holds `$`, a backtick, `{`, `(`, `*`,
-   `?` or `[`) or holds a tilde expansion (`~` at the start of the word or after `=` or
-   `:`) counts as a possible wrapper the same way, named as the token reads after quote
-   removal: a glob, brace, extglob, variable or tilde expansion may turn it into a wrapper's
-   name (`/usr/bin/x[a]rgs git commit --no-edit`, `xa*s …`, `xargs{,} …`, `x@(a)rgs …`,
-   `$W …`, `~- …` with `OLDPWD` naming `xargs`). A substitution there (`$(…)`, a
-   backtick, `${…}`) never reaches this step: the blanket rule denies the command (step 2).
-   A `)` token before `git` in the segment counts too, named `)`: it closes an extglob
-   whose `|` split the segment (`x@(z|a)rgs git commit --no-edit` gives git's segment `a`,
-   `)`, `rgs`, `git`, …). Two tokens are exempt: a lone `{`, the brace-group keyword, and
-   a lone `!(`, the `!` keyword before a subshell (`!(git commit --no-edit)`; with
-   `extglob` on, `!(z) git …` is caught by its `)` token). Any other such token counts, so these
-   are denied too (fail closed, documented false positives): `a='*' git commit --no-edit`,
-   `GIT_AUTHOR_DATE=$d git commit --no-edit`, a `case … in pat) git commit --no-edit;;` arm
-   and, in PowerShell, `if ($ok) { git commit --no-edit }` or
-   `if (Test-Path a) { git commit --no-edit }`. A form that steps 4 and 5 deny on another
-   row keeps that row (Precedence). `find … -exec git commit … {} +` (or `-execdir`, or a
-   `{}` anywhere in git's arguments) is denied by step 4: its placeholder holds `{`.
+   Every token before the `git` token in its command must fit the prefix allowlist below
+   (fail closed). The first token that does not is a possible wrapper: it denies a `commit`
+   that steps 4 and 5 would allow or give the bare row, with the wrapper row naming it as it
+   reads after quote removal (an operator token as its operator, e.g. `)`). A program that
+   runs git may append words from its input or its own arguments, so
+   `printf -- -n | xargs git commit --no-edit` runs `git commit --no-edit -n` and skips the
+   hooks; a denylist of such programs and of the tokens an expansion may turn into one kept
+   missing some (`env -S`, `watch`, `rush`, a function), so only known-safe prefixes pass.
+   `git`'s command starts at the segment's start or, when a bracket is still open at `git`,
+   right after the innermost one: in Bash a `(` token (a subshell, `<(…)`, `>(…)` or an
+   extglob opener), in PowerShell a `(` or `{` token (a grouping expression, a
+   subexpression or a script block). Redirections are dropped before this step (step 2).
+   The prefix allowlist:
+   - Bash, in this order: reserved words that may start a command (`!`, `{`, `if`, `then`,
+     `elif`, `else`, `while`, `until`, `do`), a `(` token and `time` with an optional `-p`,
+     any number of them; then literal assignments `NAME=value` whose value holds none of
+     step 4's non-literal characters (`$`, a backtick, `{`, `(`, `*`, `?`, `[`) and no tilde
+     expansion (`~` at the start of the word or after `=` or `:`); then any number of
+     runners, each with its fixed option grammar: `nice` (an optional `-n <integer>` or
+     `-<integer>`), `nohup`, `command` (no option) and `env` (any `-i` and `-u <NAME>`,
+     then literal assignments). Names compare exactly as they read (no directory, no
+     `.exe`, case-sensitive).
+   - PowerShell: the `&` call operator alone. The bracket reset lets `if (…) { … }`,
+     `foreach (…) { … }`, `else { … }`, `try { … }`, `&{ … }` and `. { … }` through.
+   A substitution before `git` or around it (`$(…)`, a backtick, `${…}`) never reaches this
+   step: the blanket rule denies the command (step 2), even `echo $(git commit --no-edit)`.
+   In a process substitution `git` as its first word fits (`diff <(git commit --no-edit) f`,
+   `tee >(git commit --no-edit)`), and the tokens before it are checked like any command's
+   (`diff <(xargs git commit --no-edit) f` names `xargs`). `!(git commit --no-edit)` fits:
+   with `extglob` off it is the `!` keyword before a subshell; with it on it is a glob
+   pattern in the command position, so git never runs as git there (the command-position
+   gap below). A form that steps 4 and 5 deny on another row keeps that row (Precedence).
+   `find … -exec git commit … {} +` (or `-execdir`, or a `{}` anywhere in git's arguments)
+   is denied by step 4: its placeholder holds `{`.
+   Accepted false denies (fail closed, documented false positives): `echo git commit` (the
+   wrapper row naming `echo`); runners outside the list (`sudo`, `timeout`, `stdbuf`,
+   `strace`, `exec`, `watch`, `/usr/bin/env`, `command -p`, `nice` or `env` with another
+   option such as `env -C`); a function definition (`f() { git commit --no-edit; }` naming
+   `f`, `function f { … }` naming `function`); a `case … in pat) git commit --no-edit;;` arm
+   (naming `case`); an assignment whose value may expand (`a='*' git …`,
+   `GIT_AUTHOR_DATE=$d git …`, `GIT_DIR=~/r/.git git …`); `>!(z) git …` (naming `z`); and in
+   PowerShell `. git commit --no-edit` (naming `.`), an environment prefix and
+   `& ('xargs') git …` (naming `(`).
    Fixtures: `xargs git commit --no-edit`, `printf -- -n | xargs git commit --no-edit`,
-   `parallel git commit --no-edit`, `/usr/bin/xargs git commit --no-edit`,
+   `parallel git commit --no-edit`, `/usr/bin/xargs git commit --no-edit` (naming
+   `/usr/bin/xargs`), `busybox xargs git commit --no-edit` (naming `busybox`),
    `xargs nice git commit --no-edit`, `xargs git commit`,
-   `/usr/bin/x[a]rgs.exe git commit --no-edit`, `/usr/bin/xa*s git commit --no-edit`,
-   `xargs{,} git commit --no-edit`, `/usr/bin/x@(a)rgs.exe git commit --no-edit`,
-   `x@(z|a)rgs git commit --no-edit` (naming `)`), `$W git commit --no-edit`,
-   `~- git commit --no-edit`, `GIT_AUTHOR_DATE=$d git commit --no-edit` and
-   `case x in a) git commit --no-edit;; esac` (the wrapper row),
-   `$(echo xargs) git commit --no-edit` (the blanket row),
-   `xargs git commit -a` (the generic row naming `-a`),
-   `find . -exec git commit --no-edit {} +` (the literal-arguments row),
-   `git commit --no-edit | xargs echo` (no output: the wrapper is in another segment), and
-   `{ git commit --no-edit; }` and `!(git commit --no-edit)` (no output: a lone `{` or `!(`
-   is not a possible wrapper), and `for f in *.md; do git commit --no-edit; done`,
-   `[ -f a ] && git commit --no-edit`, `if [ -f a ]; then git commit --no-edit; fi`,
-   `(cd sub && git commit --no-edit)` and `time -p git commit --no-edit` (no output:
-   nothing before `git` in its segment may name a wrapper).
-   Known gap: another tool or script that appends arguments to the command it runs (such as
-   `rush`, `xe`, a shell function or a user script), or a shell alias for a wrapper
-   (`alias x=xargs`), is not recognized as a wrapper, and an allowlisted form under it
-   passes with no output (Q3).
+   `/usr/bin/x[a]rgs.exe git commit --no-edit`, `xargs{,} git commit --no-edit`,
+   `x@(z|a)rgs git commit --no-edit` (naming `a`), `$W git commit --no-edit`,
+   `~- git commit --no-edit`, `env -Sxargs git commit --no-edit` (naming `-Sxargs`),
+   `env -S 'xargs -r' git commit --no-edit` (naming `-S`),
+   `watch 'xargs -r' git commit --no-edit`, `rush git commit --no-edit`,
+   `sudo git commit --no-edit`, `command -v git commit --no-edit` (naming `-v`),
+   `nice A=1 git commit --no-edit` (naming `A=1`), `(xargs git commit --no-edit)`,
+   `{ xargs git commit --no-edit; }`, `diff <(xargs git commit --no-edit) f`,
+   `echo git commit` and the false denies above (the wrapper row);
+   `$(echo xargs) git commit --no-edit` and `echo $(git commit --no-edit)` (the blanket
+   row); `xargs git commit -a` (the generic row naming `-a`);
+   `find . -exec git commit --no-edit {} +` (the literal-arguments row);
+   `git commit --no-edit | xargs echo` (no output: the wrapper is in another segment); and
+   with no output (every token before `git` fits): `{ git commit --no-edit; }`,
+   `!(git commit --no-edit)`, `! git commit --no-edit`, `(cd sub && git commit --no-edit)`,
+   `if git commit --no-edit; then :; fi`, `for f in *.md; do git commit --no-edit; done`,
+   `[ -f a ] && git commit --no-edit`, `time -p git commit --no-edit`,
+   `diff <(git commit --no-edit) f`, `tee >(git commit --no-edit)`,
+   `f() (git commit --no-edit)`, `GIT_EDITOR=: git commit --no-edit`,
+   `>out.txt git commit --no-edit`, `nice -n 5 git commit --no-edit`,
+   `env -i -u HOME A=1 git commit --fixup=1a2b3c4`,
+   `A=1 nice -n 5 nohup env B=2 command git commit --no-edit`, and PowerShell
+   `if ($ok) { git commit --no-edit }`, `&{ git commit --no-edit }` and
+   `& git commit --no-edit`.
+   Known gap: a wrapper reached through an allowlisted word passes with no output (Q3): a
+   Bash alias (with `expand_aliases`) for an allowlisted word, or a function or a script
+   earlier on `PATH` named `nice`, `nohup` or `env` (`command` skips aliases and functions,
+   not `PATH`); and since the tokenizer drops quoting, a quoted reserved word or assignment
+   (`'!'`, `'{'`, `'if'`, `"A"=x`), which bash runs as a command of that name, fits too.
+   A wrapper that runs git from a string (`sh -c '…'`, `eval`, a script) holds no `git`
+   token: the interpreter gap (Q3).
    Known gap: expansion or aliasing in the command position, where no token is `git` until
    the shell expands it, passes with no output (Q3): Bash brace expansion
    `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` or an extglob
@@ -442,12 +475,12 @@ the most specific wins, in this order: `-c` / `--config-env` before `commit`; th
 literal-subcommand row; the literal-arguments row; unknown global option; `--amend` without `--no-edit`; `--squash` in
 any form; `-n` / `--no-verify` / `--no-gpg-sign`; `--fixup=amend:` / `--fixup=reword:`; the
 generic "any other flag or argument" row (also covers `-C` / `-c` after `commit`); the
-argument-appending wrapper row (step 3); the bare/`-m`/`-F`/`--message`/`--file` row, only
+wrapper row (step 3); the bare/`-m`/`-F`/`--message`/`--file` row, only
 when no other row matches. A tie within one row
 goes to the first matching token in argv order. So `-am x` denies on `-a` (the generic row:
 `git commit -a is not allowed here. <route>`), `--amend -m x` denies on `--amend`, `-n -m x`
 on `-n`, `--squash -m x` on `--squash`, `xargs git commit -a` on `-a`, and
-`xargs git commit -m x` on the wrapper. A blanket-denied command (step 2) is never
+`xargs git commit -m x` and `echo git commit` on the wrapper. A blanket-denied command (step 2) is never
 tokenized, so it gets the blanket row and no other.
 
 | Case | Message |
@@ -458,7 +491,7 @@ tokenized, so it gets the blanket row and no other.
 | `-n`, `--no-verify`, `--no-gpg-sign` | `<flag> is not allowed. Fix the hook or signing setup instead.` |
 | `--fixup=amend:` / `--fixup=reword:` | `--fixup=<kind>: opens an editor. Use plain --fixup=<commit>, or: <route>` |
 | any other flag or argument | `git commit <flag> is not allowed here. <route>` |
-| an argument-appending wrapper (`xargs`, `gxargs`, `parallel`, or a possible wrapper: a token that is not literal by step 4 or holds a tilde expansion, or a `)` token) before `git` (step 3) | `git commit run by <wrapper> is not allowed: it can append arguments. <route>` (`<wrapper>` is its basename in lower case, without `.exe`; a possible wrapper is named as the token reads after quote removal, a `)` token as `)`) |
+| a possible wrapper before `git` in its command: the first token outside the prefix allowlist (step 3) | `git commit run by <wrapper> is not allowed: it can append arguments. <route>` (`<wrapper>` is that token as it reads after quote removal, an operator token as its operator, e.g. `)`) |
 | `-c` / `--config-env` before `commit` | `git -c … commit is not allowed. <route>` |
 | subcommand that is not literal (step 4) | `Write the git subcommand literally. <route>` |
 | any other token among git's arguments that is not literal (step 4) | `Write git's arguments literally. <route>` |

@@ -323,22 +323,25 @@
     code: `sh -c '…'`, `bash -c '…'`, `cmd /c`, `pwsh -c`, `eval`, Bash `${x@P}` prompt
     expansion and array-subscript evaluation (a variable holding `a[$(…)]` read in an
     arithmetic context), PowerShell `Invoke-Expression` and `Start-Process git 'commit -m x'`,
-    scripts that wrap git, and tools other than `xargs`, `gxargs` and `parallel` that append
-    arguments to the command they run (such as `rush` or `xe`): an allowlisted form under
-    them passes. `xargs`, `gxargs` or `parallel` before `git` in its segment denies
-    `git commit` in every spelling of that name, quoted, escaped or one an expansion may
-    produce; a shell alias or function standing for one is an unrecognized wrapper, the
-    class above. Unquoted, `xargs git commit` tokenizes to
-    separate `git` and `commit` tokens, and an `xargs`, `gxargs` or `parallel` token before
-    `git` in the segment denies the allowlisted forms too, since the wrapper can append `-n`
-    or `-m` from its input (`printf -- -n | xargs git commit --no-edit` skips the hooks;
-    C:guard step 3, fail closed). A token before `git` that is not literal by C:guard step 4
-    (`$`, a backtick, `{`, `(`, `*`, `?`, `[`) or holds a tilde expansion counts as a
-    possible wrapper too, since a glob, brace, extglob, variable or tilde expansion may turn
-    it into one (`/usr/bin/x[a]rgs git commit --no-edit`, `xargs{,} git commit --no-edit`,
-    `x@(a)rgs …`, `$W …`, `~- …`), and so does a `)` token, which closes an extglob split
-    at its `|` (`x@(z|a)rgs …`); a lone `{` or `!(` is exempt. False denies stay closed
-    (`GIT_AUTHOR_DATE=$d git commit --no-edit`, a `case … in pat) git commit` arm). `find … -exec git commit … {} +` is denied by its `{`
+    and scripts that wrap git: an allowlisted form under them passes. A program that runs
+    git may append words from its input or its own arguments (`printf -- -n | xargs git
+    commit --no-edit` skips the hooks), so every token before `git` in its command must fit
+    a structural prefix allowlist (C:guard step 3, fail closed): Bash reserved words and `(`,
+    literal `NAME=value` assignments, then the runners `nice`, `nohup`, `command` and `env`
+    with fixed option grammars; in PowerShell only the `&` call operator. A bracket still
+    open at `git` (a subshell, `<(…)`, `>(…)`, an extglob; PowerShell `(` or `{`) starts a new
+    command, so `(git commit --no-edit)` and `if ($ok) { git commit --no-edit }` pass. Any
+    other token is the wrapper row, named as it reads after quote removal. This replaced a
+    denylist (`xargs`, `gxargs`, `parallel` and tokens an expansion may turn into one) that
+    review kept finding holes in (`env -S`, `watch`, `rush`, functions). False denies stay
+    closed: `echo git commit`, `sudo`/`timeout`/`exec`/`watch git …`, `/usr/bin/env`,
+    `command -p`, a function definition or `case` arm around git, an assignment whose value
+    may expand (`GIT_AUTHOR_DATE=$d git …`, `GIT_DIR=~/r/.git git …`), PowerShell
+    `. git commit --no-edit`. Remaining gaps: a wrapper reached through an allowlisted word
+    (a Bash alias for one, a function or `PATH` script named `nice`, `nohup` or `env`), a
+    quoted reserved word or assignment (`'if'`, `"A"=x`) that bash runs as a command of that
+    name (the tokenizer drops quoting), and a wrapper that runs git from a string (the
+    interpreter class above). `find … -exec git commit … {} +` is denied by its `{`
     (C:guard step 4).
   - Expansion in the command position: what a variable holds there (Bash
     `$GIT commit -m x`, PowerShell `& $g commit -m x`; a variable holding the whole command,

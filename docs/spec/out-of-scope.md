@@ -17,9 +17,9 @@ and the module sections point here, and the README states it in full.
   `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
   `Start-Process`),
   shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
-  `Set-Alias g git`), tools other than `xargs`, `gxargs` and `parallel` that append
-  arguments to the command they run (`rush`, `xe`, a user script, a shell alias for
-  `xargs`; C:guard step 3), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
+  `Set-Alias g git`), a wrapper reached through a word the prefix allowlist lets
+  through (a Bash alias for one, a function or a `PATH` script named `nice`, `nohup` or
+  `env`, a quoted reserved word or assignment that bash runs as a command; C:guard step 3), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
   blanket trigger and is read as a script call by basename, C:guard step 2), and expansion in the command position (`$GIT commit`,
   PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
   `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`; `$(echo git) commit` is denied by
@@ -35,7 +35,10 @@ and the module sections point here, and the README states it in full.
 - Other paths to a commit pass the guard (Q3): `git commit-tree`, `git am`, the replays of
   `git stash` and `git cherry-pick`, and shells provided by MCP servers.
 - False positives: a command that only mentions `git commit` in text, such as
-  `echo git commit`, is denied, and so is a git
+  `echo git commit`, is denied (the wrapper row naming `echo`, C:guard step 3), as are
+  runners outside the prefix allowlist before git (`sudo`, `timeout`, `exec`, `watch`,
+  `/usr/bin/env`), a function definition or `case` arm around git, and an assignment
+  before git whose value may expand (`GIT_AUTHOR_DATE=$d git commit --no-edit`); so is a git
   subcommand held in a variable (`git $x`) in a command that mentions `commit` anywhere,
   a quoted variable among git's arguments (`git -C "$dir" commit --no-edit`,
   `git commit --fixup "$sha"`), a `git` word after another PowerShell command's `--%`

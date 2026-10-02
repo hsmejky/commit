@@ -71,6 +71,15 @@ delete it here; IDs are never reused.
   multi-paragraph dictated reword or `edit`; `reword: true` is ambiguous. Where:
   [C:worker-input](../contracts/worker-input.md). Fix: make `reword`/`edit` run to the end
   of the prompt, or define a block form; add a two-paragraph fixture.
+- **KD-S80. The guard's prefix allowlist before `git` trusts names, not what they resolve
+  to.** C:guard step 3 (review GRD-04 round 4) replaced the possible-wrapper denylist with
+  a structural prefix allowlist, but a wrapper reached through an allowlisted word still
+  passes: a Bash alias (with `expand_aliases`) for one, a function or a `PATH` script named
+  `nice`, `nohup` or `env`; and since G2 drops quoting, a quoted reserved word or
+  assignment (`'if'`, `"A"=x`) that bash runs as a command of that name. Impact is small:
+  the guard steers, it is no security boundary (Q3), and each needs a prepared alias,
+  function or script. Where: [C:guard](../contracts/guard.md) step 3, Q3,
+  [out-of-scope.md](out-of-scope.md). Disposition: accepted for 0.1.0.
 
 ## Testing
 
