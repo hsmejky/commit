@@ -25,7 +25,7 @@
 // shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
-import { headState, isTracked, probe } from './repo-probe.mjs';
+import { headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME } from './run.mjs';
 import { gitPath } from './process-adapter.mjs';
@@ -61,6 +61,7 @@ async function readHeadState(ctx) {
     ctx.state = { kind: result.kind, branch: result.branch, unborn: result.unborn };
     ctx.expectedHead = result.head;
     if (result.kind === 'detached') ctx.notices.push(DETACHED_HEAD_NOTICE);
+    ctx.inProgress = await inProgressState({ cwd: repo.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   }
   return undefined;
 }
@@ -83,7 +84,7 @@ async function loadConfigLayers(ctx) {
 
 /** Step 2: pre-folder refusals (M15 `planRefusal`); none of them creates the run folder. */
 async function preFolderRefusals(ctx) {
-  const refusal = planRefusal({ ...ctx.probe, config: ctx.config });
+  const refusal = planRefusal({ ...ctx.probe, config: ctx.config, inProgress: ctx.inProgress });
   if (refusal !== null) return { refusal };
   ctx.toplevel = ctx.probe.repo.toplevel;
   return undefined;
