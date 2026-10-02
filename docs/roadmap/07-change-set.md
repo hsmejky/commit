@@ -58,11 +58,11 @@ taken the lock, and a folder with no lock is discarded (C:plan, C:run-folder).
 
 **Blocked by:** CHG-02, GIT-02, INT-01, RUN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q11, C:plan, C:plan-hunks, further-notes "First slice", M10, M13.
 
-- [ ] No path is parsed out of patch text: paths come from the raw pass only.
+- [x] No path is parsed out of patch text: paths come from the raw pass only.
 
 
 ## CHG-03b: Take the run lock at step 7
