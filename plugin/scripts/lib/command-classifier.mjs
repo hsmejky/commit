@@ -3,13 +3,15 @@
 //
 // A blanket result (G2) is the blanket deny, its row picked by the blanket kind. In each segment, a `git` token directly followed
 // by a `commit` token is a commit: its arguments, read up to where git's arguments end, are
-// checked to be literal, expanded and matched against the Q4 allowlist; every other flag or
-// argument is the generic row naming it. A token before `git` in its command that is outside
+// checked to be literal, expanded and matched against the specific rows (`--amend` without
+// `--no-edit`, `--squash`, `-n`/`--no-verify`/`--no-gpg-sign`, `--fixup=amend:`/
+// `--fixup=reword:`), then the Q4 allowlist; every other flag or argument is the generic row
+// naming it. A token before `git` in its command that is outside
 // the prefix allowlist (C:guard step 3: shell keywords, literal assignments and a few runners
 // with fixed option grammars) is a possible wrapper, which may append arguments: it denies
 // what would otherwise be allowed (the wrapper row), and the bare/`-m`/`-F`/`--message`/
 // `--file` row applies only when nothing else matches. Git's own options before the
-// subcommand, the specific rows and script calls (S2) follow in later slices.
+// subcommand and script calls (S2) follow in later slices.
 
 /** C:guard `<route>`. It never names the `/commit` skill, which the model cannot invoke (Q2, Q8). */
 export const ROUTE =
@@ -20,9 +22,15 @@ export const PERSONAL_SKILL_LINE = 'If a personal commit skill sent you here, re
 
 const withPersonalLine = (text) => `${text}\n${PERSONAL_SKILL_LINE}`;
 
-/** The deny catalogue rows built so far (C:guard Deny messages). */
+/** The fixed deny catalogue rows built so far (C:guard Deny messages). */
 export const MESSAGES = Object.freeze({
   bare: withPersonalLine(`Direct git commit is blocked. ${ROUTE}`),
+  // Routes rewording to the worker and never suggests `--amend --no-edit`, which commits the
+  // index unscanned (Q4, Q20).
+  amend: withPersonalLine(
+    `To reword the last commit: ${ROUTE} Ask it to reword. To add changes, make a new commit the same way.`,
+  ),
+  squash: withPersonalLine(`git commit --squash opens an editor. ${ROUTE}`),
   literalArguments: withPersonalLine(`Write git's arguments literally. ${ROUTE}`),
   blanket: withPersonalLine(
     'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
@@ -50,6 +58,26 @@ const BLANKET_ROWS = Object.freeze({ nesting: MESSAGES.nesting, size: MESSAGES.s
  */
 function genericMessage(flag) {
   return withPersonalLine(`git commit ${flag} is not allowed here. ${ROUTE}`);
+}
+
+/**
+ * The `-n` / `--no-verify` / `--no-gpg-sign` row (Q18): no route, so no personal-skill line.
+ *
+ * @param {string} flag
+ * @returns {string}
+ */
+function noVerifyMessage(flag) {
+  return `${flag} is not allowed. Fix the hook or signing setup instead.`;
+}
+
+/**
+ * The `--fixup=amend:` / `--fixup=reword:` row: both open an editor.
+ *
+ * @param {string} kind `amend` or `reword`.
+ * @returns {string}
+ */
+function fixupKindMessage(kind) {
+  return withPersonalLine(`--fixup=${kind}: opens an editor. Use plain --fixup=<commit>, or: ${ROUTE}`);
 }
 
 /**
@@ -160,14 +188,21 @@ function isLiteral(token, shell) {
   return !(shell === 'powershell' && (/[,@]/.test(token) || token === '--%'));
 }
 
-// `commit`'s short options that take a value: attached (`-mfoo`) or the next argument.
-const SHORT_WITH_VALUE = new Set(['m', 'F', 'C', 'c', 't']);
+// `commit`'s short options that take a value: attached (`-mfoo`) or the next argument
+// (`-U <n>` in recent git; older git rejects it as unknown, denied either way).
+const SHORT_WITH_VALUE = new Set(['m', 'F', 'C', 'c', 't', 'U']);
 // Short options whose optional value can only be attached (`-S<keyid>`, `-u<mode>`).
 const SHORT_WITH_ATTACHED_VALUE = new Set(['S', 'u']);
-// Long options whose value is the next argument when it is not attached with `=`. Only the
-// ones the allowlist and the bare row read need to be known: any other long option is
-// denied by its own name, ahead of whatever follows it.
-const LONG_WITH_VALUE = new Set(['--message', '--file', '--fixup']);
+// Long options whose value is the next argument when it is not attached with `=` (git
+// commit's options with a required value), so a value is never read as a flag of a higher
+// row (`--author -n` is the generic row naming `--author`, not the `-n` row). An
+// abbreviated long option (`--reuse`) is not expanded: the generic row names it, and a value
+// it takes is read as an argument of its own (denied either way, C:guard step 5).
+const LONG_WITH_VALUE = new Set([
+  '--message', '--file', '--fixup', '--squash', '--reuse-message', '--reedit-message', '--author',
+  '--date', '--trailer', '--template', '--cleanup', '--pathspec-from-file', '--unified',
+  '--inter-hunk-context',
+]);
 
 /**
  * Expands `commit`'s arguments (C:guard step 5): `-am` → `-a -m`, `-mfoo` → `-m foo`,
@@ -217,14 +252,45 @@ function expandCommitArgs(args) {
 const BARE_ROW = new Set(['-m', '-F', '--message', '--file']);
 const QUIET = new Set(['-q', '--quiet']);
 // A `--fixup` value that opens an editor (`amend:`, `reword:`) is not the plain form.
-const isPlainFixup = (item) =>
-  item.flag === '--fixup' && item.value !== undefined && !/^(?:amend|reword):/.test(item.value);
+const FIXUP_KIND = /^(amend|reword):/;
+const isPlainFixup = (item) => item.flag === '--fixup' && item.value !== undefined && !FIXUP_KIND.test(item.value);
+const NO_VERIFY = new Set(['-n', '--no-verify', '--no-gpg-sign']);
+const isNoEdit = (item) => item.flag === '--no-edit' && item.value === undefined;
+
+// The specific rows of C:guard Precedence, in order, each finding its first matching item in
+// argv order and giving that item's message. They outrank the generic, wrapper and bare rows.
+const SPECIFIC_ROWS = [
+  (items) => (!items.some(isNoEdit) && items.some((item) => item.flag === '--amend') ? MESSAGES.amend : null),
+  (items) => (items.some((item) => item.flag === '--squash') ? MESSAGES.squash : null),
+  (items) => {
+    const item = items.find((i) => NO_VERIFY.has(i.flag));
+    return item === undefined ? null : noVerifyMessage(item.flag);
+  },
+  (items) => {
+    const item = items.find((i) => i.flag === '--fixup' && i.value !== undefined && FIXUP_KIND.test(i.value));
+    return item === undefined ? null : fixupKindMessage(FIXUP_KIND.exec(item.value)[1]);
+  },
+];
 // What each form allows besides itself. A flag that takes no value is outside the form when
 // given one (`--no-edit=x`, `--quiet=x`).
 const isQuiet = (item) => item.value === undefined && QUIET.has(item.flag);
-const fitsNoEdit = (item) =>
-  isQuiet(item) || (item.value === undefined && (item.flag === '--no-edit' || item.flag === '--amend'));
+const fitsNoEdit = (item) => isQuiet(item) || isNoEdit(item) || (item.value === undefined && item.flag === '--amend');
 const fitsFixup = (item) => isQuiet(item) || isPlainFixup(item);
+
+/**
+ * The rows of `commit`'s expanded arguments (C:guard Precedence): the specific rows first,
+ * then the Q4 allowlist (`allowlistDecision`).
+ *
+ * @param {ReturnType<typeof expandCommitArgs>} items
+ * @returns {string | null} the deny message, or null when the form is allowed.
+ */
+function argumentsDecision(items) {
+  for (const row of SPECIFIC_ROWS) {
+    const message = row(items);
+    if (message !== null) return message;
+  }
+  return allowlistDecision(items);
+}
 
 /**
  * The Q4 allowlist over expanded `commit` arguments: `--no-edit` with `--amend` and
@@ -262,7 +328,7 @@ function commitDecision(tokens, from, at, start, shell) {
     if (!isLiteral(tokens[i], shell)) return MESSAGES.literalArguments;
     args.push(tokens[i]);
   }
-  const message = allowlistDecision(expandCommitArgs(args));
+  const message = argumentsDecision(expandCommitArgs(args));
   if (message !== null && message !== MESSAGES.bare) return message;
   const wrapper = wrapperBefore(tokens, from, at, shell);
   return wrapper === undefined ? message : wrapperMessage(wrapper);

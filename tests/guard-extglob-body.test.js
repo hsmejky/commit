@@ -42,9 +42,11 @@ function hook(c, command) {
   return { ...runHook(stdinText, { env: {}, claudeHome: c.claudeHome, now: () => Date.UTC(2024, 0, 1) }) };
 }
 
-// The deny message of a row: `bare`, `wrapper <name>` or the generic row's flag.
+// The deny message of a row: `bare`, `-n` (its own row, GRD-05), `wrapper <name>` or the
+// generic row's flag.
 function messageOf(row) {
   if (row === 'bare') return MESSAGES.bare;
+  if (row === '-n') return '-n is not allowed. Fix the hook or signing setup instead.';
   const tail = `${ROUTE}\n${PERSONAL_SKILL_LINE}`;
   if (row.startsWith('wrapper ')) return `git commit run by ${row.slice(8)} is not allowed: it can append arguments. ${tail}`;
   return `git commit ${row} is not allowed here. ${tail}`;

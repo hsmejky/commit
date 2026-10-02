@@ -40,6 +40,13 @@ function hook(c, command) {
 }
 
 const generic = (flag) => `git commit ${flag} is not allowed here. ${ROUTE}\n${PERSONAL_SKILL_LINE}`;
+// The `-n` row (GRD-05): no route, no personal-skill line.
+const noVerify = (flag) => `${flag} is not allowed. Fix the hook or signing setup instead.`;
+// The deny text of a row named in a fixture table: `bare`, `-n` or the generic row's flag.
+const rowText = (row) => {
+  if (row === 'bare') return MESSAGES.bare;
+  return row === '-n' ? noVerify(row) : generic(row);
+};
 
 const allowed = [
   'git commit --no-edit',
@@ -101,8 +108,6 @@ const genericRow = [
   // The form is set by the first `--no-edit` or plain `--fixup`; the other is outside it.
   ['git commit --no-edit --fixup=1a2b3c4', '--fixup'],
   ['git commit --fixup=1a2b3c4 --no-edit', '--no-edit'],
-  ['git commit --fixup=1a2b3c4 --amend', '--amend'],
-  ['git commit --amend', '--amend'],
   ['git commit --no-edit -qa', '-a'],
   ['git commit --no-edit --verbose', '--verbose'],
   ['git commit --no-ed', '--no-ed'],
@@ -110,18 +115,12 @@ const genericRow = [
   // A flag that takes no value is outside the allowlist when given one.
   ['git commit --no-edit=x', '--no-edit'],
   ['git commit --no-edit --quiet=x', '--quiet'],
-  ['git commit --fixup=1a2b3c4 -q --amend=x', '--amend'],
   // A trailing `--fixup` has no value, so it is not the plain form.
   ['git commit --fixup', '--fixup'],
   ['git commit --no-edit --fixup', '--fixup'],
-  // `amend:` / `reword:` open an editor: the generic row until GRD-05's specific row.
-  ['git commit --fixup=amend:1a2b3c4', '--fixup'],
-  ['git commit --fixup=reword:1a2b3c4 -q', '--fixup'],
   // Attached optional values (`-S<keyid>`, `-u<mode>`) stay with their flag.
   ['git commit --no-edit -Sfoo', '-S'],
   ['git commit --no-edit -uno', '-u'],
-  // `--no-edit` does not exempt `--squash` (C:guard step 5).
-  ['git commit --no-edit --squash=HEAD', '--squash'],
   // An empty argument is named as `""`, not as an empty flag.
   ['git commit --no-edit ""', '""'],
   ["git commit ''", '""'],
@@ -361,8 +360,7 @@ const braceAfterReservedWord = [
 for (const [command, row] of braceAfterReservedWord) {
   test(`Seam 3: ${JSON.stringify(command)} is denied with the ${row} row`, (t) => {
     const c = createCase(t, { repo: false });
-    const message = row === 'bare' ? MESSAGES.bare : generic(row);
-    assert.deepEqual(hook(c, command), { stdout: denyJson(message), stderr: '' });
+    assert.deepEqual(hook(c, command), { stdout: denyJson(rowText(row)), stderr: '' });
   });
 }
 
@@ -387,8 +385,7 @@ const reservedWordAfterPrefix = [
 for (const [command, row] of reservedWordAfterPrefix) {
   test(`Seam 3: ${JSON.stringify(command)} is denied with the ${row} row`, (t) => {
     const c = createCase(t, { repo: false });
-    const message = row === 'bare' ? MESSAGES.bare : generic(row);
-    assert.deepEqual(hook(c, command), { stdout: denyJson(message), stderr: '' });
+    assert.deepEqual(hook(c, command), { stdout: denyJson(rowText(row)), stderr: '' });
   });
 }
 
@@ -396,7 +393,7 @@ test('Seam 2: a `!(` after `time --` is denied by the real hook process', async 
   const c = createCase(t);
   const result = await runGuard(c, { command: 'time -- !(git commit -n --allow-empty -m bypass1)' });
   assert.equal(result.exitCode, 0);
-  assert.equal(result.stdout, denyJson(generic('-n')));
+  assert.equal(result.stdout, denyJson(noVerify('-n')));
 });
 
 // After an assignment, a function's name or a second `--` after `time` the pattern is an
