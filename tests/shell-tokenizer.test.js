@@ -194,45 +194,46 @@ const bashTable = [
   // GRD-04 review round 5: an extglob pattern in an argument (or a redirection target) is one
   // word up to its matching `)`, separators and quotes inside it included; in a command's
   // first word (after reserved words such as `!`, `if` or `time -p`) its `(` is still a token.
-  ["xargs env -S A=@( git commit --fixup=HEAD'\\c')", [['xargs', 'env', '-S', 'A=@( git commit --fixup=HEAD\\c)']]],
-  ["xargs env -S A=@(x| git commit --fixup=HEAD'\\c')", [['xargs', 'env', '-S', 'A=@(x| git commit --fixup=HEAD\\c)']]],
-  ['echo @(a;b\nc&d) x', [['echo', '@(a;b\nc&d)', 'x']]],
-  ["echo !(a|+(b)|')') *(c)d \\@(e) '@'(f)", [['echo', "!(a|+(b)|))", '*(c)d', '@', { op: '(' }, 'e', { op: ')' }, '@', { op: '(' }, 'f', { op: ')' }]]],
-  ['>!(z) git commit', [[{ redir: '>', target: '!(z)' }, 'git', 'commit']]],
+  ["xargs env -S A=@( git commit --fixup=HEAD'\\c')", [['xargs', 'env', '-S', 'A=@( git commit --fixup=HEAD\\c)'], ['git', 'commit', '--fixup=HEAD\\c']]],
+  ["xargs env -S A=@(x| git commit --fixup=HEAD'\\c')", [['xargs', 'env', '-S', 'A=@(x| git commit --fixup=HEAD\\c)'], ['x'], ['git', 'commit', '--fixup=HEAD\\c']]],
+  ['echo @(a;b\nc&d) x', [['echo', '@(a;b\nc&d)', 'x'], ['a'], ['b'], ['c'], ['d']]],
+  ["echo !(a|+(b)|')') *(c)d \\@(e) '@'(f)", [['echo', "!(a|+(b)|))", '*(c)d', '@', { op: '(' }, 'e', { op: ')' }, '@', { op: '(' }, 'f', { op: ')' }],
+    ['a'], ['+(', { op: '(' }, 'b', { op: ')' }], [')'], ['c']]],
+  ['>!(z) git commit', [[{ redir: '>', target: '!(z)' }, 'git', 'commit'], ['z']]],
   ['echo @(a | git commit', [['echo', '@(', 'a'], ['git', 'commit']]],
   ["echo @(a 'b\n) c", [['echo', '@(', 'a', 'b'], [{ op: ')' }, 'c']]],
   ['if ! time -p !(git commit); then :; fi', [['if', '!', 'time', '-p', '!(', { op: '(' }, 'git', 'commit', { op: ')' }], ['then', ':'], ['fi']]],
-  ['A=1 !(x) | { @(y)', [['A=1', '!(x)'], ['{', '@(', { op: '(' }, 'y', { op: ')' }]]],
-  ['case a in @(a|b)) !(c);; esac', [['case', 'a', 'in', '@(a|b)', { op: ')' }, '!(', { op: '(' }, 'c', { op: ')' }], ['esac']]],
+  ['A=1 !(x) | { @(y)', [['A=1', '!(x)'], ['x'], ['{', '@(', { op: '(' }, 'y', { op: ')' }]]],
+  ['case a in @(a|b)) !(c);; esac', [['case', 'a', 'in', '@(a|b)', { op: ')' }, '!(', { op: '(' }, 'c', { op: ')' }], ['a'], ['b'], ['esac']]],
   // GRD-04 review round 6: a `\` inside a pattern escapes one character and keeps the pattern
   // balanced; a quoted or escaped `<(` inside it is a plain character, no substitution.
-  [String.raw`echo @(a\)|b) x`, [['echo', '@(a)|b)', 'x']]],
-  [String.raw`xargs env -S A=@(\x| git commit --fixup=HEAD'\c')`, [['xargs', 'env', '-S', String.raw`A=@(x| git commit --fixup=HEAD\c)`]]],
-  ["echo @(a'<(b') \\>(c) x", [['echo', '@(a<(b)', '>', { op: '(' }, 'c', { op: ')' }, 'x']]],
-  [String.raw`echo @(a\<(b)) x`, [['echo', '@(a<(b))', 'x']]],
+  [String.raw`echo @(a\)|b) x`, [['echo', '@(a)|b)', 'x'], ['a)'], ['b']]],
+  [String.raw`xargs env -S A=@(\x| git commit --fixup=HEAD'\c')`, [['xargs', 'env', '-S', String.raw`A=@(x| git commit --fixup=HEAD\c)`], ['x'], ['git', 'commit', String.raw`--fixup=HEAD\c`]]],
+  ["echo @(a'<(b') \\>(c) x", [['echo', '@(a<(b)', '>', { op: '(' }, 'c', { op: ')' }, 'x'], ['a<(b']]],
+  [String.raw`echo @(a\<(b)) x`, [['echo', '@(a<(b))', 'x'], ['a<', { op: '(' }, 'b', { op: ')' }]]],
   // `{` keeps a command's first position after `function NAME`, `coproc` and `coproc NAME`
   // only, not after an argument.
   ['function f { !(x); }', [['function', 'f', '{', '!(', { op: '(' }, 'x', { op: ')' }], ['}']]],
   ['coproc { !(x); }', [['coproc', '{', '!(', { op: '(' }, 'x', { op: ')' }], ['}']]],
   ['coproc C { !(x); }', [['coproc', 'C', '{', '!(', { op: '(' }, 'x', { op: ')' }], ['}']]],
   ['coproc !(x)', [['coproc', '!(', { op: '(' }, 'x', { op: ')' }]]],
-  ['function f !(x)', [['function', 'f', '!(x)']]],
-  ['coproc git commit { !(x)', [['coproc', 'git', 'commit', '{', '!(x)']]],
-  ['xargs env -S { A=@( git commit --fixup=HEAD) }', [['xargs', 'env', '-S', '{', 'A=@( git commit --fixup=HEAD)', '}']]],
-  ['echo function f { !(x)', [['echo', 'function', 'f', '{', '!(x)']]],
+  ['function f !(x)', [['function', 'f', '!(x)'], ['x']]],
+  ['coproc git commit { !(x)', [['coproc', 'git', 'commit', '{', '!(x)'], ['x']]],
+  ['xargs env -S { A=@( git commit --fixup=HEAD) }', [['xargs', 'env', '-S', '{', 'A=@( git commit --fixup=HEAD)', '}'], ['git', 'commit', '--fixup=HEAD']]],
+  ['echo function f { !(x)', [['echo', 'function', 'f', '{', '!(x)'], ['x']]],
   // GRD-04 review round 7: any reserved word that opens a command keeps the first position
   // after `function NAME`, `coproc` and `coproc NAME`, so does a `--` after `time [-p]`, and
   // the word after `function` is read as a first word.
   ['time -- !(x)', [['time', '--', '!(', { op: '(' }, 'x', { op: ')' }]]],
   ['time -p -- !(x)', [['time', '-p', '--', '!(', { op: '(' }, 'x', { op: ')' }]]],
   ['time -- time -- !(x)', [['time', '--', 'time', '--', '!(', { op: '(' }, 'x', { op: ')' }]]],
-  ['time -- -- !(x)', [['time', '--', '--', '!(x)']]],
+  ['time -- -- !(x)', [['time', '--', '--', '!(x)'], ['x']]],
   ['function f if !(x); then :; fi', [['function', 'f', 'if', '!(', { op: '(' }, 'x', { op: ')' }], ['then', ':'], ['fi']]],
   ['function f until !(x); do :; done', [['function', 'f', 'until', '!(', { op: '(' }, 'x', { op: ')' }], ['do', ':'], ['done']]],
   ['coproc while !(x); do :; done', [['coproc', 'while', '!(', { op: '(' }, 'x', { op: ')' }], ['do', ':'], ['done']]],
   ['coproc C if !(x); then :; fi', [['coproc', 'C', 'if', '!(', { op: '(' }, 'x', { op: ')' }], ['then', ':'], ['fi']]],
   ['function !(x); \\!',[['function', '!(', { op: '(' }, 'x', { op: ')' }], ['!']]],
-  ['coproc git commit if !(x)', [['coproc', 'git', 'commit', 'if', '!(x)']]],
+  ['coproc git commit if !(x)', [['coproc', 'git', 'commit', 'if', '!(x)'], ['x']]],
 ];
 for (const [command, expected] of bashTable) {
   test(`Seam 3: Bash segments(${JSON.stringify(command)})`, () => {

@@ -208,6 +208,11 @@ const EXTGLOB = new Set(['@', '!', '+', '*', '?']);
 // Reserved words after which the next word is still in a command's first position, where
 // `!` is the reserved word `!` (C:guard step 2). `time` may take `-p`, then `--`.
 const COMMAND_PREFIX = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do', 'time']);
+// Reserved words bash also takes where the tokenizer is in argument position: after `]]`,
+// `}`, `fi`, `done` and `esac`, and `do` after `for NAME` or `select NAME` (C:guard step 2).
+// Each opens a command's first position from any position, an argument's included (fail
+// closed: an argument spelled so only reads the next word as a first word).
+const CLAUSE_OPENERS = new Set(['then', 'do', 'else', 'elif']);
 
 // The position of the word after `token`, read at position `at` (see `tokenizeBash`): true
 // for a command's first word, 'time' right after a `time` there (a `-p` keeps it, a `--`
@@ -217,6 +222,7 @@ const COMMAND_PREFIX = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while',
 // or `coproc NAME` bash still takes a reserved word: one that opens a command's first
 // position anywhere opens it there too (fail closed).
 function nextPosition(at, token) {
+  if (CLAUSE_OPENERS.has(token)) return true;
   if (at === false) return false;
   if (at === 'function') return 'name';
   if (at === 'coproc' || at === 'name') {
@@ -235,9 +241,14 @@ function nextPosition(at, token) {
 // (bash 4.1+), a redirection prefix like descriptor digits.
 const VARIABLE_FD = /^\{[A-Za-z_][A-Za-z0-9_]*(?:\[[^]*\])?\}$/;
 
-// Tokenizes one joined reading (no escaped newline outside single quotes and `$'…'`).
-// `blanket` is 'substitution' when an argument's extglob pattern holds a `<(…)` or
-// `>(…)` substitution (`readWord`), else null.
+// Tokenizes one joined reading (no escaped newline outside single quotes and `$'…'`), or
+// the body of an extglob pattern read as a command text. `blanket` is 'substitution' when an
+// argument's extglob pattern holds a `<(…)` or `>(…)` substitution (`readWord`), else null.
+// Defense in depth (C:guard step 2): the body of each extglob pattern read as one word in an
+// argument or a redirection target is also tokenized as a command text of its own, nested
+// patterns included, and its segments follow the segment holding that word, so a `git` the
+// body would run at a command's first position is a `git` token whatever position the
+// tokenizer gave the word.
 function tokenizeBash(s) {
   const out = { segments: [], spans: [], blanket: null };
   let seg = [];
@@ -255,9 +266,17 @@ function tokenizeBash(s) {
       first = true;
     }
   };
+  // The segments of the pattern bodies read so far in the current segment, with their spans.
+  let bodies = { segments: [], spans: [] };
   const word = (from, argument) => {
     const w = readWord(s, from, argument);
     if (w.procsub) out.blanket = 'substitution';
+    for (const [bodyStart, bodyEnd] of w.bodies || []) {
+      const body = tokenizeBash(s.slice(bodyStart, bodyEnd));
+      out.blanket ??= body.blanket;
+      bodies.segments.push(...body.segments);
+      for (const [a, b] of body.spans) bodies.spans.push([a + bodyStart, b + bodyStart]);
+    }
     return w;
   };
   const endSegment = () => {
@@ -265,6 +284,9 @@ function tokenizeBash(s) {
       out.segments.push(seg);
       out.spans.push([start, end]);
     }
+    out.segments.push(...bodies.segments);
+    out.spans.push(...bodies.spans);
+    bodies = { segments: [], spans: [] };
     seg = [];
     first = true;
   };
@@ -350,14 +372,16 @@ function redirection(s, from, fd, push, word) {
 // included, as bash reads it with `extglob` on, and in `[[ … ]]` even with it off; with no
 // matching `)` (or an unterminated quote inside), the word ends after the `(` and no `(`
 // token follows. An unquoted `<(` or `>(` inside the pattern, a substitution bash runs,
-// ends the word there and `procsub` marks it (the caller denies). Its quote and `$`-run
-// tracking mirrors `join`'s: change them together.
+// ends the word there and `procsub` marks it (the caller denies). `bodies` lists each
+// balanced outermost pattern's body, `[start, end)` in `s` between its `(` and its `)`. Its
+// quote and `$`-run tracking mirrors `join`'s: change them together.
 function readWord(s, i, argument) {
   let value = '';
   let prev = null; // the previous character, when it was an unquoted literal
   let dollars = 0; // the run of unquoted literal `$` right before `i`
   let depth = 0; // the extglob brackets open in an argument
   let opener = null; // the word up to the outermost extglob `(` in an argument
+  const bodies = [];
   while (i < s.length) {
     const c = s[i];
     // Bash runs a `<(…)` or `>(…)` inside a pattern: fail closed (`procsub`).
@@ -366,10 +390,11 @@ function readWord(s, i, argument) {
     }
     if (depth > 0 && (c === '(' || c === ')')) {
       depth += c === '(' ? 1 : -1;
+      if (depth === 0) bodies.push([opener.end, i]);
     } else if (WORD_END.has(c) && depth === 0) {
       if (c !== '(' || prev === null || !EXTGLOB.has(prev)) break;
       if (!argument) return { value: `${value}(`, end: i + 1, extglob: true };
-      opener = { value: `${value}(`, end: i + 1, extglob: false };
+      opener = { value: `${value}(`, end: i + 1, extglob: false, bodies };
       depth = 1;
     }
     let q = null;
@@ -394,7 +419,7 @@ function readWord(s, i, argument) {
       i = q.end;
     }
   }
-  return depth > 0 ? opener : { value, end: i, extglob: false };
+  return depth > 0 ? opener : { value, end: i, extglob: false, bodies };
 }
 
 // A quote span's value, end and whether it is closed: the span is found first (`quoteEnd`),

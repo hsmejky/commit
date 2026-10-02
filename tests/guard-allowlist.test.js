@@ -260,9 +260,10 @@ for (const [command, name] of wrapperRow) {
   });
 }
 
-// A `git commit` inside an extglob pattern in an argument is no git token: like a string a
-// runner splits into words (`env -S 'git commit …'`), it is the documented interpreter gap
-// (C:guard step 3, Out of Scope), no output. Verified end to end in Git Bash 5.3 with
+// A string a runner splits into words (`env -S 'git commit …'`) is the documented interpreter
+// gap (C:guard step 3, Out of Scope), no output. An extglob pattern in an argument is read
+// as a command text too (C:guard step 2), but here its body is the allowed `--fixup` form:
+// what commits is `env -S` splitting the word, the same gap. Verified end to end in Git Bash 5.3 with
 // `shopt -s extglob` on the line before: `env -S` splits the word, `\c` drops the rest,
 // xargs appends `-n` and the commit lands without its pre-commit hook, exactly as the
 // `env -S` form does (review GRD-04 round 5, finding 1).
@@ -399,12 +400,13 @@ test('Seam 2: a `!(` after `time --` is denied by the real hook process', async 
 });
 
 // After an assignment, a function's name or a second `--` after `time` the pattern is an
-// argument, one word with no git token: bash rejects each with `extglob` off, and with it on
-// runs a glob, never git.
+// argument, one word: bash rejects each with `extglob` off, and with it on runs a glob, never
+// git. Its body is still read as a command text (C:guard step 2, defense in depth), so each
+// is denied: an accepted false deny (review GRD-04 round 8).
 for (const command of ['A=1 !(git commit -m x)', 'function f !(git commit -m x)', 'time -- -- !(git commit -m x)']) {
-  test(`Seam 3: ${JSON.stringify(command)} has no output (no command runs git)`, (t) => {
+  test(`Seam 3: ${JSON.stringify(command)} is denied by its pattern body (accepted false deny)`, (t) => {
     const c = createCase(t, { repo: false });
-    assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });
+    assert.deepEqual(hook(c, command), { stdout: denyJson(MESSAGES.bare), stderr: '' });
   });
 }
 
