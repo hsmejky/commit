@@ -68,7 +68,9 @@ function triggerIn(text, bash) {
 }
 
 /**
- * G2 `segments`: the command's segments of tokens, or the blanket trigger kind.
+ * G2 `segments`: the command's segments of tokens, or the blanket trigger kind. A Bash
+ * `<(…)` or `>(…)` substitution inside an extglob pattern in an argument (C:guard step 2)
+ * is the blanket kind 'substitution' too, found while tokenizing.
  *
  * A token is a word (a string, after quote removal), `{ op }` for `(` and `)`, or
  * `{ redir, target }` for a redirection with its target word (null for a descriptor
@@ -82,7 +84,8 @@ function triggerIn(text, bash) {
 export function segments(command, shell) {
   const kind = blanketTrigger(command, shell);
   if (kind !== null) return { blanket: kind };
-  return tokenize(command, shell).segments;
+  const out = tokenize(command, shell);
+  return out.blanket === null ? out.segments : { blanket: out.blanket };
 }
 
 /**
@@ -96,15 +99,17 @@ export function segments(command, shell) {
  */
 export function segmentSpans(command, shell) {
   if (blanketTrigger(command, shell) !== null) return null;
-  return tokenize(command, shell).spans;
+  const out = tokenize(command, shell);
+  return out.blanket === null ? out.spans : null;
 }
 
 function tokenize(command, shell) {
   if (shell !== 'bash') throw new Error('the PowerShell tokenizer is not built yet (GRD-06)');
-  const out = { segments: [], spans: [] };
+  const out = { segments: [], spans: [], blanket: null };
   for (const reading of bashReadings(command)) {
     const { text, origin } = join(reading);
     const result = tokenizeBash(text);
+    out.blanket ??= result.blanket;
     out.segments.push(...result.segments);
     for (const [start, end] of result.spans) out.spans.push([origin[start], origin[end - 1] + 1]);
   }
@@ -203,30 +208,51 @@ const EXTGLOB = new Set(['@', '!', '+', '*', '?']);
 // Reserved words after which the next word is still in a command's first position, where
 // `!` is the reserved word `!` (C:guard step 2). `time` may take `-p`.
 const COMMAND_PREFIX = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do', 'time']);
+
+// The position of the word after `token`, read at position `at` (see `tokenizeBash`): true
+// for a command's first word, 'time' right after a `time` there (a `-p` keeps it),
+// 'function' after a `function` there (its name follows), 'coproc' after a `coproc` there
+// (a `{`, or a name or the command), 'name' after that name (only a `{` opens a command
+// there), and false for an argument.
+function nextPosition(at, token) {
+  if (at === false) return false;
+  if (at === 'function') return 'name';
+  if (at === 'name') return token === '{';
+  if (at === 'coproc') return token === '{' ? true : 'name';
+  if (at === 'time' && token === '-p') return true;
+  if (token === 'function' || token === 'coproc') return token;
+  if (COMMAND_PREFIX.has(token)) return token === 'time' ? 'time' : true;
+  return false;
+}
+
 // A `{name}` or `{name[subscript]}` word right before `<` or `>` names a descriptor variable
 // (bash 4.1+), a redirection prefix like descriptor digits.
 const VARIABLE_FD = /^\{[A-Za-z_][A-Za-z0-9_]*(?:\[[^]*\])?\}$/;
 
 // Tokenizes one joined reading (no escaped newline outside single quotes and `$'…'`).
+// `blanket` is 'substitution' when an argument's extglob pattern holds a `<(…)` or
+// `>(…)` substitution (`readWord`), else null.
 function tokenizeBash(s) {
-  const out = { segments: [], spans: [] };
+  const out = { segments: [], spans: [], blanket: null };
   let seg = [];
   let start = 0;
   let end = 0;
-  // Whether the next word is in a command's first position: true, false, or 'time' right
-  // after a `time` there (so a `-p` keeps it). A redirection leaves it as it is.
+  // The next word's position (`nextPosition`). A redirection leaves it as it is.
   let first = true;
   const push = (token, from, to) => {
     if (seg.length === 0) start = from;
     seg.push(token);
     end = to;
     if (typeof token === 'string') {
-      if (first === 'time' && token === '-p') first = true;
-      else if (first !== false && COMMAND_PREFIX.has(token)) first = token === 'time' ? 'time' : true;
-      else first = false;
+      first = nextPosition(first, token);
     } else if (Object.hasOwn(token, 'op')) {
       first = true;
     }
+  };
+  const word = (from, argument) => {
+    const w = readWord(s, from, argument);
+    if (w.procsub) out.blanket = 'substitution';
+    return w;
   };
   const endSegment = () => {
     if (seg.length > 0) {
@@ -249,7 +275,7 @@ function tokenizeBash(s) {
       endSegment();
       i += next === '|' || next === '&' ? 2 : 1;
     } else if (c === '&' && next === '>') {
-      i = redirection(s, i, '', push);
+      i = redirection(s, i, '', push, word);
     } else if (c === '&') {
       endSegment();
       i += next === '&' ? 2 : 1;
@@ -265,12 +291,12 @@ function tokenizeBash(s) {
       fd.lastIndex = i;
       const m = fd.exec(s);
       if (m) {
-        i = redirection(s, i, m[0], push);
+        i = redirection(s, i, m[0], push, word);
       } else {
-        const w = readWord(s, i, first === false);
+        const w = word(i, first === false || first === 'function' || first === 'name');
         const raw = s.slice(i, w.end);
         if (VARIABLE_FD.test(raw) && (s[w.end] === '<' || s[w.end] === '>')) {
-          i = redirection(s, i, raw, push);
+          i = redirection(s, i, raw, push, word);
         } else {
           push(w.value, i, w.end);
           if (w.extglob) push({ op: '(' }, w.end - 1, w.end);
@@ -287,9 +313,9 @@ function tokenizeBash(s) {
 const REDIRECTION_OPS = ['&>>', '&>', '<<<', '<&', '<>', '<', '>>', '>&', '>|', '>'];
 
 // Reads a redirection at `from` (after its descriptor prefix `fd`: digits or `{name}`) and
-// its target word, never a command's first word; pushes one token; returns the index after
-// it.
-function redirection(s, from, fd, push) {
+// its target word (read by `word`, as `readWord` with the caller's bookkeeping), never a
+// command's first word; pushes one token; returns the index after it.
+function redirection(s, from, fd, push, word) {
   let i = from + fd.length;
   const op = REDIRECTION_OPS.find((candidate) => s.startsWith(candidate, i));
   i += op.length;
@@ -298,7 +324,7 @@ function redirection(s, from, fd, push) {
   let target = null;
   let to = i;
   if (j < s.length && !WORD_END.has(s[j])) {
-    const w = readWord(s, j, true);
+    const w = word(j, true);
     target = w.value;
     to = w.end;
   }
@@ -315,9 +341,11 @@ function redirection(s, from, fd, push) {
 // ends the word, kept in it, and `extglob` marks it (it is also a `(` token: `!(…)` there is
 // `!` and a subshell when `extglob` is off). In an argument (`argument`), the pattern is read
 // on to its matching unquoted `)` as part of the word, its separators, spaces and brackets
-// included, as bash reads it with `extglob` on (with it off the pattern is a syntax error);
-// with no matching `)` (or an unterminated quote inside), the word ends after the `(` and no
-// `(` token follows. Its quote and `$`-run tracking mirrors `join`'s: change them together.
+// included, as bash reads it with `extglob` on, and in `[[ … ]]` even with it off; with no
+// matching `)` (or an unterminated quote inside), the word ends after the `(` and no `(`
+// token follows. An unquoted `<(` or `>(` inside the pattern, a substitution bash runs,
+// ends the word there and `procsub` marks it (the caller denies). Its quote and `$`-run
+// tracking mirrors `join`'s: change them together.
 function readWord(s, i, argument) {
   let value = '';
   let prev = null; // the previous character, when it was an unquoted literal
@@ -326,6 +354,10 @@ function readWord(s, i, argument) {
   let opener = null; // the word up to the outermost extglob `(` in an argument
   while (i < s.length) {
     const c = s[i];
+    // Bash runs a `<(…)` or `>(…)` inside a pattern: fail closed (`procsub`).
+    if (depth > 0 && (c === '<' || c === '>') && s[i + 1] === '(') {
+      return { value, end: i, extglob: false, procsub: true };
+    }
     if (depth > 0 && (c === '(' || c === ')')) {
       depth += c === '(' ? 1 : -1;
     } else if (WORD_END.has(c) && depth === 0) {
@@ -336,7 +368,7 @@ function readWord(s, i, argument) {
     }
     let q = null;
     if (c === '\\') {
-      q = i + 1 < s.length ? { value: s[i + 1], end: i + 2 } : { value: '\\', end: i + 1 };
+      q = i + 1 < s.length ? { value: s[i + 1], end: i + 2, closed: true } : { value: '\\', end: i + 1, closed: true };
     } else if (c === "'" || c === '"') {
       q = readQuote(s, i + 1, quoteKind(c, dollars));
     } else if (c === '$' && (s[i + 1] === "'" || s[i + 1] === '"') && dollars % 2 === 0) {

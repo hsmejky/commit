@@ -90,6 +90,26 @@ for (const [shell, command] of noTriggerTable) {
   });
 }
 
+// A `<(…)` or `>(…)` inside an extglob pattern in an argument or a redirection target runs
+// (bash reads the pattern in `[[ … ]]` even with `extglob` off): found while tokenizing, it
+// is the blanket kind `substitution` (fail closed; review GRD-04 round 6, finding 1).
+const patternSubstitution = [
+  '[[ x == @(a|>(git commit -m x)) ]]',
+  'echo @(<(git commit -m x))',
+  'echo @(a|<(b)) git commit',
+  'echo +(a|@(b|>(c))) commit',
+  'case x in @(a|>(git commit -m x))) ;; esac',
+  'cat >@(>(git commit -m x))',
+  'echo x\r@(<(git commit -m x))',
+];
+for (const command of patternSubstitution) {
+  test(`Seam 3: Bash segments(${JSON.stringify(command)}) is the blanket kind substitution`, () => {
+    assert.equal(blanketTrigger(command, 'bash'), null);
+    assert.deepEqual(segments(command, 'bash'), { blanket: 'substitution' });
+    assert.equal(segmentSpans(command, 'bash'), null);
+  });
+}
+
 test('Seam 3: escaped newlines are removed before the blanket check, regardless of quotes', () => {
   assert.equal(blanketTrigger('echo "$\\\n(git commit -m x)"', 'bash'), 'substitution');
   assert.equal(blanketTrigger('echo "<\\\n<EOF" git commit', 'bash'), 'heredoc');
@@ -184,6 +204,22 @@ const bashTable = [
   ['if ! time -p !(git commit); then :; fi', [['if', '!', 'time', '-p', '!(', { op: '(' }, 'git', 'commit', { op: ')' }], ['then', ':'], ['fi']]],
   ['A=1 !(x) | { @(y)', [['A=1', '!(x)'], ['{', '@(', { op: '(' }, 'y', { op: ')' }]]],
   ['case a in @(a|b)) !(c);; esac', [['case', 'a', 'in', '@(a|b)', { op: ')' }, '!(', { op: '(' }, 'c', { op: ')' }], ['esac']]],
+  // GRD-04 review round 6: a `\` inside a pattern escapes one character and keeps the pattern
+  // balanced; a quoted or escaped `<(` inside it is a plain character, no substitution.
+  [String.raw`echo @(a\)|b) x`, [['echo', '@(a)|b)', 'x']]],
+  [String.raw`xargs env -S A=@(\x| git commit --fixup=HEAD'\c')`, [['xargs', 'env', '-S', String.raw`A=@(x| git commit --fixup=HEAD\c)`]]],
+  ["echo @(a'<(b') \\>(c) x", [['echo', '@(a<(b)', '>', { op: '(' }, 'c', { op: ')' }, 'x']]],
+  [String.raw`echo @(a\<(b)) x`, [['echo', '@(a<(b))', 'x']]],
+  // `{` keeps a command's first position after `function NAME`, `coproc` and `coproc NAME`
+  // only, not after an argument.
+  ['function f { !(x); }', [['function', 'f', '{', '!(', { op: '(' }, 'x', { op: ')' }], ['}']]],
+  ['coproc { !(x); }', [['coproc', '{', '!(', { op: '(' }, 'x', { op: ')' }], ['}']]],
+  ['coproc C { !(x); }', [['coproc', 'C', '{', '!(', { op: '(' }, 'x', { op: ')' }], ['}']]],
+  ['coproc !(x)', [['coproc', '!(', { op: '(' }, 'x', { op: ')' }]]],
+  ['function f !(x)', [['function', 'f', '!(x)']]],
+  ['coproc git commit { !(x)', [['coproc', 'git', 'commit', '{', '!(x)']]],
+  ['xargs env -S { A=@( git commit --fixup=HEAD) }', [['xargs', 'env', '-S', '{', 'A=@( git commit --fixup=HEAD)', '}']]],
+  ['echo function f { !(x)', [['echo', 'function', 'f', '{', '!(x)']]],
 ];
 for (const [command, expected] of bashTable) {
   test(`Seam 3: Bash segments(${JSON.stringify(command)})`, () => {

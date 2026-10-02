@@ -271,6 +271,10 @@ const interpreterGap = [
   String.raw`printf -- -n | xargs env -S A=@( git commit --fixup=HEAD'\c')`,
   String.raw`printf -- -n | xargs env -S A=@(x| git commit --fixup=HEAD'\c')`,
   String.raw`printf -- -n | xargs env -S A=@(x; git commit --fixup=HEAD'\c')`,
+  // A `\` inside the pattern keeps it one word (review GRD-04 round 6, finding 3).
+  String.raw`printf -- -n | xargs env -S A=@(\x| git commit --fixup=HEAD'\c')`,
+  // `{` after an argument opens no command: the pattern stays one word.
+  String.raw`printf -- -n | xargs env -S { A=@( git commit --fixup=HEAD'\c') }`,
 ];
 for (const command of interpreterGap) {
   test(`Seam 3: ${JSON.stringify(command)} has no output (interpreter gap: no git token)`, (t) => {
@@ -300,6 +304,73 @@ for (const command of substitutionBeforeGit) {
   test(`Seam 3: ${JSON.stringify(command)} is denied by the blanket rule`, (t) => {
     const c = createCase(t, { repo: false });
     assert.deepEqual(hook(c, command), { stdout: denyJson(MESSAGES.blanket), stderr: '' });
+  });
+}
+
+// Bash runs a `<(…)` or `>(…)` inside an extglob pattern, and reads the pattern in `[[ … ]]`
+// even with `extglob` off: the guard denies it with the blanket message (fail closed).
+// Verified end to end in Git Bash 5.3: each committed without its pre-commit hook and no
+// guard output before the fix (review GRD-04 round 6, finding 1).
+const substitutionInPattern = [
+  '[[ x == @(a|>(git commit -n --allow-empty -m bypass)) ]]',
+  'echo @(>(git commit -n --allow-empty -m bypass))',
+  'echo @(<(git commit -n --allow-empty -m bypass))',
+  'echo @(a|<(git commit -n --allow-empty -m bypass))',
+  'case x in @(a|>(git commit -n --allow-empty -m bypass))) ;; esac',
+  '[[ x == @(a|>(git commit -m x)) ]]',
+  'echo @(<(git commit -m x))',
+  '[[ x == !(>(xargs git commit --no-edit)) ]]',
+  'cat >@(>(git commit -m x))',
+];
+for (const command of substitutionInPattern) {
+  test(`Seam 3: ${JSON.stringify(command)} is denied by the blanket rule`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: denyJson(MESSAGES.blanket), stderr: '' });
+  });
+}
+
+test('Seam 2: a substitution inside a `[[ … ]]` pattern is denied by the real hook process', async (t) => {
+  const c = createCase(t);
+  const result = await runGuard(c, { command: '[[ x == @(a|>(git commit -n --allow-empty -m bypass)) ]]' });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdout, denyJson(MESSAGES.blanket));
+});
+
+// A quoted or escaped `<(` inside a pattern is a plain character: no substitution, and the
+// row is the one the rest of the command gives.
+test('Seam 3: a quoted or escaped `<(` inside a pattern is no substitution', (t) => {
+  const c = createCase(t, { repo: false });
+  assert.deepEqual(hook(c, "echo @(a'<(b') && git commit --no-edit"), { stdout: '', stderr: '' });
+  assert.deepEqual(hook(c, String.raw`echo @(a\<(b)) && git commit --no-edit`), { stdout: '', stderr: '' });
+});
+
+// A `{` after `function NAME`, `coproc` or `coproc NAME` opens a command, so a `!(` right
+// after it is `!` plus a subshell with `extglob` off. Each row names its deny row, `bare` or
+// the flag. Verified end to end in Git Bash 5.3: the first two committed without the
+// pre-commit hook and no guard output before the fix (review GRD-04 round 6, finding 2).
+const braceAfterReservedWord = [
+  ['function f { !(git commit -n --allow-empty -m bypass); }; f', '-n'],
+  ['coproc C { !(git commit -n --allow-empty -m bypass); }; wait', '-n'],
+  ['coproc { !(git commit -m x); }', 'bare'],
+  ['function f() { !(git commit -m x); }', 'bare'],
+  // Checked and safe either way (bash rejects them with `extglob` off), read conservatively.
+  ['coproc !(git commit -m x)', 'bare'],
+  ['>x !(git commit -m x)', 'bare'],
+];
+for (const [command, row] of braceAfterReservedWord) {
+  test(`Seam 3: ${JSON.stringify(command)} is denied with the ${row} row`, (t) => {
+    const c = createCase(t, { repo: false });
+    const message = row === 'bare' ? MESSAGES.bare : generic(row);
+    assert.deepEqual(hook(c, command), { stdout: denyJson(message), stderr: '' });
+  });
+}
+
+// After an assignment or a function's name the pattern is an argument, one word with no git
+// token: bash rejects both with `extglob` off, and with it on runs a glob, never git.
+for (const command of ['A=1 !(git commit -m x)', 'function f !(git commit -m x)']) {
+  test(`Seam 3: ${JSON.stringify(command)} has no output (no command runs git)`, (t) => {
+    const c = createCase(t, { repo: false });
+    assert.deepEqual(hook(c, command), { stdout: '', stderr: '' });
   });
 }
 
