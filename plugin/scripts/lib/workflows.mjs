@@ -16,6 +16,10 @@
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
 // RUN-03 the 45 s M15 `releaseDeadline` (`run-policy.mjs`) on the tree-state read.
+//
+// `commit` (RUN-04) also runs its own step table (`COMMIT_STEPS`) the same way: probe, the
+// shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
+// commits; EXE-02 replaces the stub with the real per-group loop.
 
 import { probe } from './repo-probe.mjs';
 import { treeState } from './change-set.mjs';
@@ -71,20 +75,28 @@ async function postScanRefusals(ctx) {
 const PLAN_STEPS = Object.freeze([probeRepo, loadConfigLayers, preFolderRefusals, inventory, postScanRefusals]);
 
 /**
- * `release` step 2: the probe's `env` refusal, the only refusal `release` shares with `plan`
- * (C:cli-and-exit-codes: `env` for any subcommand, `state` only for `plan` and `infer`).
+ * `release`/`commit` step 2: the probe's `env` refusal, the only refusal either shares with
+ * `plan` (C:cli-and-exit-codes: `env` for any subcommand, `state` only for `plan` and
+ * `infer`). Shared by `releaseRefusals` and `commitRefusals`, which differ only in the
+ * KD-S78 error string's subcommand word.
  */
-async function releaseRefusals(ctx) {
+async function subcommandRefusals(ctx, subcommand) {
   const refusal = planRefusal(ctx.probe);
   if (refusal !== null && refusal.code === 'env') return { refusal };
   const { repo } = ctx.probe;
   if (repo === null || repo.kind !== 'worktree') {
-    // Not a repo, a bare repository, or git timed out: what `release` does here is unsettled
-    // (KD-S78, docs/spec/known-deficiencies.md), not merely a slice not yet scheduled.
-    throw new Error('release outside a working tree is unsettled (KD-S78)');
+    // Not a repo, a bare repository, or git timed out: what this subcommand does here is
+    // unsettled (KD-S78, docs/spec/known-deficiencies.md), not merely a slice not yet
+    // scheduled.
+    throw new Error(`${subcommand} outside a working tree is unsettled (KD-S78)`);
   }
   ctx.toplevel = repo.toplevel;
   return undefined;
+}
+
+/** `release` step 2: see `subcommandRefusals`. */
+async function releaseRefusals(ctx) {
+  return subcommandRefusals(ctx, 'release');
 }
 
 /** `release` step 3: M12 `releaseById`, a no-op unless the lock holds this `planId`. */
@@ -98,21 +110,32 @@ async function releaseRun(ctx) {
 const RELEASE_STEPS = Object.freeze([probeRepo, releaseRefusals, releaseRun]);
 
 /**
- * `commit` step 2: the probe's `env` refusal, the only refusal `commit` shares with `plan`
- * (C:cli-and-exit-codes), mirroring `releaseRefusals`. `commit --plan` implies a prior
- * successful `plan`, so the "outside a working tree" case is left unsettled the same way
- * `release`'s own equivalent is (KD-S78): a slice that reaches it is not yet scheduled.
+ * `commit` step 2: see `subcommandRefusals`. `commit --plan` implies a prior successful
+ * `plan`, so the "outside a working tree" case is left unsettled the same way `release`'s
+ * own equivalent is (KD-S78): a slice that reaches it is not yet scheduled.
  */
 async function commitRefusals(ctx) {
-  const refusal = planRefusal(ctx.probe);
-  if (refusal !== null && refusal.code === 'env') return { refusal };
-  const { repo } = ctx.probe;
-  if (repo === null || repo.kind !== 'worktree') {
-    throw new Error('commit outside a working tree is unsettled (KD-S78)');
-  }
-  ctx.toplevel = repo.toplevel;
+  return subcommandRefusals(ctx, 'commit');
+}
+
+/** `commit` step 3: M12 `open`, the whole call's own lock check (RUN-04). */
+async function openRun(ctx) {
+  const opened = open(ctx.values.plan, { toplevel: ctx.toplevel, now: ctx.injected.now });
+  if (!opened.ok) return { refusal: { code: opened.code, message: opened.message } };
+  // Marks that `open` succeeded, so `commit`'s `finally` knows there is a `call.lock` to
+  // close (a failed `open` leaves nothing for `close` to do).
+  ctx.opened = true;
   return undefined;
 }
+
+// `commit` step 4 (temporary): ends the call at once with no commits. With no group-commit
+// behaviour built yet (M14/M16), a matched lock's call falls straight through to this stub;
+// EXE-02 replaces it with the real per-group loop.
+async function stubEnd() {
+  return { commits: [] };
+}
+
+const COMMIT_STEPS = Object.freeze([probeRepo, commitRefusals, openRun, stubEnd]);
 
 async function runSteps(steps, ctx) {
   for (const step of steps) {
@@ -203,22 +226,15 @@ export async function release(values, injected, { cwd }) {
  * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
  */
 export async function commit(values, injected, { cwd }) {
-  // Not run through the shared `runSteps` (which demands the step table itself end with a
-  // definite outcome, for `plan` and `release`'s longer tables): `commit`'s own ending comes
-  // from `open`/the stub below, not from a refusal step, so only the two probe/refusal steps
-  // run directly here.
-  const ctx = { injected, cwd, values };
-  await probeRepo(ctx);
-  const refused = await commitRefusals(ctx);
-  if (refused !== undefined) return refusalFailure(refused.refusal);
-
-  const opened = open(values.plan, { toplevel: ctx.toplevel, now: injected.now });
-  if (!opened.ok) return refusalFailure({ code: opened.code, message: opened.message });
-
+  const ctx = { injected, cwd, values, opened: false };
   try {
-    return { output: { commits: [] } };
+    const facts = await runSteps(COMMIT_STEPS, ctx);
+    if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+    return { output: facts };
   } finally {
-    close({ toplevel: ctx.toplevel, planId: values.plan });
+    // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
+    // `ended`, `busy`) leaves no `call.lock` of this call's own to close.
+    if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
 }
 
