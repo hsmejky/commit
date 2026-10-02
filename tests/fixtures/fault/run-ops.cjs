@@ -16,6 +16,8 @@
 //   { "op": "rename", "oldPath": "<path>", "newPath": "<path>" }       (callback form)
 //   { "op": "linkPromise", "existing": "<path>", "newPath": "<path>" }
 //   { "op": "renamePromise", "oldPath": "<path>", "newPath": "<path>" }
+//   { "op": "utimesSync", "path": "<path>" }                  (touches mtime/atime to now)
+//   { "op": "writeFileSync", "path": "<path>", "content": "<text>" }   (no mkdir, unlike "write")
 //
 // Each op that can fail is recorded as `{ op, ok: true }` or
 // `{ op, ok: false, code, syscall, path, dest }`.
@@ -109,6 +111,12 @@ async function runProgram(program) {
         break;
       case 'renamePromise':
         results.push(await promiseOutcome(step.op, () => fs.promises.rename(step.oldPath, step.newPath)));
+        break;
+      case 'utimesSync':
+        results.push(outcome(step.op, () => fs.utimesSync(step.path, new Date(), new Date())));
+        break;
+      case 'writeFileSync':
+        results.push(outcome(step.op, () => fs.writeFileSync(step.path, step.content || '')));
         break;
       default:
         throw new Error(`run-ops: unknown op ${step.op}`);

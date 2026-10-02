@@ -141,13 +141,25 @@ test('commit --plan X --all with a live call.lock → busy, and the run is kept'
 // mid-call maps to `taken-over`, not `internal`. Seam 1 only: the other races for this AC
 // live in tests/run.test.js as in-process M12 tests; this one goes through the shipped
 // entry point, injecting the ENOENT at the mtime touch (`fs.utimesSync` on the lock file)
-// rather than monkeypatching `node:fs` in-process.
+// rather than monkeypatching `node:fs` in-process. This covers specifically the run lock
+// itself vanishing at the mtime touch, not call.lock or the run folder — see the next test
+// for the call.lock-vanishing half of AC 5.
 test('commit --plan X --all: the lock vanishes with ENOENT at the mtime touch (real process seam) → taken-over, not internal', async (t) => {
   const c = createRepo(t);
   const { planId } = matchingRun(c);
   const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
     nodeArgs: ['--import', FAULT_PRELOAD],
     env: { COMMIT_TEST_FAULT_UTIMES_BASENAME: 'lock', COMMIT_TEST_FAULT_UTIMES_CODE: 'ENOENT' },
+  });
+  assertLockFailure(result, /this run was taken over by another \/commit/);
+});
+
+test('commit --plan X --all: call.lock\'s own create meets ENOENT (folder vanished mid-call, real process seam) → taken-over, not internal', async (t) => {
+  const c = createRepo(t);
+  const { planId } = matchingRun(c);
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_WRITEFILE_BASENAME: 'call.lock', COMMIT_TEST_FAULT_WRITEFILE_CODE: 'ENOENT' },
   });
   assertLockFailure(result, /this run was taken over by another \/commit/);
 });

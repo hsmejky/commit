@@ -94,6 +94,46 @@ test('linkSync fails only for a target path matching the configured basename', a
   assert.equal(fs.existsSync(miss), true);
 });
 
+test('utimesSync fails only for a target path matching the configured basename', async (t) => {
+  const c = createCase(t, { repo: false });
+  const hit = path.join(c.root, 'run.lock');
+  const miss = path.join(c.root, 'other.lock');
+  const results = await runOps(
+    c,
+    RUN_OPS,
+    [
+      { op: 'write', path: hit, content: 'a' },
+      { op: 'write', path: miss, content: 'b' },
+      { op: 'utimesSync', path: hit },
+      { op: 'utimesSync', path: miss },
+    ],
+    { COMMIT_TEST_FAULT_UTIMES_BASENAME: 'run.lock' },
+  );
+  const [, , failed, ok] = results;
+  assert.equal(failed.ok, false);
+  assert.equal(ok.ok, true);
+});
+
+test('writeFileSync fails only for a target path matching the configured basename', async (t) => {
+  const c = createCase(t, { repo: false });
+  const hit = path.join(c.root, 'call.lock');
+  const miss = path.join(c.root, 'other.lock');
+  const results = await runOps(
+    c,
+    RUN_OPS,
+    [
+      { op: 'writeFileSync', path: hit, content: 'a' },
+      { op: 'writeFileSync', path: miss, content: 'b' },
+    ],
+    { COMMIT_TEST_FAULT_WRITEFILE_BASENAME: 'call.lock' },
+  );
+  const [failed, ok] = results;
+  assert.equal(failed.ok, false);
+  assert.equal(ok.ok, true);
+  assert.equal(fs.existsSync(hit), false, 'the faulted write must not have happened');
+  assert.equal(fs.existsSync(miss), true, 'the non-matching write must have gone through');
+});
+
 test('the callback forms of link and rename fail for a matching target path too, and leave a non-matching call alone', async (t) => {
   const c = createCase(t, { repo: false });
   const existing = path.join(c.root, 'src');

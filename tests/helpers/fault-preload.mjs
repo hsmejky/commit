@@ -2,9 +2,11 @@
 // test tree (docs/spec/testing-seams.md, "Fault-injection preload at Seam 1"), that injects
 // failures a fixture cannot otherwise cause: `os.userInfo()` throwing, and a named fs
 // boundary (`fs.linkSync`/`fs.renameSync`, plus the callback and promise forms the code path
-// uses) failing for a target path whose basename matches a configured name. Never packaged:
-// the shipped CLI reads these only through the real `fs`/`os` modules and gains no test-only
-// switch to reach this (docs/spec/architectural-decisions.md, "Injected environment").
+// uses; `fs.utimesSync` and `fs.writeFileSync`, sync-only — the code paths that use them never
+// need the callback or promise form) failing for a target path whose basename matches a
+// configured name. Never packaged: the shipped CLI reads these only through the real
+// `fs`/`os` modules and gains no test-only switch to reach this (docs/spec/architectural-
+// decisions.md, "Injected environment").
 //
 // Environment variables (all optional; none set means no fault and no log):
 //   COMMIT_TEST_FAULT_USERINFO          set to any value: os.userInfo() throws.
@@ -28,8 +30,14 @@
 //                                       roles in the injected error).
 //   COMMIT_TEST_FAULT_UTIMES_CODE       default errno code for a failed utimes call whose
 //                                       matching entry has no `=code` (default EIO).
-//   COMMIT_TEST_FAULT_LOG               a file path; every intercepted link/rename call
-//                                       (whether or not it is made to fail) appends its
+//   COMMIT_TEST_FAULT_WRITEFILE_BASENAME   same shape as COMMIT_TEST_FAULT_LINK_BASENAME, for
+//                                       the path given to fs.writeFileSync (also one path
+//                                       playing both roles, like utimes).
+//   COMMIT_TEST_FAULT_WRITEFILE_CODE    default errno code for a failed writeFileSync call
+//                                       whose matching entry has no `=code` (default EIO).
+//                                       Never logged (see the writeFileSync section below).
+//   COMMIT_TEST_FAULT_LOG               a file path; every intercepted link/rename/utimes
+//                                       call (whether or not it is made to fail) appends its
 //                                       target path to this file, one per line, in call
 //                                       order. Unset: no file is written.
 //
@@ -98,6 +106,8 @@ const RENAME_BASENAMES = parseBasenameList(process.env.COMMIT_TEST_FAULT_RENAME_
 const RENAME_CODE = process.env.COMMIT_TEST_FAULT_RENAME_CODE || 'EIO';
 const UTIMES_BASENAMES = parseBasenameList(process.env.COMMIT_TEST_FAULT_UTIMES_BASENAME);
 const UTIMES_CODE = process.env.COMMIT_TEST_FAULT_UTIMES_CODE || 'EIO';
+const WRITEFILE_BASENAMES = parseBasenameList(process.env.COMMIT_TEST_FAULT_WRITEFILE_BASENAME);
+const WRITEFILE_CODE = process.env.COMMIT_TEST_FAULT_WRITEFILE_CODE || 'EIO';
 const LOG_FILE = process.env.COMMIT_TEST_FAULT_LOG || null;
 
 function logCall(targetPath) {
@@ -212,6 +222,22 @@ fs.utimesSync = function utimesSync(path_, ...rest) {
   const code = matchFault(UTIMES_BASENAMES, path_, UTIMES_CODE);
   if (code) throw makeFault(code, 'utimes', path_, path_);
   return originalUtimesSync.call(this, path_, ...rest);
+};
+
+// --- fs.writeFileSync ------------------------------------------------------------------------
+// writeFileSync has no separate source/target either (just one path), so `file` plays both
+// roles in the injected error; the real Node ENOENT/EACCES/etc. from a failed open report
+// `syscall: 'open'`. Deliberately not logged through `logCall`/COMMIT_TEST_FAULT_LOG: Node's
+// own `fs.appendFileSync` (which `logCall` uses) is itself implemented over `writeFileSync`,
+// so logging here would recurse into the very call doing the logging; writeFileSync is also
+// far too pervasive (every test fixture write goes through it) for a call-order log to stay
+// useful.
+
+const originalWriteFileSync = fs.writeFileSync;
+fs.writeFileSync = function writeFileSync(file, ...rest) {
+  const code = matchFault(WRITEFILE_BASENAMES, file, WRITEFILE_CODE);
+  if (code) throw makeFault(code, 'open', file, file);
+  return originalWriteFileSync.call(this, file, ...rest);
 };
 
 nodeModule.syncBuiltinESMExports();
