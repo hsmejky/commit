@@ -6,6 +6,13 @@
 // rules of its shell and split into segments. Bash only for now; the PowerShell tokenizer
 // is GRD-06.
 
+// The longest command G2 reads, in UTF-16 code units (256 Ki, about 256 KiB of ASCII): a
+// longer one is the blanket kind 'size' (C:guard step 2, fail closed), exempt form or not.
+// It bounds the time and memory the readings and the body walk can take, whose exhaustion
+// fails the guard open (review GRD-04 round 10: about 2.8 MB at full pattern depth ran the
+// heap out). Real commands stay far below it.
+export const MAX_COMMAND_LENGTH = 256 * 1024;
+
 // The typographic quotes U+2018-U+201E, written as the characters themselves.
 const TYPOGRAPHIC = /[‘-„]/;
 
@@ -31,7 +38,8 @@ export function isExemptScriptCall(command, shell) {
 
 /**
  * The blanket rule (C:guard step 2): the kind of construct that keeps a non-exempt command
- * from being tokenized, or null. Checked anywhere in the text, inside quotes or not. For
+ * from being tokenized, or null. A command longer than `MAX_COMMAND_LENGTH` is the kind
+ * 'size' first, exempt form or not. Checked anywhere in the text, inside quotes or not. For
  * Bash it is checked on both readings of `bashReadings`, each with every escaped newline
  * (`\` then a newline) removed: the text with every NUL and carriage return removed, then
  * the text with only every NUL removed, where a `\` before a carriage return escapes that
@@ -41,9 +49,10 @@ export function isExemptScriptCall(command, shell) {
  *
  * @param {string} command
  * @param {'bash'|'powershell'} shell
- * @returns {'substitution'|'heredoc'|'here-string'|'comment'|'typographic-quote'|null}
+ * @returns {'size'|'substitution'|'heredoc'|'here-string'|'comment'|'typographic-quote'|null}
  */
 export function blanketTrigger(command, shell) {
+  if (command.length > MAX_COMMAND_LENGTH) return 'size';
   if (isExemptScriptCall(command, shell)) return null;
   if (shell !== 'bash') return triggerIn(command.replace(/`\r?\n/g, ''), false);
   const withoutNul = command.replace(/\0/g, '');

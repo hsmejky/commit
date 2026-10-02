@@ -1,7 +1,7 @@
 // G3 Command classifier and deny catalogue (docs/spec/modules-shared-and-guard.md; C:guard
 // Parsing steps 3-5, Precedence, Deny messages). Pure.
 //
-// A blanket result (G2) is the blanket deny. In each segment, a `git` token directly followed
+// A blanket result (G2) is the blanket deny, its row picked by the blanket kind. In each segment, a `git` token directly followed
 // by a `commit` token is a commit: its arguments, read up to where git's arguments end, are
 // checked to be literal, expanded and matched against the Q4 allowlist; every other flag or
 // argument is the generic row naming it. A token before `git` in its command that is outside
@@ -28,7 +28,19 @@ export const MESSAGES = Object.freeze({
     'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
       + ROUTE,
   ),
+  nesting: withPersonalLine(
+    'This command mentions commit and holds an extglob pattern nested more than 16 levels deep, which the guard does not parse. Keep it out of a command that mentions commit, or to commit: '
+      + ROUTE,
+  ),
+  size: withPersonalLine(
+    'This command mentions commit and is longer than 262144 characters, which the guard does not parse. Keep a command that mentions commit shorter (write long text to a file first), or to commit: '
+      + ROUTE,
+  ),
 });
+
+// The blanket row for each G2 blanket kind with a row of its own; every other kind gets
+// MESSAGES.blanket.
+const BLANKET_ROWS = Object.freeze({ nesting: MESSAGES.nesting, size: MESSAGES.size });
 
 /**
  * The generic row (C:guard Deny messages, "any other flag or argument"), naming the flag.
@@ -265,7 +277,10 @@ function commitDecision(tokens, from, at, start, shell) {
  */
 export function classify(parsed, context = {}) {
   const { shell = 'bash' } = context;
-  if (!Array.isArray(parsed)) return { decision: 'deny', message: MESSAGES.blanket, scriptCalls: [] };
+  if (!Array.isArray(parsed)) {
+    const message = Object.hasOwn(BLANKET_ROWS, parsed.blanket) ? BLANKET_ROWS[parsed.blanket] : MESSAGES.blanket;
+    return { decision: 'deny', message, scriptCalls: [] };
+  }
   for (const segment of parsed) {
     // Redirections are dropped with their target (C:guard step 2).
     const tokens = segment.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));

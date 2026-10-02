@@ -39,6 +39,16 @@ test('the catalogue holds the bare-commit and blanket rows with their fixed text
     'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
       + `${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
   );
+  assert.equal(
+    MESSAGES.nesting,
+    'This command mentions commit and holds an extglob pattern nested more than 16 levels deep, which the guard does not parse. Keep it out of a command that mentions commit, or to commit: '
+      + `${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
+  );
+  assert.equal(
+    MESSAGES.size,
+    'This command mentions commit and is longer than 262144 characters, which the guard does not parse. Keep a command that mentions commit shorter (write long text to a file first), or to commit: '
+      + `${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
+  );
 });
 
 test('no deny text anywhere in the catalogue names /commit', () => {
@@ -59,6 +69,13 @@ test('a blanket result is the blanket deny with no script calls', () => {
     message: MESSAGES.blanket,
     scriptCalls: [],
   });
+});
+
+test('the nesting and size kinds get their own rows, any other kind the blanket row', () => {
+  const rows = [['nesting', MESSAGES.nesting], ['size', MESSAGES.size], ['heredoc', MESSAGES.blanket], ['toString', MESSAGES.blanket]];
+  for (const [kind, message] of rows) {
+    assert.deepEqual(classify({ blanket: kind }, { shell: 'bash' }), { decision: 'deny', message, scriptCalls: [] });
+  }
 });
 
 const denyTable = [
