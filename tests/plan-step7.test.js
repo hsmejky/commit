@@ -52,6 +52,8 @@ function realGit(c) {
 // A `git` shim on PATH: runs `action` (shell lines) once, when `condition` (a shell test)
 // first holds at a git call, then hands every call on to the real git. Every git call runs
 // from the toplevel (Q9), so relative `.commit-plan` paths name the run-folder directory.
+// A failing action line exits the shim with 97, so the plan sees a broken git call instead
+// of the action silently not happening.
 function gitShim(c, { condition, action }) {
   const dir = path.join(c.root, 'shim-bin');
   fs.mkdirSync(dir);
@@ -62,13 +64,23 @@ function gitShim(c, { condition, action }) {
     '#!/bin/sh',
     `if [ ! -e '${marker}' ] && ${condition}; then`,
     `  : > '${marker}'`,
-    ...action(git).map((line) => `  ${line}`),
+    ...action(git).map((line) => `  ${line} || { echo 'git shim action failed' >&2; exit 97; }`),
     'fi',
     `exec '${git}' "$@"`,
     '',
   ].join('\n'));
   fs.chmodSync(shim, 0o755);
   return { env: pathOverride(c, [dir, c.env.PATH]), marker };
+}
+
+// The case's fixed identity as shell assignments, for a commit a shim action makes. M2 strips
+// every inherited `GIT_*` outside its keep set from the plan's git calls, the identity
+// included, so the shim inherits none; git's own fallback (GECOS name, host email) fails on
+// Linux CI runners, whose user has no GECOS name.
+function identityAssignments(c) {
+  return ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_AUTHOR_DATE',
+    'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'GIT_COMMITTER_DATE']
+    .map((key) => `${key}='${c.env[key]}'`).join(' ');
 }
 
 function assertLockRefusal(result, kind) {
@@ -104,7 +116,7 @@ test('plan whose step-7 HEAD re-read finds a commit made after the lock was take
   c.writeFile('a.txt', 'one\nmore\n');
   const shim = gitShim(c, {
     condition: '[ -e .commit-plan/lock ] && [ "$*" = "rev-parse --verify -q HEAD" ]',
-    action: (git) => [`'${git}' commit -q --allow-empty -m moved`],
+    action: (git) => [`${identityAssignments(c)} '${git}' commit -q --allow-empty -m moved`],
   });
 
   const result = await runCommit(c, ['plan'], { env: shim.env });
