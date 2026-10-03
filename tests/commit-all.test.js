@@ -5,7 +5,9 @@
 // `state.json` as `check` would; `commit --plan <id> --all` then commits that group's
 // whole-file units (C:commit-release): the output fields, the commit's tree and message,
 // HEAD, the run released after the last group, and `unstaged: []` once `indexReset` is set.
-// Plus the thin M10 `matchIds` in process.
+// Plus the thin M10 `matchIds` in process. EXE-03 adds: the stored message reaches git
+// exactly as approved regardless of the repo's `commit.cleanup` config or body text that
+// looks like a git flag.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -28,13 +30,16 @@ const HEADER = 'feat: change both files';
 const BODY = 'Some body.';
 
 // Two committed files, both modified, a `plan --split` run holding the lock, and one stored
-// group naming every unit, as `check` stores it (PLN-01).
-async function groupedRun(t) {
+// group naming every unit, as `check` stores it (PLN-01). `configure` runs on the case right
+// after the seed commit, before the working-tree edit and `plan` (e.g. a repo config set for
+// EXE-03's `commit.cleanup` test).
+async function groupedRunWithMessage(t, { header = HEADER, body = BODY, configure } = {}) {
   const c = createCase(t);
   c.writeFile('a.txt', 'one\n');
   c.writeFile('b.txt', 'two\n');
   c.git(['add', '--', 'a.txt', 'b.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
+  if (configure) configure(c);
   c.writeFile('a.txt', 'one\nmore\n');
   c.writeFile('b.txt', 'two\nmore\n');
   const planned = await runCommit(c, ['plan', '--split']);
@@ -43,10 +48,14 @@ async function groupedRun(t) {
   const statePath = path.join(runDir, 'state.json');
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   state.groups = [{
-    n: 1, units: state.units.map((unit) => unit.id), header: HEADER, body: BODY, committed: false,
+    n: 1, units: state.units.map((unit) => unit.id), header, body, committed: false,
   }];
   fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   return { c, planId, runDir };
+}
+
+async function groupedRun(t) {
+  return groupedRunWithMessage(t);
 }
 
 test('one stored group of two modified files → exit 0 with one commit and the full output fields', async (t) => {
@@ -169,6 +178,45 @@ test('a backstop hit after staging resets the real index before throwing, and co
   assert.match(c.git(['status', '--porcelain']), /^ M a\.txt\r?\n M b\.txt\r?\n?$/, 'both files are plain unstaged modifications again');
   assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the run lock is kept');
   assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
+});
+
+// EXE-03 (docs/roadmap/10-commit-executor.md): the message reaches git exactly as approved.
+// `git commit` runs with `--cleanup=verbatim` on stdin (`-F -`), so the repo's own
+// `commit.cleanup` setting cannot strip a `#` line or trailing whitespace, and a body line
+// that looks like a git flag is never argv, so it changes no git behaviour.
+
+test('commit.cleanup=strip in repo config does not strip a stored body line starting with # or trailing whitespace', async (t) => {
+  const body = '# not a comment to verbatim\n\nSecond paragraph with trailing spaces.   \n   ';
+  const { c, planId } = await groupedRunWithMessage(t, {
+    body,
+    configure: (repo) => repo.git(['config', 'commit.cleanup', 'strip']),
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n`);
+});
+
+test('a stored body line reading --amend or -n is committed as text and changes no git behaviour', async (t) => {
+  const body = 'Notes:\n--amend\n-n\nEnd.';
+  const { c, planId } = await groupedRunWithMessage(t, { body });
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  assert.equal(
+    c.git(['rev-parse', `${sha}^`]).trim(),
+    headBefore,
+    'a new commit was made on top of the seed, not amended onto it',
+  );
+  assert.equal(c.git(['rev-list', '--count', sha]).trim(), '2', 'history has two commits, not one');
+  const raw = c.git(['cat-file', 'commit', sha]);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n`);
 });
 
 test('matchIds: every id whose hash a current unit carries → ok; a missing hash → unmatched', () => {
