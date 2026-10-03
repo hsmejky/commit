@@ -27,16 +27,30 @@ function seedCommit(c) {
   c.git(['commit', '-q', '-m', 'seed']);
 }
 
+// KD-R65 retired (CHG-03b): the HEAD state is stored in `plan.json` `state` and the expected
+// HEAD in `state.json` `head`, which only a tree with changes writes; stdout carries neither.
+function storedFacts(c, result) {
+  const folder = path.join(c.repoDir, '.commit-plan', result.json.planId);
+  assert.equal(Object.hasOwn(result.json, 'state'), false);
+  assert.equal(Object.hasOwn(result.json, 'expectedHead'), false);
+  return {
+    state: JSON.parse(fs.readFileSync(path.join(folder, 'plan.json'), 'utf8')).state,
+    head: JSON.parse(fs.readFileSync(path.join(folder, 'state.json'), 'utf8')).head,
+  };
+}
+
 test('plan on a branch with one commit stores the branch state and the expected HEAD', async (t) => {
   const c = createCase(t);
   seedCommit(c);
   const headSha = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('README.md', 'changed\n');
 
   const result = await runCommit(c, ['plan']);
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
-  assert.deepEqual(result.json.state, { kind: 'branch', branch: 'main', unborn: false });
-  assert.equal(result.json.expectedHead, headSha);
+  const { state, head } = storedFacts(c, result);
+  assert.deepEqual(state, { kind: 'branch', branch: 'main', unborn: false });
+  assert.equal(head, headSha);
 });
 
 test('plan on an unborn repo stores unborn: true and a null expected HEAD, with no error', async (t) => {
@@ -49,8 +63,11 @@ test('plan on an unborn repo stores unborn: true and a null expected HEAD, with 
   });
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
-  assert.deepEqual(result.json.state, { kind: 'branch', branch: 'main', unborn: true });
-  assert.equal(result.json.expectedHead, null);
+  // An unborn HEAD has no tracked modification to reach step 7 with until the inventory
+  // takes added files, so `plan.json` and `state.json` are not observable here yet; the
+  // stdout stand-in is gone all the same (KD-R65).
+  assert.equal(Object.hasOwn(result.json, 'state'), false);
+  assert.equal(Object.hasOwn(result.json, 'expectedHead'), false);
   assert.equal(result.json.reply.status, 'nothing');
 
   // Story 182: config at HEAD is skipped on an unborn HEAD, so no `git show` call is made.
@@ -68,12 +85,17 @@ test('plan on a detached HEAD stores state.kind detached and adds the detached-H
   const result = await runCommit(c, ['plan']);
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
-  assert.deepEqual(result.json.state, { kind: 'detached', branch: null, unborn: false });
-  assert.equal(result.json.expectedHead, headSha);
   assert.ok(
     result.json.reply.notices.some((n) => /detached/i.test(n)),
     JSON.stringify(result.json.reply.notices),
   );
+
+  c.writeFile('README.md', 'changed\n');
+  const changed = await runCommit(c, ['plan']);
+  assert.equal(changed.exitCode, 0, `stdout ${changed.stdout}\nstderr ${changed.stderr}`);
+  const { state, head } = storedFacts(c, changed);
+  assert.deepEqual(state, { kind: 'detached', branch: null, unborn: false });
+  assert.equal(head, headSha);
 });
 
 test('plan reads branch and HEAD from exactly one porcelain v2 status call', async (t) => {

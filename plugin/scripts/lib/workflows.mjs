@@ -12,17 +12,18 @@
 // step 1 to also load the user layer, read regardless of repo state. GIT-02 adds a plan-only
 // step right after the shared probe (`readHeadState`, review-GIT-02 finding 5): it stores the
 // HEAD state and expected HEAD on `ctx` and queues the detached-HEAD notice, so `release` and
-// `commit`, which share `probeRepo` but not this step, never spawn the extra status call; it
-// also adds `state`/`expectedHead` to `plan`'s output. GIT-03 widens the same step to also
+// `commit`, which share `probeRepo` but not this step, never spawn the extra status call. GIT-03 widens the same step to also
 // read the in-progress state (M3 `inProgressState`) and store it as `ctx.inProgress`, read by
 // step 2's `planRefusal`. GIT-04 widens it again, with the same `ctx.probe` HEAD state call's
 // `unmerged` lines and a new M3 `commitEncoding` config read, run concurrently with the
 // in-progress read since neither depends on the other's result. CHG-03 builds step 4's M10
 // `inventory` (tracked modifications only), step 5's snapshot (M10 `snapshot` and
 // `assignIds`: the units, the unit table, the `id → hash` map and the `tracked` list with M9
-// `bucketOf`, all on `ctx`) and a step-7 stand-in that ends a tree with changes as `internal`
-// until CHG-03b stores them. Later slices insert the other rows (3 lock peek, 5 scan, 7 store
-// and lock, 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
+// `bucketOf`, all on `ctx`). CHG-03b builds step 7 (`state.json`, the run lock with no
+// takeover, `plan.json`, in that order) and step 8's in-process hunk index, and drops GIT-02's
+// stdout `state`/`expectedHead` stand-in (KD-R65: they are stored in `plan.json` and
+// `state.json`). Later slices insert the other rows (3 lock peek, 5 scan, 7 re-reads and
+// sweep, 8 guard state) in their place in PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
@@ -35,7 +36,8 @@
 import { commitEncoding, headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
 import { assignIds, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
 import { bucketOf } from './path-classifier.mjs';
-import { releaseById, open, close, create, RUN_DIR_NAME } from './run.mjs';
+import { releaseById, open, close, create, RUN_DIR_NAME, STATE_VERSION } from './run.mjs';
+import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { reply } from './reply.mjs';
 import { planRefusal, releaseDeadline } from './run-policy.mjs';
@@ -168,17 +170,62 @@ async function postScanRefusals(ctx) {
 }
 
 /**
- * Step 7 (stand-in): CHG-03b takes the run lock here and stores the unit table, the
- * `id → hash` map and `plan.json`; until then a tree with changes ends as `internal`, and
- * `plan`'s `finally` discards the provisional folder.
+ * Step 7 (CHG-03b): in contract order (C:run-folder, C:plan step 7), M12 writes `state.json`
+ * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the unit
+ * table and the `id → hash` map; the later rows arrive with their slices), then takes the run
+ * lock (`acquire`, no takeover: RUN-06 adds `held`, the step-7 re-reads and the takeover
+ * path), then writes `plan.json`. A lock is never taken without `state.json` in place. From
+ * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
  */
-async function storeAndLock() {
-  throw new Error('plan on a working tree with changes is not built yet: step 7 (CHG-03b)');
+async function storeAndLock(ctx) {
+  const { planId, runDir } = ctx.provisional;
+  ctx.mode = 'split';
+  ctx.provisional.write('state.json', `${JSON.stringify({
+    version: STATE_VERSION,
+    mode: ctx.mode,
+    interactive: ctx.values['no-user'] !== true,
+    head: ctx.expectedHead,
+    units: ctx.unitTable,
+    idMap: ctx.idMap,
+  })}\n`);
+  ctx.run = ctx.provisional.acquire({ now: ctx.injected.now }).run;
+  ctx.run.write('plan.json', entryPerLine({
+    version: 1,
+    ok: true,
+    planId,
+    runDir,
+    mode: ctx.mode,
+    state: ctx.state,
+    clean: false,
+    tracked: ctx.tracked,
+  }));
+  return undefined;
+}
+
+// `plan.json` holds one top-level entry per line (C:run-folder), still one JSON object.
+function entryPerLine(object) {
+  const lines = Object.entries(object).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`);
+  return `{\n${lines.join(',\n')}\n}\n`;
+}
+
+/**
+ * Step 8 (CHG-03b, `plan --hunks` part): M13 `renderHunks` over the snapshot's units, in
+ * process; M12 writes `hunks.txt` and the output object becomes `plan`'s stdout `hunks`.
+ * Guard state and the stored notices are S1's and later slices'; the effective config
+ * values are CFG-05's (empty until then); the spill to `hunks.json` is CHG-18's.
+ */
+async function renderHunkIndex(ctx) {
+  const { stdoutObj, hunksTxt } = renderHunks(
+    { runDir: ctx.provisional.runDir, mode: ctx.mode, config: { values: {} } },
+    ctx.units,
+  );
+  ctx.run.write('hunks.txt', hunksTxt);
+  return { hunks: stdoutObj };
 }
 
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
-  snapshotUnits, postScanRefusals, storeAndLock,
+  snapshotUnits, postScanRefusals, storeAndLock, renderHunkIndex,
 ]);
 
 /**
@@ -272,19 +319,28 @@ export async function plan(values, injected, { cwd }) {
   }
   // GIT-02: `notices` lives on `ctx` from the start, so `probeRepo` (step 1) can queue the
   // detached-HEAD notice before any later step runs.
-  const ctx = { injected, cwd, provisional: null, notices: [] };
+  const ctx = { injected, cwd, values, provisional: null, run: null, notices: [] };
   let facts;
   try {
     facts = await runSteps(PLAN_STEPS, ctx);
   } finally {
-    // No outcome built yet takes the lock (step 7, CHG-03b), so every one discards the
-    // provisional folder, a thrown `internal` included (C:run-folder). `discard` never
-    // throws: a removal error becomes a notice and never changes the outcome. Only a reply
-    // carries notices so far; a refusal or `internal` drops it (KD-R64).
-    const notice = ctx.provisional === null ? null : ctx.provisional.discard();
-    if (notice !== null) ctx.notices.push(notice);
+    // Every outcome but the hunk index ends without the lock (C:run-folder), a thrown
+    // `internal` included: a throw after `acquire` (`ctx.run`) releases the lock first, one
+    // before it has no lock to release. Neither `release` nor `discard` throws: a removal
+    // error becomes a notice and never changes the outcome. Only a reply carries notices so
+    // far; a refusal or `internal` drops it (KD-R64).
+    if (facts === undefined || facts.hunks === undefined) {
+      for (const notice of [ctx.run?.release() ?? null, ctx.provisional?.discard() ?? null]) {
+        if (notice !== null) ctx.notices.push(notice);
+      }
+    }
   }
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+  if (facts.hunks !== undefined) {
+    // The lock is held and the worker goes on with the hunk index (C:plan): `reply` is null.
+    const { planId, runDir } = ctx.provisional;
+    return { output: { planId, runDir, mode: ctx.mode, reply: null, hunks: facts.hunks } };
+  }
   return {
     output: {
       planId: null,
@@ -292,10 +348,6 @@ export async function plan(values, injected, { cwd }) {
       // With no mode flag an empty index resolves to `split` (C:plan `mode`); a clean tree
       // has an empty index. M15 `resolveMode` replaces this at step 4.
       mode: 'split',
-      // GIT-02: `state` (C:plan `state.kind`) and `expectedHead` (`null` when unborn; stored
-      // for GIT-09/EXE's later head-moved checks, ahead of CHG-03b's own `state.json` write).
-      state: ctx.state,
-      expectedHead: ctx.expectedHead,
       reply: await finalReply({ ...facts, notices: ctx.notices }, ctx),
       hunks: null,
     },

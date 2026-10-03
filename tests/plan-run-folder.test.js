@@ -293,9 +293,13 @@ test('a discard that cannot remove the folder never replaces the original error 
   seedCommit(c);
   c.writeFile('README.md', 'changed\n');
   failRemoval(t);
+  // CHG-03b: the original error is now a failed `state.json` rename at step 7.
+  t.mock.method(require('node:fs'), 'renameSync', () => {
+    throw Object.assign(new Error('EIO: i/o error, rename'), { code: 'EIO' });
+  });
 
   const thrown = await planInProcess(c).then(() => null, (err) => err);
   t.mock.restoreAll();
 
-  assert.match(String(thrown && thrown.message), /plan on a working tree with changes is not built yet/);
+  assert.equal(thrown && thrown.code, 'EIO');
 });

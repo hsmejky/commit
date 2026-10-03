@@ -29,7 +29,7 @@ const PINNED_DIFF_CALL = [
   '-z', '--raw', '-p', 'HEAD',
 ];
 
-test('plan on modified tracked files runs one pinned diff with no pathspec, then stops at step 7', async (t) => {
+test('plan on modified tracked files runs one pinned diff with no pathspec and keeps the run', async (t) => {
   const c = createCase(t);
   c.writeFile('a b/c.txt', 'old\n');
   c.writeFile('src/b.js', 'one\n');
@@ -45,10 +45,9 @@ test('plan on modified tracked files runs one pinned diff with no pathspec, then
   });
 
   const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
-  assert.equal(result.exitCode, 1, detail);
-  assert.equal(result.json.error.kind, 'internal', detail);
-  assert.match(result.json.error.message, /step 7 \(CHG-03b\)/, detail);
-  assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), []);
+  assert.equal(result.exitCode, 0, detail);
+  // CHG-03b: past step 7 the run is kept; every path comes raw from the raw pass (KD-R1).
+  assert.deepEqual(result.json.hunks.hunks.map((entry) => entry.path), ['a b/c.txt', 'src/b.js'], detail);
 
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const diffCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('diff'));

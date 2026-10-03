@@ -423,6 +423,31 @@ function lockPlanId(bytes) {
 }
 
 /**
+ * Removes the lock when it still holds `planId` (`moveAsideVerified`: a takeover that landed
+ * after the caller's read gets its lock put back), then deletes the run folder and the
+ * private copy. Shared by `releaseById` and the run `acquire` returns (`run.release()`).
+ *
+ * @param {string} runDir the run-folder directory.
+ * @param {string} planId
+ * @returns {'moved' | 'put-back' | 'conflict' | 'gone' | 'busy'} `moveAsideVerified`'s outcome;
+ *   only `moved` removed anything.
+ */
+function removeOwnRun(runDir, planId) {
+  const aside = insideRunDir(runDir, `lock.${crypto.randomUUID()}`);
+  const { outcome } = moveAsideVerified({
+    from: insideRunDir(runDir, 'lock'),
+    to: aside,
+    verify: (bytes) => lockPlanId(bytes) === planId,
+  });
+  if (outcome !== 'moved') return outcome;
+  // Folder first, then the renamed lock: a kill in between leaves a renamed lock whose
+  // chain ends at a missing folder, which the next adopter counts done (C:run-folder).
+  fs.rmSync(insideRunDir(runDir, planId), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  fs.rmSync(aside, { force: true });
+  return outcome;
+}
+
+/**
  * Ends the run `planId` names (`release`, C:commit-release): reads the lock first; when it
  * holds `planId`, takes the run's `call.lock` (a live one → `busy`, the run kept), then
  * removes the lock through `moveAsideVerified` (verify `planId`; a takeover that landed
@@ -455,19 +480,9 @@ export function releaseById({
   const call = takeCallLock(runDir, planId, { now, pid, host, isAlive });
   if (!call.ok) return call;
   try {
-    const aside = insideRunDir(runDir, `lock.${crypto.randomUUID()}`);
-    const { outcome } = moveAsideVerified({
-      from: insideRunDir(runDir, 'lock'),
-      to: aside,
-      verify: (bytes) => lockPlanId(bytes) === planId,
-    });
+    const outcome = removeOwnRun(runDir, planId);
     if (outcome === 'busy') return busy(true);
-    if (outcome !== 'moved') return { ok: true, released: false };
-    // Folder first, then the renamed lock: a kill in between leaves a renamed lock whose
-    // chain ends at a missing folder, which the next adopter counts done (C:run-folder).
-    fs.rmSync(insideRunDir(runDir, planId), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    fs.rmSync(aside, { force: true });
-    return { ok: true, released: true };
+    return { ok: true, released: outcome === 'moved' };
   } finally {
     if (call.path !== null) close({ toplevel, planId, pid, host });
   }
@@ -548,10 +563,17 @@ function runFolderRefusal(trackedAs) {
  *   path the index holds under `.commit-plan`, such as `.Commit-Plan` (M3 `isTracked`), or
  *   `null`/`false` when it holds none, or `true` when the caller knows it is tracked but not
  *   which variant.
- * @returns {{ ok: true, provisional: { planId: string, runDir: string, discard: () => string | null } }
+ * @returns {{ ok: true, provisional: { planId: string, runDir: string,
+ *   write: (name: string, data: string | Uint8Array) => void,
+ *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null },
+ *   discard: () => string | null } }
  *   | { ok: false, code: 'run-folder', message: string }}
  *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
- *   slashes (C:run-folder); `discard()` deletes it (every outcome that takes no lock).
+ *   slashes (C:run-folder); `write(name, data)` writes `<planId>/<name>` atomically
+ *   (temporary name, then rename; KD-R37: `state.json` is written before `acquire`);
+ *   `acquire()` takes the run lock with no takeover (CHG-03b) and returns the run, whose
+ *   `write` is the same and whose `release()` removes the lock and the folder;
+ *   `discard()` deletes the folder (every outcome that takes no lock).
  *   Inside M12 a local `runDir` is `.commit-plan` itself (`runDirOf`); only this output
  *   field names the `<planId>/` folder, keeping C:plan's `runDir` (review-RUN-05 finding 8).
  */
@@ -581,7 +603,67 @@ export function create({ toplevel, excludePath, tracked }) {
       return discardNotice(planId, err.code || 'error');
     }
   };
-  return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), discard } };
+  const write = (name, data) => writeAtomic(folder, name, data);
+  const acquire = ({ now = Date.now } = {}) => acquireLock(runDir, planId, folder, now);
+  return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), write, acquire, discard } };
+}
+
+// Every write of a run file (`state.json`, `plan.json`, `hunks.txt`) goes to a temporary name
+// in the run folder, then a rename into place, so no reader sees a half-written file
+// (C:run-folder "Versioned"). The Windows file-in-use retry of the rename is RUN-09's.
+function writeAtomic(folder, name, data) {
+  const target = path.join(folder, name);
+  const temp = path.join(folder, `${name}.tmp`);
+  fs.writeFileSync(temp, data);
+  fs.renameSync(temp, target);
+}
+
+/**
+ * The lock's temporary file in the run-folder directory, linked into place as `lock`.
+ * Named apart from a renamed lock (`lock.<planId>`), which adoption owns (C:run-folder).
+ *
+ * @param {string} planId
+ * @returns {string}
+ */
+export function lockTempName(planId) {
+  return `lock-${planId}.tmp`;
+}
+
+// M12 `acquire` without a takeover (CHG-03b, C:plan step 7): `{ planId, created }` written to
+// a temporary file in `.commit-plan/` and hard-linked into place as `.commit-plan/lock`
+// (`linkSync` never overwrites, so no reader sees a lock without its content); the temporary
+// file is removed whether or not the link succeeds. Any link error throws for now: RUN-06
+// maps `EEXIST` to `held`, RUN-09 the Windows `EPERM`/`EBUSY` retries and the probe.
+function acquireLock(runDir, planId, folder, now) {
+  const temp = insideRunDir(runDir, lockTempName(planId));
+  const lock = insideRunDir(runDir, 'lock');
+  try {
+    fs.writeFileSync(temp, JSON.stringify({ planId, created: new Date(now()).toISOString() }), { flag: 'wx' });
+    fs.linkSync(temp, lock);
+  } finally {
+    fs.rmSync(temp, { force: true });
+  }
+  return { ok: true, run: ownRun(runDir, planId, folder), takeover: null };
+}
+
+// The run `acquire` returns: `write` as before the lock, and `release()`, which removes the
+// lock (only while it still holds `planId`) and the run folder. `release` never throws: a
+// removal error becomes a notice and never replaces the call's outcome or original error,
+// like `discard`.
+function ownRun(runDir, planId, folder) {
+  return {
+    planId,
+    write: (name, data) => writeAtomic(folder, name, data),
+    release: () => {
+      try {
+        if (!isPlainDirectory(runDir)) return null;
+        removeOwnRun(runDir, planId);
+        return null;
+      } catch (err) {
+        return discardNotice(planId, err.code || 'error');
+      }
+    },
+  };
 }
 
 /**
