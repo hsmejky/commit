@@ -104,6 +104,81 @@ test('with no pre-staging, unstaged is [] (the run set indexReset), not null', a
   assert.deepEqual(result.json.unstaged, []);
 });
 
+// A `preStaged` file (part of `a.txt`'s change staged, the rest left in the working tree,
+// C:plan "A partially staged file appears in both lists") plus the usual two-file group.
+async function partiallyStagedRun(t) {
+  const c = createCase(t);
+  c.git(['config', 'user.name', 'Commit Test Author']);
+  c.git(['config', 'user.email', 'author@example.com']);
+  c.writeFile('a.txt', 'one\n');
+  c.writeFile('b.txt', 'two\n');
+  c.git(['add', '--', 'a.txt', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nstaged\n');
+  c.git(['add', '--', 'a.txt']);
+  c.writeFile('a.txt', 'one\nstaged\nmore\n');
+  c.writeFile('b.txt', 'two\nmore\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.deepEqual(state.preStaged, ['a.txt'], 'plan recorded a.txt as pre-staged');
+  state.groups = [{
+    n: 1, units: state.units.map((unit) => unit.id), header: HEADER, body: BODY, committed: false,
+  }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return { c, planId, runDir };
+}
+
+test('a pre-staged file refuses before any group: no commit, the real index untouched, the run kept', async (t) => {
+  const { c, planId, runDir } = await partiallyStagedRun(t);
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  const statusBefore = c.git(['status', '--porcelain']);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'internal', detail(result));
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'no commit was made');
+  assert.equal(c.git(['status', '--porcelain']), statusBefore, 'the real index is exactly as plan left it');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the run lock is kept');
+  assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
+});
+
+test('a backstop hit after staging resets the real index before throwing, and commits nothing', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'user.name', 'Commit Test Author']);
+  c.git(['config', 'user.email', 'author@example.com']);
+  c.writeFile('a.txt', 'one\n');
+  c.writeFile('b.txt', 'two\n');
+  c.git(['add', '--', 'a.txt', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const keyBody = 'M'.repeat(48);
+  c.writeFile('a.txt', `one\n-----BEGIN RSA PRIVATE KEY-----\n${keyBody}\n`);
+  c.writeFile('b.txt', 'two\nmore\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = [{
+    n: 1, units: state.units.map((unit) => unit.id), header: HEADER, body: BODY, committed: false,
+  }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'internal', detail(result));
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'no commit was made');
+  assert.equal(c.git(['diff', '--cached']), '', 'the real index was reset, nothing staged');
+  assert.match(c.git(['status', '--porcelain']), /^ M a\.txt\r?\n M b\.txt\r?\n?$/, 'both files are plain unstaged modifications again');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the run lock is kept');
+  assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
+});
+
 test('matchIds: every id whose hash a current unit carries → ok; a missing hash → unmatched', () => {
   const units = [{ hash: 'h1' }, { hash: 'h2' }];
 

@@ -13,11 +13,21 @@ import { head } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, matchIds, snapshot, stage, treeDiffUnits, writeTree,
 } from './change-set.mjs';
+import { run } from './process-adapter.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 
 function notBuilt(what, slice) {
   return new Error(`${what} is not built yet (${slice})`);
+}
+
+// Low 2 (review-EXE-02): C:commit-release "`split` runs `git reset -q -- .` only when the
+// failing group itself reached (c)". EXE-10 builds the real M10 `unstage` and its `unstaged`
+// report (EXE-11); until then this best-effort reset is the cheap half, so a failure after
+// (c) (`stage-failed`/`mismatch`, a backstop hit, a non-zero `git commit`) never leaves the
+// real index staged for the run to repair later.
+async function resetIndex({ toplevel, env, now }) {
+  await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now });
 }
 
 /**
@@ -54,10 +64,16 @@ export async function commitAll(run, { now, osUser, env }) {
   const git = { toplevel, env, now };
   const state = readState(run);
   if (state.mode !== 'split') throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19, EXE-20');
+  // Medium (review-EXE-02): checked before any group's (c) reset, not after the loop, so a
+  // run with pre-staged paths is refused with the real index untouched and nothing committed
+  // — EXE-11 (the `unstaged` report those paths would need) is not built yet.
+  if (state.preStaged.length > 0) {
+    throw notBuilt('the unstaged report for pre-staged paths', 'EXE-11');
+  }
   const commits = [];
   for (const group of state.groups.filter((stored) => !stored.committed)) {
     const touched = touch(run, { now });
-    if (!touched.ok) throw notBuilt(`the ${touched.code} refusal before a group`, 'EXE-06');
+    if (!touched.ok) throw notBuilt(`the ${touched.code} refusal before a group`, 'EXE-04');
 
     // (b) Match on the temporary index, the real index untouched.
     const units = wholeFileUnits(state, group);
@@ -75,18 +91,23 @@ export async function commitAll(run, { now, osUser, env }) {
     state.indexReset = true;
     writeState(run, state);
     const ignoredPaths = state.stagedNew.filter((entry) => entry.ignored).map((entry) => entry.path);
-    const staged = await stage({ units, ignoredPaths, ...git });
-    if (!staged.ok) throw notBuilt(`the ${staged.code} failure`, 'EXE-10');
+    try {
+      const staged = await stage({ units, ignoredPaths, ...git });
+      if (!staged.ok) throw notBuilt(`the ${staged.code} failure`, 'EXE-10');
 
-    // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
-    const tree = await writeTree(git);
-    const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), { scanIgnore: [], osUser });
-    if (hits.length > 0) throw notBuilt('the backstop refusal', 'EXE-13');
+      // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
+      const tree = await writeTree(git);
+      const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), { scanIgnore: [], osUser });
+      if (hits.length > 0) throw notBuilt('the backstop refusal', 'EXE-13');
 
-    const committed = await commitGuarded({
-      args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group), ...git,
-    });
-    if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+      const committed = await commitGuarded({
+        args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group), ...git,
+      });
+      if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+    } catch (err) {
+      await resetIndex(git);
+      throw err;
+    }
     const sha = await head({ cwd: toplevel, env, now });
 
     group.committed = true;
@@ -94,9 +115,6 @@ export async function commitAll(run, { now, osUser, env }) {
     state.indexFingerprint = await indexFingerprint(git);
     writeState(run, state);
     commits.push({ n: group.n, sha, header: group.header });
-  }
-  if (state.indexReset === true && state.preStaged.length > 0) {
-    throw notBuilt('the unstaged report for pre-staged paths', 'EXE-11');
   }
   return {
     commits,
