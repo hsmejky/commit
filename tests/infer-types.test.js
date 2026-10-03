@@ -63,26 +63,27 @@ test('Seam 1: a history without revert still proposes it; deps at 7% is kept, wi
 
 // Exact boundary around the 5% threshold: a mutation from `>=` to `>` must flip "bar" (kept)
 // without touching "baz" (dropped), and vice versa for a `<` to `<=` mutation on the drop
-// side.
-test('Seam 1: an exactly-5% non-standard type is kept; a 4% one is dropped', async (t) => {
+// side. 200 commits (the read cap) so the 4.5% step next to 5% is representable, which also
+// kills a mutant threshold such as 0.041 that a 1%-granularity (n=100) boundary cannot catch.
+test('Seam 1: an exactly-5% non-standard type is kept; a 4.5% one is dropped', async (t) => {
   const c = createCase(t);
-  // 100 Conventional Commits: 5 "bar" (exactly 5%, kept), 4 "baz" (4%, dropped), 91 "feat".
+  // 200 Conventional Commits: 10 "bar" (exactly 5%, kept), 9 "baz" (4.5%, dropped), 181 "feat".
   const messages = [];
-  for (let i = 1; i <= 5; i += 1) messages.push(`bar: change ${i}\n`);
-  for (let i = 1; i <= 4; i += 1) messages.push(`baz: change ${i}\n`);
-  for (let i = 1; i <= 91; i += 1) messages.push(`feat: change ${i}\n`);
+  for (let i = 1; i <= 10; i += 1) messages.push(`bar: change ${i}\n`);
+  for (let i = 1; i <= 9; i += 1) messages.push(`baz: change ${i}\n`);
+  for (let i = 1; i <= 181; i += 1) messages.push(`feat: change ${i}\n`);
   fastImportLinear(c, messages.length, (i) => messages[i - 1]);
 
   const result = await runCommit(c, ['infer']);
 
   assertOk(result);
-  assert.equal(result.json.commitCount, 100, detail(result));
+  assert.equal(result.json.commitCount, 200, detail(result));
   assert.deepEqual(
     result.json.proposal.types,
     { value: [...STANDARD_TYPES, 'bar'], evidence: { bar: 0.05 } },
     detail(result),
   );
-  assert.deepEqual(result.json.droppedTypes, [{ type: 'baz', count: 4 }], detail(result));
+  assert.deepEqual(result.json.droppedTypes, [{ type: 'baz', count: 9 }], detail(result));
 });
 
 test('Seam 1: a non-standard type share is computed over the Conventional Commits ones only', async (t) => {

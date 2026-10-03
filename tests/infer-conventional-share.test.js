@@ -71,6 +71,7 @@ test('Seam 1: a 49% Conventional Commits share is not-conventional with proposal
   assert.equal(result.json.outcome, 'not-conventional', detail(result));
   assert.equal(result.json.proposal, null, detail(result));
   assert.equal(result.json.wouldFail, null, detail(result));
+  assert.equal(result.json.droppedTypes, null, detail(result));
   assert.equal(result.json.configJson, null, detail(result));
 });
 
@@ -106,6 +107,7 @@ test('M19 infer: 49% is not-conventional, 50% is a proposal (pure)', () => {
   assert.equal(below.ccShare, 0.49);
   assert.equal(below.proposal, null);
   assert.equal(below.wouldFail, null);
+  assert.equal(below.droppedTypes, null);
 
   const atThreshold = infer([
     ...Array.from({ length: 50 }, (_, i) => `feat: change ${i}`),
