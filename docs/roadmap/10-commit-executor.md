@@ -559,14 +559,14 @@ a later `continue` needs no flag.
 
 **Blocked by:** EXE-02, GIT-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, story 169.
 
-- [ ] Seam 1 (skipped where `ssh-keygen` is missing): `gpg.format=ssh`, a fixture key
+- [x] Seam 1 (skipped where `ssh-keygen` is missing): `gpg.format=ssh`, a fixture key
       without passphrase, `commit.gpgsign=true` → the commit is signed and verifies against
       an `allowedSignersFile`.
-- [ ] Seam 1: the same repo with `commit.gpgsign=true` set only in a `GIT_CONFIG_SYSTEM`
+- [x] Seam 1: the same repo with `commit.gpgsign=true` set only in a `GIT_CONFIG_SYSTEM`
       file → still signed (the M2 scrub keeps signing config).
 
 
