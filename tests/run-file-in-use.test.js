@@ -26,7 +26,7 @@ const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-prelo
 const BUSY_TEXT = process.platform === 'win32'
   ? 'another /commit call on this run is still running; try again once it has finished'
   : "the run's lock could not be read or replaced (permission denied or in use); try again";
-const RUN_FOLDER_TEXT = "the run folder's filesystem does not support hard links";
+const NO_HARD_LINKS_TEXT = "the run folder's filesystem does not support hard links";
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -89,7 +89,7 @@ test('plan: the lock link failing EPERM on every try and the probe link failing 
     COMMIT_TEST_FAULT_LINK_BASENAME: 'lock=EPERM,hardlink-probe.link=ENOTSUP',
   });
 
-  assertRefused(c, result, 'state', RUN_FOLDER_TEXT);
+  assertRefused(c, result, 'state', NO_HARD_LINKS_TEXT);
   assert.deepEqual(calls, ['<planId>/state.json', ...SIX_LOCK_LINKS, PROBE_LINK]);
 });
 
@@ -97,7 +97,7 @@ for (const code of ['ENOTSUP', 'ENOSYS']) {
   test(`plan: the lock link failing ${code} → exit 6 state (run-folder) at once, one attempt and no probe`, async (t) => {
     const { c, result, calls } = await planWithFault(t, { COMMIT_TEST_FAULT_LINK_BASENAME: `lock=${code}` });
 
-    assertRefused(c, result, 'state', RUN_FOLDER_TEXT);
+    assertRefused(c, result, 'state', NO_HARD_LINKS_TEXT);
     assert.deepEqual(calls, ['<planId>/state.json', 'lock']);
   });
 }
@@ -149,6 +149,7 @@ async function holdExclusively(t, file, releasePath) {
 
 test('commit --plan X --all while another process holds the lock with FileShare.None → exit 6 lock (busy), the run kept', {
   skip: process.platform !== 'win32' && 'FileShare.None is a Windows share mode; POSIX opens never exclude each other',
+  timeout: 120_000,
 }, async (t) => {
   const c = modifiedRepo(t);
   const planned = await runCommit(c, ['plan']);
@@ -157,8 +158,16 @@ test('commit --plan X --all while another process holds the lock with FileShare.
   const lock = path.join(runDirOf(c), 'lock');
   const release = await holdExclusively(t, lock, path.join(c.root, 'release-lock'));
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
-  await release();
+  // Release the holder's handle before this test's own `t.after` hooks run (registered in
+  // registration order: createCase's `rmSync` hook, from `modifiedRepo` above, comes before
+  // this), so a rejected/hanging `runCommit` never leaves the holder's exclusive handle open
+  // while the temp-dir removal runs.
+  let result;
+  try {
+    result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  } finally {
+    await release();
+  }
 
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.error.kind, 'lock', detail(result));

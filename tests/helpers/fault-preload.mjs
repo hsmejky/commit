@@ -14,7 +14,7 @@
 //                                       argument to fs.linkSync/fs.link/fs.promises.link)
 //                                       that fails, or a comma-separated list of
 //                                       `name[=code]` entries so different targets can fail
-//                                       with different codes in the same run (KD-R24); an
+//                                       with different codes in the same run (RUN-09); an
 //                                       entry without `=code` uses
 //                                       COMMIT_TEST_FAULT_LINK_CODE (default EIO).
 //   COMMIT_TEST_FAULT_LINK_CODE         default errno code for a failed link call whose

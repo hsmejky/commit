@@ -140,8 +140,9 @@ its lock are per worktree, Q9); mint `planId`
 written to a temporary file in `.commit-plan/` and hard-linked into place, which fails
 when a lock exists, so no reader ever sees a lock without its content: an existing lock →
 `held`; on Windows `EPERM` and `EBUSY` are retried like the state rename, and one that
-persists falls back to a hard-link probe of a temporary file in `.commit-plan/`: the probe
-succeeds → `busy` (the file is in use, story 193), the probe fails → `run-folder` ("the run
+persists falls back to a hard-link probe (a fresh empty `<planId>/hardlink-probe.tmp` hard-
+linked as `<planId>/hardlink-probe.link`): the probe succeeds, or its link already exists
+(`EEXIST`) → `busy` (the file is in use, story 193), the probe fails otherwise → `run-folder` ("the run
 folder's filesystem does not support hard links"); `ENOTSUP` or `ENOSYS` is `run-folder` at
 once, without a probe; the errno mapping is in C:run-folder) or `discard`; a read-only `peek()` reports a live lock without
 acquiring anything (M18 skips it under `--take-over`);

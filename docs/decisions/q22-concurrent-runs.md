@@ -148,8 +148,9 @@
 - **Amended.** By spec pass 5 (2026-09-27): on Windows the lock's hard link is retried on
   `EPERM`/`EBUSY` like the `state.json` rename; `run-folder` (the domain code, CLI kind
   `state`, for `.commit-plan` problems, "the run folder's filesystem does not support hard links") is reported only when
-  a hard-link probe (a temporary file hard-linked once more in `.commit-plan/`) also fails; a
-  persisting `EPERM`/`EBUSY` whose probe succeeds is `lock` (`busy`) instead, since another
+  a hard-link probe (a fresh empty `<planId>/hardlink-probe.tmp` hard-linked as
+  `<planId>/hardlink-probe.link`) also fails; a persisting `EPERM`/`EBUSY` whose probe
+  succeeds, or whose probe link already exists (`EEXIST`), is `lock` (`busy`) instead, since another
   process genuinely holds the link. `ENOTSUP` and `ENOSYS` are `run-folder` at once, without
   a probe; `EEXIST` stays the normal held-lock handling.
 - **Amended.** By spec pass 6 (2026-09-27): supersedes the pass-2 amendment's "reports that
