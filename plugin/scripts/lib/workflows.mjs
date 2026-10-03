@@ -133,22 +133,27 @@ async function readHeadState(ctx) {
  * read only when the probe found a worktree to read it from. `release` never runs this: it
  * shares only the `env` refusal with `plan` (C:cli-and-exit-codes), so it never needs a
  * config load. CFG-08 adds M5 `resolveAttribution` here too, the same step C:plan step 1
- * names ("resolve the attribution"): the tracer reads no settings and never refuses, so it
- * cannot change `preFolderRefusals`' outcome; it is stored on `ctx.attribution` for
- * `storeAndLock` (step 7) to write into `state.json` and `plan.json`, read from there by
- * later calls instead of re-resolved. The tracer's `warnings` is always `[]` (no settings are
- * read yet, so there is nothing to warn about); CFG-09, the first slice that can produce one,
- * wires it into both `ctx.notices` and `plan.json`'s (not yet existing) `warnings` field.
+ * names ("resolve the attribution"): it never refuses, so it cannot change
+ * `preFolderRefusals`' outcome; the result is stored on `ctx.attribution` for `storeAndLock`
+ * (step 7) to write into `state.json` and `plan.json`, read from there by later calls instead
+ * of re-resolved. CFG-09 reads the user settings layer and can produce a warning (a dropped
+ * `attribution.commit` line): it is queued into `ctx.notices` here, the same sink
+ * `probeRepo`'s detached-HEAD notice uses, and also collected on `ctx.warnings` for
+ * `storeAndLock` to write into `plan.json`'s `warnings` field (C:plan).
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
     ? ctx.probe.repo.toplevel
     : null;
   ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
-  const { trailer, source } = resolveAttribution({
+  const { trailer, source, warnings } = resolveAttribution({
     env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, toplevel,
   });
   ctx.attribution = { trailer, source };
+  for (const warning of warnings) {
+    ctx.notices.push(warning);
+    ctx.warnings.push(warning);
+  }
   return undefined;
 }
 
@@ -292,10 +297,12 @@ async function readHistory(ctx) {
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
  * CFG-08 adds `attribution` (`{ trailer, source }`, step 1's `ctx.attribution`) to both
  * files, in the contract's order (C:run-folder): ahead of `recentSubjects`, so M16/M17 read
- * the resolved trailer from here instead of re-resolving it. The tracer's `trailer` is never
- * `null`, so both files always get the full `{ trailer, source }` object; C:plan l.248 wants
- * `plan.json`'s `attribution` as `null` when no trailer is added (while `state.json` always
- * keeps `{ trailer, source }`), a split CFG-09 must make once the resolver can return `null`.
+ * the resolved trailer from here instead of re-resolving it. `state.json` always keeps the
+ * full `{ trailer, source }` object (M16/M17 need `source` even when `trailer` is `null`,
+ * e.g. to tell an explicit `includeCoAuthoredBy: false` apart from nothing to report);
+ * `plan.json`'s `attribution` is `null` when `ctx.attribution.trailer` is `null` (C:plan,
+ * CFG-09). `plan.json` also gets `warnings` (step 1's `ctx.warnings`, C:plan): empty until
+ * CFG-09, the first producer.
  */
 async function storeAndLock(ctx) {
   const { planId, runDir } = ctx.provisional;
@@ -358,8 +365,9 @@ async function storeAndLock(ctx) {
       hidden: ctx.inventory.hidden,
     },
     stagedExcluded: stagedExcludedOf(ctx),
-    attribution: ctx.attribution,
+    attribution: ctx.attribution.trailer === null ? null : ctx.attribution,
     recentSubjects: ctx.recentSubjects,
+    warnings: ctx.warnings,
   }));
   return undefined;
 }
@@ -494,7 +502,7 @@ export async function plan(values, injected, { cwd }) {
   }
   // GIT-02: `notices` lives on `ctx` from the start, so `probeRepo` (step 1) can queue the
   // detached-HEAD notice before any later step runs.
-  const ctx = { injected, cwd, values, provisional: null, run: null, notices: [] };
+  const ctx = { injected, cwd, values, provisional: null, run: null, notices: [], warnings: [] };
   let facts;
   try {
     facts = await runSteps(PLAN_STEPS, ctx);
