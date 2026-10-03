@@ -8,7 +8,7 @@
 | `already-committed` (`check` after a committed group) | M15 `checkGate` | `usage` | 1 |
 | `no-groups` (no stored groups, or all committed) | M16 | `usage` | 1 |
 | `config` (invalid layer or glob) | M4, M7 | `config` | 1 |
-| `env` (git missing, git < 2.34, Node < 22, an install path containing `$`, a backtick, `"`, `\` or a typographic double quote (U+201C-U+201E)) | entry point, M3 | `env` | 1 |
+| `env` (git missing, git < 2.34, Node < 22, an install path containing `$`, a backtick, `"`, `\`, a typographic double quote (U+201C-U+201E), `!` or a control character) | entry point, M3 | `env` | 1 |
 | `not-a-repo`, `bare`, `in-progress` (incl. a pending `merge --squash`), `unmerged`, `unborn` or `merge` HEAD in reword, `encoding` | M3 via M15 | `state` | 6 |
 | `run-folder` (`.commit-plan` tracked, a link or not a directory; its filesystem does not support hard links) | M12 | `state` | 6 |
 | `killed-leftover` (`--no-user` without `--reword`: a takeover found staging beyond the killed group's paths; lock released, folder deleted, index untouched) | M15 `resolveMode` via M18 | `state` | 6 |

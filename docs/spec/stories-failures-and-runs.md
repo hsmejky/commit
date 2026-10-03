@@ -65,7 +65,7 @@
 223. As a developer installing the plugin, I want the README to present its allow rules as a required install step and say what goes wrong without them (the worker's calls stall on permission prompts), so that I set them up before my first run. [Q16, Q24]
 202. As a developer, I want Node 22+ and git 2.34+ required, and an older git, older Node or missing git reported as such, so that support is predictable and failures are loud. [Q1, Q15]
 203. As a developer, I want a plugin with no npm dependencies, so that the guard works from the first shell call, offline, with no install step and no third-party code watching my commands. [Q1]
-204. As a developer whose plugin sits under a path containing `$`, a backtick, `"`, `\` or a typographic double quote (U+201C-U+201E), I want the first call refused with an explanation before any work, while an ordinary Windows path works, so that no shell ever expands or mangles the script path. [Q16, C:guard]
+204. As a developer whose plugin sits under a path containing `$`, a backtick, `"`, `\`, a typographic double quote (U+201C-U+201E), `!` or a control character, I want the first call refused with an explanation before any work, while an ordinary Windows path works, so that no shell ever expands or mangles the script path. [Q16, C:guard]
 
 ## Budget and release
 

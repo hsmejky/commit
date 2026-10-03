@@ -85,11 +85,13 @@ spaces and drive letters) goes through G1 `runHook` as Bash and as PowerShell an
 recognised with the same subcommand and arguments; through Seam 2, as `commit:commit-worker`
 a `commit` or `release` call is denied and a `plan` call writes the heartbeat. A check
 asserts the README allow rules and the worker prompt's command form match `build` output.
-The round trip uses install paths without `$`, a backtick, `"`, `\` or a typographic double
-quote (U+201C-U+201E); a Seam 1 case copies the scripts under a path with each of them and
-expects `env`. The `"` and `\` cases are POSIX only (Windows forbids `"` in a name, and `\`
-is its separator); the typographic-quote case runs on both platforms; on Windows a case
-under a plain native path (`C:\…`) expects no `env` refusal.
+The round trip uses install paths without `$`, a backtick, `"`, `\`, a typographic double
+quote (U+201C-U+201E), `!` or a control character; a Seam 1 case copies the scripts under a
+path with each of them and expects `env`. The `"` and `\` cases are POSIX only (Windows
+forbids `"` in a name, and `\` is its separator); control characters other than those
+Windows also forbids in a name are POSIX only too; the typographic-quote and `!` cases run
+on both platforms; on Windows a case under a plain native path (`C:\…`) expects no `env`
+refusal.
 
 **Caller trust fixtures (Seam 1).** Every `run` string M17 builds passes the base
 `callerRule`'s shape predicate: one command segment, an absolute path under the plugin cache,

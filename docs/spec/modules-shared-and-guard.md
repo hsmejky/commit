@@ -23,8 +23,9 @@ form is `build`'s output, which the step 2 exemption and the caller's shape chec
 accept. `build({ scriptPath, subcommand, args })`
 emits the one quoted form (absolute forward-slash path in double quotes) that the anchored
 README allow rules match. It escapes nothing: the commit entry point refuses (`env`) an
-install path containing `$`, a backtick, `"`, `\` or a typographic double quote
-(U+201C-U+201E) before any work, so no shell can expand or mangle the path. The check runs on the path `build` emits, after the Windows separators
+install path containing `$`, a backtick, `"`, `\`, a typographic double quote
+(U+201C-U+201E), `!` or a control character before any work, so no shell can expand or
+mangle the path. The check runs on the path `build` emits, after the Windows separators
 are converted to `/`, so a native Windows path is not refused for its separators; a `\`
 left after the conversion can only be part of a POSIX file name (`build` reads a path with
 a drive letter or a UNC start as Windows, one starting with `/` as POSIX). `build` throws a
