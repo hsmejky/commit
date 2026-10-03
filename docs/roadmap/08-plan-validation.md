@@ -112,18 +112,18 @@ M8 `scanText`; errors carry the group number, and a scan error carries the `scan
 
 **Blocked by:** PLN-01, MSG-05, SCN-05, EXE-01, FND-10, SCN-11.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5, Q10, Q13, C:check, C:message-grammar, stories 178, M6, M8, M14.
 
-- [ ] Seam 1: header `Feat: x` → shape error "header is not 'type(scope)!: description'" with `group: 1`, no type check run.
-- [ ] Seam 1: header `wip: x` → "type 'wip' not in types" with `group: 1`.
-- [ ] Seam 1: a body holding a home-directory path → "message contains `local-path`", with spans stored for the reply; the matched text never appears in stdout.
-- [ ] Seam 1: a body footer with a disallowed token → lint error; allowed tokens pass.
-- [ ] A static test asserts M14's module imports `lint` from M6.
-- [ ] A static test asserts `validatePlan(planBytes, runState, { osUser })` passes `osUser`
+- [x] Seam 1: header `Feat: x` → shape error "header is not 'type(scope)!: description'" with `group: 1`, no type check run.
+- [x] Seam 1: header `wip: x` → "type 'wip' not in types" with `group: 1`.
+- [x] Seam 1: a body holding a home-directory path → "message contains `local-path`", with spans stored for the reply; the matched text never appears in stdout.
+- [x] Seam 1: a body footer with a disallowed token → lint error; allowed tokens pass.
+- [x] A static test asserts M14's module imports `lint` from M6.
+- [x] A static test asserts `validatePlan(planBytes, runState, { osUser })` passes `osUser`
       through to `scanText` (EXE-01 item 1).
-- [ ] Seam 1, FND-10 preload making `os.userInfo()` throw and `USER=jdoe1`: a body holding
+- [x] Seam 1, FND-10 preload making `os.userInfo()` throw and `USER=jdoe1`: a body holding
       `/srv/jdoe1/x` → "message contains `local-path`"; `state.json` holds no `jdoe1`
       (`osUser` is passed by M18, never stored, EXE-01 item 1).
 

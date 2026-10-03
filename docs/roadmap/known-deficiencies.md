@@ -162,6 +162,20 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `plugin/scripts/lib/change-set.mjs` (binary classification). Fix: none needed beyond
   CHG-11 landing as scheduled; this row documents the gap until then. Slice: CHG-11.
 
+- **KD-R71.** A worker-plan parse failure echoes V8's raw `JSON.parse` message, which can
+  quote a snippet of the invalid JSON text verbatim (e.g. a secret-shaped fragment next to the
+  syntax error). PLN-06's redaction (C:check) only covers scanned message text; this
+  unscanned worker-plan text is not redacted. Where: `plugin/scripts/lib/plan-validator.mjs`
+  `parseWorkerPlan`'s JSON-parse catch (review-PLN-06-r2, "Out of PLN-06 scope"). Fix: have
+  `parseWorkerPlan` give a fixed reason instead of `err.message`, or scan/redact the snippet,
+  if this is wanted. Slice: PLN-01 (done; this is accepted interim behavior until revisited).
+- **KD-R72.** `resolvePath`'s "`<path>` is not a change" and "use the new path ... for the
+  rename of `<path>`" lint errors echo the worker plan's own, unscanned path text verbatim
+  for any `files`/`notIncluded` path the worker names that is not a real change. Where:
+  `plugin/scripts/lib/plan-validator.mjs` `resolvePath` (review-PLN-06-r2, "Out of PLN-06
+  scope"). Fix: scan or redact the path before quoting it, if this is wanted. Slice: PLN-02
+  (done; this is accepted interim behavior until revisited).
+
 ## Bookkeeping
 
 - **KD-R53.** CFG-03 lacks a wrong-JSON-type case such as `body: 1` → `config` (not
