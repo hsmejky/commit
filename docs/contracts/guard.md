@@ -4,10 +4,23 @@
 `PowerShell`), `tool_input.command`, `cwd`, and `agent_type` (the worker-only rule below).
 `agent_id` is for the debug log only.
 
-**Script call:** a segment (parsing step 2) whose first command token, optionally after the
-`&` call operator, has the basename `node` or `node.exe`, whose next token has the basename
-`commit.cjs`, and whose token after that is the subcommand (`plan`, `check`, `commit`,
-`release`, `infer`). Basename: the part of a token after the last `/` or `\`, in both shells
+**Script call:** a segment (parsing step 2) whose first command token, after any leading
+prefixes, has the basename `node` or `node.exe`, whose next token has the basename
+`commit.cjs`, both compared case-insensitively, and whose token after that is the
+subcommand (`plan`, `check`, `commit`, `release`, `infer`), compared exactly. The leading
+prefixes skipped are those that cannot change what node runs: the group openers `(` and
+`{`, Bash `!` and `time` (with `-p`), and the PowerShell call operators `&` and `.` (so
+`( node … )`, `& { node … }` and `time -p node …` are script calls). An assignment or a
+runner (`X=1`, `NODE_OPTIONS=…`, `env`, `command`, `exec`) is never skipped. This is the
+wide recogniser (S2 `recognise`): the guard uses it for the worker-only rule and the
+heartbeat only, where matching more is fail-closed (more denies, a heartbeat from a guard
+that really ran), and it never feeds an allow. The narrow form is S2 `build`'s output, the
+step 2 script-call exemption's form (case-sensitive `node`, nothing before it but a
+PowerShell `&`): the exemption and the caller's `run` shape check (Q25) accept only that.
+Documented gaps of the wide recogniser, so the worker-only rule is defence in depth and not
+the deterministic boundary: `node -- "…/commit.cjs" commit` and other node options before
+the script, a nested shell (`bash -c 'node …'`), a copy or link of `commit.cjs` under
+another name, and the interpreter gap (Out of Scope). Basename: the part of a token after the last `/` or `\`, in both shells
 (a Bash `commit.cjs` invocation may still carry a Windows-style path, e.g. through a quoted
 `"C:\...\commit.cjs"` argument, Q3). Tokens are compared after the shell's quote removal, so the quoted form
 every handback and worker uses (`node "C:/…/commit.cjs" plan`, Q16) matches like the unquoted
@@ -629,7 +642,8 @@ a `Skill("commit")` call could resolve to a personal commit skill (Q8). Every me
 that contains `<route>` ends with a `\n` and then the fixed line `If a personal commit skill
 sent you here, remove it (see the commit plugin README).` (Q8; nothing is detected).
 
-Worker-only rule: when `agent_type` is `commit:commit-worker` and any segment is a script
+Worker-only rule (defence in depth: the wide recogniser's documented gaps, Script call
+above, are not covered): when `agent_type` is `commit:commit-worker` and any segment is a script
 call with subcommand `commit` or `release`, deny with `The handback is for your caller:
 return the reply verbatim and stop.` (Q25). Everything else the worker runs is left to the
 normal rules. A blanket-denied command (parsing step 2) has no segments, so this rule does

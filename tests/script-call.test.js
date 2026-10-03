@@ -73,6 +73,25 @@ const RECOGNISED = [
   ['bash', 'node "/opt/commit/commit.cjs" infer', 'infer', []],
   ['powershell', 'node "C:/commit/commit.cjs" infer', 'infer', []],
   ['bash', 'node "/opt/commit/commit.cjs" plan 2>&1 > out.txt', 'plan', []],
+  // The wide recogniser (C:guard Script call): `node`, `node.exe` and `commit.cjs` in any
+  // case, and after a leading group or a prefix that cannot change what node runs.
+  ['bash', 'NODE "/opt/commit/commit.cjs" plan', 'plan', []],
+  ['powershell', 'Node.EXE "C:/commit/commit.cjs" commit', 'commit', []],
+  ['powershell', '& NODE.EXE "C:/commit/commit.cjs" release', 'release', []],
+  ['bash', 'node "/opt/commit/COMMIT.CJS" commit', 'commit', []],
+  ['bash', '( node "/opt/commit/commit.cjs" commit )', 'commit', []],
+  ['bash', '{ node "/opt/commit/commit.cjs" commit; }', 'commit', []],
+  ['bash', '! node "/opt/commit/commit.cjs" commit', 'commit', []],
+  ['bash', 'time node "/opt/commit/commit.cjs" commit', 'commit', []],
+  ['bash', 'time -p node "/opt/commit/commit.cjs" commit', 'commit', []],
+  ['bash', '! ( { node "/opt/commit/commit.cjs" release; } )', 'release', []],
+  ['bash', `'&' node "/opt/commit/commit.cjs" plan`, 'plan', []],
+  ['powershell', '(node "C:/commit/commit.cjs" commit)', 'commit', []],
+  ['powershell', '& { node "C:/commit/commit.cjs" commit }', 'commit', []],
+  ['powershell', '&{node "C:/commit/commit.cjs" release}', 'release', []],
+  ['powershell', '. node "C:/commit/commit.cjs" commit', 'commit', []],
+  ['powershell', '. { node "C:/commit/commit.cjs" commit }', 'commit', []],
+  ['powershell', `'&' node "C:/commit/commit.cjs" plan`, 'plan', []],
 ];
 
 for (const [shell, command, subcommand, args] of RECOGNISED) {
@@ -90,6 +109,18 @@ const NOT_CALLS = [
   ['bash', 'node --eval x commit.cjs plan'],
   ['bash', 'node other.cjs plan'],
   ['bash', 'nodejs commit.cjs plan'],
+  ['bash', 'node commit.cjs PLAN'],
+  ['powershell', 'node commit.cjs Commit'],
+  ['bash', 'node "/opt/commit/commit.cjs." plan'],
+  // Never skipped: an assignment or a runner can change what node runs (C:guard Script call).
+  ['bash', 'X=1 node "/opt/commit/commit.cjs" commit'],
+  ['bash', 'NODE_OPTIONS=--require=/evil.js node "/opt/commit/commit.cjs" commit'],
+  ['bash', 'env node "/opt/commit/commit.cjs" commit'],
+  ['bash', 'command node "/opt/commit/commit.cjs" commit'],
+  ['bash', 'exec node "/opt/commit/commit.cjs" commit'],
+  // Documented gaps of the worker-only rule (C:guard Script call).
+  ['bash', 'node -- "/opt/commit/commit.cjs" commit'],
+  ['powershell', 'node -- "C:/commit/commit.cjs" commit'],
 ];
 
 for (const [shell, command] of NOT_CALLS) {
@@ -113,6 +144,32 @@ test('Seam 3: classify reports every segment\'s script call, a denied command\'s
   assert.deepEqual(ps.scriptCalls, [{ subcommand: 'check', args: ['--plan', UUID] }]);
   assert.deepEqual(classify(segments('git status', 'bash'), { shell: 'bash' }).scriptCalls, []);
 });
+
+// Recognising more cannot make a command pass: every newly recognised form chained with
+// `git commit` is still denied, and none of them is in the step 2 exemption form.
+const WIDE_ONLY = [
+  ['bash', 'NODE "/opt/commit/commit.cjs" commit'],
+  ['bash', 'node "/opt/commit/COMMIT.CJS" commit'],
+  ['bash', '( node "/opt/commit/commit.cjs" commit )'],
+  ['bash', '! node "/opt/commit/commit.cjs" commit'],
+  ['bash', 'time -p node "/opt/commit/commit.cjs" commit'],
+  ['bash', `'&' node "/opt/commit/commit.cjs" commit`],
+  ['powershell', 'NODE.EXE "C:/commit/commit.cjs" commit'],
+  ['powershell', '(node "C:/commit/commit.cjs" commit)'],
+  ['powershell', '& { node "C:/commit/commit.cjs" commit }'],
+  ['powershell', '. node "C:/commit/commit.cjs" commit'],
+];
+
+for (const [shell, command] of WIDE_ONLY) {
+  test(`Seam 3: ${shell} \`${command}\` is not exempt, and denied when chained with git commit`, () => {
+    assert.equal(isExemptScriptCall(command, shell), false);
+    for (const joint of ['; ', ' && ']) {
+      const result = classify(segments(`${command}${joint}git commit -m x`, shell), { shell });
+      assert.equal(result.decision, 'deny', joint);
+      assert.equal(result.scriptCalls.length, 1, joint);
+    }
+  });
+}
 
 // S2 `build` (declared at Seam 3): an absolute forward-slash path in double quotes.
 const BUILDS = [

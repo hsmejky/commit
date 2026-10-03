@@ -1,6 +1,8 @@
 // S2 ScriptCall (docs/spec/modules-shared-and-guard.md; C:guard Script call). Pure, imports
-// nothing. The single definition of a script call: `recognise` reads one from a G2 segment,
-// `build` emits the one quoted form every handback and worker runs (Q16, Q23, Q25).
+// nothing. The definition of a script call, in two widths: `recognise` reads one from a G2
+// segment widely, for the guard's denies and heartbeat only; `build` emits the one narrow
+// quoted form every handback and worker runs and the caller's shape check accepts (Q16,
+// Q23, Q25).
 
 /** The fixed subcommand list of a script call (C:guard Script call). */
 export const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);
@@ -20,11 +22,30 @@ function basename(token) {
   return token.slice(Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\')) + 1);
 }
 
+// Leading words skipped before `node`: they cannot change what node runs (C:guard Script
+// call). Bash's `{` group opener and `!`, `time` (with `-p`), PowerShell's `&` and `.` call
+// operators; a `(` or `{` operator token is skipped too. Never an assignment or a runner
+// (`X=1`, `env`, `command`, `exec`): those can.
+const PREFIX = new Set(['{', '!', 'time', '&', '.']);
+
+// The index of the first word after the leading prefixes and group openers.
+function afterPrefix(words) {
+  let i = 0;
+  for (;;) {
+    const word = words[i];
+    if (typeof word === 'object' && (word.op === '(' || word.op === '{')) i += 1;
+    else if (PREFIX.has(word)) i += word === 'time' && words[i + 1] === '-p' ? 2 : 1;
+    else return i;
+  }
+}
+
 /**
- * S2 `recognise`: the script call a segment holds, or null. A segment is a script call when
- * its first token (optionally after `&`) has the basename `node` or `node.exe`, the next one
- * the basename `commit.cjs`, and the one after that is a subcommand of the fixed list, all
- * compared after quote removal (G2 already removed the quotes). Redirections are dropped
+ * S2 `recognise`: the script call a segment holds, or null. The wide recogniser, used for
+ * the worker-only rule and the heartbeat only (C:guard Script call): a segment is a script
+ * call when, after any leading prefixes and group openers (`afterPrefix`), a token has the
+ * basename `node` or `node.exe`, the next one the basename `commit.cjs`, both compared
+ * case-insensitively, and the one after that is a subcommand of the fixed list, compared
+ * exactly; all after quote removal (G2 already removed the quotes). Redirections are dropped
  * with their target; the arguments are the words after the subcommand up to the first
  * operator token (`(`, `)`, `{`, `}`, `cut`).
  *
@@ -33,10 +54,10 @@ function basename(token) {
  */
 export function recognise(tokens) {
   const words = tokens.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));
-  let i = words[0] === '&' ? 1 : 0;
+  let i = afterPrefix(words);
   const [runner, script, subcommand] = words.slice(i, i + 3);
-  if (typeof runner !== 'string' || !NODE.has(basename(runner))) return null;
-  if (typeof script !== 'string' || basename(script) !== ENTRY) return null;
+  if (typeof runner !== 'string' || !NODE.has(basename(runner).toLowerCase())) return null;
+  if (typeof script !== 'string' || basename(script).toLowerCase() !== ENTRY) return null;
   if (typeof subcommand !== 'string' || !SUBCOMMANDS.includes(subcommand)) return null;
   const args = [];
   for (i += 3; i < words.length && typeof words[i] === 'string'; i += 1) args.push(words[i]);

@@ -13,9 +13,14 @@ and the realpathed hook `cwd` inside the toplevel or vice versa) versus `not-see
 })`; pure `samePathTree(a, b, { caseFold })` over already-realpathed paths, `caseFold` true
 on Windows and macOS. Sources: Q23, C:guard.
 
-**S2 ScriptCall.** The single definition of a script call (C:guard): `node` or `node.exe`
-(optionally after `&`), a token whose basename is the commit entry point's, a subcommand
-from the fixed list, compared after quote removal. `build({ scriptPath, subcommand, args })`
+**S2 ScriptCall.** The definition of a script call (C:guard), in two widths. The wide
+`recognise`, for the guard's worker-only rule and heartbeat only: `node` or `node.exe` after
+any leading group openers and prefixes that cannot change what node runs (`(`, `{`, Bash `!`
+and `time [-p]`, PowerShell `&` and `.`; never an assignment or a runner such as `env`), a
+token whose basename is the commit entry point's, both basenames compared case-insensitively,
+then a subcommand from the fixed list compared exactly, all after quote removal. The narrow
+form is `build`'s output, which the step 2 exemption and the caller's shape check (Q25)
+accept. `build({ scriptPath, subcommand, args })`
 emits the one quoted form (absolute forward-slash path in double quotes) that the anchored
 README allow rules match. It escapes nothing: the commit entry point refuses (`env`) an
 install path containing `$`, a backtick, `"`, `\` or a typographic double quote

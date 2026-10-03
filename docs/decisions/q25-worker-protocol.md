@@ -244,6 +244,16 @@
     (C:reply-and-handback).
   - `humanOnly` without a user holds for an honest worker only; a forged `ifNoUser` answer
     stays the accepted gap of pass 9 (story 102, glossary).
+- **Amended.** By the GRD-13 review (2026-10-03): a script call has two widths
+  ([contracts](../contracts/guard.md), Script call). The guard's wide recogniser, for the
+  worker-only rule and the heartbeat only, matches `node`, `node.exe` and `commit.cjs` in any
+  case and after a leading `(`/`{` group, Bash `!` or `time`, or a PowerShell `&`/`.`; it
+  never skips an assignment or a runner (`X=1`, `NODE_OPTIONS=…`, `env`). The caller's `run`
+  shape check and the step 2 exemption accept only the narrow form S2 `build` emits, so
+  nothing new passes. The worker-only rule is defence in depth, not the deterministic
+  boundary "the guard makes it deterministic" above suggests: `node -- "…/commit.cjs"`,
+  `bash -c '…'`, a copied or linked `commit.cjs` and the interpreter gap stay documented
+  gaps; the prompt rule and the caller's planId-bound shape check remain.
 - **Rejected.**
   - The protocol in the agent description: it does not fit in 200 characters and would be
     resident in every session.
