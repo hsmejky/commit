@@ -206,12 +206,12 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 
 **Blocked by:** GRD-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, C:guard (Parsing step 3), stories 14, 15.
 
-- [ ] Denied: `/usr/bin/git commit -m x`, `GIT.EXE commit -m x`, `& "C:\…\git.exe" commit -m x`, Bash `"C:\Program Files\Git\cmd\git.exe" commit -m x`, `git-commit -m x`, `/usr/lib/git-core/git-COMMIT.exe -m x`.
-- [ ] `git-commit --no-edit` → no output (its args go through the allowlist).
+- [x] Denied: `/usr/bin/git commit -m x`, `GIT.EXE commit -m x`, `& "C:\…\git.exe" commit -m x`, Bash `"C:\Program Files\Git\cmd\git.exe" commit -m x`, `git-commit -m x`, `/usr/lib/git-core/git-COMMIT.exe -m x`.
+- [x] `git-commit --no-edit` → no output (its args go through the allowlist).
 
 
 ## GRD-11: Git global options before the subcommand
