@@ -88,15 +88,15 @@ slice adds the `failed` variant.
 
 **Blocked by:** RPL-03, GIT-03, CHG-04, INT-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M17, C:reply-and-handback (`callerRule` base rule, `text`), Q25, stories 50, 56.
 
-- [ ] Seam 1: `plan` during a merge → exit 6 `state`, output carries `reply` with the fields
+- [x] Seam 1: `plan` during a merge → exit 6 `state`, output carries `reply` with the fields
       above; the base rule text equals the fixture text from C:reply-and-handback
-- [ ] `text` ends with the tree state ("N files left: …" or "working tree clean")
-- [ ] The reply without `text` is ≤ 2 kB
-- [ ] Every pre-folder refusal, not only the merge case, carries a `failed` reply with the
+- [x] `text` ends with the tree state ("N files left: …" or "working tree clean")
+- [x] The reply without `text` is ≤ 2 kB
+- [x] Every pre-folder refusal, not only the merge case, carries a `failed` reply with the
       base `callerRule` and no handback
 
 
