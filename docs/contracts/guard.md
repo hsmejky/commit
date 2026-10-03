@@ -89,7 +89,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `` git com` `` plus newline plus `mit`) still reach parsing. Fixtures: each of these
    forms (deny) and a case variant (`git COMMIT`, deny).
    Known gap: text that never contains the literal substring `commit` passes here even when
-   it builds the word at runtime, such as `git $(echo com)mit`, `git co${x}mmit`,
+   it builds the word at runtime, such as `git $(echo com)mit`, `git co${x}mmit`, a glob
+   matching a file named `commit` (`git [c]ommit -m x`, `git c?mmit -m x`),
    `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or a PowerShell 7 `` `u{…} `` escape
    (`` git co`u{6d}mit ``), or an argv[0] value built the same way
    (`exec -agit-c{,o}mmit git -m x`, step 3) (Q3, not fixed in 0.1.0; spec story 22). Also a known gap:
@@ -562,13 +563,20 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    - holds `{`, `(` or a glob character (`*`, `?`, `[`): brace expansion, an expression or
      a glob may give another word or several (`git -C {.,commit} status` runs
      `git -C . commit status`, `git {commit,-m,x}`, PowerShell 7 expands globs in native
-     arguments on Linux and macOS);
+     arguments on Linux and macOS); a `{` that expands to nothing is denied too (fail closed:
+     `git {1x}>/dev/null commit -m x` is an accepted false deny);
    - in PowerShell, holds `,` or `@`, or is `--%`: a comma makes an array literal, which
      Windows PowerShell 5.1 passes as separate arguments (`git -C . ,commit -m x`,
      `git -C . , commit -m x` and `git commit, -m x` run a commit there; PowerShell 7 passes
      the comma on); a leading `@` is a splat (`git @a`, `git commit --fixup @s`); `--%`
      stops parsing (step 2) and expands `%NAME%` in the rest of the line (`$env:X='commit'; git --% %X% -m x`), and a quoted `'--%'` is dropped from
-     the native command line (`git '--%' commit -m x` runs `git commit -m x`);
+     the native command line (`git '--%' commit -m x` runs `git commit -m x`). A token
+     starting with `,` right after a value-taking option's value joins that value into an
+     array (`git -C . ,commit -m x` and `git -C . , commit -m x` pass `-C . commit -m x` in
+     5.1), so it is the value that is not literal: the literal-arguments row, not the
+     literal-subcommand row; after `git` or an option without a value the comma starts an
+     array of its own in the subcommand's place (`git --no-advice ,commit -m x` → the
+     literal-subcommand row);
    - in PowerShell, is empty, holds `"` or ends in `\`: Windows PowerShell 5.1's legacy
      native-argument passing drops an empty argument, passes an embedded `"` unescaped (git
      splits the argument there: `git commit --fixup ':/!-\" --no-verify'` passes
@@ -582,8 +590,12 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    record quoting, so a quoted form is denied too (fail closed; documented false positives:
    `git -C "$dir" commit --no-edit`, `git commit --fixup "$sha"`; write the value
    literally). A non-literal token in the subcommand position is denied with the
-   literal-subcommand message, anywhere else with the literal-arguments message (deny
-   table). The tokens after a literal subcommand other than `commit` are not read, so
+   literal-subcommand message, whatever follows it and whether or not it would run `commit`
+   (`git $sub status; echo commit` is an accepted false deny), anywhere else with the
+   literal-arguments message (deny table). A variable holding an option takes the
+   subcommand's place too, since the guard cannot tell (`$o='--no-pager'; git $o commit -m x`,
+   `opt=--no-pager; git "$opt" commit -m x`, `git {--no-pager,commit} -m x`, PowerShell
+   `git -C . --no-advice $null commit -m x`, where PowerShell drops `$null`). The tokens after a literal subcommand other than `commit` are not read, so
    `git log --format=%h,%s $x; echo commit` gives no output. So the `)` or `}` that ends
    git's arguments closes a bracket opened before `git` (`(git commit --no-edit)`,
    `&{git commit --no-edit}`), or is a stray one the shell rejects as a syntax error; in

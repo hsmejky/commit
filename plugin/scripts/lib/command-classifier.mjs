@@ -36,6 +36,7 @@ export const MESSAGES = Object.freeze({
     `To reword the last commit: ${ROUTE} Ask it to reword. To add changes, make a new commit the same way.`,
   ),
   squash: withPersonalLine(`git commit --squash opens an editor. ${ROUTE}`),
+  literalSubcommand: withPersonalLine(`Write the git subcommand literally. ${ROUTE}`),
   literalArguments: withPersonalLine(`Write git's arguments literally. ${ROUTE}`),
   config: withPersonalLine(`git -c … commit is not allowed. ${ROUTE}`),
   unknownGlobalOption: withPersonalLine(`Could not parse git options before 'commit'. ${ROUTE}`),
@@ -439,19 +440,23 @@ const CONFIG = /^(?:-c|--config-env(?:=.*)?)$/s;
  * Every token read must be literal (`nonLiteral` records one that is not, a non-literal
  * option or value included, whether or not a `commit` follows). A PowerShell empty token in
  * an option's place is skipped (Windows PowerShell 5.1 drops it) and is not literal either.
- * A non-literal subcommand reads as one other than `commit`.
+ * A non-literal subcommand may run `commit` at run time (`git $c -m x`, `git {commit,-m,x}`,
+ * `$o='--no-pager'; git $o commit`): `nonLiteralSubcommand` records it. In PowerShell a
+ * token starting with `,` right after an option's value joins that value into an array
+ * (`git -C . ,commit` passes `-C . commit` in 5.1), so it is the value that is not literal.
  *
  * @param {Array<string|object>} tokens
  * @param {number} start
  * @param {'bash'|'powershell'} shell
- * @returns {{ commit: number, config: boolean, nonLiteral: boolean, unknown: boolean }}
+ * @returns {{ commit: number, config: boolean, nonLiteral: boolean, nonLiteralSubcommand: boolean, unknown: boolean }}
  *   `commit`: the index of the `commit` subcommand or, after an unknown option, of the first
  *   `commit` token (-1 when there is none); `config`: a `-c` or `--config-env` was read.
  */
 function readGitOptions(tokens, start, shell) {
   const within = (k) => k < tokens.length && !endsArguments(tokens[k], shell);
-  const found = { commit: -1, config: false, nonLiteral: false, unknown: false };
+  const found = { commit: -1, config: false, nonLiteral: false, nonLiteralSubcommand: false, unknown: false };
   let i = start;
+  let afterValue = false;
   for (; within(i); i += 1) {
     const token = tokens[i];
     const literal = isLiteral(token, shell);
@@ -460,11 +465,13 @@ function readGitOptions(tokens, start, shell) {
       continue;
     }
     if (typeof token !== 'string' || !token.startsWith('-')) break;
+    afterValue = false;
     if (literal && CONFIG.test(token)) found.config = true;
     if (literal && GIT_OPTION_WITH_VALUE.has(token)) {
       i += 1;
       if (!within(i)) break;
       if (!isLiteral(tokens[i], shell)) found.nonLiteral = true;
+      afterValue = true;
     } else if (!literal || !(GIT_OPTION_FLAGS.has(token) || GIT_OPTION_JOINED_VALUE.test(token))) {
       found.unknown = true;
       if (!literal) found.nonLiteral = true;
@@ -475,16 +482,25 @@ function readGitOptions(tokens, start, shell) {
       return found;
     }
   }
-  if (within(i) && isLiteral(tokens[i], shell) && COMMIT.test(tokens[i])) found.commit = i;
+  if (!within(i)) return found;
+  const token = tokens[i];
+  if (isLiteral(token, shell)) {
+    if (COMMIT.test(token)) found.commit = i;
+  } else if (shell === 'powershell' && afterValue && typeof token === 'string' && token.startsWith(',')) {
+    found.nonLiteral = true;
+  } else {
+    found.nonLiteralSubcommand = true;
+  }
   return found;
 }
 
 // The deny message of git's options before the subcommand (C:guard Precedence: the `-c`/`--config-env` row,
-// then the literal-arguments row, then the unknown-option row, all above the `commit`
+// then the literal-subcommand row, then the literal-arguments row, then the unknown-option row, all above the `commit`
 // argument rows), or null when they leave the decision to the `commit` arguments, or to
 // nothing when there is no `commit`.
 function gitOptionsDecision(found) {
   if (found.config && found.commit !== -1) return MESSAGES.config;
+  if (found.nonLiteralSubcommand) return MESSAGES.literalSubcommand;
   if (found.nonLiteral) return MESSAGES.literalArguments;
   if (found.unknown && found.commit !== -1) return MESSAGES.unknownGlobalOption;
   return null;

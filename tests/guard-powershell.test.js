@@ -23,6 +23,7 @@ const PERSONAL_SKILL_LINE = 'If a personal commit skill sent you here, remove it
 const TEXTS = {
   noVerify: '--no-verify is not allowed. Fix the hook or signing setup instead.',
   bare: `Direct git commit is blocked. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
+  literalSubcommand: `Write the git subcommand literally. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   literalArguments: `Write git's arguments literally. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   unknownOption: `Could not parse git options before 'commit'. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   blanket: 'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
@@ -115,7 +116,8 @@ const table = [
   ['Start-Process git -ArgumentList { git commit -m x }', 'literalArguments'],
   // Start-Process builds git's arguments from its own parameters: denied like `sudo git commit`.
   ['Start-Process git -ArgumentList "commit --fixup HEAD"', 'wrapper:Start-Process'],
-  ['saps git commit,--fixup,HEAD', 'wrapper:saps'],
+  // GRD-12: the subcommand holds `,` (5.1 passes an array), a row above the wrapper row.
+  ['saps git commit,--fixup,HEAD', 'literalSubcommand'],
   // A row above the wrapper row keeps precedence (C:guard Precedence).
   ['saps git commit --no-verify', 'noVerify'],
   ['start git -ArgumentList commit', 'unknownOption'],

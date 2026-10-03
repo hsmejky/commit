@@ -219,8 +219,7 @@ test('Seam 3: fail-closed: no value-taking option other than --fixup stays allow
   }
 });
 
-// One command per row reachable from a Bash command (the literal-subcommand row comes with
-// GRD-12).
+// One command per row reachable from a Bash command.
 const everyRow = [
   'git commit -m x',
   'git commit --amend',
@@ -237,6 +236,7 @@ const everyRow = [
   'echo "$(date)"; git commit',
   'git -c k=v commit',
   'git --unknown commit',
+  'git {commit,-m,x}',
 ];
 
 test('Seam 3: every message holding the route ends with the personal-skill line; the others do not', (t) => {

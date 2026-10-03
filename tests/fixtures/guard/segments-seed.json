@@ -4790,7 +4790,7 @@
      "x"
     ]
    ],
-   "decision": "none",
+   "decision": "deny",
    "oracle": {
     "bash": "redirection"
    }

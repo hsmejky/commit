@@ -25,10 +25,7 @@ const bashCases = JSON.parse(fs.readFileSync(SEED, 'utf8')).cases.filter((c) => 
 // (the seed's `decision` is already the final one) or a C:guard known gap. Checked to still
 // pass the guard, so an entry is dropped when its slice lands.
 const NOT_DENIED = new Map([
-  ['b-brace-sub', 'GRD-12: a subcommand holding `{` is unreadable'],
   ['b-brace-cmd', 'C:guard step 3 known gap (Q3): brace expansion in the command position'],
-  ['b-procsub-no-target', 'C:guard step 4 (later slice): a `(` among git\'s arguments is denied'],
-  ['b-procsub-no-target-fd', 'C:guard step 4 (later slice): a `(` among git\'s arguments is denied'],
 ]);
 
 let runHook;
