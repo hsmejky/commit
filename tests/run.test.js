@@ -1041,14 +1041,14 @@ test('peek: a fresh lock held by another planId refuses held with the holder fie
   const holderId = crypto.randomUUID();
   const created = '2026-09-26T13:58:02.000Z';
   fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: holderId, created }));
+  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
 
-  const peeked = provisional.peek({ now: () => T0 });
+  const peeked = provisional.peek({ now: () => touched + 40_000 });
 
   assert.equal(peeked.ok, false);
   assert.equal(peeked.code, 'held');
-  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
   assert.deepEqual(peeked.holder, { planId: holderId, created, touched });
-  assert.match(peeked.message, /^another \/commit run is in progress \(started \d{2}:\d{2}, last active \d+ s ago\)$/);
+  assert.match(peeked.message, /^another \/commit run is in progress \(started \d{2}:\d{2}, last active 40 s ago\)$/);
   assert.equal(fs.readFileSync(path.join(runDir, 'lock'), 'utf8'), JSON.stringify({ planId: holderId, created }), 'the holder\'s lock is untouched');
 });
 
@@ -1057,26 +1057,71 @@ test('peek: a fresh lock with garbage content refuses held with planId: null', (
   const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
   const runDir = path.join(toplevel, '.commit-plan');
   fs.writeFileSync(path.join(runDir, 'lock'), 'not json');
+  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
 
-  const peeked = provisional.peek({ now: () => T0 });
+  const peeked = provisional.peek({ now: () => touched + 1000 });
 
   assert.equal(peeked.ok, false);
   assert.equal(peeked.code, 'held');
-  assert.equal(peeked.holder.planId, null);
+  assert.deepEqual(peeked.holder, { planId: null, created: null, touched });
   assert.equal(peeked.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
 });
 
-test('peek: a fresh lock whose planId is not in the minted form refuses held with planId: null', (t) => {
+test('peek: a fresh lock whose planId is not in the minted form refuses held with planId and created null', (t) => {
   const toplevel = tempDir(t);
   const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
   const runDir = path.join(toplevel, '.commit-plan');
   fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: 'not-a-uuid', created: '2026-09-26T13:58:02.000Z' }));
+  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
 
-  const peeked = provisional.peek({ now: () => T0 });
+  const peeked = provisional.peek({ now: () => touched + 1000 });
 
   assert.equal(peeked.ok, false);
   assert.equal(peeked.code, 'held');
-  assert.equal(peeked.holder.planId, null);
+  // C:cli-and-exit-codes: a malformed `planId` nulls `created` too (a corrupt or foreign lock).
+  assert.deepEqual(peeked.holder, { planId: null, created: null, touched });
+});
+
+test('peek: a lock one millisecond short of stale still refuses held', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: crypto.randomUUID(), created: '2026-09-26T13:58:02.000Z' }));
+  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
+
+  const peeked = provisional.peek({ now: () => touched + run.STALE_AFTER_MS - 1 });
+
+  assert.equal(peeked.ok, false);
+  assert.equal(peeked.code, 'held');
+});
+
+// review-RUN-07 finding 5: the holder comes from the one read `peek` already made, so a
+// holder releasing right after that read never turns the refusal into a holder-less one.
+test('peek: the holder is named from its single read of the lock, even if the lock goes right after it', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  const lock = path.join(runDir, 'lock');
+  const holderId = crypto.randomUUID();
+  const created = '2026-09-26T13:58:02.000Z';
+  fs.writeFileSync(lock, JSON.stringify({ planId: holderId, created }));
+  const touched = fs.statSync(lock).mtimeMs;
+  const realRead = fs.readFileSync;
+  let reads = 0;
+  t.mock.method(fs, 'readFileSync', (target, options) => {
+    const bytes = realRead(target, options);
+    if (path.resolve(String(target)) === lock) {
+      reads += 1;
+      fs.unlinkSync(lock);
+    }
+    return bytes;
+  });
+
+  const peeked = provisional.peek({ now: () => touched + 1000 });
+
+  assert.equal(reads, 1);
+  assert.equal(peeked.code, 'held');
+  assert.deepEqual(peeked.holder, { planId: holderId, created, touched });
 });
 
 test('peek: a lock stale by mtime is ok, whatever its content (the automatic takeover is RUN-21\'s)', (t) => {

@@ -813,9 +813,8 @@ function heldMessage(holder, nowMs) {
 // `acquire`'s lost race (RUN-06): reads the lock now in place, without following a link, to
 // name its holder. A file-in-use error on that read names no holder rather than failing the
 // refusal. `holder` (`{ planId, created, touched } | null`) rides along in the typed result,
-// matching M12's interface ("`held` with holder") and the failure shape's `planId`/`created`/
-// `touched` fields; wiring it into the final `failed` reply is RPL-04's, and `peek`'s own
-// `held` is RUN-07's.
+// matching M12's interface ("`held` with holder"); `plan` turns it into the failure shape's
+// `planId`/`created`/`touched` error fields (RUN-07).
 function held(runDir, now) {
   let file = null;
   try {
@@ -823,11 +822,20 @@ function held(runDir, now) {
   } catch (err) {
     if (!(err instanceof InUse)) throw err;
   }
-  const holder = file === null ? null : {
-    planId: lockPlanId(file.bytes),
-    created: lockCreated(file.bytes),
-    touched: file.stats.mtimeMs,
-  };
+  return heldBy(file, now);
+}
+
+// The `held` refusal for the lock file already read (`readLockFile`'s result, `null` when it
+// was gone): `peek` passes its own read, so the lock is read once and a holder releasing
+// right after it never makes the refusal holder-less (review-RUN-07 finding 5). For a lock
+// whose `planId` is not in the minted form (unparseable included), `created` is `null` too
+// (C:cli-and-exit-codes): a corrupt or foreign lock's content names nothing.
+function heldBy(file, now) {
+  let holder = null;
+  if (file !== null) {
+    const planId = lockPlanId(file.bytes);
+    holder = { planId, created: planId === null ? null : lockCreated(file.bytes), touched: file.stats.mtimeMs };
+  }
   return { ok: false, code: 'held', message: heldMessage(holder, now()), holder };
 }
 
@@ -865,7 +873,7 @@ function peekLock(runDir, now) {
     return busy(true);
   }
   if (file === null || now() - file.stats.mtimeMs >= STALE_AFTER_MS) return { ok: true };
-  return held(runDir, now);
+  return heldBy(file, now);
 }
 
 // The run `acquire` returns: `write` as before the lock, and `release()`, which removes the

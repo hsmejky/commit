@@ -127,10 +127,12 @@ stories 55, 56, 57, 60, 228.
       `release` reply past its 45 s budget omits the tree state too, distinct from "working
       tree clean"
 - [ ] Seam 1: a live lock met by `plan --no-user` → `status: "failed"`, `text` with no
-      takeover question and no handback (RUN-07 covers the refusal's other fields)
-- [ ] An unparseable lock, or one with a malformed `planId`, met by `--no-user` →
-      `status: "failed"`, `text` naming the automatic takeover time (`touched` plus 15
-      minutes) (RUN-07 covers `planId` and `created`)
+      takeover question and no handback (RUN-07 covers the error's `planId`, `created` and
+      `touched`)
+- [ ] An unparseable lock, or one with a malformed `planId`, met interactively or by
+      `--no-user` → `status: "failed"`, `text` naming the automatic takeover time
+      (`touched` plus 15 minutes) in both modes (RUN-07 covers the error's `planId: null`,
+      `created: null` and `touched`)
 
 
 ## RPL-06: Escaping paths and relayed git or hook output

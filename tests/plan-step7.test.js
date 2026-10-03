@@ -90,6 +90,44 @@ function assertLockRefusal(result, kind) {
   assert.equal(result.json.error.kind, kind);
 }
 
+// Writes the run lock with a fixed mtime a minute in the past: fresh (under 15 minutes) and
+// whole seconds, so `touched` has one exact ISO form.
+function placeLock(c, content) {
+  const lock = path.join(runDirOf(c), 'lock');
+  fs.writeFileSync(lock, content);
+  const minuteAgo = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000);
+  fs.utimesSync(lock, minuteAgo, minuteAgo);
+}
+
+// C:cli-and-exit-codes: a `lock` error carries the holder's `planId`, `created` and
+// `touched` (the lock file's mtime, ISO); both `null`s for an unreadable lock.
+function assertHolderFields(result, c, { planId, created }) {
+  const touched = new Date(fs.statSync(path.join(runDirOf(c), 'lock')).mtimeMs).toISOString();
+  const { error } = result.json;
+  assert.deepEqual(
+    { planId: error.planId, created: error.created, touched: error.touched },
+    { planId, created, touched },
+    detail(result),
+  );
+}
+
+// A trace2 `normalTarget` in a global config of its own (M2's keep-set passes
+// `GIT_CONFIG_GLOBAL` through; `GIT_TRACE*` would be stripped): `commands()` lists the argv
+// of every git process the call started, one `start` line each. Works from git 2.34 on all
+// three OSes, unlike the PATH shims (KD-R21).
+function traceGit(c) {
+  const log = path.join(c.root, 'trace2.log');
+  const config = path.join(c.root, 'trace.gitconfig');
+  fs.writeFileSync(config, `[trace2]\n\tnormalTarget = ${log.split(path.sep).join('/')}\n`);
+  return {
+    env: { GIT_CONFIG_GLOBAL: config },
+    commands() {
+      if (!fs.existsSync(log)) return [];
+      return fs.readFileSync(log, 'utf8').split('\n').filter((line) => / start /.test(line));
+    },
+  };
+}
+
 test('plan --reword on a clean tree exits 0 and takes the lock; release then removes the lock and the folder', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
@@ -163,6 +201,8 @@ test('plan that loses the lock race to a lock placed after its folder exists exi
 
   assertLockRefusal(result, 'lock');
   assert.match(result.json.error.message, /^another \/commit run is in progress \(started 13:58, last active \d+ s ago\)$/);
+  // RUN-07: a lost `acquire` carries the same holder fields as a `peek` refusal.
+  assertHolderFields(result, c, { planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed);
   assert.equal(fs.readFileSync(path.join(runDirOf(c), OTHER_PLAN_ID, 'state.json'), 'utf8'), 'kept');
   assert.deepEqual(folderNames(c), [OTHER_PLAN_ID]);
@@ -182,45 +222,72 @@ test('plan whose lock link fails with EEXIST exits 6 lock and deletes its own pr
   // No real lock was ever written (only the link call is faulted): `held`'s read finds the
   // lock gone again, naming no holder (review-RUN-06 finding 6).
   assert.equal(result.json.error.message, 'another /commit run is in progress');
+  const { planId, created, touched } = result.json.error;
+  assert.deepEqual({ planId, created, touched }, { planId: null, created: null, touched: null });
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
   assert.deepEqual(folderNames(c), []);
 });
 
-test('plan whose lock link hits a real EEXIST against a garbage lock exits 6 lock with the unreadable-lock text', async (t) => {
+test('plan refused at peek by a fresh garbage lock exits 6 lock with the unreadable-lock text and null holder planId and created', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
   c.writeFile('a.txt', 'one\nmore\n');
-  // RUN-07's `peek` at step 3 catches this fresh garbage lock before any inventory work, the
-  // same text `held()` built for step 7's lost-race case (review-RUN-06 finding 6).
+  // RUN-07's `peek` at step 3 catches this fresh garbage lock before any inventory work, with
+  // the same text and holder fields step 7's lost race builds (RUN-06). The real `EEXIST` at
+  // `acquire` itself is covered by run.test.js and the POSIX shim race above.
   fs.mkdirSync(runDirOf(c));
-  fs.writeFileSync(path.join(runDirOf(c), 'lock'), 'not json');
+  placeLock(c, 'not json');
 
   const result = await runCommit(c, ['plan']);
 
   assertLockRefusal(result, 'lock');
   assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
+  assertHolderFields(result, c, { planId: null, created: null });
+  assert.equal(result.json.reply.handback, null);
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), 'not json', 'the foreign lock is left alone');
   assert.deepEqual(folderNames(c), []);
 });
 
 // RUN-07: a live lock in place before `plan` even starts refuses at step 3's `peek`, before
-// any inventory work, with no race or shim needed (the lock is already there).
-test('plan refused by a live lock already in place before inventory exits 6 lock, leaving that lock alone and creating nothing', async (t) => {
+// any inventory work, with no race or shim needed (the lock is already there). Inventory is
+// made observable with a trace2 target in the case's global config (`GIT_CONFIG_GLOBAL` is in
+// M2's keep-set, while `GIT_TRACE*` would be stripped): its first git call, `ls-files
+// --others`, must never run. Without the `peek`, step 7's `acquire` refuses identically but
+// only after the inventory (review-RUN-07 finding 6).
+test('plan refused by a live lock already in place exits 6 lock before any inventory git call, leaving that lock alone and creating nothing', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
   c.writeFile('a.txt', 'one\nmore\n');
   fs.mkdirSync(runDirOf(c));
   const placed = JSON.stringify({ planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
-  fs.writeFileSync(path.join(runDirOf(c), 'lock'), placed);
+  placeLock(c, placed);
+  const trace = traceGit(c);
 
-  const result = await runCommit(c, ['plan']);
+  const result = await runCommit(c, ['plan'], { env: trace.env });
 
   assertLockRefusal(result, 'lock');
   assert.match(result.json.error.message, /^another \/commit run is in progress \(started 13:58, last active \d+ s ago\)$/);
+  assertHolderFields(result, c, { planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
+  const started = trace.commands();
+  assert.ok(started.some((line) => / rev-parse /.test(line)), `the trace records the plan's git calls:\n${started.join('\n')}`);
+  assert.deepEqual(started.filter((line) => / ls-files --others /.test(line)), [], 'no inventory git call ran');
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed, "the holder's lock is untouched");
-  assert.deepEqual(folderNames(c), [], 'no provisional folder and no temporary index are left (peek refuses before inventory)');
-  assert.equal(result.json.reply.planId, null);
+  assert.deepEqual(folderNames(c), [], 'no provisional folder and no temporary index are left');
   assert.equal(result.json.reply.handback, null, "the lock handback itself is INT-05's");
+});
+
+test('plan --no-user --split refused by a live lock carries the same holder fields', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  fs.mkdirSync(runDirOf(c));
+  placeLock(c, JSON.stringify({ planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' }));
+
+  const result = await runCommit(c, ['plan', '--no-user', '--split']);
+
+  assertLockRefusal(result, 'lock');
+  assertHolderFields(result, c, { planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
+  assert.deepEqual(folderNames(c), []);
 });
 
 // RUN-07: a fresh lock whose planId is not in the minted form also refuses at `peek`, with
@@ -231,13 +298,14 @@ test('plan refused by a fresh lock with a non-UUID planId exits 6 lock with no h
   seed(c, { 'a.txt': 'one\n' });
   c.writeFile('a.txt', 'one\nmore\n');
   fs.mkdirSync(runDirOf(c));
-  fs.writeFileSync(path.join(runDirOf(c), 'lock'), JSON.stringify({ planId: 'not-a-uuid', created: '2026-09-26T13:58:02.000Z' }));
+  placeLock(c, JSON.stringify({ planId: 'not-a-uuid', created: '2026-09-26T13:58:02.000Z' }));
 
   const result = await runCommit(c, ['plan']);
 
   assertLockRefusal(result, 'lock');
   assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
-  assert.equal(result.json.reply.planId, null);
+  // C:cli-and-exit-codes: a malformed `planId` nulls `created` too, whatever the lock says.
+  assertHolderFields(result, c, { planId: null, created: null });
   assert.equal(result.json.reply.handback, null);
   assert.deepEqual(folderNames(c), []);
 });

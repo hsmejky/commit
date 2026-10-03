@@ -196,10 +196,16 @@ M12 `acquire`, M18 `plan` step 7, story 187.
 
 **What to build:** M12 `peek` at `plan` step 3. A live lock (touched under 15 minutes ago)
 refuses with `lock` (`held`), carrying the holder's `planId`, start time and last-active
-time, before any inventory work, and the provisional folder is discarded. A fresh lock that
-cannot be parsed, or whose `planId` is not in the minted form, refuses with `planId: null`
-and no handback. Its text names when the automatic takeover becomes possible. The `lock`
-handback itself is built by INT-05.
+time, before any inventory work, and the provisional folder is discarded. The error carries
+them as `planId`, `created` and `touched` (ISO), from `peek` and a lost `acquire` alike
+(C:cli-and-exit-codes). A fresh lock that cannot be parsed, or whose `planId` is not in the
+minted form, refuses with `planId: null`, `created: null` and no handback.
+
+Out of scope here (review-RUN-07 findings 1 and 4): the `lock` handback, and its end-to-end
+Seam-1 check against a real first run, are INT-05's. The reply `text` that names when an
+unreadable lock is taken over automatically (`touched` plus 15 minutes) is RPL-05's, in both
+the interactive and the `--no-user` mode: the contracts fix the time but not the wording, and
+RPL-05 owns the `text` layout.
 
 **Blocked by:** RUN-06, RPL-04.
 
@@ -215,7 +221,7 @@ handback itself is built by INT-05.
       or `--no-user`; the `lock` handback's own shape is INT-05's, and the `--no-user`
       reply's shape (no takeover question, no handback) is RPL-05's (C:reply-and-handback).
 - [ ] Seam 1: a fresh lock with garbage content, and a fresh lock with a non-UUID
-      `planId` → `lock` with `planId: null` and no handback.
+      `planId` → `lock` with `planId: null`, `created: null` and no handback.
 
 
 ## RUN-08: `plan` sweeps old run folders

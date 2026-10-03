@@ -161,13 +161,15 @@ export const EXIT_CODES = Object.freeze({
  * @param {object} [reply] the M17 reply for this failure (RPL-04: a pre-folder refusal
  *   carries one; a bad argv or flag combination, reached before any workflow runs, has
  *   none).
+ * @param {object} [errorFields] fields the error itself carries beyond `kind`/`message`: a
+ *   `lock` error's holder `planId`/`created`/`touched` (C:cli-and-exit-codes, RUN-07).
  * @returns {{ stdoutJson: object, exitCode: number }}
  * @throws {Error} when `kind` has no entry in `EXIT_CODES`: an unmapped kind would otherwise
  *   silently exit 0 with `ok: false` (`EXIT_CODES[kind]` reading `undefined`), or, for a kind
  *   spelled like an inherited property (e.g. `toString`), resolve to that inherited value
  *   instead of being rejected (`Object.hasOwn` checks ownership, not just presence).
  */
-export function failure(kind, message, errors, reply) {
+export function failure(kind, message, errors, reply, errorFields) {
   if (!Object.hasOwn(EXIT_CODES, kind)) {
     throw new Error(`no exit code mapped for kind ${JSON.stringify(kind)}`);
   }
@@ -176,7 +178,7 @@ export function failure(kind, message, errors, reply) {
     stdoutJson: {
       version: 1,
       ok: false,
-      error: { kind, message },
+      error: { kind, message, ...errorFields },
       ...(errors === undefined ? {} : { errors }),
       ...(reply === undefined ? {} : { reply }),
     },
@@ -255,8 +257,8 @@ export async function main(argv, env) {
     // naming each field, so a future failure shape with its own extra keys needs no change
     // here. `extra` spreads first, so a future failure shape that happens to carry its own
     // `version`/`ok`/`error` can never overwrite the envelope `failure()` built.
-    const { kind, message, errors, reply, ...extra } = result.failure;
-    const built = failure(kind, message, errors, reply);
+    const { kind, message, errors, reply, errorFields, ...extra } = result.failure;
+    const built = failure(kind, message, errors, reply, errorFields);
     return { ...built, stdoutJson: { ...extra, ...built.stdoutJson } };
   }
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };

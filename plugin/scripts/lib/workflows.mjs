@@ -203,7 +203,8 @@ async function preFolderRefusals(ctx) {
  * the index holds, which M3 `isTracked` asks git for → `run-folder`), adds the exclude line
  * to the common dir's `info/exclude`, mints the `planId` and creates the provisional run
  * folder. `plan` discards it on every
- * outcome that takes no lock (`plan`'s `finally`). RUN-07 adds the lock `peek` here.
+ * outcome that takes no lock (`plan`'s `finally`). Then M12 `peek` (RUN-07) checks the run
+ * lock read-only, before any inventory work: a live lock refuses `lock`.
  */
 async function createRunFolder(ctx) {
   const { env, now } = ctx.injected;
@@ -479,9 +480,8 @@ async function storeAndLock(ctx) {
   };
   ctx.provisional.write('state.json', `${JSON.stringify(ctx.storedState)}\n`);
   // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
-  // `plan`'s `finally` deletes only this call's own provisional folder. `holder` (the
-  // `planId`/`created`/`touched` the failure shape defines) rides along for RUN-07 to wire
-  // into the `failed` reply's `lock` handback.
+  // `plan`'s `finally` deletes only this call's own provisional folder. `holder` becomes the
+  // failure's `planId`/`created`/`touched` error fields (`planRefusalFailure`, RUN-07).
   const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
   if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
   ctx.run = acquired.run;
@@ -954,8 +954,9 @@ function refusalFailure(refusal) {
 // and no handback"). `facts.refusal` reaches here from every `plan` refusal, pre- and
 // post-folder alike — every step of `PLAN_STEPS` that can end the run with one — so this is
 // `plan`'s single refusal→reply seam, not only the merge case. A lock refusal (`held`,
-// `EEXIST`) reaches it too and gets this same plain `failed` reply with no handback, until
-// RUN-07, INT-05 and RPL-05 replace it with the documented `lock` handback. `release`,
+// `EEXIST`) reaches it too: its error carries the holder fields (RUN-07, `holderFields`
+// below), and it gets this same plain `failed` reply with no handback until INT-05 and
+// RPL-05 add the documented `lock` handback. `release`,
 // `commit`, `check` and `infer` keep `refusalFailure` above unchanged: their own `reply`
 // wiring (`infer` has no `reply` field at all, C:infer) is later slices' (INT-02 and after;
 // KD-R73 tracks the gap for `release`/`commit`). `ctx.toplevel` is not set yet this early in
@@ -969,8 +970,18 @@ async function planRefusalFailure(refusal, ctx) {
       kind: kindForDomainCode(refusal.code),
       message: refusal.message,
       reply: await finalReply({ status: 'failed', message: refusal.message, notices: ctx.notices }, ctx, { toplevel }),
+      ...(refusal.code === 'held' ? { errorFields: holderFields(refusal.holder) } : {}),
     },
   };
+}
+
+// RUN-07 (C:cli-and-exit-codes): a `lock` error carries the holder's `planId`, `created` and
+// `touched` (the lock's mtime, as an ISO time), from a `peek` refusal and a lost `acquire`
+// alike; M12 already sets `planId` and `created` to `null` for an unreadable lock. A lock
+// gone again before `acquire`'s lost race could read it names no holder: all three `null`.
+function holderFields(holder) {
+  if (holder === null) return { planId: null, created: null, touched: null };
+  return { planId: holder.planId, created: holder.created, touched: new Date(holder.touched).toISOString() };
 }
 
 // Every reply ends with the tree state, read after the call's last git call (M10) — except
