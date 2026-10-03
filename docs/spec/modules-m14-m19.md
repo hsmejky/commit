@@ -9,8 +9,9 @@ its new path only); IDs exist, are used once and are not mixed with `files`; com
 scan (M8) each message; add the `notIncluded` extras and notices; derive new files, file lists and the
 attribution flag per group. `validatePlan(planBytes, runState, { osUser })` (typed: `{ groups,
 notIncluded, notices, stored }` or `lint` with errors; `stored` is the per-group rows
-`check` writes into `state.json`, PLN-01; a message's scan error carries the M8
-`scanText` spans for M17's redaction). `osUser` is the entry point's injected value, passed
+`check` writes into `state.json`, PLN-01; a message's scan errors, one per pattern ID,
+carry the M8 `scanText` spans for M17's redaction, and an M6 reason quoting a fragment that
+overlaps a span quotes `[<pattern-id>]` instead, C:check). `osUser` is the entry point's injected value, passed
 by M18 on every call and never stored in the run state (Q10 as amended by EXE-01). Sources:
 Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
 

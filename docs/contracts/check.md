@@ -72,7 +72,11 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   error (`group: null`).
 - Validates:
   - every group's message against the [grammar](message-grammar.md), and against the
-    [scan patterns](scan-patterns.md) ("message contains `local-path`");
+    [scan patterns](scan-patterns.md): one error per distinct pattern ID, in first-hit order
+    ("message contains `local-path`"). A grammar reason that quotes a message fragment (the
+    type, the scope, a footer token) overlapping a hit's span quotes `[<pattern-id>]` (the
+    first overlapping hit's ID) in its place ("scope '[local-path]' not allowed (scope:
+    forbidden)"), so no matched text reaches stdout or a `lintFailed` text;
   - every hunk ID exists in the state file and is used at most once;
   - completeness (`split` only): every unit in the state file is placed exactly once, in a
     group or in `notIncluded` (by ID, or by a `hunks: null` path entry): a unit placed nowhere
@@ -90,6 +94,11 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
     group ("h4 has scan hit `github-token`; move it to notIncluded");
   - `staged` and `reword`: exactly one group. `split`: zero groups is valid.
 - `errors`: `group` is the group number, or `null` for a run-wide error. Any error → exit 2.
+  A scan error also carries `spans`: that pattern's hits in the group's message, each
+  `{ "patternId", "start", "end" }` ([scan patterns](scan-patterns.md): offsets only, never
+  the matched value), which the `lintFailed` text uses to redact the message it quotes:
+  ``{ "group": 1, "reason": "message contains `local-path`", "spans": [{ "patternId":
+  "local-path", "start": 19, "end": 37 }] }``.
 - `groups[].files`: every path in the group, `hunks` = the number of the path's hunks in
   this group (`null` in the file-level slice). The confirmation shows at most 20 per group,
   then "+N more".

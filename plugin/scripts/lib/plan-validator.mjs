@@ -20,12 +20,13 @@
 // when present; CFG-05 (not built yet) is the slice that makes
 // `plan` actually store the layered, effective values there, so until it lands every run
 // falls back to `DEFAULT_MESSAGE_VALUES`, the exact Q6 defaults CFG-05 will also use as its
-// own default layer. A scan hit becomes one error naming the first hit's pattern ID
-// ("message contains `local-path`"); its `spans` (never the matched value) ride along on
-// the error for M17's future redaction, which needs every span to redact the message it
-// quotes, not just the one the reason text names.
+// own default layer. Scan hits become one error per distinct pattern ID, in first-hit order
+// ("message contains `local-path`"); each carries that ID's `spans` (never the matched
+// value) for M17's future redaction of the quoted message. A lint reason that quotes a
+// fragment overlapping a span quotes `[<pattern-id>]` in its place, so no matched text
+// reaches stdout (C:check).
 
-import { lint } from './message-grammar.mjs';
+import { lint, parse } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
@@ -49,6 +50,52 @@ const DEFAULT_MESSAGE_VALUES = Object.freeze({
 // as an extra empty body paragraph.
 function messageOf(header, body) {
   return body === null ? header : `${header}\n\n${body.replace(/\n+$/, '')}`;
+}
+
+// M6's lint reasons quote three message fragments verbatim: the type, the scope and a footer
+// token. One that overlaps a scan-hit span would put the matched text on stdout, so it is
+// quoted as `[<pattern-id>]` instead, the first overlapping hit's ID (C:check). Every
+// occurrence of the fragment in the message counts, and every occurrence in a reason is
+// replaced: over-redacting is harmless, a missed overlap is a leak.
+function redactReasons(reasons, message, hits) {
+  if (hits.length === 0 || reasons.length === 0) return reasons;
+  const { header, footer } = parse(message);
+  const fragments = [header?.type, header?.scope, ...(footer ?? []).map((entry) => entry.token)];
+  const replacements = new Map();
+  for (const fragment of fragments) {
+    if (!fragment || replacements.has(fragment)) continue;
+    const hit = firstOverlappingHit(fragment, message, hits);
+    if (hit !== null) replacements.set(fragment, `[${hit.patternId}]`);
+  }
+  if (replacements.size === 0) return reasons;
+  // Longest first, in one pass: a fragment inside a longer one, or inside an inserted
+  // `[<pattern-id>]`, is never replaced on its own.
+  const alternation = [...replacements.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map((fragment) => fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const pattern = new RegExp(alternation, 'g');
+  return reasons.map((reason) => reason.replace(pattern, (fragment) => replacements.get(fragment)));
+}
+
+function firstOverlappingHit(fragment, message, hits) {
+  for (const hit of hits) {
+    for (let at = message.indexOf(fragment); at !== -1; at = message.indexOf(fragment, at + 1)) {
+      if (at < hit.end && hit.start < at + fragment.length) return hit;
+    }
+  }
+  return null;
+}
+
+// The scan hits as one entry per distinct pattern ID, in first-hit order, each with its own
+// spans in hit order (C:check: one "message contains `<id>`" error per ID).
+function spansByPattern(hits) {
+  const byPattern = new Map();
+  for (const hit of hits) {
+    if (!byPattern.has(hit.patternId)) byPattern.set(hit.patternId, []);
+    byPattern.get(hit.patternId).push(hit);
+  }
+  return byPattern;
 }
 
 /**
@@ -89,12 +136,12 @@ export function validatePlan(planBytes, runState, options = {}) {
     const n = index + 1;
     if (group.hunks.length > 0) throw new Error('hunk-level worker plans are not built yet (PLN-03)');
     const message = messageOf(group.header, group.body);
-    for (const reason of lint(message, messageValues)) {
+    const hits = scanText(message, { osUser });
+    for (const reason of redactReasons(lint(message, messageValues), message, hits)) {
       errors.push({ group: n, reason });
     }
-    const hits = scanText(message, { osUser });
-    if (hits.length > 0) {
-      errors.push({ group: n, reason: `message contains \`${hits[0].patternId}\``, spans: hits });
+    for (const [patternId, spans] of spansByPattern(hits)) {
+      errors.push({ group: n, reason: `message contains \`${patternId}\``, spans });
     }
     const files = [];
     const units = [];

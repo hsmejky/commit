@@ -10,7 +10,9 @@ matching). Over a commit message the scanner
 returns each hit as `{ patternId, start, end }`: UTF-16 offsets into the normalised message,
 `end` exclusive, never the matched value; overlapping hits stay separate entries. A
 `lintFailed` text replaces the union of the spans with `[<pattern-id>]` (the first hit's ID
-where spans overlap), so no secret reaches the caller ([reply](reply-and-handback.md)).
+where spans overlap), so no secret reaches the caller ([reply](reply-and-handback.md)); a
+`check` lint reason quoting a fragment that overlaps a span quotes `[<pattern-id>]` in
+its place ([check](check.md)).
 
 | ID | Regex | Not a hit when | Source |
 | --- | --- | --- | --- |

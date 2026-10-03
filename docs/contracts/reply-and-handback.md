@@ -46,7 +46,9 @@ handles it the same way.
   reason and the groups not committed; for `confirm` the confirmation block (Q16: per group the header, body and files, each file
   with its hunk count when `hunks` is not `null`); for
   `lintFailed` the rejected messages and the errors, each message quoted with every
-  scan-hit span replaced by `[<pattern-id>]`, so no secret reaches the caller. A unit left
+  scan-hit span replaced by `[<pattern-id>]`, and the errors as `check` gives them (a
+  fragment overlapping a span already reads `[<pattern-id>]`, [check](check.md)), so no
+  secret reaches the caller. A unit left
   out on a scan hit gets two manual lines, `!git --literal-pathspecs add -- <path>` and then
   `!git commit -m "<message>"` (no `&&`: Windows PowerShell 5.1 cannot parse it): the path bare when it holds only `[A-Za-z0-9._/@+-]`, else in
   single quotes (literal in Bash and PowerShell); a path holding `'`, U+2018–U+201B (single
