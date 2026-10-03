@@ -272,16 +272,16 @@ the fixed list) and S2 `build` emits the one quoted form the allow rules match.
 
 **Blocked by:** GRD-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q16, Q23, Q25, C:guard (Script call), stories 37, 38.
 
-- [ ] Seam 3 fixtures of C:guard's script-call list: quoted and unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path, `cd sub && node …`, a quoted backslash path in Bash → recognised with subcommand and args; `echo "node commit.cjs plan"` → not a call.
-- [ ] S2 `build` (declared at Seam 3) emits an absolute forward-slash path in double quotes for POSIX and Windows paths (with spaces and drive letters), and its output is recognised back with the same subcommand and args in both shells.
-- [ ] A caller's `plan`, `check`, `commit` and `release` script calls produce no guard output outside the worker (story 38).
-- [ ] Seam 3: an `infer` script call is recognised as a script call, like the other four subcommands.
-- [ ] Seam 3: `node commit.cjs foo` (an unrecognised subcommand) is not recognised as a script call.
-- [ ] Seam 3: `build`'s output is in C:guard's step 2 script-call exemption form; the exemption seed's four `decision: none` cases (`b-exempt-hash`, `b-exempt-typographic`, `p-exempt-hash`, `p-exempt-atparen`: a path holding `#`, `@(` or `‘`) are recognised script calls with no output, and the rest (`b-exempt-appended`, `b-exempt-newline`, `b-exempt-comment`, `b-exempt-bang`, `p-exempt-appended`, `p-exempt-dollar`) are blanket-denied.
+- [x] Seam 3 fixtures of C:guard's script-call list: quoted and unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path, `cd sub && node …`, a quoted backslash path in Bash → recognised with subcommand and args; `echo "node commit.cjs plan"` → not a call.
+- [x] S2 `build` (declared at Seam 3) emits an absolute forward-slash path in double quotes for POSIX and Windows paths (with spaces and drive letters), and its output is recognised back with the same subcommand and args in both shells.
+- [x] A caller's `plan`, `check`, `commit` and `release` script calls produce no guard output outside the worker (story 38).
+- [x] Seam 3: an `infer` script call is recognised as a script call, like the other four subcommands.
+- [x] Seam 3: `node commit.cjs foo` (an unrecognised subcommand) is not recognised as a script call.
+- [x] Seam 3: `build`'s output is in C:guard's step 2 script-call exemption form; the exemption seed's four `decision: none` cases (`b-exempt-hash`, `b-exempt-typographic`, `p-exempt-hash`, `p-exempt-atparen`: a path holding `#`, `@(` or `‘`) are recognised script calls with no output, and the rest (`b-exempt-appended`, `b-exempt-newline`, `b-exempt-comment`, `b-exempt-bang`, `p-exempt-appended`, `p-exempt-dollar`) are blanket-denied.
 
 
 ## GRD-14: Worker-only rule
