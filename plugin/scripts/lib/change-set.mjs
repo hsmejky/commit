@@ -84,6 +84,19 @@ export async function indexFingerprint({ toplevel, env, now }) {
 }
 
 /**
+ * Whether `index.lock` exists for this worktree (EXE-08, reused by CHG-23's
+ * `commitGuarded`), resolved through M2 `gitPath` (the per-worktree git directory). Read-only:
+ * an `fs.existsSync` check, never an attempt to create or remove the lock.
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<boolean>}
+ */
+export async function indexLockExists({ toplevel, env, now }) {
+  const [lockPath] = await gitPath(['index.lock'], { cwd: toplevel, env, now });
+  return existsSync(lockPath);
+}
+
+/**
  * The inventory (C:plan step 4, Q11). Read-only: four git calls (six when the tree can hold a
  * submodule), none writes the index.
  * - candidates: `git ls-files --others --exclude-standard -z` after `hideFilter`, each with

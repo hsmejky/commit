@@ -659,3 +659,62 @@ test('three groups with no outside change → all three commit: the run\'s own s
   assert.equal(c.git(['rev-list', '--count', `${seed}..HEAD`]).trim(), '3');
   assert.equal(c.git(['status', '--porcelain']), '');
 });
+
+// EXE-08 (docs/roadmap/10-commit-executor.md): M10 `indexLockExists` as the last refusal of
+// phase (a), right before a group's (b)/(c) work ever touches the index (Q18, story 166).
+
+const INDEX_LOCK_TEXT = 'another git process is running in this repo';
+
+test('an index.lock created before the call → exit 6 index-lock, the lock file untouched, the index unchanged, the run released', async (t) => {
+  const { c, planId, runDir } = await groupedRun(t);
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  const lockPath = path.join(c.repoDir, '.git', 'index.lock');
+  fs.writeFileSync(lockPath, 'foreign lock\n');
+  const indexPath = path.join(c.repoDir, '.git', 'index');
+  const indexBefore = fs.readFileSync(indexPath);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'index-lock', detail(result));
+  assert.equal(result.json.error.message, INDEX_LOCK_TEXT);
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [1]);
+  assert.equal(result.json.unstaged, null, 'no group reached (c), so nothing was reset');
+  assert.deepEqual(result.json.notices, []);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'nothing committed');
+  assert.equal(fs.readFileSync(lockPath, 'utf8'), 'foreign lock\n', 'the lock file is untouched');
+  assert.deepEqual(fs.readFileSync(indexPath), indexBefore, 'the index is byte-identical to before the call');
+  // C:cli-and-exit-codes: `index-lock` ends the run, like `head-moved`/`diff-changed`.
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('a post-commit hook of group 1 creates index.lock → group 1 kept, group 2 refused index-lock, no reset ran for group 2 (unstaged reflects only group 1\'s reset)', async (t) => {
+  const { c, planId, seed, runDir } = await threeGroupRun(t);
+  const lockPath = path.join(c.repoDir, '.git', 'index.lock');
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(lockPath)}, 'left behind\\n');`,
+    '',
+  ].join('\n'), 'post-commit');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'index-lock', detail(result));
+  assert.equal(result.json.error.message, INDEX_LOCK_TEXT);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'only group 1 was committed');
+  assert.equal(subjectOf(c, shas[0]), THREE_HEADERS[0]);
+  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  // group 1's own (c) phase already set `indexReset`, so `unstaged` reflects that reset, not
+  // a reset group 2 never ran (it was refused in phase (a), before touching the real index).
+  assert.deepEqual(result.json.unstaged, []);
+  assert.equal(fs.existsSync(lockPath), true, 'the hook\'s own index.lock is left in place, not removed by this refusal');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});

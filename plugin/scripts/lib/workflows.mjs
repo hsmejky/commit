@@ -690,9 +690,11 @@ async function commitGroups(ctx) {
   // release the lock and delete the run folder, so the next `/commit` starts fresh" — a
   // moved HEAD is not something a retry within this run can fix. Once RUN-27's `runEnd`
   // lands, it replaces this condition outright.
-  // EXE-07's `index-changed` (CLI kind `diff-changed`) ends the run the same way.
+  // EXE-07's `index-changed` (CLI kind `diff-changed`) and EXE-08's `index-locked` (CLI kind
+  // `index-lock`) end the run the same way.
   if ((!outcome.refusal && outcome.remaining.length === 0)
-    || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed') {
+    || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed'
+    || outcome.refusal?.code === 'index-locked') {
     releaseOpen(run);
   }
   return outcome;
@@ -859,8 +861,8 @@ export async function release(values, injected, { cwd }) {
  * `ended` (no lock, or a state `version` mismatch) are refused before any group-commit work;
  * `busy` covers only a live `call.lock`. A matched lock's call then runs M16 `commitAll`
  * over the stored groups (EXE-02) and releases the run (lock and folder) once no
- * group remains, or on a `head-moved` or `index-changed` refusal (EXE-06, EXE-07,
- * C:cli-and-exit-codes), which also ends the run. `run.close()` always runs for a call
+ * group remains, or on a `head-moved`, `index-changed` or `index-locked` refusal (EXE-06,
+ * EXE-07, EXE-08, C:cli-and-exit-codes), which also ends the run. `run.close()` always runs for a call
  * that reached a successful `open` (success or a later failure alike), never when `open`
  * itself failed (there is then no call.lock to
  * close). A run with no stored groups (or all committed) is refused `no-groups` (exit 1

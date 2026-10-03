@@ -25,14 +25,17 @@
 // commit` calls (C:commit-release), so the run's own staging never trips it. The unstage
 // half of that update arrives with M10 `unstage` (EXE-10); today's best-effort reset only
 // runs on a path that throws.
-// The other phase (a) refusal (EXE-08), the failure paths (EXE-09 to
+// EXE-08 adds the last phase (a) refusal, `index-lock`: M10 `indexLockExists`, checked right
+// before a group's (b)/(c) work ever touches the index (after `index-changed`, before the
+// budget check). The failure paths (EXE-09 to
 // EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
-  commitGuarded, indexFingerprint, matchIds, snapshot, stage, treeDiffUnits, writeTree,
+  commitGuarded, indexFingerprint, indexLockExists, matchIds, snapshot, stage, treeDiffUnits,
+  writeTree,
 } from './change-set.mjs';
 import { run } from './process-adapter.mjs';
 import { scanUnits } from './scanner.mjs';
@@ -56,6 +59,13 @@ const NO_GROUPS_TEXT = 'no groups to commit: none are stored, or every stored gr
  * domain code's kind and that the text names the index.
  */
 export const INDEX_CHANGED_TEXT = 'the index changed since plan (staged elsewhere?), run /commit again';
+
+/**
+ * The `index-lock` refusal text (Q18, EXE-08): checked last in phase (a), right before a
+ * group's (b)/(c) work ever touches the index, since `reset` and `apply` would otherwise take
+ * the lock too and could fail unmapped or leave the index half staged.
+ */
+export const INDEX_LOCK_TEXT = 'another git process is running in this repo';
 
 // EXE-06: the notice when a hook or another process committed during group `n`, so that
 // group's own commit landed but is not HEAD's first parent any more.
@@ -117,18 +127,19 @@ function refused(state, group, commits, refusal, notices) {
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: null,
  *   unstaged: Array<object> | null, notices: string[],
- *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved' | 'index-changed',
- *   message: string } }>} C:commit-release's output fields; `no-groups` (no stored groups,
- *   or every one committed) refuses before any group, with `failed: null` and
+ *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved' | 'index-changed'
+ *   | 'index-locked', message: string } }>} C:commit-release's output fields; `no-groups` (no
+ *   stored groups, or every one committed) refuses before any group, with `failed: null` and
  *   `remaining: []`. On a phase (a) refusal before a later group instead, `refusal` with
  *   `failed` that group and `remaining` the groups not committed (never empty); `head-moved`
  *   when HEAD is not the SHA this run expects (EXE-06); `index-changed` when the index
- *   fingerprint differs from the stored one, i.e. staging from outside the run (EXE-07).
+ *   fingerprint differs from the stored one, i.e. staging from outside the run (EXE-07);
+ *   `index-locked` when `index.lock` exists, checked last in phase (a) (EXE-08).
  *   `notices` holds any "another commit was made during group `<n>`" notices from groups
  *   this call already committed before a `head-moved` refusal (EXE-06), `[]` otherwise.
  *   `no-groups`/`taken-over`/`busy` (`usage`/`lock`, M18's call) keep the run; the caller
- *   releases it on `head-moved` and `index-changed` (`diff-changed`) instead, like
- *   `index-lock` (C:cli-and-exit-codes, C:commit-release).
+ *   releases it on `head-moved`, `index-changed` (`diff-changed`) and `index-locked`
+ *   (`index-lock`) instead (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
 export async function commitAll(run, { now, osUser, env }) {
@@ -181,6 +192,13 @@ export async function commitAll(run, { now, osUser, env }) {
     // with the real index untouched and that staging left in place.
     if (await indexFingerprint(git) !== state.indexFingerprint) {
       return refused(state, group, commits, { code: 'index-changed', message: INDEX_CHANGED_TEXT }, notices);
+    }
+
+    // (a) EXE-08: the last refusal of phase (a), right before this group's (b)/(c) work ever
+    // touches the index — `reset` and `apply` take the lock too and would otherwise fail
+    // unmapped (exit 1) and could leave the index half staged.
+    if (await indexLockExists(git)) {
+      return refused(state, group, commits, { code: 'index-locked', message: INDEX_LOCK_TEXT }, notices);
     }
 
     // (b) Match on the temporary index, the real index untouched.
