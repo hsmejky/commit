@@ -99,11 +99,11 @@ function wrapperMessage(wrapper) {
 // components split on `/` and `\`, each with its trailing spaces and dots dropped (Windows
 // trims them: PowerShell runs git for `& 'git '` and `& 'C:\…\git.exe.'`), an empty or `.`
 // component dropped, `..` dropping the one before it (PowerShell runs git for `git.exe\.`
-// and `git.exe\x\..`, Git Bash for `git.exe/.` and `git.exe/`); on Linux an accepted false
-// deny.
+// and `git.exe\x\..`, Git Bash for `git.exe/.` and `git.exe/`), a leading drive `C:` dropped
+// (PowerShell runs git for the drive-relative `C:git.exe`); on Linux an accepted false deny.
 function basename(token) {
   const parts = [];
-  for (const part of token.split(/[/\\]/)) {
+  for (const part of token.replace(/^[A-Za-z]:/, '').split(/[/\\]/)) {
     if (part === '..') parts.pop();
     else {
       const name = part.replace(/[ .]+$/, '');
@@ -118,10 +118,13 @@ const GIT = /^git(?:\.exe)?$/i;
 const DASHED_COMMIT = /^git-commit(?:\.exe)?$/i;
 const COMMIT = /^commit$/i;
 // An argv[0] option (C:guard step 3): git runs `git-<x>` from argv[0]'s basename as `<x>`,
-// and Bash `exec -a NAME` (`-aNAME`, `-caNAME`) or coreutils `env -a NAME` (`--argv0`)
-// sets it. An option cluster holding `a`, or a long option starting `--a`.
-const ARGV0_RUNNER = /^(?:exec|env)$/;
-const ARGV0_OPTION = /^-(?:-a|[^-]*a)/;
+// and Bash `exec -a NAME` (`-aNAME`, `-caNAME`) or coreutils `env -a NAME` (`--argv0`;
+// Homebrew names it `genv`) sets it, also from inside `env -S STRING` (`--split-string`).
+// An option cluster holding `a` or `S`, or a long option starting `--a` or `--s`.
+const ARGV0_RUNNER = /^(?:exec|g?env)$/;
+const ARGV0_OPTION = /^-(?:-[as]|[^-]*[aS])/;
+// The `-a` (`--argv0`) option itself: an `a` in a cluster before any `S`.
+const ARGV0_A = /^-(?:-a|[^-S]*a)/;
 
 // The `exec` or `env` word before an argv[0] option before the `git` token at `at`, in its
 // command starting at `from`, as it reads after quote removal; undefined when there is none.
@@ -396,7 +399,10 @@ function commitDecision(tokens, from, at, start, shell) {
   const message = argumentsDecision(expandCommitArgs(args));
   if (message !== null && message !== MESSAGES.bare) return message;
   const wrapper = wrapperBefore(tokens, from, at, shell);
-  return wrapper === undefined ? message : wrapperMessage(wrapper);
+  if (wrapper === undefined) return message;
+  // An `env` whose `-a` option is the first unfit token is named rather than that option.
+  const runner = ARGV0_A.test(wrapper) ? argv0Runner(tokens, from, at) : undefined;
+  return wrapperMessage(runner ?? wrapper);
 }
 
 /**

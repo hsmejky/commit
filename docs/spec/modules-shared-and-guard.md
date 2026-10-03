@@ -124,11 +124,15 @@ each span on its own.
 Sources: Q3, C:guard.
 
 **G3 Command classifier and deny catalogue.** Per segment: find every token whose basename (the
-last component of its path normalised Win32-style in both shells: `.`, `..`, empty components
-and trailing spaces and dots resolved, C:guard step 3) is `git` or `git.exe`, compared
+last component of its path normalised Win32-style in both shells: a leading drive `C:`, `.`,
+`..`, empty components and trailing spaces and dots resolved, C:guard step 3) is `git` or
+`git.exe`, compared
 case-insensitively (optionally after `&`), or whose basename is
 the dashed `git-commit` (with or without `.exe`, in any directory, compared
-case-insensitively), which classifies as `git commit`; skip the
+case-insensitively), which classifies as `git commit`; a `git` token after an `exec`,
+`env` or `genv` argv[0] option (`-a`, `--argv0`, `env -S`) denies with the wrapper row
+naming that word whatever follows it, since git runs `git-commit` from argv[0] as
+`commit` (C:guard step 3); skip the
 known global options; remember `-c` and `--config-env`; compare the subcommand with
 `commit` case-insensitively (`git COMMIT` is a commit, fail closed); deny an unknown option before
 `commit`; read git's arguments up to the segment's end, a `cut` token, a `)` token or (in

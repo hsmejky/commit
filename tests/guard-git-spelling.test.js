@@ -4,7 +4,8 @@
 // (C:guard Parsing step 3; Q3). A `git` token is found by its basename, `git` or `git.exe`
 // compared case-insensitively, after the `&` call operator too, once its path is normalised
 // Win32-style in both shells: split on `/` and `\`, each component's trailing spaces and
-// dots dropped, empty and `.` components dropped, `..` dropping the one before it, the
+// dots dropped, empty and `.` components dropped, `..` dropping the one before it, a
+// leading drive `C:` dropped, the
 // basename the last component left; the dashed `git-commit` (any directory, optional `.exe`) is
 // `git commit` with its arguments checked against the allowlist. Rows were checked against
 // bash (Git Bash), pwsh and powershell.exe running a fake git and git-commit that log argv.
@@ -60,6 +61,12 @@ const table = [
   ['powershell', r`& 'C:\Git\cmd\GIT' commit -m x`, 'bare'],
   ['powershell', r`C:\Git\cmd\git.exe commit -m x`, 'bare'],
   ['powershell', r`.\git commit -m x`, 'bare'],
+  // A drive-relative path: PowerShell ran the fake git for `C:git.exe` with the cwd on drive C.
+  ['powershell', 'C:git.exe commit -m x', 'bare'],
+  ['powershell', `& 'C:git.exe' commit -m x`, 'bare'],
+  ['powershell', 'C:git-commit.exe -m x', 'bare'],
+  ['powershell', `& 'c:GIT' commit -m x`, 'bare'],
+  ['powershell', 'C:git.exe status', null],
   // A Bash-quoted Windows path: its basename is read after the last `\` too.
   ['bash', r`"C:\Program Files\Git\cmd\git.exe" commit -m x`, 'bare'],
   ['bash', r`"C:\Program Files\Git\cmd\git.exe" commit --no-edit`, null],
@@ -140,7 +147,13 @@ const table = [
   ['bash', 'env -agit-commit git -m x', () => wrapper('env')],
   ['bash', 'env -i -agit-commit /usr/bin/git -m x', () => wrapper('env')],
   ['bash', 'command /usr/bin/env --a=git-commit git -m x', () => wrapper('/usr/bin/env')],
-  ['bash', 'env -a x git commit --no-edit', () => wrapper('-a')],
+  ['bash', 'env -a x git commit --no-edit', () => wrapper('env')],
+  // `env -S` splits its value into options, an argv[0] one among them; Homebrew's `genv`.
+  ['bash', 'env -S-agit-commit git -m x', () => wrapper('env')],
+  ['bash', `env -S'--argv0=git-commit' git -m x`, () => wrapper('env')],
+  ['bash', 'env -vS-agit-commit git -m x', () => wrapper('env')],
+  ['bash', `env --split-string='-agit-commit' git -m x`, () => wrapper('env')],
+  ['bash', 'genv --argv0=git-commit git -m x', () => wrapper('genv')],
   ['bash', 'env -i git log --grep=commit', null],
   // Accepted false denies: any argv[0] value, a cluster holding `a` with another meaning.
   ['bash', 'exec -a x git log --grep=commit', () => wrapper('exec')],

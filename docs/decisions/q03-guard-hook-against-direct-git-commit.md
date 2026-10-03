@@ -329,6 +329,12 @@
     double quotes or escaped opens nothing); in PowerShell two characters of one quote
     class in a row inside a string of that class are one escaped quote, and any one closes
     it (verified with bash 5.3, Windows PowerShell 5.1 and PowerShell 7).
+- **Amended.** By the GRD-10 reviews (2026-10-03): a `git` token's basename is read after
+  Win32-style path normalisation in both shells (a leading drive `C:`, `.`, `..`, empty
+  components, trailing spaces and dots), and git runs `git-<x>` from argv[0], so a `git`
+  token after an `exec`, `env` or `genv` argv[0] option (`-a`, `--argv0`, or `env -S`
+  that may hold one) denies with the wrapper row whatever follows it (fail closed;
+  C:guard step 3).
 - **Rejected.**
   - Description tuning alone; the hook alone.
   - Git-native enforcement (a `pre-commit` / `commit-msg` hook, e.g. via `core.hooksPath`).

@@ -29,8 +29,9 @@ and the module sections point here, and the README states it in full.
   the blanket rule, C:guard step 2), `GIT_DIR`
   redirection and env-prefixed config pass it.
 - A command whose text never spells `commit` (`git $(echo com)mit`, `git co${x}mmit`,
-  `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or PowerShell 7 `` git co`u{6d}mit ``)
-  passes G1's early exit unparsed (Q3); `sudo -u git git commit` is
+  `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or PowerShell 7 `` git co`u{6d}mit ``,
+  or an argv[0] value built that way, `exec -agit-c{,o}mmit git -m x`, which Linux bash
+  runs as a commit) passes G1's early exit unparsed (Q3); `sudo -u git git commit` is
   not addressed. Brace expansion, a parenthesised or globbed subcommand and the dashed
   `git-commit` binary are denied (story 15); a backtick or typographic quote in Bash, like
   any blanket-rule construct, is denied anywhere in a command that mentions `commit`

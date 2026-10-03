@@ -77,7 +77,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    Known gap: text that never contains the literal substring `commit` passes here even when
    it builds the word at runtime, such as `git $(echo com)mit`, `git co${x}mmit`,
    `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or a PowerShell 7 `` `u{…} `` escape
-   (`` git co`u{6d}mit ``) (Q3, not fixed in 0.1.0; spec story 22). Also a known gap:
+   (`` git co`u{6d}mit ``), or an argv[0] value built the same way
+   (`exec -agit-c{,o}mmit git -m x`, step 3) (Q3, not fixed in 0.1.0; spec story 22). Also a known gap:
    variable indirection, where a single variable holds a whole command word-split at
    runtime (Bash `x='git commit'; $x`), and arithmetic-evaluation command execution, where a
    variable set by an earlier, separately-guarded command is later read in an arithmetic
@@ -324,11 +325,14 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    shells, e.g. `git.exe` out of a Bash-quoted `"C:\Program Files\Git\cmd\git.exe"`) is `git`
    or `git.exe`, compared
    case-insensitively (`Git.exe`), optionally after the `&` call operator, once the path is
-   normalised Win32-style in both shells: split on `/` and `\`, each component's trailing
+   normalised Win32-style in both shells: a leading drive `C:` (any letter) dropped, then
+   split on `/` and `\`, each component's trailing
    spaces and dots dropped, empty and `.` components dropped, a `..` dropping the component
    before it; the basename is the last component left. Windows normalises a program's path
    that way, so PowerShell `& 'git ' commit -m x`, `& "C:\…\git.exe." commit -m x`,
-   `& 'C:\…\git.exe\.' commit -m x` and `& 'C:\…\git.exe\x\..' commit -m x` run git
+   `& 'C:\…\git.exe\.' commit -m x`, `& 'C:\…\git.exe\x\..' commit -m x` and the
+   drive-relative `C:git.exe commit -m x` (`& 'C:git.exe' …`, the cwd on drive C holding
+   git.exe) run git
    (verified 2026-10-03 with PowerShell 5.1 and 7), and so do Git Bash
    `/mingw64/bin/git/. commit` and `/mingw64/bin/git.exe/ commit`; where a shell does not
    (Linux bash), the same reading is an accepted false deny (`'git ' commit -m x`,
@@ -355,16 +359,23 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    coreutils `env -a NAME` / `--argv0=NAME` sets argv[0], so Linux bash commits on
    `(exec -agit-commit git --allow-empty -m e)` though no token reads `commit` after `git`
    (Git Bash does not pass argv[0] to the native git.exe). So a `git` token whose command
-   holds, before it, an `exec` or `env` word (by basename) followed by an argv[0] option, a
-   token starting `-` whose option cluster holds `a` (`-a`, `-aNAME`, `-caNAME`, `-la`) or
-   starting `--a` (`--argv0`, any abbreviation), denies with the wrapper row naming that
+   holds, before it, an `exec`, `env` or `genv` (Homebrew coreutils) word (by basename)
+   followed by an argv[0] option, a token starting `-` whose option cluster holds `a` (`-a`,
+   `-aNAME`, `-caNAME`, `-la`) or `S` (`env -S` splits its value into options, an argv[0]
+   one among them: `env -S-agit-commit git -m x`), or starting `--a` (`--argv0`) or `--s`
+   (`--split-string`), any abbreviation, denies with the wrapper row naming that
    word, whatever follows the token and whatever the option's value (fail closed; PRE-03):
    `(exec -a"git-commit" git -m x)`, `env -i -agit-commit /usr/bin/git -m x`. A `git` token
    followed by `commit`, or a `git-commit` token, is classified as usual: the argv[0] option
-   is then a possible wrapper and the rows rank as in Precedence (`exec -a x git commit
-   --no-edit` names `exec`, `exec -a git-commit git --no-edit` gets the generic row on
-   `git`). Accepted false denies: an option cluster holding `a` with another meaning
-   (`env -uname git log --grep=commit`) and any value (`exec -a x git log --grep=commit`).
+   is then a possible wrapper and the rows rank as in Precedence, an `-a` option that is
+   the first unfit token being named by its `env` word (`exec -a x git commit --no-edit`
+   names `exec`, `env -a x git commit --no-edit` names `env`, `exec -a git-commit git
+   --no-edit` gets the generic row on `git`). Accepted false denies: an option cluster
+   holding `a` or `S` with another meaning (`env -uname git log --grep=commit`) and any
+   value (`exec -a x git log --grep=commit`). Known gap: an argv[0] value that never spells
+   `commit` passes the early exit unparsed (Parsing step 1's gap), and Bash keeps the last
+   `-a`, so `exec -agit-c{,o}mmit git -m x` and `exec -agit-$'\x63'ommit git -m x` commit
+   in Linux bash with no output.
    Every token before the `git` token in its command must fit the prefix allowlist below
    (fail closed). The first token that does not is a possible wrapper: it denies a `commit`
    that steps 4 and 5 would allow or give the bare row, with the wrapper row naming it as it
