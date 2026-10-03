@@ -14,6 +14,12 @@ import path from 'node:path';
 export const STARTUP_TIMEOUT_MS = 10_000;
 
 /**
+ * How long `run` waits, after killing a child whose `onStdout` consumer threw, for the
+ * child to exit before rejecting anyway (a kill that never takes effect must not hang).
+ */
+export const KILL_BACKSTOP_MS = 5_000;
+
+/**
  * The inherited `GIT_*` variables every git call except `git commit` keeps (M2, story 147):
  * the ones that choose git itself, its config files and its credentials, never ones that
  * redirect what a call reads.
@@ -158,8 +164,10 @@ export async function gitPath(names, { cwd, env, now }) {
  *   ignored; `onStdout`: a consumer (M10's patch pass only, CHG-06) that gets each raw
  *   stdout chunk as it arrives, nothing being buffered here; if it throws, the child is
  *   killed (`SIGKILL`, the child only, same as `timeoutMs` below) instead of being left to
- *   run to completion, it gets no further chunk, and the call rejects with that error once
- *   the child has closed;
+ *   run to completion, its stdout and stderr are no longer read, it gets no further chunk,
+ *   and the call rejects with that error once the child has exited, without waiting for a
+ *   process the child left holding its pipes, or `KILL_BACKSTOP_MS` after the kill if the
+ *   child never exits;
  *   `timeoutMs` (GIT-12, the signing probe's fixed `ssh-add` timeout): past it the child is
  *   killed (`SIGKILL`, the child only) and the call resolves at once with `timedOut: true`
  *   and `code: null`, without waiting for a process the child left holding the pipes.
@@ -219,15 +227,35 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, input,
         onStdout(chunk);
       } catch (err) {
         consumerError = err;
-        // Left running, the child would keep producing output nobody reads; killing it here
-        // matches the `timeoutMs` path below instead of waiting for it to finish on its own.
-        child.kill('SIGKILL');
+        abandon();
       }
     });
     child.stderr.on('data', (chunk) => stderr.push(chunk));
+    // Left running, the child would keep producing output nobody reads; it is killed like
+    // the `timeoutMs` path above instead of being waited for. Its pipes are destroyed too: a
+    // process the child left holding them (the real git.exe behind Git for Windows'
+    // `cmd\git.exe` launcher, a textconv filter) survives a kill of the child alone and
+    // would otherwise keep `close` from ever firing, so the call settles on the child's own
+    // exit. If even that never comes (the kill failed), the backstop rejects anyway.
+    function abandon() {
+      clearTimeout(timer);
+      child.kill('SIGKILL');
+      child.stdout.destroy();
+      child.stderr.destroy();
+      timer = setTimeout(() => {
+        if (!settled) reject(consumerError);
+        settled = true;
+      }, KILL_BACKSTOP_MS);
+    }
     child.on('error', (err) => {
       clearTimeout(timer);
-      if (!settled) reject(err);
+      if (!settled) reject(consumerError ?? err);
+      settled = true;
+    });
+    child.on('exit', () => {
+      if (consumerError === null) return;
+      clearTimeout(timer);
+      if (!settled) reject(consumerError);
       settled = true;
     });
     child.on('close', (code) => {

@@ -9,6 +9,7 @@
 // exercised through M2 `run` itself.
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -330,55 +331,149 @@ test('run: an onStdout that throws rejects the call with its error once the chil
   );
 });
 
-// True if `pid` still denotes a live process. On Linux this also treats a zombie (`/proc/
-// <pid>/stat` state `Z`) as gone: a SIGKILLed child can sit unreaped for a moment even under
-// an init that reaps it, and `process.kill(pid, 0)` keeps succeeding against a zombie even
-// though it is already dead.
-function isAlive(pid) {
-  if (process.platform === 'linux') {
-    let stat;
-    try {
-      stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    } catch {
-      return false; // no /proc entry: already reaped and gone
-    }
-    const state = stat.slice(stat.lastIndexOf(')') + 1).trim().split(' ')[0];
-    if (state === 'Z') return false;
-  }
+
+// The two cases below spawn processes that never exit on their own, so each process proves
+// it is still running by ticking a heartbeat file (`heartbeat` below) instead of the test
+// trusting its pid alone: on a busy Windows box a killed child's pid can be handed to an
+// unrelated process within a second, which `process.kill(pid, 0)` would then report as alive
+// (a false failure) and a cleanup kill by pid would hit (a stray kill). A pid is only acted
+// on while its heartbeat is still ticking, which no other process can do.
+
+const TICK_MS = 50;
+const LIFETIME_MS = 120_000;
+
+function sleep(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// A `node -e` snippet that writes its pid to `<base>.pid` and then a growing counter to
+// `<base>.beat` every TICK_MS. It never exits on its own within a case; it does exit after
+// LIFETIME_MS, a last line of defence against an immortal process if even the cleanup below
+// never runs (e.g. the test process itself is killed).
+function heartbeat(base) {
+  return `{ const fs = require('fs'); fs.writeFileSync(${JSON.stringify(`${base}.pid`)}, String(process.pid));`
+    + ` let n = 0; setInterval(() => { fs.writeFileSync(${JSON.stringify(`${base}.beat`)}, String(++n)); }, ${TICK_MS});`
+    + ` setTimeout(() => process.exit(0), ${LIFETIME_MS}); }`;
+}
+
+function readOrNull(file) {
   try {
-    process.kill(pid, 0);
-    return true;
+    return fs.readFileSync(file, 'utf8');
   } catch {
-    return false;
+    return null;
   }
+}
+
+// True if the heartbeat process at `base` is still running: its counter moves within one
+// second (20 ticks), polled so a running process is reported as soon as it ticks.
+async function ticking(base) {
+  const before = readOrNull(`${base}.beat`);
+  for (let waited = 0; waited < 1000; waited += TICK_MS) {
+    await sleep(TICK_MS);
+    const now = readOrNull(`${base}.beat`);
+    if (now !== null && now !== before) return true;
+  }
+  return false;
+}
+
+// Registers, before the case's own cleanup (`after` hooks run in the order they were added,
+// and the case directory cannot be removed on Windows while a process still runs in it), a
+// hook that kills every heartbeat process in `bases()` that is still running: a regression
+// then fails the case instead of leaking an immortal process or hanging the suite.
+function killLeftovers(t, bases) {
+  t.after(async () => {
+    for (const base of bases()) {
+      const pid = Number(readOrNull(`${base}.pid`));
+      if (!Number.isInteger(pid) || pid <= 0 || !(await ticking(base))) continue;
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (err) {
+        if (err.code !== 'ESRCH') throw err;
+      }
+      // Windows keeps the case directory busy (the process's cwd) until the killed process
+      // is fully gone, so wait (bounded) for its pid to disappear before the case's cleanup.
+      for (let waited = 0; waited < 5000; waited += TICK_MS) {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          break;
+        }
+        await sleep(TICK_MS);
+      }
+    }
+  });
+}
+
+// Waits (bounded) until the heartbeat process at `base` has stopped ticking.
+async function stopped(base) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (!(await ticking(base))) return true;
+  }
+  return false;
 }
 
 test(
   'run: an onStdout that throws kills the child instead of leaving it running to completion',
+  { timeout: 30_000 },
   async (t) => {
+    let base = null;
+    killLeftovers(t, () => (base === null ? [] : [base]));
     const c = createCase(t);
-    const pidFile = path.join(c.repoDir, 'child.pid');
-    // A non-git child (M2 only touches env for git) that records its own pid, emits one
-    // stdout chunk, then hangs forever on its own: it has no reason to ever exit except
-    // being killed, so finding it dead afterwards proves the kill happened rather than the
-    // child simply finishing.
-    const script = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`
-      + "process.stdout.write('first\\n');"
-      + 'setInterval(() => {}, 1000);';
+    base = path.join(c.root, 'child');
+    // A non-git child (M2 only touches env for git) that emits one stdout chunk, then runs
+    // forever on its own: it has no reason to ever stop except being killed, so finding its
+    // heartbeat stopped afterwards proves the kill happened rather than the child finishing.
+    const script = `${heartbeat(base)} process.stdout.write('first\\n');`;
 
     await assert.rejects(
       processAdapter.run(process.execPath, ['-e', script], {
-        cwd: c.repoDir,
+        cwd: os.tmpdir(), // not the case directory: Windows cannot remove a dying process's cwd
         env: c.env,
         onStdout: () => { throw new Error('consumer failed'); },
       }),
       /consumer failed/,
     );
 
-    // Give the OS a moment to tear the killed child down before checking it is gone.
-    await new Promise((resolve) => { setTimeout(resolve, 1000); });
-    assert.ok(fs.existsSync(pidFile), `child pid file was never written: ${pidFile}`);
-    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
-    assert.equal(isAlive(pid), false, 'child was not killed after the consumer threw');
+    assert.ok(fs.existsSync(`${base}.pid`), `child pid file was never written: ${base}.pid`);
+    assert.equal(await stopped(base), true, 'child was not killed after the consumer threw');
+  },
+);
+
+test(
+  'run: an onStdout that throws rejects without waiting for a process the child left holding '
+    + 'stdout open',
+  { timeout: 30_000 },
+  async (t) => {
+    let root = null;
+    killLeftovers(t, () => (root === null ? [] : [path.join(root, 'child'), path.join(root, 'grandchild')]));
+    const c = createCase(t);
+    root = c.root;
+    const child = path.join(root, 'child');
+    const grandchild = path.join(root, 'grandchild');
+    // The child starts a grandchild that inherits its stdout and outlives it (`detached`, so
+    // the Windows job object of the child does not take it down with the child), as the real git.exe behind Git for Windows' `cmd\git.exe` launcher, or a
+    // textconv filter, does for git; only then does it emit its chunk. Killing the child
+    // leaves the grandchild holding the stdout pipe, so the child's `close` event cannot
+    // fire while it runs: the call must settle on the child's own exit instead.
+    const script = "const { spawn } = require('child_process');"
+      + `const g = spawn(process.execPath, ['-e', ${JSON.stringify(heartbeat(grandchild))}],`
+      + " { detached: true, cwd: require('os').tmpdir(), stdio: ['ignore', 'inherit', 'ignore'] }); g.unref();"
+      + `${heartbeat(child)}`
+      + ` const fs = require('fs'); const wait = setInterval(() => {`
+      + ` if (fs.existsSync(${JSON.stringify(`${grandchild}.beat`)})) { clearInterval(wait); process.stdout.write('first\\n'); }`
+      + ` }, ${TICK_MS});`;
+
+    await assert.rejects(
+      processAdapter.run(process.execPath, ['-e', script], {
+        cwd: os.tmpdir(),
+        env: c.env,
+        onStdout: () => { throw new Error('consumer failed'); },
+      }),
+      /consumer failed/,
+    );
+
+    // Still running when the call has settled: the call did not wait for it.
+    assert.equal(await ticking(grandchild), true, 'the call waited for the grandchild to end');
+    assert.equal(await stopped(child), true, 'child was not killed after the consumer threw');
   },
 );

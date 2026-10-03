@@ -16,7 +16,10 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 
 const pidFile = process.argv[2];
-const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+// The grandchild self-exits after 120s: if the tree-kill under test ever misses it (the
+// test then fails), it must not live on as an immortal orphan (three such orphans were
+// once found on a Windows dev box, from the short-timeout first version of this test).
+const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000); setTimeout(() => process.exit(0), 120000)'], {
   detached: process.platform === 'win32',
   stdio: 'ignore',
 });
