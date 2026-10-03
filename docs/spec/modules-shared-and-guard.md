@@ -23,9 +23,10 @@ install path containing `$`, a backtick, `"`, `\` or a typographic double quote
 are converted to `/`, so a native Windows path is not refused for its separators; a `\`
 left after the conversion can only be part of a POSIX file name (`build` reads a path with
 a drive letter or a UNC start as Windows, one starting with `/` as POSIX). `build` throws a
-`TypeError` for a path that is not absolute or not to `commit.cjs`, a subcommand outside the
-list, or an argument outside the step 2 exemption's word characters, so its output is always
-in the exemption form; `recognise(tokens) → { subcommand, args } | null`, the arguments being
+`TypeError` for a path that is not absolute or not to `commit.cjs`, a path holding a
+character the step 2 exemption keeps out of the quoted path (`"`, U+201C-U+201E, `$`, a
+backtick, `!` or a control character), a subcommand outside the list, or an argument outside
+the step 2 exemption's word characters, so its output is always in the exemption form; `recognise(tokens) → { subcommand, args } | null`, the arguments being
 the words after the subcommand up to the first operator token, redirections dropped. Sources: Q16,
 Q23, Q25, C:guard, C:reply-and-handback.
 

@@ -156,6 +156,41 @@ test('Seam 3: build refuses what has no exempt quoted form', () => {
   }
 });
 
+// The characters the step 2 exemption keeps out of the quoted path (C:guard step 2): a
+// double quote of either shell, `$`, a backtick, `!` and every control character.
+const PATH_REFUSED = new Set(['"', '\u201C', '\u201D', '\u201E', '$', '`', '!', '\u007F']);
+for (let code = 0; code < 0x20; code += 1) PATH_REFUSED.add(String.fromCharCode(code));
+
+test('Seam 3: build refuses every path character outside the exemption form', () => {
+  for (const char of ['"', '\u201C', '$', '`', '!', '\n', '\r', '\t', '\u0000', '\u007F']) {
+    for (const scriptPath of [`/opt/a${char}b/commit.cjs`, `C:\\a${char}b\\commit.cjs`]) {
+      assert.throws(() => build({ scriptPath, subcommand: 'plan' }), TypeError, JSON.stringify(scriptPath));
+    }
+  }
+  // A `"` would otherwise end the quoted path and append commands that G3 lets through.
+  assert.throws(() => build({ scriptPath: '/opt/a" ; touch x ; "/commit.cjs', subcommand: 'plan' }), TypeError);
+});
+
+test('Seam 3: across a character sweep, build either throws or is exempt and read back in both shells', () => {
+  const sweep = [];
+  for (let code = 0; code < 0x80; code += 1) sweep.push(String.fromCharCode(code));
+  sweep.push('\u00A0', '\u0085', '\u2018', '\u2019', '\u201A', '\u201B', '\u201C', '\u201D', '\u201E', '\u2028', '\uFEFF', '\u00E9');
+  for (const char of sweep) {
+    for (const scriptPath of [`/opt/a${char}b/commit.cjs`, `C:\\a${char}b\\commit.cjs`]) {
+      const label = JSON.stringify(scriptPath);
+      if (PATH_REFUSED.has(char)) {
+        assert.throws(() => build({ scriptPath, subcommand: 'plan', args: ['--x'] }), TypeError, label);
+        continue;
+      }
+      const command = build({ scriptPath, subcommand: 'plan', args: ['--x'] });
+      for (const shell of SHELLS) {
+        assert.ok(isExemptScriptCall(command, shell), `${shell}: ${label} in the exemption form`);
+        assert.deepEqual(callsIn(command, shell), [{ subcommand: 'plan', args: ['--x'] }], `${shell}: ${label}`);
+      }
+    }
+  }
+});
+
 // The exemption seed: its four `decision: none` cases named by GRD-13 are recognised script
 // calls with no output; the rest are blanket-denied.
 const EXEMPT_NONE = ['b-exempt-hash', 'b-exempt-typographic', 'p-exempt-hash', 'p-exempt-atparen'];

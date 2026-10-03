@@ -22,7 +22,8 @@ the plain call the worker and every handback run blanket-denied: that call is in
 script-call exemption's form (step 2). The same path in any other command that mentions
 `commit` (a chained `cd sub && node …`, a word outside the exemption's form), or a path
 that also holds `!` or a control character, is blanket-denied (a documented false positive,
-Q3). Fixtures: quoted and
+Q3); S2 `build` throws on a path holding any character the exemption keeps out of the
+quoted path, so it never emits such a call. Fixtures: quoted and
 unquoted, Bash and PowerShell, `& node …`, `node.exe` at an absolute path,
 `cd sub && node …`, `echo "node commit.cjs plan"` (not a script call), and a quoted backslash
 path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by basename on `\`).

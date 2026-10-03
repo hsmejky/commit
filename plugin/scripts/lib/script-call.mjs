@@ -11,6 +11,9 @@ const ENTRY = 'commit.cjs';
 const WORD = /^[A-Za-z0-9._:=-]+$/;
 // A Windows absolute path: a drive letter then a separator, or a UNC `\\` or `//` start.
 const WINDOWS_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|[\\/]{2})/;
+// A character the step 2 exemption keeps out of the quoted path: a double quote of either
+// shell (`"`, U+201C-U+201E), `$`, a backtick, `!` or a control character (C:guard step 2).
+const PATH_REFUSED = /["“”„$`!\x00-\x1F\x7F]/;
 
 // The part of a token after its last `/` or `\`, in both shells (C:guard Script call).
 function basename(token) {
@@ -45,19 +48,22 @@ export function recognise(tokens) {
  * which the anchored README allow rules match and C:guard's step 2 exemption covers. The
  * path is absolute; a Windows path (a drive letter or a UNC start) has its `\` separators
  * converted to `/`, while a `\` in a POSIX path is kept (the entry point refuses that install
- * path with `env`). Nothing is escaped: the entry point refuses an install path holding a
- * character a shell would expand or mangle (C:cli `env`).
+ * path with `env`). Nothing is escaped: a path holding a character the exemption keeps out of
+ * the quoted path throws, so the output is always in the exemption form (the entry point
+ * refuses most of them earlier, C:cli `env`).
  *
  * @param {{ scriptPath: string, subcommand: string, args?: string[] }} call
  * @returns {string}
- * @throws {TypeError} for a path that is not an absolute path to `commit.cjs`, a subcommand
- *   outside the fixed list, or an argument outside the exemption's word characters.
+ * @throws {TypeError} for a path that is not an absolute path to `commit.cjs` or holds a
+ *   character outside the exemption's quoted path, a subcommand outside the fixed list, or
+ *   an argument outside the exemption's word characters.
  */
 export function build({ scriptPath, subcommand, args = [] }) {
   const windows = WINDOWS_ABSOLUTE.test(scriptPath);
   if (!windows && !scriptPath.startsWith('/')) throw new TypeError(`not an absolute path: ${scriptPath}`);
   const quoted = windows ? scriptPath.replaceAll('\\', '/') : scriptPath;
   if (!quoted.endsWith(`/${ENTRY}`)) throw new TypeError(`not the commit entry point: ${scriptPath}`);
+  if (PATH_REFUSED.test(quoted)) throw new TypeError(`a path character outside the exemption form: ${JSON.stringify(scriptPath)}`);
   if (!SUBCOMMANDS.includes(subcommand)) throw new TypeError(`not a script-call subcommand: ${subcommand}`);
   for (const arg of args) {
     if (!WORD.test(arg)) throw new TypeError(`not a plain script-call word: ${JSON.stringify(arg)}`);
