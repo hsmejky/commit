@@ -260,8 +260,8 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   in the cleaned form the diff shows (Q10).
 - Temporary index (Q11): a copy of the real index that keeps its mtime (floored to the
   second, so racy-git detection still sees a same-size edit made in the second of the last
-  index write), reset with `git reset -q` on the copy
-  (empty when unborn), then extended with `git add -N` of the stored candidate and
+  index write), reset with `git reset -q -- .` on the copy (the pathspec form writes no
+  ref, so the user's `ORIG_HEAD` and HEAD reflog stay as they were; empty when unborn), then extended with `git add -N` of the stored candidate and
   staged-new lists, skipping missing paths; it is never built from HEAD. Paths with
   `ignored: true` go in a separate `git add -N -f` call, so no other ignored path is added.
   A non-zero `git add` exit is a failure (exit 4 `git`, code `git-failed`) even when some paths were

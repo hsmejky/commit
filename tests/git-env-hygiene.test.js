@@ -140,7 +140,7 @@ test('plan removes decoy GIT_*_PATHSPECS and still refuses a tracked .commit-pla
   }
 });
 
-// CHG-05: the temporary index's own writes (`reset -q`, `add -N`) are the only calls without
+// CHG-05: the temporary index's own writes (`reset -q -- .`, `add -N`) are the only calls without
 // `GIT_OPTIONAL_LOCKS=0`, and they and the diff carry `GIT_INDEX_FILE` at the run folder's
 // `git-index`: the real index is never written.
 test('every git call plan makes is read-only or writes only the temporary index; only the keep-set and the pins reach it', async (t) => {

@@ -30,7 +30,9 @@ const PINNED_DIFF_CALL = [
   '-z', '--raw', '-p',
 ];
 // CHG-05: the inventory's own staged-paths read, the only other `diff` call.
-const INVENTORY_DIFF_CALL = ['diff', '--cached', '--no-renames', '--name-status', '-z'];
+const INVENTORY_DIFF_CALL = [
+  'diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z',
+];
 
 test('plan on modified tracked files runs one pinned diff with no pathspec and keeps the run', async (t) => {
   const c = createCase(t);

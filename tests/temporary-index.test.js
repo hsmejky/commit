@@ -96,12 +96,12 @@ function commitAll(repoDir, env, message) {
 }
 
 // Copies the real index into a sibling file and resets that copy to HEAD, as Q11 step 1
-// prescribes ("Copy the real index to git-index in the run folder and git reset -q the
+// prescribes ("Copy the real index to git-index in the run folder and git reset -q -- . the
 // copy"). Returns the copy's path, to be passed as GIT_INDEX_FILE.
 function copyIndexResetToHead(repoDir, env) {
   const indexCopy = path.join(repoDir, '..', 'git-index');
   fs.copyFileSync(path.join(repoDir, '.git', 'index'), indexCopy);
-  git(repoDir, env, ['reset', '-q'], { GIT_INDEX_FILE: indexCopy });
+  git(repoDir, env, ['reset', '-q', '--', '.'], { GIT_INDEX_FILE: indexCopy });
   return indexCopy;
 }
 

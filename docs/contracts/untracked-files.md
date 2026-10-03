@@ -2,8 +2,9 @@
 
 Source: `git ls-files --others --exclude-standard` (gitignored files are never seen). In
 `split` and `staged` mode the **staged-new** paths go through the same rules: every path the
-real index adds relative to HEAD (`git diff --cached --no-renames --name-only --diff-filter=A
--z`; on an unborn HEAD every path in the real index), gitignored or not (a force-added file is
+real index adds relative to HEAD (`git diff --cached --ita-visible-in-index --no-renames
+--name-only --diff-filter=A -z`, so a user's intent-to-add entry counts; on an unborn HEAD
+every path in the real index), gitignored or not (a force-added file is
 listed). In `split` they count toward the caps together with the untracked candidates, and a
 staged-new path that is hidden or falls in a collapsed directory goes to `plan.stagedExcluded`
 instead of `untracked`. In `staged` only the hidden rule applies: a hidden staged-new path

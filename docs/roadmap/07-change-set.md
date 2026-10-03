@@ -135,7 +135,7 @@ paths }` read after the subcommand's last git call.
 
 **What to build:** `inventory` gathers candidates (`ls-files --others --exclude-standard`,
 after `hideFilter`), staged-new paths (with `ignored` from `check-ignore`) and pre-staged
-paths; `snapshot` copies the real index into the run folder, `git reset -q` on the copy
+paths; `snapshot` copies the real index into the run folder, `git reset -q -- .` on the copy
 (empty when unborn), then `git add -N` of the stored lists from stdin (ignored ones in a
 separate `-f` call, missing paths skipped, any non-zero exit → `git-failed`), and diffs
 against it. The real index is never written.

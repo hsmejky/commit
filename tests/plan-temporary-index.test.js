@@ -162,6 +162,46 @@ test('the real index is byte-identical before and after plan', async (t) => {
   assert.ok(after.stdout.equals(before.stdout), 'the real index changed');
 });
 
+function gitOut(c, args) {
+  const result = spawnSync('git', args, { cwd: c.repoDir, env: c.env });
+  return { status: result.status, stdout: String(result.stdout) };
+}
+
+test('plan writes no ref: ORIG_HEAD and the HEAD reflog are unchanged', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('staged.txt', 'staged\n');
+  c.git(['add', 'staged.txt']);
+  const origBefore = gitOut(c, ['rev-parse', '-q', '--verify', 'ORIG_HEAD']);
+  const reflogBefore = gitOut(c, ['reflog', 'show', 'HEAD']);
+  assert.equal(reflogBefore.status, 0, reflogBefore.stdout);
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.deepEqual(gitOut(c, ['rev-parse', '-q', '--verify', 'ORIG_HEAD']), origBefore);
+  assert.deepEqual(gitOut(c, ['reflog', 'show', 'HEAD']), reflogBefore);
+});
+
+for (const unborn of [false, true]) {
+  test(`a user's git add -N file is an A unit, stored in stagedNew (${unborn ? 'unborn' : 'born'} HEAD)`, async (t) => {
+    const c = createCase(t);
+    if (!unborn) seed(c, { 'a.txt': 'one\n' });
+    c.writeFile('ita.txt', 'intent\n');
+    c.git(['add', '-N', 'ita.txt']);
+
+    const result = await runCommit(c, ['plan']);
+
+    assert.equal(result.exitCode, 0, detail(result));
+    const added = unitsByPath(result, 'ita.txt');
+    assert.equal(added.length, 1, detail(result));
+    assert.equal(added[0].status, 'A');
+    const state = readJson(path.join(result.json.runDir, 'state.json'));
+    assert.deepEqual(state.stagedNew, [{ path: 'ita.txt', ignored: false }]);
+  });
+}
+
 // A `git` shim on PATH that fails every `add` call (the temporary index's `git add -N`) and
 // delegates everything else to the real git, cross-platform-safe because it only runs on
 // POSIX (KD-R21).
@@ -198,5 +238,6 @@ test('a failing git add -N into the temporary index exits 4 git and leaves no ru
   assert.equal(result.exitCode, 4, detail(result));
   assert.equal(result.json.ok, false, detail(result));
   assert.equal(result.json.error.kind, 'git', detail(result));
+  assert.match(result.json.error.message, /git add failed/, detail(result));
   assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), []);
 });

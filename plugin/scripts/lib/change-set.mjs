@@ -77,13 +77,16 @@ export async function indexFingerprint({ toplevel, env, now }) {
  * - candidates: `git ls-files --others --exclude-standard -z` after `hideFilter`, each with
  *   its `lstat` size and `binary` (a NUL in the first 8000 bytes; `.gitattributes` is not
  *   read here, CHG-08/CHG-11).
- * - preStaged: every path of `git diff --cached --no-renames --name-status -z`; its `A`
- *   paths are the staged-new ones. A hidden staged-new path goes to `stagedExcluded`, the
- *   rest to `stagedNew` with `ignored`: listed by `git ls-files --cached --ignored
+ * - preStaged: every path of `git diff --cached --ita-visible-in-index --no-renames
+ *   --name-status -z`; its `A` paths are the staged-new ones, a user's intent-to-add
+ *   (`git add -N`) entries included (plain `diff --cached` hides them). A hidden
+ *   staged-new path goes to `stagedExcluded`, the rest to `stagedNew` with `ignored`:
+ *   listed by `git ls-files --cached --ignored
  *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore` refuses
  *   M2's `GIT_LITERAL_PATHSPECS=1`).
  * - tracked: the `git status` entries that are neither untracked nor staged-new.
- * Unborn HEAD needs no special case: `diff --cached` then lists every index entry as `A`.
+ * Unborn HEAD needs no special case: `diff --cached` then lists every index entry as `A`,
+ * as C:untracked-files asks.
  *
  * @param {{ toplevel: string, env: object, now?: () => number }} options
  * @returns {Promise<{ clean: boolean, tracked: string[], preStaged: string[],
@@ -105,7 +108,9 @@ export async function inventory({ toplevel, env, now }) {
     sample: [...filtered.hidden].sort(byteOrder).slice(0, 5),
   };
 
-  const cached = nulList(await gitOk(['diff', '--cached', '--no-renames', '--name-status', '-z'], opts));
+  const cached = nulList(await gitOk(
+    ['diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z'], opts,
+  ));
   const preStaged = [];
   const added = [];
   for (let i = 0; i + 1 < cached.length; i += 2) {
@@ -168,8 +173,9 @@ function byteOrder(a, b) {
  * one whole-file unit per changed text file, diffed against the temporary index.
  *
  * The temporary index (Q11 steps 1-3, C:plan): the real index is copied to `indexPath`
- * (keeping its mtime, see `copyIndex`) and the copy reset to HEAD (`git reset -q`); on an
- * unborn HEAD it starts empty instead. Then `git add -N` of the stored candidate and
+ * (keeping its mtime, see `copyIndex`) and the copy reset to HEAD with `git reset -q -- .`
+ * (the pathspec form writes no ref; a bare reset would move ORIG_HEAD, append a HEAD reflog
+ * entry and take HEAD.lock); on an unborn HEAD it starts empty instead. Then `git add -N` of the stored candidate and
  * staged-new paths from stdin, the `ignored: true` ones in a separate `-f` call; a path gone
  * from the worktree since the inventory is skipped. Only the copy is written: the real index never is.
  *
@@ -221,7 +227,7 @@ async function buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, e
   if (!unborn) {
     const [realIndex] = await gitPath(['index'], { cwd: toplevel, env, now });
     if (existsSync(realIndex)) await copyIndex(realIndex, indexPath);
-    const reset = await run('git', ['reset', '-q'], { cwd: toplevel, env, now, index: indexPath });
+    const reset = await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now, index: indexPath });
     if (reset.code !== 0) throw new Error(`git reset failed (${reset.code}): ${reset.stderr}`);
   }
   const present = (path) => existsInWorktree(toplevel, path);

@@ -19,12 +19,16 @@
   - Untracked files go through a **temporary index**, so they diff like tracked ones and the
     user's index is never touched. One function builds the diff for `plan --hunks`, the
     `plan` scan and `commit` in `split` mode:
-    1. Copy the real index to `git-index` in the run folder and `git reset -q` the copy
-       (`GIT_INDEX_FILE`), so it matches HEAD and keeps its stat cache. On an unborn HEAD the
-       copy starts empty.
+    1. Copy the real index to `git-index` in the run folder and `git reset -q -- .` the copy
+       (`GIT_INDEX_FILE`), so it matches HEAD and keeps its stat cache. The pathspec form
+       writes no ref: a bare `git reset -q` would move the user's `ORIG_HEAD`, append a HEAD
+       reflog entry and take `HEAD.lock`, even with `GIT_INDEX_FILE` set. On an unborn HEAD
+       the copy starts empty.
     2. `git add -N` into the copy: the untracked candidates, and the **staged-new** paths,
-       i.e. every path the real index adds relative to HEAD (`git diff --cached --no-renames
-       --name-only --diff-filter=A -z`; on an unborn HEAD, every path in the real index).
+       i.e. every path the real index adds relative to HEAD (`git diff --cached
+       --ita-visible-in-index --no-renames --name-only --diff-filter=A -z`; on an unborn
+       HEAD, every path in the real index). `--ita-visible-in-index` keeps the user's own
+       intent-to-add (`git add -N`) entries, which a plain `diff --cached` hides.
        Step 1 dropped the staged-new paths from the copy, and `ls-files --others` does not
        list them because the real index tracks them, so without this they would be in
        neither list and vanish. Staged-new paths go through the same hidden and collapse

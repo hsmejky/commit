@@ -7,7 +7,8 @@ and of the real index.
   which M9 `applyCaps` and M13 read; in `staged` mode it also counts `unstagedLeft`, `null`
   in `split` and `reword`, C:plan).
 - `snapshot({ mode, storedLists, indexPath })` → units. Builds the temporary index by
-  copying the real index and running `git reset -q` on the copy (empty when unborn), then
+  copying the real index and running `git reset -q -- .` on the copy (no ref written;
+  empty when unborn), then
   `git add -N` of the stored lists, skipping missing paths (Q11 steps 1-3); paths with
   `ignored: true` go in a separate `git add -N -f` call, so no other ignored path is added.
   A non-zero `git add` exit counts as failed even when some paths were added (`git-failed`,
