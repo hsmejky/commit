@@ -222,6 +222,18 @@ test('Seam 3: runHook keeps the decision when the heartbeat write fails', (t) =>
   assert.deepEqual({ ...allowed }, { stdout: '', stderr: '{"heartbeat":"failed"}\n' });
 });
 
+// GRD-15 review (round 2) L1: guard.cjs itself passes no Claude home when its own
+// `os.homedir()` lookup throws (no portable way to force that on this host; see guard.cjs),
+// relying on G1 to swallow the resulting `path.join(undefined, …)` throw the same way it
+// swallows any other failed write.
+test('Seam 3: runHook keeps a compound deny when claudeHome is undefined', () => {
+  const denied = runHook(payload('node "/p/commit.cjs" plan && git commit -m x'), { env: {}, claudeHome: undefined, now: () => 1 });
+  assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(denied.stderr, '');
+  const allowed = runHook(payload('node "/p/commit.cjs" plan'), { env: { COMMIT_GUARD_DEBUG: '1' }, claudeHome: undefined, now: () => 1 });
+  assert.deepEqual({ ...allowed }, { stdout: '', stderr: '{"heartbeat":"failed"}\n' });
+});
+
 test('Seam 3: redactCommand keeps only --flag words and planIds, cut at --% and at 200', () => {
   const { redactCommand } = heartbeat;
   assert.equal(redactCommand({ subcommand: 'plan', args: [] }), 'commit.cjs plan');

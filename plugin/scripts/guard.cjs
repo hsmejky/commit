@@ -11,7 +11,16 @@ var major = Number(String(process.versions.node).split('.')[0]);
 if (major >= 22) {
   import('./lib/hook-io.mjs').then(function (g1) {
     var env = process.env;
-    var claudeHome = env.CLAUDE_CONFIG_DIR || require('node:path').join(require('node:os').homedir(), '.claude');
+    var claudeHome;
+    try {
+      claudeHome = env.CLAUDE_CONFIG_DIR || require('node:path').join(require('node:os').homedir(), '.claude');
+    } catch (e) {
+      // The Claude home is only ever needed for the heartbeat write (S1); a lookup failure
+      // here (e.g. no HOME/USERPROFILE and no passwd entry) must not drop the guard's
+      // decision for every command. Passing no Claude home makes the inner catch in G1's
+      // writePlanHeartbeat throw and swallow it instead (C:guard Heartbeat).
+      claudeHome = undefined;
+    }
     return g1.main({
       stdin: process.stdin,
       stdout: process.stdout,
