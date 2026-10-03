@@ -181,7 +181,7 @@ unstaging or releasing.
 
 ## GIT-09: M3 history reads and reword facts
 
-**What to build:** `recentSubjects` (last 10), `oldMessage` and, with `--reword`, the
+**What to build:** `recentSubjects` (last 10, non-merge), `oldMessage` and, with `--reword`, the
 unborn, merge-commit, root-commit and pushed facts (one `for-each-ref --contains` over
 remote-tracking refs, skipped when unborn), with `plan --reword` refusing unborn and merge
 HEAD (`state`) and a pushed HEAD (`pushed`); also the last 200 non-merge messages for
@@ -189,13 +189,13 @@ HEAD (`state`) and a pushed HEAD (`pushed`); also the last 200 non-merge message
 
 **Blocked by:** GIT-02, CHG-03b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, Q20, Q21, C:plan (step 2), C:plan-hunks (`recentSubjects`, `oldMessage`), stories 176, 177, M3.
 
-- [ ] Seam 1: `plan` → `recentSubjects` holds the last 10 subjects, newest first, with `log.showSignature=true` set in the repo config not leaking signature lines.
-- [ ] Seam 1: `plan --reword` on an unborn HEAD and on a merge commit → exit 6 `state` (the merge-commit text is "HEAD is a merge commit; reword it by hand", confirmed in Q20); on a HEAD contained in a remote-tracking ref → `pushed`; on a root commit → accepted (root-commit fact stored for CHG-15).
-- [ ] Seam 1: `plan --reword` on a clean tree → `oldMessage` stored in the run state byte-exact (UTF-8) (the lock-taken criterion is RUN-06's).
+- [x] Seam 1: `plan` → `recentSubjects` holds the last 10 non-merge subjects, newest first, with `log.showSignature=true` set in the repo config not leaking signature lines.
+- [x] Seam 1: `plan --reword` on an unborn HEAD and on a merge commit → exit 6 `state` (the merge-commit text is "HEAD is a merge commit; reword it by hand", confirmed in Q20); on a HEAD contained in a remote-tracking ref → `pushed`; on a root commit → accepted (root-commit fact stored for CHG-15).
+- [x] Seam 1: `plan --reword` on a clean tree → `oldMessage` stored in the run state byte-exact (UTF-8) (the lock-taken criterion is RUN-06's).
 
 
 ## GIT-10: Signing probe tracer: enabled flag and non-SSH formats
