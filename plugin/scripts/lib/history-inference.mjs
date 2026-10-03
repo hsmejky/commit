@@ -3,11 +3,12 @@
 //
 // INF-01 (tracer) built the `too-few-commits` outcome only. INF-02 adds the Conventional
 // Commits share split: `not-conventional` under 50%, else `proposal`. INF-03 fills in the
-// proposal's `scope` and `body` fields. The proposal carries only `scope` and `body` until
-// INF-04 and INF-05 add its remaining fields (`types`, `subjectCase`, `maxSubjectLength`);
-// `wouldFail` stays `null` until INF-06 computes it.
+// proposal's `scope` and `body` fields. INF-04 adds `subjectCase` and `maxSubjectLength`.
+// The proposal carries `scope`, `body`, `subjectCase` and `maxSubjectLength` until INF-05
+// adds its remaining field (`types`); `wouldFail` stays `null` until INF-06 computes it.
 
 import { parse } from './message-grammar.mjs';
+import { passesLowerCase } from './message-grammar.mjs';
 
 /** Under this many non-merge commits read, `infer` proposes nothing (C:infer). */
 export const MIN_COMMITS = 20;
@@ -23,6 +24,20 @@ export const SCOPE_OPTIONAL_THRESHOLD = 0.1;
 
 /** At or above this share of Conventional Commits messages with a body, `body: optional` (C:infer). */
 export const BODY_OPTIONAL_THRESHOLD = 0.1;
+
+/** At or above this share of Conventional Commits descriptions passing M6's lowercase
+ * check, `subjectCase: lower` (C:infer). */
+export const SUBJECT_CASE_LOWER_THRESHOLD = 0.9;
+
+/** `maxSubjectLength` is 72 up to this p95 header length (C:infer). */
+export const MAX_SUBJECT_LENGTH_LOW = 72;
+
+/** `maxSubjectLength` is 100 up to this p95 header length; above it, the value is rounded
+ * up to the next multiple of 10 and flagged (C:infer). */
+export const MAX_SUBJECT_LENGTH_HIGH = 100;
+
+/** `maxSubjectLength` never proposes a value above this, flagged when clamped (C:infer). */
+export const MAX_SUBJECT_LENGTH_CAP = 200;
 
 /**
  * Propose `scope` (C:infer): `required` at `SCOPE_REQUIRED_THRESHOLD` or more of the
@@ -66,6 +81,74 @@ function proposeBody(conventional) {
 }
 
 /**
+ * Propose `subjectCase` (C:infer): `lower` at `SUBJECT_CASE_LOWER_THRESHOLD` or more of the
+ * Conventional Commits descriptions passing M6's `passesLowerCase` (which exempts a leading
+ * acronym, such as `API change`), else `any`. The share is reported verbatim in
+ * `evidence.lower`.
+ *
+ * @param {readonly { header: { description: string } }[]} conventional parsed Conventional
+ *   Commits messages only.
+ * @returns {{ value: 'lower' | 'any', evidence: { lower: number } }}
+ */
+function proposeSubjectCase(conventional) {
+  const lower = conventional.filter((p) => passesLowerCase(p.header.description)).length;
+  const share = lower / conventional.length;
+  const value = share >= SUBJECT_CASE_LOWER_THRESHOLD ? 'lower' : 'any';
+  return { value, evidence: { lower: share } };
+}
+
+/**
+ * The header line's length in code points: everything up to (not including) the first
+ * `\n`, or the whole message when it has none. Counted the same way M6 `lint` counts it
+ * against `maxSubjectLength`, but computed locally since M6 does not export the split.
+ *
+ * @param {string} message
+ * @returns {number}
+ */
+function headerCodePointLength(message) {
+  return Array.from(message.split('\n', 1)[0]).length;
+}
+
+/**
+ * The 95th percentile of `lengths` by the nearest-rank method: sorted ascending, the value
+ * at index `ceil(0.95 * n) - 1`.
+ *
+ * @param {readonly number[]} lengths non-empty.
+ * @returns {number}
+ */
+function percentile95(lengths) {
+  const sorted = [...lengths].sort((a, b) => a - b);
+  const index = Math.ceil(sorted.length * 0.95) - 1;
+  return sorted[Math.min(sorted.length - 1, Math.max(0, index))];
+}
+
+/**
+ * Propose `maxSubjectLength` (C:infer): the p95 header length (code points) over the
+ * Conventional Commits messages read, rounded up to `MAX_SUBJECT_LENGTH_LOW` or
+ * `MAX_SUBJECT_LENGTH_HIGH`; above `MAX_SUBJECT_LENGTH_HIGH`, rounded up to the next
+ * multiple of 10 and flagged; clamped to `MAX_SUBJECT_LENGTH_CAP` (still flagged) when that
+ * exceeds it. `evidence.p95` carries the raw, unrounded percentile.
+ *
+ * @param {readonly string[]} conventionalMessages the raw Conventional Commits messages
+ *   (not their parses), to measure the whole header line.
+ * @returns {{ value: number, evidence: { p95: number, flagged: boolean } }}
+ */
+function proposeMaxSubjectLength(conventionalMessages) {
+  const p95 = percentile95(conventionalMessages.map(headerCodePointLength));
+  let value;
+  let flagged = false;
+  if (p95 <= MAX_SUBJECT_LENGTH_LOW) {
+    value = MAX_SUBJECT_LENGTH_LOW;
+  } else if (p95 <= MAX_SUBJECT_LENGTH_HIGH) {
+    value = MAX_SUBJECT_LENGTH_HIGH;
+  } else {
+    flagged = true;
+    value = Math.min(MAX_SUBJECT_LENGTH_CAP, Math.ceil(p95 / 10) * 10);
+  }
+  return { value, evidence: { p95, flagged } };
+}
+
+/**
  * M19 `infer(messages)`: the history facts and outcome of C:infer for the non-merge
  * messages read (at most 200, newest first).
  *
@@ -77,15 +160,15 @@ function proposeBody(conventional) {
  *   `too-few-commits`: under `MIN_COMMITS` non-merge commits read; `proposal: null`.
  *   `not-conventional`: `MIN_COMMITS` or more read, `ccShare` under `PROPOSAL_THRESHOLD`;
  *   `proposal: null`. `proposal`: `ccShare` at or above `PROPOSAL_THRESHOLD`; `proposal` has
- *   `scope` and `body` (INF-03) only until INF-04 and INF-05 add its remaining fields
- *   (`types`, `subjectCase`, `maxSubjectLength`). `wouldFail` is `null` for every outcome
- *   until INF-06 computes it.
+ *   `scope`, `body` (INF-03), `subjectCase` and `maxSubjectLength` (INF-04) only until
+ *   INF-05 adds its remaining field (`types`). `wouldFail` is `null` for every outcome until
+ *   INF-06 computes it.
  */
 export function infer(messages) {
-  const parsed = messages.map((message) => parse(message));
+  const entries = messages.map((message) => ({ message, parsed: parse(message) }));
   const commitCount = messages.length;
-  const conventionalParses = parsed.filter((p) => p.header !== null);
-  const conventional = conventionalParses.length;
+  const conventionalEntries = entries.filter((e) => e.parsed.header !== null);
+  const conventional = conventionalEntries.length;
   const ccShare = commitCount === 0 ? null : conventional / commitCount;
   const nonConventional = commitCount - conventional;
 
@@ -99,9 +182,13 @@ export function infer(messages) {
     proposal = null;
   } else {
     outcome = 'proposal';
+    const conventionalParses = conventionalEntries.map((e) => e.parsed);
+    const conventionalMessages = conventionalEntries.map((e) => e.message);
     proposal = {
       scope: proposeScope(conventionalParses),
       body: proposeBody(conventionalParses),
+      subjectCase: proposeSubjectCase(conventionalParses),
+      maxSubjectLength: proposeMaxSubjectLength(conventionalMessages),
     };
   }
 
