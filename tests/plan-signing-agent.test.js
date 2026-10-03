@@ -296,7 +296,10 @@ test('the SSH probe spawns only git and the ssh-add next to git\'s ssh-keygen', 
 function sshToolsMissing() {
   if (process.platform === 'win32') return 'the fixture agent case is POSIX-only';
   for (const tool of ['ssh-agent', 'ssh-add', 'ssh-keygen']) {
-    const probe = spawnSync(tool, ['-?'], { stdio: 'ignore' });
+    // No `SSH_AUTH_SOCK` (or anything else of the host env): `ssh-add -?` connects to
+    // whatever agent that names before it parses `-?`, so passing the host env here would
+    // reach the developer's own agent (review-GIT-12 finding 6).
+    const probe = spawnSync(tool, ['-?'], { stdio: 'ignore', env: { PATH: process.env.PATH } });
     if (probe.error && probe.error.code === 'ENOENT') return `${tool} not on PATH`;
   }
   return false;
@@ -392,4 +395,21 @@ test('M2 run with timeoutMs kills a child past it and resolves timedOut', async 
   });
   assert.equal(result.timedOut, true);
   assert.equal(result.code, null);
+});
+
+// Past the timeout, `run` kills only the direct child (its JSDoc); a grandchild the child
+// left holding the inherited stdout/stderr pipes must not make the call wait for it
+// (review-GIT-12 finding 7). `sh` backgrounds a 60 s `sleep` and then itself waits on it, so
+// the direct child (`sh`) is the one `run` kills at 200 ms; the orphaned `sleep` keeps the
+// pipes open for the rest of its 60 s unless `run` resolves without waiting for a `close`
+// that depends on it.
+test('M2 run with timeoutMs resolves without waiting for an orphaned grandchild on the pipes', { skip: process.platform === 'win32' && 'POSIX-only (sh)' }, async () => {
+  const { run } = await loadLib('process-adapter');
+  const started = Date.now();
+  const result = await run('sh', ['-c', 'sleep 60 & wait'], {
+    cwd: os.tmpdir(), env: process.env, timeoutMs: 200,
+  });
+  assert.equal(result.timedOut, true);
+  assert.equal(result.code, null);
+  assert.ok(Date.now() - started < 10_000, 'resolved well under the grandchild\'s 60 s lifetime');
 });

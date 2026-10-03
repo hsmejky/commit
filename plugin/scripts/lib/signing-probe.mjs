@@ -231,10 +231,10 @@ function envValue(env, name) {
   return key === undefined ? undefined : env[key];
 }
 
-function isExecutableFile(filePath) {
+function isExecutableFile(filePath, platform) {
   try {
     if (!statSync(filePath).isFile()) return false;
-    if (process.platform !== 'win32') accessSync(filePath, fsConstants.X_OK);
+    if (platform !== 'win32') accessSync(filePath, fsConstants.X_OK);
     return true;
   } catch {
     return false;
@@ -266,9 +266,9 @@ export function locateSshAdd({ execPath, env, platform = process.platform }) {
     if (path.isAbsolute(dir)) dirs.push(dir);
   }
   for (const dir of dirs) {
-    if (!isExecutableFile(path.join(dir, `ssh-keygen${exe}`))) continue;
+    if (!isExecutableFile(path.join(dir, `ssh-keygen${exe}`), platform)) continue;
     const sshAdd = path.join(dir, `ssh-add${exe}`);
-    return isExecutableFile(sshAdd) ? sshAdd : null;
+    return isExecutableFile(sshAdd, platform) ? sshAdd : null;
   }
   return null;
 }
@@ -304,9 +304,14 @@ async function gitExecPath({ toplevel, env, now }) {
 }
 
 // The `ssh-add -L` check (GIT-12): the agent's keys, or `null` when the check is not run
-// (no `ssh-add` next to git's `ssh-keygen`, or `listAgentKeys`' own `null`).
+// (no `ssh-add` next to git's `ssh-keygen`, `listAgentKeys`' own `null`, or — on Windows,
+// where the locator's first step depends on it — an exec path that could not be read: with
+// no `usr/bin` step to try, the locator would otherwise fall through to a `PATH` search,
+// which can land on Windows OpenSSH and its own agent, a probe step that never finished
+// deciding `false` on Q18's say (review-GIT-12 finding 1)).
 async function agentKeys(context) {
   const execPath = context.execPath !== undefined ? context.execPath : await gitExecPath(context);
+  if (execPath === null && process.platform === 'win32') return null;
   const sshAdd = locateSshAdd({ execPath, env: context.env });
   return sshAdd === null ? null : listAgentKeys(sshAdd, context);
 }
