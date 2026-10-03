@@ -2,7 +2,8 @@
 
 // CHG-03 (docs/roadmap/07-change-set.md): Seam 1 for the wiring of steps 4-5. `plan` on a
 // modified tracked file runs M10 `inventory` and `snapshot`: exactly one pinned
-// `git diff -z --raw -p HEAD` call with no pathspec (Q11). Storing the units is CHG-03b's
+// `git diff -z --raw -p` call with no pathspec (Q11; against the temporary index since
+// CHG-05, so no `HEAD`). Storing the units is CHG-03b's
 // (step 7), so the call then ends `internal` and leaves no run folder (C:run-folder: a
 // folder with no lock is discarded). The units themselves are asserted in-process in
 // `change-set-units.test.js` and `hunk-index.test.js` (KD-R1).
@@ -26,8 +27,10 @@ const PINNED_DIFF_CALL = [
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
   '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
-  '-z', '--raw', '-p', 'HEAD',
+  '-z', '--raw', '-p',
 ];
+// CHG-05: the inventory's own staged-paths read, the only other `diff` call.
+const INVENTORY_DIFF_CALL = ['diff', '--cached', '--no-renames', '--name-status', '-z'];
 
 test('plan on modified tracked files runs one pinned diff with no pathspec and keeps the run', async (t) => {
   const c = createCase(t);
@@ -51,19 +54,9 @@ test('plan on modified tracked files runs one pinned diff with no pathspec and k
 
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const diffCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('diff'));
-  assert.deepEqual(diffCalls.map((e) => [e.file, e.args]), [['git', PINNED_DIFF_CALL]], JSON.stringify(diffCalls));
-});
-
-test('plan on an untracked file is not built yet and leaves no run folder', async (t) => {
-  const c = createCase(t);
-  c.writeFile('README.md', 'hello\n');
-  c.git(['add', 'README.md']);
-  c.git(['commit', '-q', '-m', 'seed']);
-  c.writeFile('new.txt', 'n\n');
-
-  const result = await runCommit(c, ['plan']);
-
-  assert.equal(result.exitCode, 1, `stdout ${result.stdout}\nstderr ${result.stderr}`);
-  assert.equal(result.json.error.kind, 'internal');
-  assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), []);
+  assert.deepEqual(
+    diffCalls.map((e) => [e.file, e.args]),
+    [['git', INVENTORY_DIFF_CALL], ['git', PINNED_DIFF_CALL]],
+    JSON.stringify(diffCalls),
+  );
 });

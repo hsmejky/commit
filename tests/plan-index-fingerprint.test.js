@@ -60,7 +60,8 @@ function fingerprintOf(c) {
 
 // A `clean` filter on `a.txt` that passes its input through and, the first time it runs
 // once a provisional run folder exists in `.commit-plan/`, stages `b.txt` (outside any
-// temporary index: the real one). Filters run from the toplevel.
+// temporary index: the real one, hence the `unset`, since a filter run by a git call on the
+// temporary index (CHG-05) inherits its `GIT_INDEX_FILE`). Filters run from the toplevel.
 function stagingFilter(c) {
   const marker = forwardSlashes(path.join(c.root, 'filter-fired'));
   const script = path.join(c.root, 'stager.sh');
@@ -69,6 +70,7 @@ function stagingFilter(c) {
     'for d in .commit-plan/*/; do',
     `  if [ -d "$d" ] && [ ! -e '${marker}' ]; then`,
     `    : > '${marker}'`,
+    '    unset GIT_INDEX_FILE',
     '    git add -- b.txt </dev/null >/dev/null 2>&1',
     '  fi',
     'done',

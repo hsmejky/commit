@@ -5,6 +5,7 @@
 // `body: "file"` block per unit. Pure: it returns texts and M18 writes them through M12.
 // `plan` prints `hunks` only once it has taken the lock (CHG-03b), so this is in-process.
 
+const path = require('node:path');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -100,7 +101,9 @@ test('renderHunks over a real snapshot: h1 and h2 point at their ### blocks', as
   c.writeFile('a b/c.txt', 'new\n');
   c.writeFile('z.txt', '1\nTWO\n3\n');
   const units = changeSet.assignIds(await changeSet.snapshot({
-    mode: 'split', toplevel: c.repoDir, env: c.env, now: () => 0,
+    mode: 'split', storedLists: { candidates: [], stagedNew: [] },
+    indexPath: path.join(c.root, 'git-index'), unborn: false,
+    toplevel: c.repoDir, env: c.env, now: () => 0,
   }));
 
   const { stdoutObj, hunksTxt } = hunkIndex.renderHunks(RUN_STATE, units);

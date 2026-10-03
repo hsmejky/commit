@@ -36,9 +36,22 @@ function seed(c, files) {
   c.git(['commit', '-q', '-m', 'seed']);
 }
 
-function snapshot(c) {
-  return changeSet.snapshot({ mode: 'split', toplevel: c.repoDir, env: c.env, now: NOW });
+// The temporary index lives under the case's own root, never inside the repo.
+function snapshot(c, storedLists = { candidates: [], stagedNew: [] }, unborn = false) {
+  return changeSet.snapshot({
+    mode: 'split', storedLists, indexPath: path.join(c.root, 'git-index'), unborn,
+    toplevel: c.repoDir, env: c.env, now: NOW,
+  });
 }
+
+function inventory(c) {
+  return changeSet.inventory({ toplevel: c.repoDir, env: c.env, now: NOW });
+}
+
+const EMPTY_INVENTORY = Object.freeze({
+  clean: true, tracked: [], preStaged: [], candidates: [], hidden: { count: 0, sample: [] },
+  stagedNew: [], stagedExcluded: [],
+});
 
 // `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file.
 function numstat(c) {
@@ -57,26 +70,67 @@ test('inventory: a clean tree is clean, a modified tracked file is listed', asyn
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n' });
 
-  const options = { toplevel: c.repoDir, env: c.env, now: NOW };
-  assert.deepEqual(await changeSet.inventory(options), { clean: true, tracked: [] });
+  assert.deepEqual(await inventory(c), EMPTY_INVENTORY);
 
   c.writeFile('a.txt', 'b\n');
-  assert.deepEqual(await changeSet.inventory(options), { clean: false, tracked: ['a.txt'] });
+  assert.deepEqual(await inventory(c), { ...EMPTY_INVENTORY, clean: false, tracked: ['a.txt'] });
 });
 
-test('inventory: untracked, staged and deleted paths are not built yet', async (t) => {
+// CHG-05: candidates after `hideFilter` with size and NUL-sniffed `binary`, the hidden count
+// with a byte-sorted sample of 5, staged-new paths with `ignored` from `check-ignore
+// --no-index`, a hidden staged-new path in `stagedExcluded`, every staged path in `preStaged`.
+test('inventory: untracked candidates, hidden files, staged-new and pre-staged paths', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n', 'b.txt': 'b\n' });
-  const options = { toplevel: c.repoDir, env: c.env, now: NOW };
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), 'ign.txt\n');
 
   c.writeFile('new.txt', 'n\n');
-  await assert.rejects(changeSet.inventory(options), /not built yet/);
+  fs.writeFileSync(path.join(c.repoDir, 'bin.dat'), Buffer.from([0x61, 0x00, 0x62]));
+  for (const name of ['.f', '.e', '.d', '.c', '.b', '.a']) c.writeFile(name, 'h\n');
+  c.writeFile('ign.txt', 'i\n');
+  c.writeFile('staged.txt', 's\n');
+  c.writeFile('.env.local', 'SECRET=1\n');
+  c.git(['add', '-f', 'ign.txt', 'staged.txt', '.env.local']);
+  c.writeFile('b.txt', 'B\n');
+  c.git(['add', 'b.txt']);
+
+  assert.deepEqual(await inventory(c), {
+    clean: false,
+    tracked: ['b.txt'],
+    preStaged: ['.env.local', 'b.txt', 'ign.txt', 'staged.txt'],
+    candidates: [{ path: 'bin.dat', size: 3, binary: true }, { path: 'new.txt', size: 2, binary: false }],
+    hidden: { count: 6, sample: ['.a', '.b', '.c', '.d', '.e'] },
+    stagedNew: [{ path: 'ign.txt', ignored: true }, { path: 'staged.txt', ignored: false }],
+    stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],
+  });
+});
+
+test('inventory: a tree with hidden files only, untracked or staged, is clean', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('.env', 'X=1\n');
+  c.writeFile('.env.local', 'Y=1\n');
+  c.git(['add', '.env.local']);
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    preStaged: ['.env.local'],
+    hidden: { count: 1, sample: ['.env'] },
+    stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],
+  });
+});
+
+test('inventory: a staged-new file on an unborn HEAD', async (t) => {
+  const c = createCase(t);
+  c.writeFile('new.txt', 'n\n');
   c.git(['add', 'new.txt']);
-  await assert.rejects(changeSet.inventory(options), /not built yet/);
-  c.git(['rm', '-q', '--cached', 'new.txt']);
-  fs.rmSync(path.join(c.repoDir, 'new.txt'));
-  c.git(['rm', '-q', 'b.txt']);
-  await assert.rejects(changeSet.inventory(options), /not built yet/);
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    clean: false,
+    preStaged: ['new.txt'],
+    stagedNew: [{ path: 'new.txt', ignored: false }],
+  });
 });
 
 test('snapshot: two modified files become two sorted whole-file text units', async (t) => {
@@ -250,12 +304,160 @@ test('snapshot: a binary file and a mode change are not built yet', async (t) =>
   c.writeFile('bin.dat', Buffer.from([0, 1, 3, 10]));
   await assert.rejects(snapshot(c), /not built yet/);
 
+  // `core.fileMode` is false on Windows, where git takes the worktree mode from the index:
+  // the temporary index is reset to HEAD's mode, so a staged `--chmod` alone shows no change
+  // there (CHG-08 decides that case).
+  if (process.platform === 'win32') return;
   const c2 = createCase(t);
   seed(c2, { 'run.sh': 'echo\n' });
-  // `core.fileMode` is false on Windows, where git takes the worktree mode from the index.
-  c2.git(['update-index', '--chmod=+x', 'run.sh']);
-  if (process.platform !== 'win32') fs.chmodSync(path.join(c2.repoDir, 'run.sh'), 0o755);
+  fs.chmodSync(path.join(c2.repoDir, 'run.sh'), 0o755);
   await assert.rejects(snapshot(c2), /not built yet/);
+});
+
+// CHG-05: the temporary index. `snapshot` copies the real index, resets the copy to HEAD,
+// `git add -N`s the stored lists into it and diffs the worktree against it.
+test('snapshot: a stored untracked candidate is an A unit of + lines', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('new.txt', 'one\ntwo\n');
+
+  const units = await snapshot(c, { candidates: ['new.txt'], stagedNew: [] });
+
+  assert.equal(units.length, 1);
+  const [unit] = units;
+  assert.deepEqual(
+    { path: unit.path, oldPath: unit.oldPath, status: unit.status, kind: unit.kind },
+    { path: 'new.txt', oldPath: null, status: 'A', kind: 'text' },
+  );
+  assert.deepEqual({ added: unit.added, deleted: unit.deleted, range: unit.range }, { added: 2, deleted: 0, range: '-0,0 +1,2' });
+  assert.equal(unit.body.toString('utf8'), '@@ -0,0 +1,2 @@\n+one\n+two\n');
+  const expected = crypto.createHash('sha256').update('new.txt\0+one\n+two\n').digest('hex');
+  assert.equal(unit.hash, expected);
+});
+
+test('snapshot: a plain mv and a git mv each give one R unit with oldPath', async (t) => {
+  for (const viaGit of [false, true]) {
+    const c = createCase(t);
+    seed(c, { 'old.txt': 'a\nb\nc\nd\n' });
+    if (viaGit) {
+      c.git(['mv', 'old.txt', 'moved.txt']);
+    } else {
+      fs.renameSync(path.join(c.repoDir, 'old.txt'), path.join(c.repoDir, 'moved.txt'));
+    }
+    const inv = await inventory(c);
+    const units = await snapshot(c, { candidates: inv.candidates.map((x) => x.path), stagedNew: inv.stagedNew });
+
+    assert.equal(units.length, 1, `git mv: ${viaGit}`);
+    const [unit] = units;
+    assert.deepEqual(
+      { path: unit.path, oldPath: unit.oldPath, status: unit.status, kind: unit.kind },
+      { path: 'moved.txt', oldPath: 'old.txt', status: 'R', kind: 'text' },
+    );
+    assert.deepEqual(
+      { added: unit.added, deleted: unit.deleted, range: unit.range, body: unit.body.length },
+      { added: 0, deleted: 0, range: '-0,0 +0,0', body: 0 },
+    );
+    assert.equal(unit.hash, crypto.createHash('sha256').update('old.txt\0moved.txt\0').digest('hex'));
+  }
+});
+
+test('snapshot: a renamed and edited file hashes both paths and its -/+ lines', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'old.txt': 'a\nb\nc\nd\ne\n' });
+  fs.rmSync(path.join(c.repoDir, 'old.txt'));
+  c.writeFile('moved.txt', 'a\nb\nC\nd\ne\n');
+
+  const [unit] = await snapshot(c, { candidates: ['moved.txt'], stagedNew: [] });
+
+  assert.deepEqual([unit.status, unit.oldPath, unit.path, unit.added, unit.deleted], ['R', 'old.txt', 'moved.txt', 1, 1]);
+  assert.equal(unit.hash, crypto.createHash('sha256').update('old.txt\0moved.txt\0-c\n+C\n').digest('hex'));
+});
+
+test('snapshot: staged-new paths, also ignored ones and on an unborn HEAD, are A units', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), 'ign.txt\n');
+  c.writeFile('ign.txt', 'i\n');
+  c.writeFile('staged.txt', 's\n');
+  c.git(['add', '-f', 'ign.txt', 'staged.txt']);
+  const inv = await inventory(c);
+  const units = await snapshot(c, { candidates: [], stagedNew: inv.stagedNew });
+  assert.deepEqual(units.map((u) => [u.path, u.status]), [['ign.txt', 'A'], ['staged.txt', 'A']]);
+
+  const unborn = createCase(t);
+  unborn.writeFile('new.txt', 'n\n');
+  unborn.git(['add', 'new.txt']);
+  const unbornUnits = await snapshot(unborn, { candidates: [], stagedNew: [{ path: 'new.txt', ignored: false }] }, true);
+  assert.deepEqual(unbornUnits.map((u) => [u.path, u.status, u.added]), [['new.txt', 'A', 1]]);
+});
+
+test('snapshot: on an unborn HEAD, git add then git mv is one A unit for the new path', async (t) => {
+  const c = createCase(t);
+  c.writeFile('newfile', 'n\n');
+  c.git(['add', 'newfile']);
+  c.git(['mv', 'newfile', 'renamed']);
+  const inv = await inventory(c);
+
+  const units = await snapshot(c, { candidates: inv.candidates.map((x) => x.path), stagedNew: inv.stagedNew }, true);
+
+  assert.deepEqual(units.map((u) => [u.path, u.oldPath, u.status]), [['renamed', null, 'A']]);
+});
+
+test('snapshot: an empty new file is an A unit with no hunk', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('empty.txt', '');
+
+  const [unit] = await snapshot(c, { candidates: ['empty.txt'], stagedNew: [] });
+
+  assert.deepEqual(
+    [unit.path, unit.status, unit.added, unit.deleted, unit.range, unit.body.length],
+    ['empty.txt', 'A', 0, 0, '-0,0 +0,0', 0],
+  );
+});
+
+test('snapshot: a stored path gone from the worktree is skipped; the real index is untouched', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('a.txt', 'b\n');
+  c.writeFile('staged.txt', 's\n');
+  c.git(['add', 'staged.txt']);
+  c.writeFile('new.txt', 'n\n');
+  const realIndex = path.join(c.repoDir, '.git', 'index');
+  const before = fs.readFileSync(realIndex);
+
+  const units = await snapshot(c, {
+    candidates: ['gone.txt', 'new.txt'],
+    stagedNew: [{ path: 'staged.txt', ignored: false }],
+  });
+
+  assert.deepEqual(units.map((u) => [u.path, u.status]), [['a.txt', 'M'], ['new.txt', 'A'], ['staged.txt', 'A']]);
+  assert.ok(fs.readFileSync(realIndex).equals(before));
+});
+
+test('snapshot: a failing git add -N is git-failed', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), 'ign.txt\n');
+  c.writeFile('ign.txt', 'i\n');
+
+  // Stored as not ignored, so it goes to the `git add -N` call without `-f`, which refuses it.
+  await assert.rejects(
+    snapshot(c, { candidates: ['ign.txt'], stagedNew: [] }),
+    (err) => err.domainCode === 'git-failed' && /^git add failed/.test(err.message),
+  );
+});
+
+test('snapshot: an untracked binary file and a deletion are not built yet', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  fs.writeFileSync(path.join(c.repoDir, 'bin.dat'), Buffer.from([0x61, 0x00, 0x62]));
+  await assert.rejects(snapshot(c, { candidates: ['bin.dat'], stagedNew: [] }), /binary\) is not built yet \(CHG-08\)/);
+
+  const c2 = createCase(t);
+  seed(c2, { 'a.txt': 'a\n', 'b.txt': 'b\n' });
+  fs.rmSync(path.join(c2.repoDir, 'b.txt'));
+  await assert.rejects(snapshot(c2), /a D change \(b\.txt\) is not built yet/);
 });
 
 test('assignIds mints h1..hN in unit order and leaves the input alone', async (t) => {

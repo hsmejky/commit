@@ -29,7 +29,10 @@
 // `oldMessage`), stored in `state.json`, `plan.json` and the hunk index. CFG-08 widens step 1
 // again, with M5 `resolveAttribution` (the tracer reads no settings and never refuses): the
 // resolved `{ trailer, source }` is stored as `ctx.attribution` for step 7 to write into
-// `state.json` and `plan.json`, ahead of `recentSubjects` in both (C:run-folder). Later
+// `state.json` and `plan.json`, ahead of `recentSubjects` in both (C:run-folder). CHG-05
+// widens step 4's inventory (candidates, hidden, staged-new, pre-staged) and points step 5's
+// snapshot at the temporary index in the run folder's `git-index` (a failed `git add -N` is
+// `git-failed`); step 7 stores the lists in `state.json` and `plan.json`. Later
 // slices insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in
 // PLAN_STEPS, and widen these.
 //
@@ -184,7 +187,8 @@ async function createRunFolder(ctx) {
 /**
  * Step 4: M10 `indexFingerprint` (CHG-04), read first, before the inventory's own git calls,
  * so step 7's re-read covers every index change since the inventory began (C:plan step 4).
- * Then M10 `inventory`. CHG-03: tracked modifications only (other kinds throw). Also the
+ * Then M10 `inventory`: tracked changes, candidates, hidden, staged-new and pre-staged paths
+ * (CHG-05). Also the
  * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
  * full `modeChoice` (M15 `resolveMode`) is a later slice's.
  */
@@ -199,8 +203,10 @@ async function inventory(ctx) {
  * Step 5 (snapshot part, CHG-03): M10 `snapshot` in `split` and `assignIds`. Puts on `ctx`
  * the units (bodies included, for M13), the unit table rows CHG-03b stores in `state.json`
  * (`{ id, hash, path, oldPath, status, kind }`), the `id → hash` map and `plan.json`'s
- * `tracked` list (`bucket` from M9 `bucketOf`). A clean tree takes no snapshot. The scan
- * part is CHG-16's.
+ * `tracked` list (`bucket` from M9 `bucketOf`; an untracked candidate's `A` unit is left to
+ * `untracked.candidates`). CHG-05: the snapshot diffs against the temporary index in the run
+ * folder's `git-index`, built from the stored lists; a failed `git add -N` is the
+ * `git-failed` refusal. A clean tree takes no snapshot. The scan part is CHG-16's.
  */
 async function snapshotUnits(ctx) {
   if (ctx.mode === 'reword') {
@@ -213,15 +219,35 @@ async function snapshotUnits(ctx) {
     return undefined;
   }
   if (ctx.inventory.clean) return undefined;
-  const units = assignIds(await snapshot({
-    mode: 'split', toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now,
-  }));
+  let units;
+  try {
+    units = assignIds(await snapshot({
+      mode: 'split',
+      storedLists: {
+        candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
+        stagedNew: ctx.inventory.stagedNew,
+      },
+      indexPath: `${ctx.provisional.runDir}/git-index`,
+      unborn: ctx.state.unborn,
+      toplevel: ctx.toplevel,
+      env: ctx.injected.env,
+      now: ctx.injected.now,
+    }));
+  } catch (err) {
+    // C:plan: a non-zero `git add -N` into the temporary index is exit 4 `git`.
+    if (err.domainCode === 'git-failed') return { refusal: { code: 'git-failed', message: err.message } };
+    throw err;
+  }
   ctx.units = units;
   ctx.unitTable = units.map(({ id, hash, path, oldPath, status, kind }) => ({ id, hash, path, oldPath, status, kind }));
   ctx.idMap = Object.fromEntries(units.map((unit) => [unit.id, unit.hash]));
-  ctx.tracked = units.map(({ path, oldPath, status, added, deleted }) => ({
-    path, oldPath, status, bucket: bucketOf(path), added, deleted,
-  }));
+  // An untracked candidate's `A` unit is listed under `untracked.candidates`, not `tracked`.
+  const candidatePaths = new Set(ctx.inventory.candidates.map((candidate) => candidate.path));
+  ctx.tracked = units
+    .filter((unit) => !(unit.status === 'A' && candidatePaths.has(unit.path)))
+    .map(({ path, oldPath, status, added, deleted }) => ({
+      path, oldPath, status, bucket: bucketOf(path), added, deleted,
+    }));
   return undefined;
 }
 
@@ -276,6 +302,11 @@ async function storeAndLock(ctx) {
     indexFingerprint: ctx.indexFingerprint,
     units: ctx.unitTable,
     idMap: ctx.idMap,
+    // CHG-05 (C:run-folder): the lists the temporary index is rebuilt from.
+    preStaged: ctx.inventory.preStaged,
+    candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
+    stagedNew: ctx.inventory.stagedNew,
+    stagedExcluded: ctx.inventory.stagedExcluded,
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
@@ -311,7 +342,15 @@ async function storeAndLock(ctx) {
     mode: ctx.mode,
     state: ctx.state,
     clean: ctx.inventory.clean,
+    preStaged: ctx.inventory.preStaged,
     tracked: ctx.tracked,
+    // CHG-05: `collapsed` stays empty until CHG-13's caps.
+    untracked: {
+      candidates: ctx.inventory.candidates.map(({ path, binary }) => ({ path, bucket: bucketOf(path), binary })),
+      collapsed: [],
+      hidden: ctx.inventory.hidden,
+    },
+    stagedExcluded: ctx.inventory.stagedExcluded,
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
   }));

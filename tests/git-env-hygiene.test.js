@@ -140,7 +140,10 @@ test('plan removes decoy GIT_*_PATHSPECS and still refuses a tracked .commit-pla
   }
 });
 
-test('every git call plan makes is read-only: only the keep-set and the pins reach it', async (t) => {
+// CHG-05: the temporary index's own writes (`reset -q`, `add -N`) are the only calls without
+// `GIT_OPTIONAL_LOCKS=0`, and they and the diff carry `GIT_INDEX_FILE` at the run folder's
+// `git-index`: the real index is never written.
+test('every git call plan makes is read-only or writes only the temporary index; only the keep-set and the pins reach it', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'old\n' });
   c.writeFile('a.txt', 'new\n');
@@ -173,6 +176,10 @@ test('every git call plan makes is read-only: only the keep-set and the pins rea
       GIT_CONFIG_VALUE_2: 'false',
       GIT_CONFIG_VALUE_3: 'UTF-8',
     } : {};
+    const indexFile = spawn.gitEnv.GIT_INDEX_FILE;
+    const temporary = indexFile === undefined ? {} : { GIT_INDEX_FILE: indexFile };
+    if (indexFile !== undefined) assert.match(indexFile, /\/\.commit-plan\/[^/]+\/git-index$/);
+    const writesTemporary = indexFile !== undefined && (spawn.args.includes('reset') || spawn.args.includes('add'));
     assert.deepEqual(spawn.gitEnv, {
       GIT_ASKPASS: 'askpass-decoy',
       GIT_CONFIG_COUNT: '2',
@@ -183,9 +190,10 @@ test('every git call plan makes is read-only: only the keep-set and the pins rea
       GIT_CONFIG_VALUE_0: 'false',
       GIT_CONFIG_VALUE_1: 'false',
       GIT_LITERAL_PATHSPECS: '1',
-      GIT_OPTIONAL_LOCKS: '0',
+      ...(writesTemporary ? {} : { GIT_OPTIONAL_LOCKS: '0' }),
       GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
       ...history,
+      ...temporary,
     }, JSON.stringify(spawn.args));
   }
 });
