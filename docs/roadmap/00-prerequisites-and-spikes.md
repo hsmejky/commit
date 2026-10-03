@@ -317,14 +317,14 @@ and the CI permissions needed to write a file there for the managed-layer fixtur
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q5, M5, glossary (managed directory), story 116.
 
 Gates: CFG-11 (managed settings layer).
 
-- [ ] The managed-settings directory's fixed path is found for macOS, Windows and Linux.
-- [ ] The CI permissions (or workaround) needed to write `managed-settings.json` there on
+- [x] The managed-settings directory's fixed path is found for macOS, Windows and Linux.
+- [x] The CI permissions (or workaround) needed to write `managed-settings.json` there on
       hosted runners are found; if none exist, the CFG-11 fixture design is revised with the
       user.
-- [ ] Both are recorded as a Q5 amendment and in the glossary's "managed directory" entry.
+- [x] Both are recorded as a Q5 amendment and in the glossary's "managed directory" entry.
