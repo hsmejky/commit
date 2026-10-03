@@ -81,6 +81,115 @@ export function hideFilter(paths) {
   return { candidates, hidden };
 }
 
+// C:untracked-files count cap (`split`): per topmost new directory, at the repo root, and in
+// total.
+const DIR_CAP = 50;
+const ROOT_CAP = 50;
+const TOTAL_CAP = 200;
+
+/**
+ * The count cap of C:untracked-files, `split` only, over the untracked candidates and the
+ * staged-new paths together. Each path belongs to its topmost new ancestor directory (one
+ * not in `trackedDirs`), else it is loose in its parent directory (`"."` for the root).
+ * 1. A new directory holding more than 50 paths is collapsed.
+ * 2. More than 50 loose files directly at the root are collapsed as `"."`.
+ * 3. While more than 200 paths remain, the largest remaining new directory is collapsed;
+ *    once none is left, the largest remaining loose parent directory (its direct files).
+ * Ties break by path in UTF-8 byte order.
+ *
+ * @param {ReadonlyArray<{ path: string, size: number, binary: boolean }>} candidates
+ * @param {ReadonlyArray<{ path: string, ignored: boolean }>} stagedNew
+ * @param {readonly string[]} trackedDirs every directory at HEAD (`git ls-tree -r -d
+ *   --name-only HEAD`), `[]` on an unborn HEAD.
+ * @returns {{ candidates: Array<{ path: string, size: number, binary: boolean }>,
+ *   stagedNew: Array<{ path: string, ignored: boolean }>,
+ *   collapsed: Array<{ dir: string, count: number, bytes: number }>,
+ *   stagedExcluded: Array<{ dir: string, count: number, reason: 'collapsed' }> }}
+ *   `candidates` and `stagedNew`: the survivors, input order kept. `collapsed` (untracked
+ *   candidates, `bytes` summed from their sizes) and `stagedExcluded` (staged-new paths):
+ *   one entry per collapsed directory holding that kind, in byte order of `dir`.
+ */
+export function applyCaps(candidates, stagedNew, trackedDirs) {
+  const tracked = new Set(trackedDirs);
+  // key: `n:<dir>` for a topmost new directory, `l:<dir>` for a loose parent directory.
+  const groups = new Map();
+  const keyOf = new Map();
+  for (const path of [...candidates.map((c) => c.path), ...stagedNew.map((s) => s.path)]) {
+    const key = groupKey(path, tracked);
+    keyOf.set(path, key);
+    groups.set(key, (groups.get(key) ?? 0) + 1);
+  }
+
+  const collapsedKeys = new Set();
+  let total = candidates.length + stagedNew.length;
+  const collapse = (key) => {
+    collapsedKeys.add(key);
+    total -= groups.get(key);
+  };
+  for (const [key, count] of groups) {
+    if (key.startsWith('n:') && count > DIR_CAP) collapse(key);
+  }
+  if ((groups.get('l:.') ?? 0) > ROOT_CAP) collapse('l:.');
+  for (const kind of ['n:', 'l:']) {
+    const remaining = [...groups.keys()]
+      .filter((key) => key.startsWith(kind) && !collapsedKeys.has(key))
+      .sort((a, b) => groups.get(b) - groups.get(a) || byteCompare(a, b));
+    for (const key of remaining) {
+      if (total <= TOTAL_CAP) break;
+      collapse(key);
+    }
+  }
+
+  const survives = (path) => !collapsedKeys.has(keyOf.get(path));
+  const candidateEntries = new Map();
+  for (const { path, size } of candidates) {
+    if (survives(path)) continue;
+    const entry = candidateEntries.get(keyOf.get(path)) ?? { count: 0, bytes: 0 };
+    entry.count += 1;
+    entry.bytes += size;
+    candidateEntries.set(keyOf.get(path), entry);
+  }
+  const stagedCounts = new Map();
+  for (const { path } of stagedNew) {
+    if (!survives(path)) stagedCounts.set(keyOf.get(path), (stagedCounts.get(keyOf.get(path)) ?? 0) + 1);
+  }
+  const byDir = (a, b) => byteCompare(a.dir, b.dir);
+  return {
+    candidates: candidates.filter((c) => survives(c.path)),
+    stagedNew: stagedNew.filter((s) => survives(s.path)),
+    collapsed: [...candidateEntries]
+      .map(([key, { count, bytes }]) => ({ dir: key.slice(2), count, bytes }))
+      .sort(byDir),
+    stagedExcluded: [...stagedCounts]
+      .map(([key, count]) => ({ dir: key.slice(2), count, reason: 'collapsed' }))
+      .sort(byDir),
+  };
+}
+
+// The cap group of `path`: its topmost ancestor directory not at HEAD (`n:`), else its parent
+// directory (`l:`, `"."` at the root). An ancestor of a tracked directory is tracked too, so
+// the first untracked prefix is the topmost new one.
+function groupKey(path, tracked) {
+  const segments = path.split('/');
+  for (let i = 1; i < segments.length; i += 1) {
+    const dir = segments.slice(0, i).join('/');
+    if (!tracked.has(dir)) return `n:${dir}`;
+  }
+  return segments.length === 1 ? 'l:.' : `l:${segments.slice(0, -1).join('/')}`;
+}
+
+// UTF-8 byte order is code point order; `<` on strings compares UTF-16 code units instead,
+// which differs for characters above U+FFFF.
+function byteCompare(a, b) {
+  const left = [...a];
+  const right = [...b];
+  for (let i = 0; i < Math.min(left.length, right.length); i += 1) {
+    const diff = left[i].codePointAt(0) - right[i].codePointAt(0);
+    if (diff !== 0) return diff;
+  }
+  return left.length - right.length;
+}
+
 // C:summary-only-files rule 1: lockfile names, matched on the last path segment (any
 // directory).
 const LOCKFILES = Object.freeze([

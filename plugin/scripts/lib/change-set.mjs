@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { copyFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hideFilter } from './path-classifier.mjs';
+import { applyCaps, hideFilter } from './path-classifier.mjs';
 import { gitPath, run } from './process-adapter.mjs';
 
 // Q11's pinned options, every one of them, for every diff the script runs. Only M10 holds
@@ -87,24 +87,33 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   refuses M2's `GIT_LITERAL_PATHSPECS=1`).
  * - tracked: the `git status --untracked-files=no --no-renames` entries that are not
  *   staged-new (a rename's old path is its own deletion).
- * Unborn HEAD needs no special case: `diff --cached` then lists every index entry as `A`,
- * as C:untracked-files asks.
+ * - caps (CHG-13): in `split` only, M9 `applyCaps` over the candidates and staged-new
+ *   paths, with the tracked directories of `git ls-tree -r -d --name-only -z HEAD` (none on
+ *   an unborn HEAD); a collapsed directory's paths leave `candidates` and `stagedNew` (so
+ *   they are never added to the temporary index or scanned) for `collapsed` and
+ *   `stagedExcluded`. Other modes keep `collapsed` empty (C:untracked-files).
+ * Unborn HEAD needs no other special case: `diff --cached` then lists every index entry as
+ * `A`, as C:untracked-files asks.
  *
- * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @param {{ toplevel: string, env: object, now?: () => number, mode?: string,
+ *   unborn?: boolean }} options `mode`: the run's mode; caps apply only in `'split'`.
  * @returns {Promise<{ clean: boolean, tracked: string[], preStaged: string[],
  *   candidates: Array<{ path: string, size: number, binary: boolean }>,
+ *   collapsed: Array<{ dir: string, count: number, bytes: number }>,
  *   hidden: { count: number, sample: string[] },
  *   stagedNew: Array<{ path: string, ignored: boolean }>,
- *   stagedExcluded: Array<{ path: string, reason: 'hidden' }> }>} `hidden.sample`: the first
- *   5 hidden untracked paths in UTF-8 byte order. `clean`: no tracked change, candidate or
- *   staged-new path (hidden-only and `stagedExcluded`-only trees are clean, C:plan).
+ *   stagedExcluded: Array<{ path: string, reason: 'hidden' }
+ *     | { dir: string, count: number, reason: 'collapsed' }> }>} `hidden.sample`: the first
+ *   5 hidden untracked paths in UTF-8 byte order. `stagedExcluded`: the hidden entries, then
+ *   the collapsed ones. `clean`: no tracked change, candidate or staged-new path left
+ *   (hidden-only, collapsed-only and `stagedExcluded`-only trees are clean, C:plan).
  * @throws {Error} when a git call fails.
  */
-export async function inventory({ toplevel, env, now }) {
+export async function inventory({ toplevel, env, now, mode, unborn = false }) {
   const opts = { cwd: toplevel, env, now, readOnly: true };
   const untracked = nulList(await gitOk(['ls-files', '--others', '--exclude-standard', '-z'], opts));
   const filtered = hideFilter(untracked);
-  const candidates = candidateFacts(toplevel, filtered.candidates);
+  let candidates = candidateFacts(toplevel, filtered.candidates);
   const hidden = {
     count: filtered.hidden.length,
     sample: [...filtered.hidden].sort(byteOrder).slice(0, 5),
@@ -130,7 +139,16 @@ export async function inventory({ toplevel, env, now }) {
   const ignored = new Set(split.candidates.length === 0 ? [] : nulList(
     await gitOk(['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], opts),
   ));
-  const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
+  let stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
+  let collapsed = [];
+  if (mode === 'split' && candidates.length + stagedNew.length > 0) {
+    const trackedDirs = unborn ? [] : nulList(await gitOk(['ls-tree', '-r', '-d', '--name-only', '-z', 'HEAD'], opts));
+    const capped = applyCaps(candidates, stagedNew, trackedDirs);
+    candidates = capped.candidates;
+    stagedNew = capped.stagedNew;
+    collapsed = capped.collapsed;
+    stagedExcluded.push(...capped.stagedExcluded);
+  }
 
   const addedSet = new Set(added);
   const tracked = status
@@ -138,7 +156,7 @@ export async function inventory({ toplevel, env, now }) {
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
-    tracked, preStaged, candidates, hidden, stagedNew, stagedExcluded,
+    tracked, preStaged, candidates, collapsed, hidden, stagedNew, stagedExcluded,
   };
 }
 

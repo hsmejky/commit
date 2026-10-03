@@ -49,7 +49,7 @@ function inventory(c) {
 }
 
 const EMPTY_INVENTORY = Object.freeze({
-  clean: true, tracked: [], preStaged: [], candidates: [], hidden: { count: 0, sample: [] },
+  clean: true, tracked: [], preStaged: [], candidates: [], collapsed: [], hidden: { count: 0, sample: [] },
   stagedNew: [], stagedExcluded: [],
 });
 
@@ -100,6 +100,7 @@ test('inventory: untracked candidates, hidden files, staged-new and pre-staged p
     tracked: ['b.txt'],
     preStaged: ['.env.local', 'b.txt', 'ign.txt', 'staged.txt'],
     candidates: [{ path: 'bin.dat', size: 3, binary: true }, { path: 'new.txt', size: 2, binary: false }],
+    collapsed: [],
     hidden: { count: 6, sample: ['.a', '.b', '.c', '.d', '.e'] },
     stagedNew: [{ path: 'ign.txt', ignored: true }, { path: 'staged.txt', ignored: false }],
     stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],

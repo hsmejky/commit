@@ -207,8 +207,11 @@ async function createRunFolder(ctx) {
  */
 async function inventory(ctx) {
   ctx.indexFingerprint = await indexFingerprint({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
-  ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
+  // CHG-13: the mode decides whether the count caps apply.
+  ctx.inventory = await takeInventory({
+    toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now, mode: ctx.mode, unborn: ctx.state.unborn,
+  });
   return undefined;
 }
 
@@ -371,12 +374,11 @@ async function storeAndLock(ctx) {
     clean: ctx.inventory.clean,
     preStaged: ctx.inventory.preStaged,
     tracked: ctx.tracked,
-    // CHG-05: `collapsed` stays empty until CHG-13's caps.
     untracked: {
       candidates: ctx.inventory.candidates
         .filter(({ path }) => ctx.renameTargets?.has(path) !== true)
         .map(({ path, binary }) => ({ path, bucket: bucketOf(path), binary })),
-      collapsed: [],
+      collapsed: ctx.inventory.collapsed,
       hidden: ctx.inventory.hidden,
     },
     stagedExcluded: stagedExcludedOf(ctx),
