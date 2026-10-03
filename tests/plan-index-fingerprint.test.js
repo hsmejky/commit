@@ -11,7 +11,7 @@
 // file that, the first time it runs once the provisional run folder exists, stages another
 // path. Its file's edit changes its size, so `git status` (step 1's HEAD state, step 4's
 // inventory) decides "modified" from the stat data alone and never runs the filter; the
-// first run is the step-5 snapshot diff, which reads the working-tree bytes (KD-R25).
+// first run is the step-5 snapshot diff, which reads the working-tree bytes.
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -21,6 +21,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
+
+// The `index-changed` refusal text, recorded in C:cli-and-exit-codes next to `head-moved`
+// (Q18); workflows.mjs emits it verbatim.
+const INDEX_CHANGED_TEXT = 'the index changed since plan (staged elsewhere?), run /commit again';
 
 const SHIM_SKIP = process.platform === 'win32'
   && 'PATH script shims are not found by shell-less spawn on Windows (KD-R21)';
@@ -89,6 +93,7 @@ test('plan whose index is changed between the inventory and the lock, HEAD uncha
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.ok, false);
   assert.equal(result.json.error.kind, 'diff-changed');
+  assert.equal(result.json.error.message, INDEX_CHANGED_TEXT);
   assert.ok(fs.existsSync(filter.marker), 'the filter never ran with a run folder in place');
   assert.equal(c.git(['diff', '--cached', '--name-only']), 'b.txt\n', 'the fixture staged b.txt');
   assert.equal(c.git(['rev-parse', 'HEAD']), head, 'HEAD is unchanged');
@@ -180,6 +185,7 @@ test('plan whose index is staged after the lock is taken, in split, exits 6 diff
 
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.error.kind, 'diff-changed');
+  assert.equal(result.json.error.message, INDEX_CHANGED_TEXT);
   assert.ok(fs.existsSync(shim.marker));
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
   assert.deepEqual(folderNames(c), []);
