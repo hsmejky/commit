@@ -176,20 +176,20 @@ the lock and the folder.
 
 **Blocked by:** RUN-04, RUN-05, CHG-03b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:run-folder (`lock` row), C:plan (step 7), C:cli-and-exit-codes,
 M12 `acquire`, M18 `plan` step 7, story 187.
 
-- [ ] Seam 1: a PATH git shim makes a manual commit the first time step 7's HEAD re-read
+- [x] Seam 1: a PATH git shim makes a manual commit the first time step 7's HEAD re-read
       call runs → `acquire` succeeds, the re-read finds HEAD moved by that commit, the
       lock is released, the folder is deleted, and `plan` exits 6 `head-moved`.
-- [ ] Seam 1: a PATH git shim creates the lock file (as another process's `acquire` would)
+- [x] Seam 1: a PATH git shim creates the lock file (as another process's `acquire` would)
       the first git call once the provisional folder exists and no lock does, before step 7
       hard-links its own → `EEXIST` → `held`, and the placed lock and folder are unchanged;
       the race loser (this call) deletes its own provisional folder and exits 6 `lock`.
-- [ ] Seam 1: `plan --reword` on a clean tree → exit 0 and the lock is taken.
-- [ ] Seam 1: `release --plan <that planId>` then removes the lock and the folder.
+- [x] Seam 1: `plan --reword` on a clean tree → exit 0 and the lock is taken.
+- [x] Seam 1: `release --plan <that planId>` then removes the lock and the folder.
 
 
 ## RUN-07: a live lock refuses `plan` before inventory (`peek`)
