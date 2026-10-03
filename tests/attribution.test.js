@@ -3,9 +3,10 @@
 // CFG-09 (docs/roadmap/04-config-and-attribution.md): M5 reads the user settings layer
 // (`<claudeHome>/settings.json`) for `attribution.commit` (trailer-shaped lines kept, the
 // rest dropped with a warning; empty string = no trailer), then the deprecated
-// `includeCoAuthoredBy: false`; otherwise the CFG-08 default. Unit-level coverage of the
-// resolver itself; Seam 1 coverage of `plan`'s `attribution`/`warnings` fields lives in
-// plan-attribution.test.js.
+// `includeCoAuthoredBy: false`; otherwise the CFG-08 default. CFG-10 adds the project-local
+// and project layers under `projectDir`, ahead of the user layer, and drops `toplevel`.
+// Unit-level coverage of the resolver itself; Seam 1 coverage of `plan`'s
+// `attribution`/`warnings` fields lives in plan-attribution.test.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -322,12 +323,11 @@ test('attribution.commit wins over includeCoAuthoredBy: false when both are set'
   });
 });
 
-test('resolveAttribution ignores env, toplevel and managedDir (CFG-10/CFG-11 fields)', (t) => {
+test('resolveAttribution ignores env and managedDir (CFG-11 fields) when no layer sets a key', (t) => {
   const claudeHome = tempClaudeHome(t);
   const result = attribution.resolveAttribution({
     env: { CLAUDE_MODEL: 'opus', CLAUDE_CODE_MODEL: 'haiku' },
     claudeHome,
-    toplevel: '/some/repo',
     managedDir: '/some/managed/dir',
   });
   assert.deepEqual(result, {
@@ -337,11 +337,170 @@ test('resolveAttribution ignores env, toplevel and managedDir (CFG-10/CFG-11 fie
   });
 });
 
+test('resolveAttribution has no project layers, and does not throw, when projectDir is absent', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  writeSettings(claudeHome, { includeCoAuthoredBy: false });
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome }), {
+    trailer: null,
+    source: 'user',
+    warnings: [],
+  });
+});
+
 test('resolveAttribution returns a fresh warnings array each call, not a shared mutable reference', (t) => {
   const claudeHome = tempClaudeHome(t);
   const first = attribution.resolveAttribution({ claudeHome });
   const second = attribution.resolveAttribution({ claudeHome });
   assert.notEqual(first.warnings, second.warnings);
+});
+
+// CFG-10 (docs/roadmap/04-config-and-attribution.md): the project-local
+// (.claude/settings.local.json) and project (.claude/settings.json) layers under
+// `projectDir`, ahead of the user layer. `projectDir` is passed directly here, exactly as
+// the entry point would inject it (CLAUDE_PROJECT_DIR resolution and the no-walk-up cwd
+// fallback are the entry point's job, PRE-11, not this resolver's).
+
+function tempProjectDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-project-dir-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  return dir;
+}
+
+function writeProjectSettings(projectDir, filename, value) {
+  const dir = path.join(projectDir, '.claude');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), JSON.stringify(value));
+}
+
+test('settings.local.json beats settings.json beats user settings for attribution.commit, source names the layer', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  writeProjectSettings(projectDir, 'settings.json', { attribution: { commit: 'Co-Authored-By: Project <p@x>' } });
+  writeProjectSettings(projectDir, 'settings.local.json', { attribution: { commit: 'Co-Authored-By: Local <l@x>' } });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir }), {
+    trailer: 'Co-Authored-By: Local <l@x>',
+    source: 'project-local',
+    warnings: [],
+  });
+});
+
+test('settings.json beats user settings for attribution.commit when settings.local.json sets nothing', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  writeProjectSettings(projectDir, 'settings.json', { attribution: { commit: 'Co-Authored-By: Project <p@x>' } });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir }), {
+    trailer: 'Co-Authored-By: Project <p@x>',
+    source: 'project',
+    warnings: [],
+  });
+});
+
+test('user settings apply when neither project layer sets attribution.commit', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir }), {
+    trailer: 'Co-Authored-By: User <u@x>',
+    source: 'user',
+    warnings: [],
+  });
+});
+
+// Q5 "two passes": attribution.commit is checked across every layer before includeCoAuthoredBy
+// is checked in any layer, so a lower layer's attribution.commit still wins over a higher
+// layer's includeCoAuthoredBy.
+test('includeCoAuthoredBy: false in project-local with attribution.commit set in user: the user trailer applies', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  writeProjectSettings(projectDir, 'settings.local.json', { includeCoAuthoredBy: false });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir }), {
+    trailer: 'Co-Authored-By: User <u@x>',
+    source: 'user',
+    warnings: [],
+  });
+});
+
+test('includeCoAuthoredBy: false in project-local wins when no layer sets attribution.commit', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeProjectSettings(projectDir, 'settings.local.json', { includeCoAuthoredBy: false });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir }), {
+    trailer: null,
+    source: 'project-local',
+    warnings: [],
+  });
+});
+
+// No walk-up (PRE-11, Q5 Amended): this resolver only ever reads the given `projectDir`
+// itself, never a parent of it, so a subfolder passed as `projectDir` sees only its own
+// project layers, even when a parent directory has its own differing settings.
+test('a projectDir subfolder with its own .claude/ is read on its own, never a parent directory', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const parent = tempProjectDir(t);
+  const sub = path.join(parent, 'sub');
+  fs.mkdirSync(sub);
+  writeProjectSettings(parent, 'settings.json', { attribution: { commit: 'Co-Authored-By: Parent <p@x>' } });
+  writeProjectSettings(sub, 'settings.json', { attribution: { commit: 'Co-Authored-By: Sub <s@x>' } });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir: sub }), {
+    trailer: 'Co-Authored-By: Sub <s@x>',
+    source: 'project',
+    warnings: [],
+  });
+});
+
+test('a projectDir subfolder with no .claude/ of its own has no project layers; the parent directory is never consulted', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const parent = tempProjectDir(t);
+  const bare = path.join(parent, 'bare');
+  fs.mkdirSync(bare);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  writeProjectSettings(parent, 'settings.json', { attribution: { commit: 'Co-Authored-By: Parent <p@x>' } });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir: bare }), {
+    trailer: 'Co-Authored-By: User <u@x>',
+    source: 'user',
+    warnings: [],
+  });
+});
+
+test('unparseable JSON in a project layer is treated as no settings from that layer, with a warning naming it, and falls through to user', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  fs.mkdirSync(path.join(projectDir, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, '.claude', 'settings.json'), '{ not json');
+
+  const result = attribution.resolveAttribution({ claudeHome, projectDir });
+
+  assert.equal(result.trailer, 'Co-Authored-By: User <u@x>');
+  assert.equal(result.source, 'user');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /project settings\.json/);
+  assert.match(result.warnings[0], /not valid JSON/);
+});
+
+test('a malformed settings.local.json still warns even when settings.json already supplies the trailer', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  writeProjectSettings(projectDir, 'settings.json', { attribution: { commit: 'Co-Authored-By: Project <p@x>' } });
+  fs.writeFileSync(path.join(projectDir, '.claude', 'settings.local.json'), '[1, 2, 3]');
+
+  const result = attribution.resolveAttribution({ claudeHome, projectDir });
+
+  assert.equal(result.trailer, 'Co-Authored-By: Project <p@x>');
+  assert.equal(result.source, 'project');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /project-local settings\.local\.json/);
+  assert.match(result.warnings[0], /not a JSON object/);
 });
 
 // AC: a static test asserts M5's module imports M6's `isFooterLine` (footer-line grammar)

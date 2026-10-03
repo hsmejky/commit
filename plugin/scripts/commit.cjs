@@ -49,6 +49,11 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
     claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(osHome, '.claude'),
     osUser: osUser,
     cwd: process.cwd(),
+    // M5's project layers (CFG-10, Q5, PRE-11): the project directory is `CLAUDE_PROJECT_DIR`
+    // when set, else this process's own cwd; no walk-up to a git toplevel. Resolved once
+    // here, like `claudeHome`, and injected: M5 never reads `env` or the cwd itself to find
+    // it.
+    projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
     // The reply contract (docs/contracts/reply-and-handback.md "run") names
     // `process.argv[1]`, not `__filename`: they can differ through a symlink (e.g. a
     // plugin cache linked into place), and the `run` command must match the path the

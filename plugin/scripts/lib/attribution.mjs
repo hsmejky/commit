@@ -4,19 +4,27 @@
 // and never writes, never refuses `plan`, and spawns nothing.
 //
 // CFG-08 built the tracer: no settings files were read, source always `default`. CFG-09
-// adds the user layer only (`<claudeHome>/settings.json`), the two-pass key lookup
-// (`attribution.commit`, then the deprecated `includeCoAuthoredBy`) and the trailer-line
-// filtering, each line of the value tested on its own against M6's `isFooterLine` (a line
-// that is not footer-shaped, e.g. a 🤖 line or a blank line, is dropped with a warning; M5
-// has no use for M6's `lint`, which checks a message against the configured rules). `env`,
-// `toplevel` and `managedDir` are accepted now (and ignored) for CFG-10 (project-local and
-// project layers, `CLAUDE_PROJECT_DIR`) and CFG-11 (the managed layer) to read later.
-// Claude's own settings.json is not ours to validate: a missing file is no settings at all
-// (same as a missing `commit.json` layer, Q6), not a `config` refusal. When the file exists
-// but cannot be read, is not valid UTF-8, is not valid JSON, or its top level is not a JSON
-// object, it is likewise treated as no settings, but a warning names the problem (Q5
-// Amended, docs/spec/modules-m1-m9.md M5), so a broken file does not silently bring the
-// default trailer back unnoticed.
+// added the user layer only (`<claudeHome>/settings.json`). CFG-10 adds the project-local
+// (`<projectDir>/.claude/settings.local.json`) and project (`<projectDir>/.claude/
+// settings.json`) layers, ahead of the user layer, and drops the `toplevel` param CFG-09
+// accepted and ignored: `projectDir` is the already-resolved project directory the entry
+// point injects (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`; no
+// walk-up to a git toplevel — PRE-11, Q5 Amended), the same way `claudeHome` is injected.
+// This resolver never reads `env` or the cwd itself to find it. The two-pass key lookup
+// (`attribution.commit` across every layer, highest first, then the deprecated
+// `includeCoAuthoredBy` across every layer) and the trailer-line filtering are unchanged:
+// each line of a winning `attribution.commit` value is tested on its own against M6's
+// `isFooterLine` (a line that is not footer-shaped, e.g. a 🤖 line or a blank line, is
+// dropped with a warning; M5 has no use for M6's `lint`, which checks a message against the
+// configured rules). `env` and `managedDir` are still accepted (and ignored) for CFG-11 (the
+// managed layer) to read later. Claude's own settings.json is not ours to validate: a
+// missing file is no settings at all from that layer (same as a missing `commit.json`
+// layer, Q6), not a `config` refusal. When a layer's file exists but cannot be read, is not
+// valid UTF-8, is not valid JSON, or its top level is not a JSON object, it is likewise
+// treated as no settings from that layer, but a warning names the problem (Q5 Amended,
+// docs/spec/modules-m1-m9.md M5), so a broken file does not silently give way to a lower
+// layer (or the default trailer) unnoticed. Every layer's file is read and checked for this
+// warning regardless of which layer's key ends up winning.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,65 +33,79 @@ import { isFooterLine } from './message-grammar.mjs';
 /** The fixed trailer used while no settings layer sets attribution (Q5). */
 const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
-/** The user layer's settings filename, directly under the Claude home (Q5). */
-const USER_SETTINGS_FILENAME = 'settings.json';
-
 /** Splits a config value into lines on LF, CRLF or a lone CR (M6 byte normalisation, Q5). */
 const LINE_SPLIT = /\r\n?|\n/;
 
+/** Each layer's display label for a warning (`Claude <label> ignored: ...`), and the path
+ * segments (relative to its own base directory: `projectDir` for the two project layers,
+ * `claudeHome` for the user layer) its settings file lives at (Q5). Order matters: this is
+ * the precedence order, highest first, project-local and project only applying when
+ * `projectDir` is given. */
+const LAYER_DEFS = [
+  { source: 'project-local', label: 'project-local settings.local.json', segments: ['.claude', 'settings.local.json'] },
+  { source: 'project', label: 'project settings.json', segments: ['.claude', 'settings.json'] },
+  { source: 'user', label: 'user settings.json', segments: ['settings.json'] },
+];
+
 /**
- * Reads and parses `<claudeHome>/settings.json`. A missing file is no settings at all (Q6).
- * Any other problem reading or parsing it (unreadable, not valid UTF-8, not valid JSON, a
- * non-object top level) is also treated as no settings, since Claude's own settings file is
- * not this resolver's to validate or refuse `plan` over — but `warning` then names the
- * problem (finding 3, Q5 Amended), so a broken file does not silently restore the default
- * trailer unnoticed.
+ * Reads and parses one settings-layer file. A missing file is no settings from this layer at
+ * all (Q6). Any other problem reading or parsing it (unreadable, not valid UTF-8, not valid
+ * JSON, a non-object top level) is also treated as no settings from this layer, since
+ * Claude's own settings file is not this resolver's to validate or refuse `plan` over — but
+ * `warning` then names the problem (finding 3, Q5 Amended), so a broken file does not
+ * silently give way to a lower layer unnoticed.
  *
- * @param {string|undefined} claudeHome
+ * @param {string} filePath
+ * @param {string} label names the layer in the warning (e.g. `project settings.json`).
  * @returns {{ settings: object, warning: string | null }}
  */
-function readUserSettings(claudeHome) {
-  if (typeof claudeHome !== 'string') return { settings: {}, warning: null };
-  const filePath = path.join(claudeHome, USER_SETTINGS_FILENAME);
-
+function readSettingsFile(filePath, label) {
   let buffer;
   try {
     buffer = fs.readFileSync(filePath);
   } catch (err) {
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { settings: {}, warning: null };
-    return {
-      settings: {},
-      warning: `Claude user ${USER_SETTINGS_FILENAME} ignored: cannot be read (${err.code})`,
-    };
+    return { settings: {}, warning: `Claude ${label} ignored: cannot be read (${err.code})` };
   }
 
   let text;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
   } catch {
-    return {
-      settings: {},
-      warning: `Claude user ${USER_SETTINGS_FILENAME} ignored: not valid UTF-8`,
-    };
+    return { settings: {}, warning: `Claude ${label} ignored: not valid UTF-8` };
   }
 
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    return {
-      settings: {},
-      warning: `Claude user ${USER_SETTINGS_FILENAME} ignored: not valid JSON: ${err.message}`,
-    };
+    return { settings: {}, warning: `Claude ${label} ignored: not valid JSON: ${err.message}` };
   }
 
   if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
     return { settings: parsed, warning: null };
   }
-  return {
-    settings: {},
-    warning: `Claude user ${USER_SETTINGS_FILENAME} ignored: top level is not a JSON object`,
-  };
+  return { settings: {}, warning: `Claude ${label} ignored: top level is not a JSON object` };
+}
+
+/**
+ * Builds the ordered, available layers (highest precedence first): project-local and project
+ * (under `projectDir`) only when `projectDir` is a string (no walk-up to a git toplevel — a
+ * `projectDir` without its own `.claude/` yields no project layers, matching the entry
+ * point's own resolution, PRE-11), then user (under `claudeHome`) only when `claudeHome` is a
+ * string.
+ *
+ * @param {{ projectDir?: string, claudeHome?: string }} injected
+ * @returns {Array<{ source: string, settings: object, warning: string | null }>}
+ */
+function readLayers({ projectDir, claudeHome }) {
+  const bases = { 'project-local': projectDir, project: projectDir, user: claudeHome };
+  return LAYER_DEFS
+    .filter((def) => typeof bases[def.source] === 'string')
+    .map((def) => {
+      const filePath = path.join(bases[def.source], ...def.segments);
+      return { source: def.source, ...readSettingsFile(filePath, def.label) };
+    });
 }
 
 /**
@@ -116,45 +138,62 @@ function trailerLinesOf(commitValue) {
 }
 
 /**
- * Resolves the commit attribution trailer (M5, Q5). CFG-09 reads the user settings layer
- * only (`<claudeHome>/settings.json`): `attribution.commit` wins when it is a string (`''`
+ * Resolves the commit attribution trailer (M5, Q5). Layers, highest first: project-local
+ * (`<projectDir>/.claude/settings.local.json`), project (`<projectDir>/.claude/
+ * settings.json`), user (`<claudeHome>/settings.json`); the managed layer is CFG-11's.
+ * `attribution.commit` wins at the first layer (highest first) where it is a string (`''`
  * means no trailer, a whitespace-only string behaves the same since every line of it is
  * dropped; otherwise its trailer-shaped lines are kept, every other line dropped with a
- * warning); otherwise a boolean `includeCoAuthoredBy` wins (`false` means no trailer, `true`
- * means the fixed default trailer); otherwise (neither key set, or `settings.json` could not
- * be used) the fixed default trailer, source `default`. A boolean `includeCoAuthoredBy`
- * counts as "set" either way, per Q5's "first layer that defines a key wins": `source` is
- * `'user'` even when the value is `true` and the resulting trailer is the same text the
- * `default` source would give. When any key is read from the user layer (even to a `null`
- * trailer), `source` is `'user'`; a `settings.json` that could not be read or parsed adds a
- * warning but never changes `source` by itself.
+ * warning); otherwise a boolean `includeCoAuthoredBy` wins at the first layer (highest first)
+ * where it is set (`false` means no trailer, `true` means the fixed default trailer); only
+ * when no layer sets either key (or no layer could be used) the fixed default trailer,
+ * source `default`. Two passes (Q5): every layer's `attribution.commit` is checked, highest
+ * first, before any layer's `includeCoAuthoredBy` is — so `attribution.commit` set in a lower
+ * layer still wins over `includeCoAuthoredBy` set in a higher one. A boolean
+ * `includeCoAuthoredBy` counts as "set" either way, per Q5's "first layer that defines a key
+ * wins": `source` names that layer even when the value is `true` and the resulting trailer
+ * is the same text the `default` source would give. `source` is the layer a key was read
+ * from (even to a `null` trailer); a layer's `settings.json` that could not be read or
+ * parsed adds a warning but never changes `source` by itself, and never stops a lower layer
+ * from being checked.
  *
- * @param {{ env?: object, claudeHome?: string, toplevel?: string|null,
- *   managedDir?: string|null }} [injected] `env`, `toplevel` and `managedDir` are accepted
- *   for CFG-10/CFG-11 and ignored here.
+ * @param {{ env?: object, claudeHome?: string, projectDir?: string|null,
+ *   managedDir?: string|null }} [injected] `projectDir` is the entry point's already-resolved
+ *   project directory (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`;
+ *   PRE-11); omitted or not a string, there are no project layers. `env` and `managedDir` are
+ *   accepted for CFG-11 and ignored here.
  * @returns {{ trailer: string | null, source: string, warnings: string[] }}
  */
 export function resolveAttribution(injected = {}) {
-  const { settings, warning } = readUserSettings(injected.claudeHome);
-  const settingsWarnings = warning !== null ? [warning] : [];
-  const commitValue = settings.attribution?.commit;
+  const layers = readLayers(injected);
+  const warnings = [];
+  for (const layer of layers) {
+    if (layer.warning !== null) warnings.push(layer.warning);
+  }
 
-  if (typeof commitValue === 'string') {
+  // Pass 1: `attribution.commit`, every layer, highest first (Q5 "two passes").
+  for (const layer of layers) {
+    const commitValue = layer.settings.attribution?.commit;
+    if (typeof commitValue !== 'string') continue;
+
     if (commitValue === '') {
-      return { trailer: null, source: 'user', warnings: settingsWarnings };
+      return { trailer: null, source: layer.source, warnings };
     }
     const { trailer, dropped } = trailerLinesOf(commitValue);
-    const warnings = dropped.length > 0
-      ? [...settingsWarnings, `attribution.commit: dropped ${dropped.length} line(s) that are not a trailer`]
-      : settingsWarnings;
-    return { trailer, source: 'user', warnings };
+    if (dropped.length > 0) {
+      warnings.push(`attribution.commit: dropped ${dropped.length} line(s) that are not a trailer`);
+    }
+    return { trailer, source: layer.source, warnings };
   }
 
-  if (typeof settings.includeCoAuthoredBy === 'boolean') {
-    return settings.includeCoAuthoredBy
-      ? { trailer: DEFAULT_TRAILER, source: 'user', warnings: settingsWarnings }
-      : { trailer: null, source: 'user', warnings: settingsWarnings };
+  // Pass 2: `includeCoAuthoredBy`, every layer, highest first.
+  for (const layer of layers) {
+    if (typeof layer.settings.includeCoAuthoredBy === 'boolean') {
+      return layer.settings.includeCoAuthoredBy
+        ? { trailer: DEFAULT_TRAILER, source: layer.source, warnings }
+        : { trailer: null, source: layer.source, warnings };
+    }
   }
 
-  return { trailer: DEFAULT_TRAILER, source: 'default', warnings: settingsWarnings };
+  return { trailer: DEFAULT_TRAILER, source: 'default', warnings };
 }
