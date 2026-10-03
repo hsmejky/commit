@@ -124,7 +124,8 @@ each span on its own.
 Sources: Q3, C:guard.
 
 **G3 Command classifier and deny catalogue.** Per segment: find every token whose basename (the
-part after the last `/` or `\`, in both shells) is `git` or `git.exe`, compared
+last component of its path normalised Win32-style in both shells: `.`, `..`, empty components
+and trailing spaces and dots resolved, C:guard step 3) is `git` or `git.exe`, compared
 case-insensitively (optionally after `&`), or whose basename is
 the dashed `git-commit` (with or without `.exe`, in any directory, compared
 case-insensitively), which classifies as `git commit`; skip the

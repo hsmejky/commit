@@ -1,9 +1,11 @@
 'use strict';
 
 // GRD-10: detecting `git` in every spelling, through G1 `runHook` (Seam 3), in both shells
-// (C:guard Parsing step 3; Q3). A `git` token is found by its basename (after the last `/`
-// or `\`, in both shells), `git` or `git.exe` compared case-insensitively, after the `&`
-// call operator too; the dashed `git-commit` (any directory, optional `.exe`) is
+// (C:guard Parsing step 3; Q3). A `git` token is found by its basename, `git` or `git.exe`
+// compared case-insensitively, after the `&` call operator too, once its path is normalised
+// Win32-style in both shells: split on `/` and `\`, each component's trailing spaces and
+// dots dropped, empty and `.` components dropped, `..` dropping the one before it, the
+// basename the last component left; the dashed `git-commit` (any directory, optional `.exe`) is
 // `git commit` with its arguments checked against the allowlist. Rows were checked against
 // bash (Git Bash), pwsh and powershell.exe running a fake git and git-commit that log argv.
 
@@ -75,6 +77,25 @@ const table = [
   ['powershell', r`& 'C:\Git\git-core\git-commit.exe .' -m x`, 'bare'],
   ['bash', `'git ' commit -m x`, 'bare'],
   ['bash', `'git. ' commit --no-edit`, null],
+  // The path is normalised first, Win32-style in both shells: `.` and empty components are
+  // dropped, `..` drops the component before it (PowerShell 5.1 and 7 run git for each row
+  // below, Git Bash for `git.exe/.`, `git/.` and `git.exe/`); on Linux the same reading is
+  // an accepted false deny.
+  ['powershell', r`& 'C:\Program Files\Git\cmd\git.exe\.' commit -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\git.exe/.' commit -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\git.exe\x\..' commit -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\git.exe\.\.' commit -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\git.exe\x \..' commit -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\x\..\git.exe' commit -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\git.exe\x\..' commit --no-edit`, null],
+  ['powershell', r`& 'C:\Git\git-core\git-commit.exe\.' -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\cmd\git.exe\..' commit -m x`, null],
+  ['bash', '"/c/Program Files/Git/cmd/git.exe/." commit -m x', 'bare'],
+  ['bash', '/mingw64/bin/git/. commit -m x', 'bare'],
+  ['bash', r`"C:\Program Files\Git\cmd\git.exe\." commit -m x`, 'bare'],
+  ['bash', '/mingw64/bin/git.exe/ commit -m x', 'bare'],
+  ['bash', '/usr/lib/git-core/git-commit/. -m x', 'bare'],
+  ['bash', '/usr/bin/git/.. commit -m x', null],
   // The dashed `git-commit`:`commit` straight away, its arguments through the allowlist.
   ['bash', 'git-commit -m x', 'bare'],
   ['powershell', 'git-commit -m x', 'bare'],

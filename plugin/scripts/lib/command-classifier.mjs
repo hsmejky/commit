@@ -95,12 +95,27 @@ function wrapperMessage(wrapper) {
   return withPersonalLine(`git commit run by ${wrapper} is not allowed: it can append arguments. ${ROUTE}`);
 }
 
-// A `git` token: basename `git` or `git.exe` after the last `/` or `\`, case-insensitive,
-// once trailing spaces and dots are dropped (Windows trims them: PowerShell runs git for
-// `& 'git '` and `& 'C:\…\git.exe.'`; in Bash an accepted false deny).
-const GIT = /(?:^|[/\\])git(?:\.exe)?[ .]*$/i;
-// git's own dashed form: basename `git-commit` or `git-commit.exe`, read the same way.
-const DASHED_COMMIT = /(?:^|[/\\])git-commit(?:\.exe)?[ .]*$/i;
+// A token's basename once its path is normalised Win32-style in both shells (C:guard step 3):
+// components split on `/` and `\`, each with its trailing spaces and dots dropped (Windows
+// trims them: PowerShell runs git for `& 'git '` and `& 'C:\…\git.exe.'`), an empty or `.`
+// component dropped, `..` dropping the one before it (PowerShell runs git for `git.exe\.`
+// and `git.exe\x\..`, Git Bash for `git.exe/.` and `git.exe/`); on Linux an accepted false
+// deny.
+function basename(token) {
+  const parts = [];
+  for (const part of token.split(/[/\\]/)) {
+    if (part === '..') parts.pop();
+    else {
+      const name = part.replace(/[ .]+$/, '');
+      if (name !== '') parts.push(name);
+    }
+  }
+  return parts.length === 0 ? '' : parts[parts.length - 1];
+}
+// A `git` token: basename `git` or `git.exe`, case-insensitive.
+const GIT = /^git(?:\.exe)?$/i;
+// git's own dashed form: basename `git-commit` or `git-commit.exe`.
+const DASHED_COMMIT = /^git-commit(?:\.exe)?$/i;
 const COMMIT = /^commit$/i;
 // C:guard step 4: a token holding `$`, a backtick, `{`, `(` or a glob character may turn
 // into another word or into several arguments.
@@ -391,8 +406,9 @@ export function classify(parsed, context = {}) {
       const token = tokens[i];
       if (typeof token !== 'string') continue;
       // The dashed `git-commit` is `commit` straight away, its arguments right after it.
-      const dashed = DASHED_COMMIT.test(token);
-      if (!dashed && !GIT.test(token)) continue;
+      const name = basename(token);
+      const dashed = DASHED_COMMIT.test(name);
+      if (!dashed && !GIT.test(name)) continue;
       starts ??= commandStarts(tokens, shell);
       // Windows PowerShell 5.1 drops an empty argument, so `git '' commit` runs a commit.
       let next = i + 1;
