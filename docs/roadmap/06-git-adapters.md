@@ -80,13 +80,13 @@ case-insensitively; both refuse `plan` as `state`.
 
 **Blocked by:** GIT-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q21, C:plan (`i18n.commitEncoding`), stories 186, 211, M3, testing-modules Q11 case list.
 
-- [ ] Seam 1: a conflicting `git stash pop` (no in-progress marker) → exit 6 `state`, text "resolve the conflicts first".
-- [ ] Seam 1: `i18n.commitEncoding` set to `utf8` and to `UTF-8` → accepted; set to `ISO-8859-1` → exit 6 `state`.
-- [ ] The encoding check is refused in the `state` slot of the refusal order (after `env` and `config`).
+- [x] Seam 1: a conflicting `git stash pop` (no in-progress marker) → exit 6 `state`, text "resolve the conflicts first".
+- [x] Seam 1: `i18n.commitEncoding` set to `utf8` and to `UTF-8` → accepted; set to `ISO-8859-1` → exit 6 `state`.
+- [x] The encoding check is refused in the `state` slot of the refusal order (after `env` and `config`).
 
 
 ## GIT-05: M2 environment hygiene for read-only and staging calls
