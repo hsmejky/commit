@@ -4,14 +4,14 @@
 // `--type=bool` and `gpg.format`, and `plan` stores the result in `plan.json` `signing` at
 // step 6, after the clean-tree check (Q18, C:plan `signing`, stories 169 and 171). Seam 1:
 // the shipped entry point as a subprocess through the FND-04 harness. GIT-11 adds SSH
-// readiness from the key file (key-source table, header parse); the `ssh-add -L` check is
-// GIT-12's, so every case the header alone cannot clear (an encrypted key, a missing or
-// unrecognised private key file, an unresolved key source) still gives `"unknown"`, never
-// `false`.
+// readiness from the key file (key-source table, header parse). The cases here never reach
+// the `ssh-add -L` check (GIT-12, tests/plan-signing-agent.test.js): either the header alone
+// decides, or there is no public key to compare, so a key the header cannot clear is
+// `"unknown"`.
 //
 // The signing config is set after the seed commit, so the harness's own `git commit` never
 // tries to sign. Nothing here runs gpg, gpgsm, ssh-keygen or ssh-add: the probe reads config
-// and, for GIT-11, key files, only.
+// and key files only.
 //
 // The prompt note's place in the stored notices and the `plan` reply is not observable yet
 // (roadmap KD-R67): the path that reaches the probe ends with the hunk index, whose reply is
@@ -188,7 +188,7 @@ test('plan with gpg.format=ssh and an unencrypted OpenSSH or PEM key file stores
   }
 });
 
-test('plan with a passphrase-protected SSH key file stores ready "unknown" (no ssh-add check yet)', async (t) => {
+test('plan with a passphrase-protected SSH key file and no public key to check stores ready "unknown"', async (t) => {
   for (const [name, content] of [['id_ed25519', opensshKeyFile('aes256-ctr')], ['id_rsa', ENCRYPTED_PEM]]) {
     const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
     c.writeFile(name, content);
@@ -287,12 +287,8 @@ test('plan with user.signingKey set to a .pub path reads the private file beside
   assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: true });
 });
 
-test('plan with user.signingKey set to a .pub path without its private file stores ready "unknown"', async (t) => {
-  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
-  c.writeFile('id_ed25519.pub', 'ssh-ed25519 AAAAFAKE comment\n');
-  c.git(['config', 'user.signingKey', 'id_ed25519.pub']);
-  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
-});
+// A `.pub` without its private file and a literal key now depend on the `ssh-add -L` check
+// (GIT-12): tests/plan-signing-agent.test.js pins them with and without an `ssh-add`.
 
 test('plan with user.signingKey starting with ~/ expands against the injected OS home', async (t) => {
   const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
@@ -319,12 +315,6 @@ test('plan with a relative user.signingKey resolves against the toplevel, not th
   c.writeFile('sub/.keep', '');
   const signing = await storedSigning(c, { cwd: path.join(c.repoDir, 'sub') });
   assert.deepEqual(signing, { enabled: true, format: 'ssh', ready: true });
-});
-
-test('plan with user.signingKey set to a literal key stores ready "unknown" (no private key file)', async (t) => {
-  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
-  c.git(['config', 'user.signingKey', 'ssh-ed25519 AAAAFAKE comment']);
-  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
 });
 
 test('plan with user.signingKey pointing to a file with no recognised header stores ready "unknown"', async (t) => {

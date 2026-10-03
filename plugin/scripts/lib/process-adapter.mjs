@@ -157,13 +157,17 @@ export async function gitPath(names, { cwd, env, now }) {
  *   child's stdin, which is then closed (message input, path lists); without it stdin is
  *   ignored; `onStdout`: a consumer (M10's patch pass only, CHG-06) that gets each raw
  *   stdout chunk as it arrives, nothing being buffered here; if it throws, it gets no
- *   further chunk and the call rejects with that error once the child has closed.
+ *   further chunk and the call rejects with that error once the child has closed;
+ *   `timeoutMs` (GIT-12, the signing probe's fixed `ssh-add` timeout): past it the child is
+ *   killed (`SIGKILL`, the child only) and the call resolves at once with `timedOut: true`
+ *   and `code: null`, without waiting for a process the child left holding the pipes.
+ *   GIT-07's deadline-driven timeout and process-tree kill replace this.
  * @returns {Promise<{ code: number|null, stdout: Buffer, stderr: string, timedOut: boolean,
  *   spawnedAt: number|null }>} `stdout` is the raw bytes, never decoded here, and empty with
- *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` stays `false` until GIT-07
- *   adds the call's timer.
+ *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` is `true` only past
+ *   `timeoutMs`.
  */
-export function run(cmd, args, { cwd, env, now, readOnly, index, history, input, onStdout }) {
+export function run(cmd, args, { cwd, env, now, readOnly, index, history, input, onStdout, timeoutMs }) {
   return new Promise((resolve, reject) => {
     const isGit = path.basename(cmd, '.exe').toLowerCase() === 'git';
     const childEnv = isGit ? gitEnv(env, { readOnly, index, history }) : env;
@@ -185,6 +189,23 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, input,
     child.on('spawn', () => {
       spawnedAt = typeof now === 'function' ? now() : null;
     });
+    let settled = false;
+    let timer;
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(() => {
+        settled = true;
+        child.kill('SIGKILL');
+        child.stdout.destroy();
+        child.stderr.destroy();
+        resolve({
+          code: null,
+          stdout: Buffer.concat(stdout),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+          timedOut: true,
+          spawnedAt,
+        });
+      }, timeoutMs);
+    }
     let consumerError = null;
     child.stdout.on('data', (chunk) => {
       if (onStdout === undefined) {
@@ -199,8 +220,15 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, input,
       }
     });
     child.stderr.on('data', (chunk) => stderr.push(chunk));
-    child.on('error', reject);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      if (!settled) reject(err);
+      settled = true;
+    });
     child.on('close', (code) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
       if (consumerError !== null) {
         reject(consumerError);
         return;
