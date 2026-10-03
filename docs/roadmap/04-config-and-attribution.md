@@ -241,18 +241,18 @@ point injects instead (no toplevel fallback, matching PRE-11).
 
 **Blocked by:** CFG-09, PRE-11.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5, M5, open verification items (project directory), story 114.
 
-- [ ] Seam 1: `settings.local.json` beats `settings.json` beats user settings for
+- [x] Seam 1: `settings.local.json` beats `settings.json` beats user settings for
       `attribution.commit`; `source` names the layer (`project-local`, `project`, `user`).
-- [ ] Seam 1: `includeCoAuthoredBy: false` in project-local with `attribution.commit` set in
+- [x] Seam 1: `includeCoAuthoredBy: false` in project-local with `attribution.commit` set in
       user → the user trailer applies (two passes).
-- [ ] Seam 1: `CLAUDE_PROJECT_DIR` set → project layers read from it; unset → from the
+- [x] Seam 1: `CLAUDE_PROJECT_DIR` set → project layers read from it; unset → from the
       process cwd: a subfolder with its own `.claude/` beats the toplevel's, a subfolder
       without `.claude/` yields no project layers (toplevel settings not read).
-- [ ] Seam 1: with `CLAUDE_CONFIG_DIR` set, the user settings layer is read from
+- [x] Seam 1: with `CLAUDE_CONFIG_DIR` set, the user settings layer is read from
       `$CLAUDE_CONFIG_DIR/settings.json`, not the OS-home default (story 112).
 
 
