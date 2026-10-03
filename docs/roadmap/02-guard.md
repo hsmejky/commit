@@ -312,15 +312,15 @@ redacted.
 
 **Blocked by:** GRD-13, PRE-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q23, Q5, C:guard (Heartbeat), stories 21, 36, 37.
 
-- [ ] Seam 2: a `plan` script call in each shell and quoting form writes the file under the temp Claude home (`CLAUDE_CONFIG_DIR` honoured), with `ts` from `now`, the raw `cwd`, and `command` as `commit.cjs plan <flags>` without the path or other segments, cut to 200 characters.
-- [ ] A denied compound command that also calls `plan` and holds no blanket-rule construct still writes the heartbeat; a blanket-denied one (`node "…/commit.cjs" plan # x`), `check`, `commit` or a crash write none.
-- [ ] The write goes through a temporary name with pid and random part, renamed into place; no temporary file remains.
-- [ ] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).
-- [ ] Seam 2 with the Claude home path an existing file, not a directory: the write fails and the decision stands (Q3, C:guard Heartbeat). A `plan` call alone → no stdout, exit 0; `node "…/commit.cjs" plan && git commit -m x` → still the deny JSON, exit 0. With `COMMIT_GUARD_DEBUG=1`, each logs one stderr line `{"agent_id":"…","heartbeat":"failed"}`; without the variable, no stderr.
+- [x] Seam 2: a `plan` script call in each shell and quoting form writes the file under the temp Claude home (`CLAUDE_CONFIG_DIR` honoured), with `ts` from `now`, the raw `cwd`, and `command` as `commit.cjs plan <flags>` without the path or other segments, cut to 200 characters.
+- [x] A denied compound command that also calls `plan` and holds no blanket-rule construct still writes the heartbeat; a blanket-denied one (`node "…/commit.cjs" plan # x`), `check`, `commit` or a crash write none.
+- [x] The write goes through a temporary name with pid and random part, renamed into place; no temporary file remains.
+- [x] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).
+- [x] Seam 2 with the Claude home path an existing file, not a directory: the write fails and the decision stands (Q3, C:guard Heartbeat). A `plan` call alone → no stdout, exit 0; `node "…/commit.cjs" plan && git commit -m x` → still the deny JSON, exit 0. With `COMMIT_GUARD_DEBUG=1`, each logs one stderr line `{"agent_id":"…","heartbeat":"failed"}`; without the variable, no stderr.
 
 Note (GRD-13 review): S2 `recognise`'s `args` are everything node receives up to the first
 operator token, message text (`-m "…"`), unexpanded `$HOME` and a PowerShell `--%` tail
