@@ -15,16 +15,16 @@ Read-only, no lock, no run folder.
 
 **Blocked by:** MSG-01, RPL-02, INT-01, GIT-09.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:infer, M19, M18 `infer`, Q7, stories 128, 134.
 
-- [ ] Seam 1: a repo with 5 conventional commits → `ok: true`, `outcome:
+- [x] Seam 1: a repo with 5 conventional commits → `ok: true`, `outcome:
       "too-few-commits"`, `commitCount: 5`, `ccShare` over the 5 read, `proposal: null`,
       `wouldFail: null`, exit 0.
-- [ ] Seam 1: an unborn repo → `too-few-commits`, `commitCount: 0`, `ccShare: null`.
-- [ ] Seam 1: no `.commit-plan/` exists after the call.
-- [ ] Seam 1: `infer` outside a repo or in a bare repo → exit 6 `state`, the same text
+- [x] Seam 1: an unborn repo → `too-few-commits`, `commitCount: 0`, `ccShare: null`.
+- [x] Seam 1: no `.commit-plan/` exists after the call.
+- [x] Seam 1: `infer` outside a repo or in a bare repo → exit 6 `state`, the same text
       family as `plan` (C:infer).
 
 
@@ -45,6 +45,16 @@ M6's header grammar; `ccShare` over all commits read (merges excluded, at most 2
 - [ ] Seam 1: 49% conventional → `not-conventional`, `proposal: null`; 50% → a proposal.
 - [ ] A static test asserts M19's module imports `parse` from M6 (no duplicate header
       grammar).
+
+**Notes (from the INF-01 review):**
+- The 20-commit boundary (`too-few-commits` vs. going on) is pinned on one side only by
+  INF-01's tests: a 19-message case passes whether the guard is `>= MIN_COMMITS` or
+  `> MIN_COMMITS`. Include a 20-commit case that is not `too-few-commits`, e.g. as part of
+  the "50% → a proposal" criterion above, to pin the other side.
+- INF-01's seam tests only cover a history where every commit is conventional
+  (`ccShare: 1`), which does not show that `ccShare`'s denominator is the commit count read
+  through the real git path. Close this with a seam case over a mixed history (e.g. `WIP: x`
+  at 49%/50%), alongside the criterion above.
 
 
 ## INF-03: Scope and body proposal
