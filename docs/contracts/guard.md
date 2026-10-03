@@ -72,8 +72,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   `--` logs its name (the part before any `=`) when that name matches
   `--[A-Za-z0-9][A-Za-z0-9-]*`; one starting with a single `-` logs `-<c>` for each letter of
   its bundle (the token up to and including its first value-taking letter: `m F C c t U S
-  u`) when that bundle matches `-[A-Za-z0-9]+`; a token outside this grammar (`"- added
-  notes"`, `"--a b"`) logs nothing. A value is never logged: the rest after a value-taking
+  u`) when every letter of that bundle is one of `git commit`'s own short options (the
+  git-commit docs' set: `a c e i m n o p q s t u v z C F S U`); a token outside this grammar
+  (`"- added notes"`, `"--a b"`, `"-removed notes"`, `"-hello"`) logs nothing. So message
+  text reaches the log only as a token git itself reads as options (`"-secret words"` is
+  `-s -e -c` with value `ret words`). A value is never logged: the rest after a value-taking
   letter or `=`, and the next argument after a bundle ending in `m F C c t U` or after a
   long option without `=` that is, or abbreviates, a value-taking one (`--mess` is
   `--message`).

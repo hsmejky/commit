@@ -417,9 +417,11 @@ const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument ||
 
 // C:guard Output's option-token grammar for GRD-16's debug log: a long option's name (the
 // part before any `=`) and a short bundle's part up to and including its first value-taking
-// letter, each judged on the whole token, never letter by letter.
+// letter, each judged on the whole token, never letter by letter. A bundle logs only when
+// each of its letters is one of `git commit`'s own short options (the git-commit docs'
+// set), so a token git would not read as an option group (`-removed notes`) logs nothing.
 const LONG_OPTION_NAME = /^--[A-Za-z0-9][A-Za-z0-9-]*$/;
-const SHORT_BUNDLE = /^-[A-Za-z0-9]+$/;
+const SHORT_BUNDLE = /^-[aceimnopqstuvzCFSU]+$/;
 
 // Whether a long option written without `=` takes the next argument as its value, for the
 // log only: an exact `LONG_WITH_VALUE` name or any abbreviation of one (`--mess` is git's

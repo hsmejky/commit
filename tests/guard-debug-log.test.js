@@ -148,6 +148,16 @@ const optionTokenTable = [
   ['git commit --mess=secret -n', '--mess -n'],
   ['git commit -F secret.txt -n', '-F -n'],
   ['git commit -m x -- -secret', '-m'],
+  // M1 (GRD-16 round 3): a short bundle logs only when each letter up to its first
+  // value-taking one is a `git commit` short option, so no prefix of free text leaks.
+  ['git commit -m "feat: x" "-removed secret"', '-m'],
+  ['git commit -m "feat: x" "-Refactored the secret module"', '-m'],
+  ['git commit "-abc secret words"', undefined],
+  ['git commit -q "-plaintexthunter2 is the key"', '-q'],
+  ['git commit -q "-0"', '-q'],
+  ['git commit -nm "secret"', '-n -m'],
+  // Accepted limit: a token git itself reads as an option group (`-s -e -c` + value).
+  ['git commit -q "-secret words"', '-q -s -e -c'],
 ];
 for (const toolName of ['Bash', 'PowerShell']) {
   for (const [command, want] of optionTokenTable) {
@@ -161,13 +171,21 @@ for (const toolName of ['Bash', 'PowerShell']) {
 }
 
 // H1 sweep: no word of the message text ever appears in the logged command, whichever way the
-// text reaches the command line. A text that is itself one whole option token (`--secret`) is
-// left out: git reads it as an option, so the log names it like any other.
+// text reaches the command line, neither whole nor letter by letter (L1, GRD-16 round 3: a run
+// of logged short flags read back as letters is never part of a message word), and the logged
+// command holds only option-grammar tokens. A text git itself reads as an option group
+// (`--secret`, `-secret words`) is left out: the log names its options like any other's.
 const messageTexts = [
-  '- added secret foo', '-hello world', '-fix the secret bug', '-secret words', '--secret words',
+  '- added secret foo', '-hello world', '-fix the secret bug', '--secret words',
   '-m secret', 'feat: secret thing', '-q.secret', '-am secret', '--x=secret words', '-x,secret',
-  '-secret', '-S secret', '-uvwxyz secret', '-0 secret', '-ñsecret words',
+  '-S secret', '-uvwxyz secret', '-0 secret', '-ñsecret words', '-removed secret',
+  '-Refactored the secret module', '-abc secret words', '-plaintexthunter2 is the key',
 ];
+const OPTION_SHAPE = /^(-[A-Za-z0-9]|--[A-Za-z0-9][A-Za-z0-9-]*)$/;
+// The letters of each run of consecutive logged short flags (`-q -r -e -m --amend` gives
+// `qrem`), so a message prefix logged one letter at a time shows up as text again.
+const shortFlagRuns = (command) =>
+  command.split(' ').map((token) => (/^-[^-]$/.test(token) ? token[1] : ' ')).join('').split(' ');
 const messageTemplates = [
   (m) => `git commit "${m}"`,
   (m) => `git commit -q "${m}"`,
@@ -193,8 +211,14 @@ for (const toolName of ['Bash', 'PowerShell']) {
       for (const template of messageTemplates) {
         const command = template(text);
         const fields = debugFields(command, { tool_name: toolName });
+        const logged = fields.command ?? '';
+        if (logged !== '') {
+          for (const token of logged.split(' ')) assert.match(token, OPTION_SHAPE, `${command} -> ${logged}`);
+        }
+        const runs = shortFlagRuns(logged).filter((run) => run.length >= 2);
         for (const word of words) {
-          assert.ok(!(fields.command ?? '').includes(word), `${command} -> ${fields.command}`);
+          assert.ok(!logged.includes(word), `${command} -> ${logged}`);
+          for (const run of runs) assert.ok(!word.includes(run), `${command} -> ${logged}`);
         }
       }
     }
