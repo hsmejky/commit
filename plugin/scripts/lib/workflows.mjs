@@ -69,7 +69,7 @@ import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
-import { cleanupDeadline, deadline, planRefusal, releaseDeadline } from './run-policy.mjs';
+import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
@@ -762,19 +762,8 @@ async function inferFromHistory(ctx) {
 
 const INFER_STEPS = Object.freeze([probeRepo, inferRefusals, inferFromHistory]);
 
-// RUN-12: the text of `plan`'s `timeout` past its M15 `deadline` (C:cli-and-exit-codes
-// `timeout` row; no recorded text).
-const DEADLINE_TEXT = '/commit passed its 540-second deadline';
-
-// RUN-12: a call that set `ctx.deadline` (only `plan` so far) is checked before every step:
-// past it the call ends as `timed-out` (exit 5 `timeout`) and the caller's own cleanup
-// discards or releases the run. The per-call `timeoutMs = deadline - now()` of each M2 call
-// inside a step is GIT-07's (docs/roadmap/06-git-adapters.md).
 async function runSteps(steps, ctx) {
   for (const step of steps) {
-    if (ctx.deadline !== undefined && ctx.injected.now() >= ctx.deadline) {
-      return { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
-    }
     const ending = await step(ctx);
     if (ending !== undefined) return ending;
   }
@@ -793,9 +782,6 @@ async function runSteps(steps, ctx) {
  *   shape and exit code.
  */
 export async function plan(values, injected, { cwd }) {
-  // RUN-12: the call's start, read once and first (as `release`'s, RUN-03), so M15
-  // `deadline` and `cleanupDeadline` bound the whole call.
-  const callStarted = injected.now();
   // Only bare `plan`, `plan --split` and `plan --reword` (RUN-06: the lock on a clean tree;
   // its reword facts GIT-09's, its snapshot CHG-15's) are built: every other flag
   // changes the mode or the clean-tree outcome (C:plan `mode`).
@@ -805,19 +791,10 @@ export async function plan(values, injected, { cwd }) {
   }
   // GIT-02: `notices` lives on `ctx` from the start, so `probeRepo` (step 1) can queue the
   // detached-HEAD notice before any later step runs.
-  const ctx = {
-    injected, cwd, values, provisional: null, run: null, notices: [], warnings: [],
-    deadline: deadline(callStarted), cleanupDeadline: cleanupDeadline(callStarted),
-  };
+  const ctx = { injected, cwd, values, provisional: null, run: null, notices: [], warnings: [] };
   let facts;
-  let thrown;
   try {
     facts = await runSteps(PLAN_STEPS, ctx);
-  } catch (err) {
-    // KD-R64 (RUN-12): an unexpected throw ends `plan` as `internal` here, with the reply and
-    // the notices collected so far (the cleanup's own below included), instead of reaching
-    // `commit.cjs`'s backstop, which has neither.
-    thrown = err;
   } finally {
     // Every outcome but the hunk index ends without the lock (C:run-folder), a thrown
     // `internal` included: a throw after `acquire` (`ctx.run`) releases the lock first, one
@@ -825,8 +802,8 @@ export async function plan(values, injected, { cwd }) {
     // error becomes a notice and never changes the outcome. A `release()` that could not
     // remove the lock (`busy`) reports `kept: true` and the folder is left alone too, so the
     // lock and its folder stay consistent for the next `/commit` (review-CHG-03b finding 2);
-    // a `nothing`/`failed` reply carries notices since RPL-04 (`planRefusalFailure` below),
-    // an `internal` throw's since RUN-12 (`planInternalFailure`).
+    // a `nothing`/`failed` reply carries notices since RPL-04 (`planRefusalFailure` below);
+    // an `internal` throw still drops them (KD-R64, RUN-12).
     if (facts === undefined || facts.hunks === undefined) {
       const released = ctx.run?.release() ?? { notice: null, kept: false };
       if (released.notice !== null) ctx.notices.push(released.notice);
@@ -836,7 +813,6 @@ export async function plan(values, injected, { cwd }) {
       }
     }
   }
-  if (thrown !== undefined) return await planInternalFailure(thrown, ctx);
   if (facts.refusal !== undefined) return await planRefusalFailure(facts.refusal, ctx);
   if (facts.hunks !== undefined) {
     // The lock is held and the worker goes on with the hunk index (C:plan): `reply` is null.
