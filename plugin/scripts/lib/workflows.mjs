@@ -357,6 +357,7 @@ async function snapshotUnits(ctx) {
     units = assignIds(await snapshot({
       mode: 'split',
       storedLists: {
+        tracked: ctx.inventory.tracked,
         candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
         stagedNew: ctx.inventory.stagedNew,
       },

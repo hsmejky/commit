@@ -520,21 +520,62 @@ export async function snapshot({ mode, storedLists, indexPath, unborn, toplevel,
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14, CHG-15)`);
   await buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, env, now });
   const opts = { toplevel, env, now, indexPath };
-  const reader = await pinnedDiff([], opts);
+  // CHG-10: one `check-attr` call, over every path the snapshot could turn into a unit
+  // (tracked, candidate and staged-new), before the diff pass runs: `filter`-attributed
+  // paths get `kind: "filtered"` at section-open time (openSection), and `linguist-generated`
+  // is carried on every unit as `generated`, for M9 `summaryOnly` (CHG-17).
+  const attrPaths = [
+    ...(storedLists.tracked ?? []),
+    ...storedLists.candidates,
+    ...storedLists.stagedNew.map((entry) => entry.path),
+  ];
+  const attrs = await checkAttrs(attrPaths, opts);
+  const reader = await pinnedDiff([], opts, attrs);
   const units = reader.end();
   if (reader.rediff.length === 0) return units;
   // A rename from a non-UTF-8 path: its UTF-8 new path, as the same diff shows it without
   // rename detection, is an `A` unit; the old path stays in `notUtf8` (review-CHG-12
   // finding 1). No pathspec (Q11: argv length), so the other paths' units are dropped.
   const rediff = new Set(reader.rediff);
-  const again = (await pinnedDiff(['--no-renames'], opts)).end().filter((unit) => rediff.has(unit.path));
+  const again = (await pinnedDiff(['--no-renames'], opts, attrs)).end().filter((unit) => rediff.has(unit.path));
   return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
 }
 
+// One `git check-attr --stdin -z filter linguist-generated` call (CHG-10, Q11): paths go on
+// stdin, NUL-separated, never argv. Runs through M2's `run`, which strips every inherited
+// `GIT_*` variable outside the keep-set (GIT-05), so a decoy `GIT_ATTR_SOURCE` cannot
+// redirect which `.gitattributes` this call reads. Returns a `Map<path, { filtered:
+// boolean, generated: boolean }>`; a path with no row (not in `paths`) is absent.
+async function checkAttrs(paths, { toplevel, env, now, indexPath }) {
+  if (paths.length === 0) return new Map();
+  const result = await run(
+    'git',
+    ['check-attr', '--stdin', '-z', 'filter', 'linguist-generated'],
+    {
+      cwd: toplevel, env, now, readOnly: true, index: indexPath,
+      input: Buffer.from(paths.map((p) => `${p}\0`).join(''), 'utf8'),
+    },
+  );
+  if (result.code !== 0) throw new Error(`git check-attr failed (${result.code}): ${result.stderr}`);
+  const fields = nulFields(result.stdout);
+  const out = new Map();
+  for (let i = 0; i + 2 < fields.length; i += 3) {
+    const path = fields[i].toString('utf8');
+    const attr = fields[i + 1].toString('utf8');
+    const value = fields[i + 2].toString('utf8');
+    const entry = out.get(path) ?? { filtered: false, generated: false };
+    if (attr === 'filter' && value !== 'unspecified' && value !== 'unset') entry.filtered = true;
+    if (attr === 'linguist-generated' && value === 'set') entry.generated = true;
+    out.set(path, entry);
+  }
+  return out;
+}
+
 // One pinned `git diff -z --raw -p` call against the temporary index, `extra` appended,
-// streamed into a diff reader.
-async function pinnedDiff(extra, { toplevel, env, now, indexPath }) {
-  const reader = createDiffReader();
+// streamed into a diff reader. `attrs`: the `check-attr` results (CHG-10), threaded to
+// `openSection` so a `filter`-attributed path's section opens as `kind: "filtered"`.
+async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map()) {
+  const reader = createDiffReader(attrs);
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...extra],
@@ -614,13 +655,16 @@ function existsInWorktree(toplevel, path) {
  * path is ever taken from patch text. Exported so the pairing can be fed crafted bytes in
  * any chunking without spawning git.
  *
+ * @param {Map<string, { filtered: boolean, generated: boolean }>} [attrs] the `check-attr`
+ *   results (CHG-10), keyed by path: a `filtered` path's section opens with
+ *   `entryKind: "filtered"` and every unit carries `generated`.
  * @returns {{ rediff: string[], push: (chunk: Buffer) => void, end: () => object[] }}
  *   `push` throws on the first pairing error and is not called again; `end` flushes the
  *   last line, checks the section count and returns the units in `snapshot`'s shape and
  *   order. `rediff`: the new paths of the renames whose old path is not UTF-8, in diff
  *   order (complete once `end` returns), which made no unit here.
  */
-export function createDiffReader() {
+export function createDiffReader(attrs = new Map()) {
   const records = [];
   const units = [];
   const rediff = [];
@@ -657,7 +701,7 @@ export function createDiffReader() {
       if (!line.equals(sectionHeader(record))) {
         throw new Error(`patch section ${sections} does not match raw record ${sections} (${escapeNonUtf8(record.pathBytes)})`);
       }
-      section = openSection(record);
+      section = openSection(record, attrs);
       if (section.notUtf8 === true && section.rediff !== null) rediff.push(section.rediff);
       if (record.status === 'T') typeChange = { header: Buffer.from(line), path: escapeNonUtf8(record.pathBytes) };
       return;
@@ -957,8 +1001,11 @@ const NOT_UTF8_SECTION = Object.freeze({ notUtf8: true, rediff: null });
 // 100644 and 100755 (CHG-08), and `T` (a type change between a file, a symlink and a
 // gitlink, CHG-09: `modes` holds both modes, and its second section is read into the same
 // section by `secondPart`). `entryKind` (CHG-09): `submodule` when either side is a gitlink
-// (160000), else `symlink` when either side is a symlink (120000), else null.
-function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
+// (160000), else `symlink` when either side is a symlink (120000), else `filtered` when the
+// `check-attr` results mark the path with a `filter` attribute (CHG-10), else null.
+// `generated`: the `linguist-generated` result, carried on every unit for M9 `summaryOnly`
+// (CHG-17), independent of `entryKind`.
+function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }, attrs = new Map()) {
   const path = utf8Path(pathBytes);
   const oldPath = oldPathBytes === null ? null : utf8Path(oldPathBytes);
   if (path === null) return NOT_UTF8_SECTION;
@@ -971,7 +1018,10 @@ function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
       throw new Error(`an unexpected ${mode} entry (${path})`);
     }
   }
-  const entryKind = modes.includes(GITLINK_MODE) ? 'submodule' : (modes.includes(SYMLINK_MODE) ? 'symlink' : null);
+  const attr = attrs.get(path);
+  const entryKind = modes.includes(GITLINK_MODE)
+    ? 'submodule'
+    : (modes.includes(SYMLINK_MODE) ? 'symlink' : (attr?.filtered ? 'filtered' : null));
   return {
     path,
     pathBytes,
@@ -979,6 +1029,7 @@ function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
     oldPathBytes,
     status: kind,
     entryKind,
+    generated: attr?.generated ?? false,
     modes: kind !== 'A' && kind !== 'D' && oldMode !== newMode ? `${oldMode} ${newMode}` : null,
     // Which side of a `T` is a gitlink: its `Subproject commit` line is hashed, never scanned.
     gitlink: [oldMode === GITLINK_MODE, newMode === GITLINK_MODE],
@@ -1038,14 +1089,14 @@ function sectionLine(section, line) {
 // lines (which start with `-`, `+` or `\`, never `m` or `b`).
 function unitsOf(section) {
   if (section.notUtf8 === true) return [];
-  const { path, pathBytes, oldPath, oldPathBytes, status, entryKind, modes, blobs, binary, hunks } = section;
+  const { path, pathBytes, oldPath, oldPathBytes, status, entryKind, modes, blobs, binary, hunks, generated } = section;
   if (binary && blobs === null) throw new Error(`a binary section without an index line (${path})`);
   if (status === 'T') return [typeChangeUnit(section)];
   if (status === 'M' && entryKind === null && !binary && modes === null && hunks.length === 0) {
     throw new Error(`a modified section without a hunk (${path})`);
   }
   const kind = entryKind ?? (binary ? 'binary' : (modes === null ? 'text' : 'mode'));
-  const base = { path, pathBytes, oldPath, status, kind };
+  const base = { path, pathBytes, oldPath, status, kind, generated };
   if (status === 'M' && kind === 'text') {
     const occurrences = new Map();
     return hunks.map((hunk) => {
@@ -1097,7 +1148,7 @@ function unitsOf(section) {
 // `Subproject commit` line is hashed but neither counted, scanned nor in the body, so a
 // file↔submodule `T`'s body is its file side (C:plan-hunks; review-CHG-09 finding 4).
 function typeChangeUnit(section) {
-  const { path, pathBytes, oldPath, entryKind, modes, gitlink, first } = section;
+  const { path, pathBytes, oldPath, entryKind, modes, gitlink, first, generated } = section;
   const parts = [first, { blobs: section.blobs, binary: section.binary, hunks: section.hunks }];
   const whole = createHash('sha256').update(Buffer.from('T\0')).update(pathBytes).update(Buffer.from([NUL]));
   whole.update(Buffer.from(`mode ${modes}\0`));
@@ -1122,7 +1173,7 @@ function typeChangeUnit(section) {
   const range = `-${parts[0].hunks[0]?.old.text ?? '0,0'} +${parts[1].hunks[0]?.new.text ?? '0,0'}`;
   return {
     path, pathBytes, oldPath, status: 'T', kind: entryKind, hash, identityKey: hash, ...counts, range,
-    body: Buffer.concat(body),
+    generated, body: Buffer.concat(body),
   };
 }
 

@@ -33,8 +33,13 @@ export function renderHunks(runState, units) {
   let nextLine = 1;
   for (const unit of units) {
     // CHG-08, CHG-09: a binary unit or a submodule pointer change has no block (`body:
-    // "none"`, C:plan-hunks); a file↔submodule `T` with file lines has one.
-    if (unit.kind === 'binary' || (unit.kind === 'submodule' && unit.body.length === 0)) {
+    // "none"`, C:plan-hunks); a file↔submodule `T` with file lines has one. CHG-10: a
+    // `filtered` unit whose cleaned form is binary has no block either.
+    if (
+      unit.kind === 'binary'
+      || (unit.kind === 'filtered' && unit.body.length === 0)
+      || (unit.kind === 'submodule' && unit.body.length === 0)
+    ) {
       hunks.push({
         id: unit.id,
         path: unit.path,
