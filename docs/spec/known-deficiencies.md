@@ -110,23 +110,6 @@ delete it here; IDs are never reused.
 
 ## Testing
 
-Privacy-guard test (Q15); settled by [FND-06](../roadmap/01-foundation.md):
-
-- **KD-S30. Self-test file set wider than the guard's.** The self-test scans all tracked
-  files, including fixtures that legitimately hold service-user paths, so it fails where
-  the guard passes. Where: [testing-modules.md](testing-modules.md), Q15. Fix: use the
-  guard's file set.
-- **KD-S31. The segment check cannot use `scanText`.** `scanText` always applies the
-  service-user list (`runner`, `root`) and the length rule, so it finds nothing by
-  construction. Fix: the test owns a one-line segment regex (stated, with its reason), or
-  `scanText` gains an exemption-off option.
-- **KD-S32. Tracked-only scan skips new files** until `git add`. Fix: say so, or also scan
-  non-excluded untracked files in the set.
-- **KD-S33. Main privacy test scans "docs" unscoped**, so untracked review reports fail a
-  local `npm test`. Fix: scan `git ls-files`, the self-test's set.
-- **KD-S34. "Any user name" overstates `local-path`**, which skips placeholder and
-  service-user names. Fix: reword.
-
 Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](testing-seams.md)):
 
 - **KD-S35. PATH git shims cannot work on Windows.** Shell-less spawn finds only

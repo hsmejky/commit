@@ -103,19 +103,20 @@ the privacy-guard test and its self-test scan and where the runner-name segment 
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q10, Q15, C:scan-patterns (`local-path`), Modules and how "Other checks", M8.
 
-- [ ] One file set is named for both the test and its self-test (docs, README, manifests, test sources; whether fixtures are in it): tracked files only (`git ls-files`), per Q15 and testing-modules.md.
-- [ ] The docs state whether the runner-name segment check is a matcher the test owns (with its reason against "do not duplicate library logic") or an exemption-off option of M8 `scanText`, since `scanText` always applies the service-user list that holds `runner` and `root`.
-- [ ] The "any user name" wording of the `local-path` part is aligned with C:scan-patterns' placeholder and service-user exemptions.
+- [x] One file set is named for both the test and its self-test (docs, README, manifests, test sources; whether fixtures are in it): tracked files only (`git ls-files`), per Q15 and testing-modules.md.
+- [x] The docs state whether the runner-name segment check is a matcher the test owns (with its reason against "do not duplicate library logic") or an exemption-off option of M8 `scanText`, since `scanText` always applies the service-user list that holds `runner` and `root`.
+- [x] The "any user name" wording of the `local-path` part is aligned with C:scan-patterns' placeholder and service-user exemptions.
 
 
 ## FND-07: Privacy guard: runner name as a path segment, with self-test
 
 **What to build:** the CI test that fails when the runner's user name appears as a path
-segment in the privacy file set, and a self-test that runs the same check locally with the
+segment in the privacy file set, matched by a one-line regex the test owns (not an M8
+`scanText` option, FND-06), and a self-test that runs the same check locally with the
 name set to `runner` and to `root`.
 
 **Blocked by:** FND-03, FND-06.
@@ -131,8 +132,10 @@ name set to `runner` and to `root`.
 
 ## FND-08: Privacy guard: `local-path` and every scan pattern
 
-**What to build:** the privacy-guard test's scan part: `local-path` over docs, README,
-manifests and test sources, and every other scan pattern over test sources, through the
+**What to build:** the privacy-guard test's scan part: `local-path` over the file set
+FND-06 decided (docs, README, manifests and test sources: tracked files, `git ls-files`,
+plus untracked non-ignored files, `git ls-files --others --exclude-standard`, excluding
+`tests/fixtures/**`), and every other scan pattern over test sources, through the
 scanner.
 
 **Blocked by:** FND-07, SCN-06, SCN-07, SCN-09, SCN-11.

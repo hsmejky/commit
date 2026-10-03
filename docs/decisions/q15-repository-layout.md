@@ -40,7 +40,9 @@
   runner image ships a newer git and a job on it would not test the minimum. A
   privacy-guard test keeps local paths and usernames out of docs, README,
   manifests and test sources (Q10): `local-path` over all four, matching a home-directory
-  path with any user name on every OS, and the CI runner's user name as a path segment. A
+  path with any user name except the placeholders and service users of C:scan-patterns
+  (and names with OS-illegal characters) on every OS, and the CI runner's user name as a
+  path segment. A
   bare user name outside a home path is not caught (accepted). Design review reports stay out of history: they quote
   the bugs they found, local paths included, and the decisions already record what they
   changed. They are written next to the docs (`docs/design-review*.md`, where the review
@@ -104,6 +106,20 @@
   (nodejs/node#52682, fixed in 22.1.0), so the CI Node 22 leg's oldest pin is windows-only
   22.1.0; ubuntu and macos keep the 22.0.0 floor (Dependency policy "Built-ins and version
   fences").
+- **Amended.** By FND-06 (2026-10-03): settled the privacy-guard test's file set and segment
+  matcher. The file set is identical for the test and its self-test: tracked files (`git
+  ls-files`) plus untracked non-ignored files (`git ls-files --others --exclude-standard`,
+  which honours `.gitignore` and `.git/info/exclude`, so untracked `docs/design-review*.md`
+  reports are skipped), filtered to docs, README, manifests and test sources, excluding
+  `tests/fixtures/**` (which deliberately holds local-path positives and service-user
+  paths, consistent with the repo's `scanIgnore`). The manifest files that exist in the
+  repo are `package.json`, `plugin/.claude-plugin/plugin.json` and
+  `.claude-plugin/marketplace.json`. The runner-name segment check (`[\\/]<name>[\\/]`, no
+  service-user or length exemptions) is a one-line regex the test owns, not an option on
+  M8 `scanText`: it is a different, test-only rule (no exemptions), so it does not
+  duplicate library logic, and the production `scanText` API stays free of a test-only
+  switch. The main body's "any user name" wording is corrected above to name the
+  placeholder and service-user exemptions it already had.
 - **Rejected.**
   - Node 18 or 20 as the minimum: both are end-of-life, and Claude Code's npm install
     already requires Node 22.

@@ -23,7 +23,7 @@ starting a slice it names.
 | File | Prefix | Slices | needs-human | Delivers |
 | --- | --- | --- | --- | --- |
 | 00-prerequisites-and-spikes.md | PRE | 16 | 12 | spikes, manual checks, repo config prerequisite, story and text wording (PRE-15), managed-settings path and CI permissions spike (PRE-16) |
-| 01-foundation.md | FND | 10 | 1 | repo skeleton, seam harnesses, stepping clock, fault-injection preload (FND-10), CI matrix, privacy guard, manifest skeleton, roadmap graph check (FND-09) |
+| 01-foundation.md | FND | 10 | 0 | repo skeleton, seam harnesses, stepping clock, fault-injection preload (FND-10), CI matrix, privacy guard, manifest skeleton, roadmap graph check (FND-09) |
 | 02-guard.md | GRD | 20 | 1 | S1 heartbeat, S2 ScriptCall, G1-G3, deny catalogue, hook registration; GRD-08 also covers the former GRD-09 |
 | 03-message-grammar.md | MSG | 8 | 0 | M6 message grammar, lint, trailers, reword carry-over |
 | 04-config-and-attribution.md | CFG | 11 | 1 | M4 config loader, M5 attribution resolver |
@@ -38,7 +38,7 @@ starting a slice it names.
 | 13-worker-and-skills.md | WRK | 8 | 3 | commit-worker agent, `/commit` skill, worker protocol, hand-tests |
 | 14-infer-and-commit-config.md | INF | 9 | 1 | M19 inference, `infer`, `/commit-config` skill |
 | 15-release.md | REL | 6 | 2 | manifests, README (with the first-time-reader overview, REL-03b), 0.1.0 release checks |
-| **Total** | | **228** | **28** | |
+| **Total** | | **228** | **27** | |
 
 Not a group: [known-deficiencies.md](known-deficiencies.md) lists open defects of the plan
 (KD-R IDs) with the slices they affect and a suggested fix order.
@@ -57,7 +57,7 @@ slices widen it.
 ## Can start immediately
 
 Agent work: none (PRE-01, PRE-03, PRE-09, PRE-10 and FND-01 are done).
-Human work: PRE-02, PRE-05, PRE-11, PRE-13, PRE-16, FND-06.
+Human work: PRE-02, PRE-05, PRE-11, PRE-13, PRE-16.
 
 After FND-01 → FND-03 → FND-04 → RPL-01, the walking skeleton INT-01 opens most groups.
 FND-09 (agent work, the roadmap graph check) also starts right after FND-01.
@@ -85,7 +85,6 @@ only through another gated slice, named in parentheses.
 | Slice | Open item | Gates |
 | --- | --- | --- |
 | PRE-16 | managed-settings directory path per OS and the CI permissions to write it | CFG-11 |
-| FND-06 | privacy test file set and segment matcher | FND-07 |
 | PRE-02 | personal commit skill removed before spikes and dogfooding | PRE-04, PRE-06, PRE-12, GRD-21, WRK-06 |
 | PRE-04 | spike: hook `if` condition on compound commands | GRD-18 |
 | PRE-05 | spike: heartbeat under the sandbox | GRD-15; GRD-17 *(transitive, via GRD-15)* |

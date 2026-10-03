@@ -109,15 +109,23 @@ the Seam 1 size fixtures, `plan`'s own fields ≤ 1 kB (excluding `hunks` and `r
 counted), `plan --hunks` stdout ≤ 20 000 characters (the hunk index spills to `hunks.json`
 past that budget).
 Privacy-guard test (Q15: no local paths or usernames in docs, README, manifests or test
-sources): `local-path` over all four, matching a home-directory path with any user name on
-every OS, not just the runner's; every other scan pattern over test sources; the CI runner's
-user name only as a path segment (`/home/<name>/`, `/Users/<name>/`, `C:\Users\<name>\` and
-any other path, as in story 138 but without its service-user and length exemptions), never
-as a bare word, since `runner` and `root` are ordinary words in the docs. A bare name
-outside a path is not caught (accepted). A self-test runs the segment check over the
-repo's tracked files (`git ls-files`, so untracked review reports are skipped) with the
-user name set to `runner` and to `root`, so a doc that quotes a
-runner path fails locally, not only on the runner.
+sources): `local-path` over all four, matching a home-directory path with any user name
+except the placeholders and service users of C:scan-patterns (and names with OS-illegal
+characters), on every OS, not just the runner's; every other scan pattern over test
+sources; the CI runner's user name only as a path segment (`/home/<name>/`,
+`/Users/<name>/`, `C:\Users\<name>\` and any other path, as in story 138 but without its
+service-user and length exemptions), never as a bare word, since `runner` and `root` are
+ordinary words in the docs. A bare name outside a path is not caught (accepted). The
+segment check is a one-line regex the test owns (FND-06), not an option on M8 `scanText`:
+a different, test-only rule with no exemptions, kept out of the production API. The file
+set is identical for the test and its self-test (FND-06): tracked files (`git ls-files`)
+plus untracked non-ignored files (`git ls-files --others --exclude-standard`, which
+honours `.gitignore` and `.git/info/exclude`, so untracked `docs/design-review*.md`
+reports are skipped), filtered to docs, README, manifests (`package.json`,
+`plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`) and test sources,
+excluding `tests/fixtures/**`. The self-test runs the segment check over that same file
+set with the user name set to `runner` and to `root`, so a doc that quotes a runner path
+fails locally, not only on the runner.
 Hook registration check: the packaged hook file registers exactly one `PreToolUse` hook on
 `Bash|PowerShell` in exec form, with `node` as the command and the guard entry point as the
 only argument. Fixtures: one positive and one negative
