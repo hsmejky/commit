@@ -117,6 +117,25 @@ const GIT = /^git(?:\.exe)?$/i;
 // git's own dashed form: basename `git-commit` or `git-commit.exe`.
 const DASHED_COMMIT = /^git-commit(?:\.exe)?$/i;
 const COMMIT = /^commit$/i;
+// An argv[0] option (C:guard step 3): git runs `git-<x>` from argv[0]'s basename as `<x>`,
+// and Bash `exec -a NAME` (`-aNAME`, `-caNAME`) or coreutils `env -a NAME` (`--argv0`)
+// sets it. An option cluster holding `a`, or a long option starting `--a`.
+const ARGV0_RUNNER = /^(?:exec|env)$/;
+const ARGV0_OPTION = /^-(?:-a|[^-]*a)/;
+
+// The `exec` or `env` word before an argv[0] option before the `git` token at `at`, in its
+// command starting at `from`, as it reads after quote removal; undefined when there is none.
+function argv0Runner(tokens, from, at) {
+  let runner;
+  for (let i = from; i < at; i += 1) {
+    const token = tokens[i];
+    if (typeof token !== 'string') continue;
+    if (runner === undefined) {
+      if (ARGV0_RUNNER.test(basename(token))) runner = token;
+    } else if (ARGV0_OPTION.test(token)) return runner;
+  }
+  return undefined;
+}
 // C:guard step 4: a token holding `$`, a backtick, `{`, `(` or a glob character may turn
 // into another word or into several arguments.
 const NOT_LITERAL = /[$`{(*?[]/;
@@ -413,7 +432,12 @@ export function classify(parsed, context = {}) {
       // Windows PowerShell 5.1 drops an empty argument, so `git '' commit` runs a commit.
       let next = i + 1;
       while (!dashed && shell === 'powershell' && tokens[next] === '') next += 1;
-      if (!dashed && !(typeof tokens[next] === 'string' && COMMIT.test(tokens[next]))) continue;
+      if (!dashed && !(typeof tokens[next] === 'string' && COMMIT.test(tokens[next]))) {
+        // An argv[0] option may make this `git` run `commit` whatever follows it.
+        const runner = argv0Runner(tokens, starts[i], i);
+        if (runner === undefined) continue;
+        return { decision: 'deny', message: wrapperMessage(runner), scriptCalls: [] };
+      }
       if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
       const message = commitDecision(tokens, starts[i], i, dashed ? next : next + 1, shell);
       if (message !== null) {

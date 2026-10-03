@@ -112,6 +112,24 @@ const table = [
   ['bash', 'echo x && git-commit -m x', 'bare'],
   ['bash', '(git-commit -m x)', 'bare'],
   ['bash', 'xargs git-commit --no-edit', () => wrapper('xargs')],
+  // An argv[0] option of `exec` or `env` before a `git` token may name it `git-commit`, which
+  // git runs as `commit` (Linux bash ran `(exec -agit-commit git --allow-empty -m e)`): such
+  // a `git` token not followed by `commit` denies with the wrapper row naming `exec` or
+  // `env`. A `git-commit` or `commit` token is classified as usual, its rows ranking first.
+  ['bash', '(exec -agit-commit git -m x)', () => wrapper('exec')],
+  ['bash', '(exec -a"git-commit" git -m x)', () => wrapper('exec')],
+  ['bash', '(exec -cagit-commit git -m x)', () => wrapper('exec')],
+  ['bash', 'exec -a git-commit git --no-edit', generic('git')],
+  ['bash', 'exec -la x /usr/bin/git commit --no-edit', () => wrapper('exec')],
+  ['bash', 'env --argv0=git-commit git -m x', () => wrapper('env')],
+  ['bash', 'env -agit-commit git -m x', () => wrapper('env')],
+  ['bash', 'env -i -agit-commit /usr/bin/git -m x', () => wrapper('env')],
+  ['bash', 'command /usr/bin/env --a=git-commit git -m x', () => wrapper('/usr/bin/env')],
+  ['bash', 'env -a x git commit --no-edit', () => wrapper('-a')],
+  ['bash', 'env -i git log --grep=commit', null],
+  // Accepted false denies: any argv[0] value, a cluster holding `a` with another meaning.
+  ['bash', 'exec -a x git log --grep=commit', () => wrapper('exec')],
+  ['bash', 'env -uname git log --grep=commit', () => wrapper('env')],
 ];
 
 for (const [shell, command, expected] of table) {

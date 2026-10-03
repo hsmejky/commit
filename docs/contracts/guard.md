@@ -342,6 +342,20 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    segment as a `commit` straight away, skipping steps 4 and 5's global-option and
    subcommand scan: the tokens after it are `commit`'s own args, expanded and checked
    against the allowlist as in step 5.
+   git runs `git-<x>` read from argv[0]'s basename as `<x>`, and Bash `exec -a NAME` or
+   coreutils `env -a NAME` / `--argv0=NAME` sets argv[0], so Linux bash commits on
+   `(exec -agit-commit git --allow-empty -m e)` though no token reads `commit` after `git`
+   (Git Bash does not pass argv[0] to the native git.exe). So a `git` token whose command
+   holds, before it, an `exec` or `env` word (by basename) followed by an argv[0] option, a
+   token starting `-` whose option cluster holds `a` (`-a`, `-aNAME`, `-caNAME`, `-la`) or
+   starting `--a` (`--argv0`, any abbreviation), denies with the wrapper row naming that
+   word, whatever follows the token and whatever the option's value (fail closed; PRE-03):
+   `(exec -a"git-commit" git -m x)`, `env -i -agit-commit /usr/bin/git -m x`. A `git` token
+   followed by `commit`, or a `git-commit` token, is classified as usual: the argv[0] option
+   is then a possible wrapper and the rows rank as in Precedence (`exec -a x git commit
+   --no-edit` names `exec`, `exec -a git-commit git --no-edit` gets the generic row on
+   `git`). Accepted false denies: an option cluster holding `a` with another meaning
+   (`env -uname git log --grep=commit`) and any value (`exec -a x git log --grep=commit`).
    Every token before the `git` token in its command must fit the prefix allowlist below
    (fail closed). The first token that does not is a possible wrapper: it denies a `commit`
    that steps 4 and 5 would allow or give the bare row, with the wrapper row naming it as it
