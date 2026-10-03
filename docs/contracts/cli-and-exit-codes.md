@@ -57,15 +57,17 @@ Failure shape, shared by all subcommands:
 ```
 
 A lint failure uses the same shape and adds the `errors` array (see [check](check.md)). A
-`lock` error carries the holder's `planId`, `created` and `touched` (the lock file's mtime),
-so the takeover question can say how long ago it was last active and
+`lock` error refused `held` carries the holder's `planId`, `created` and `touched` (the lock
+file's mtime), so the takeover question can say how long ago it was last active and
 `plan --take-over <planId>` replaces only that run (Q22). For an unparseable lock, or one
 whose `planId` is not in the minted form, `planId` and `created` are `null` and the `reply`
 carries no handback: a run's own lock is never seen without its content (it is linked into
 place fully written), so such a lock is corrupt or foreign, and there is no `planId` to take
 over. The message is "the /commit lock is unreadable (corrupt or not written by /commit)",
 and the `text` says it is waited out: it is taken over automatically once it has been idle
-for 15 minutes, at the time `touched` plus 15 minutes, which the text names.
+for 15 minutes, at the time `touched` plus 15 minutes, which the text names. A race lost to
+a lock that is gone again before it can be read names no holder either: `planId`, `created`
+and `touched` are all `null`.
 
 Every output that ends the worker's part of a run, failures included, also carries `reply`
 ([Reply and handback](reply-and-handback.md)); the worker returns it verbatim. A failure the

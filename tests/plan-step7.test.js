@@ -270,7 +270,30 @@ test('plan refused by a live lock already in place exits 6 lock before any inven
   assertHolderFields(result, c, { planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
   const started = trace.commands();
   assert.ok(started.some((line) => / rev-parse /.test(line)), `the trace records the plan's git calls:\n${started.join('\n')}`);
-  assert.deepEqual(started.filter((line) => / ls-files --others /.test(line)), [], 'no inventory git call ran');
+  // review-RUN-07-r2 finding 3: matching only the inventory's current first call
+  // (`ls-files --others`) loses its power the moment the inventory starts with a different
+  // one. Checked against an allow-list instead, so any CHG-05 inventory git call at all —
+  // not just this one — fails the test: `probe`'s two startup calls, `readHeadState`'s
+  // status call and its concurrent `inProgressState`/`commitEncoding` pair (order
+  // unconstrained, both run via `Promise.all`), `createRunFolder`'s own `git-path`/
+  // `isTracked` calls, and the one `git status` call `treeState` makes afterward for the
+  // `failed` reply's text (INT-01: every reply, refusal included, ends with it; a single
+  // cheap call, unlike CHG-05's own multi-call scan, so it is not "inventory work" either).
+  const PRE_INVENTORY_CALLS = [
+    / --version$/,
+    / rev-parse --show-toplevel$/,
+    / status --porcelain=v2 --branch --untracked-files=no --ignore-submodules=all --no-ahead-behind$/,
+    / rev-parse(?: --git-path \S+)+$/,
+    / config --get i18n\.commitEncoding$/,
+    / ls-files -z --cached$/,
+    / status --porcelain -z --untracked-files=all$/,
+  ];
+  for (const line of started) {
+    assert.ok(
+      PRE_INVENTORY_CALLS.some((allowed) => allowed.test(line)),
+      `a git call ran that is not on the allow-list (a CHG-05 inventory call?):\n${line}`,
+    );
+  }
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed, "the holder's lock is untouched");
   assert.deepEqual(folderNames(c), [], 'no provisional folder and no temporary index are left');
   assert.equal(result.json.reply.handback, null, "the lock handback itself is INT-05's");
