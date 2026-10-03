@@ -2,7 +2,8 @@
 // Pure: it returns texts, and M18 writes them through M12. Bodies are decoded lossily here
 // and nowhere else on the way to the worker; nothing decoded feeds a hash or a patch.
 //
-// CHG-03 builds the tracer: every unit gets a `body: "file"` block in `hunks.txt`. CHG-16
+// CHG-03 builds the tracer: every unit gets a `body: "file"` block in `hunks.txt`, except a
+// binary one (CHG-08: `body: "none"`, no block). CHG-16
 // adds the per-entry `scan` and withheld bodies, CHG-17 summary-only entries and the body
 // cap, CHG-18 the stdout budget with the spill to `hunks.json`. GIT-09 adds `oldMessage` in
 // `reword` mode.
@@ -21,7 +22,8 @@ const LOSSY_UTF8 = new TextDecoder('utf-8');
  * @returns {{ stdoutObj: object, hunksTxt: string }} `stdoutObj`: exactly the C:plan-hunks
  *   output shape; `hunksTxt`: one block per unit, a `### <id> <status> <kind> <range>
  *   <path>` line then the lossily decoded body. Per entry, `offset` is the 1-based line of
- *   its `###` line and `lines` the block's line count including it.
+ *   its `###` line and `lines` the block's line count including it. A binary unit has no
+ *   block: `body: "none"`, `offset` and `lines` null.
  */
 export function renderHunks(runState, units) {
   const { scanIgnore, ...values } = runState.config.values;
@@ -29,6 +31,21 @@ export function renderHunks(runState, units) {
   const hunks = [];
   let nextLine = 1;
   for (const unit of units) {
+    // CHG-08: a binary unit has no block (`body: "none"`, C:plan-hunks).
+    if (unit.kind === 'binary') {
+      hunks.push({
+        id: unit.id,
+        path: unit.path,
+        oldPath: unit.oldPath,
+        status: unit.status,
+        kind: unit.kind,
+        range: unit.range,
+        lines: null,
+        offset: null,
+        body: 'none',
+      });
+      continue;
+    }
     const label = unit.oldPath === null ? unit.path : `${unit.oldPath} -> ${unit.path}`;
     let body = LOSSY_UTF8.decode(unit.body);
     if (!body.endsWith('\n')) body += '\n';

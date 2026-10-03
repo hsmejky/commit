@@ -57,7 +57,9 @@ and of the real index.
   it for mode, symlink, submodule and binary units): a hunk unit hashes its path, NUL, its
   `-`/`+` (and qualifying `\`) lines, NUL, its occurrence index in decimal ASCII; its identity
   key is the same hash without the last two parts; a whole-file unit hashes `[old path, NUL,]
-  path, NUL, lines`, and is its own identity key. **Hidden by an attribute**: for a path git
+  path, NUL, [mode <old> <new>, NUL,] lines` (CHG-08: `mode` for a mode change; a binary
+  file has `blob <old> <new>`, NUL, the `index` line's full IDs, in place of the lines), and
+  is its own identity key. **Hidden by an attribute**: for a path git
   reports as binary (`-\t-` in `--numstat`), the same `check-attr` call also queries `diff`
   and `binary`; only a path whose attributes hide its diff (`-diff`, `binary`, or a `diff`
   driver) gets the content check: its size is checked against the 1 MB scan limit first

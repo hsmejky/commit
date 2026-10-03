@@ -107,7 +107,7 @@
     hunks (current ranges) and run `git apply --cached --whitespace=nowarn` on it (Q18).
   - Every diff the script runs uses pinned options: `--no-ext-diff --no-color --no-textconv
     --no-relative -U3 --inter-hunk-context=0 --indent-heuristic -M --diff-algorithm=myers
-    --ignore-submodules=dirty --submodule=short --src-prefix=a/ --dst-prefix=b/` and
+    --ignore-submodules=dirty --submodule=short --src-prefix=a/ --dst-prefix=b/ --full-index` and
     `-c core.quotePath=false -c diff.suppressBlankEmpty=false -c diff.autoRefreshIndex=true`,
     from the toplevel (Q9). `--whitespace=nowarn` keeps `apply.whitespace=error|fix` from
     rejecting or changing what was planned and scanned. `diff.autoRefreshIndex=true` keeps a
@@ -208,9 +208,12 @@
     range, never a file with a hit.
   - The per-group temporary index stays deferred past 0.1.0 (see [Non-goals](non-goals.md)).
 - **Amended.** By spec pass 4 (2026-09-27):
-  - The pinned list above is complete: no `--full-index` (text hunks go through
-    `git apply --cached`, which needs no full blob IDs; binary files are whole-file adds)
-    and no pinned rename limit. `diff.renameLimit` is left to the user's config like
+  - The pinned list above is complete (text hunks go through `git apply --cached`, which
+    needs no full blob IDs) and has no pinned rename limit. `--full-index` was added by the
+    CHG-08 decision (2026-10-03): a binary unit hashes its path and blob IDs, which come from
+    the patch's `index` line (the raw record shows zeros for a worktree side), and only
+    full IDs keep that hash stable, since an abbreviation lengthens as the object count
+    grows (`gc --auto` after a group's commit) and depends on `core.abbrev`. `diff.renameLimit` is left to the user's config like
     `diff.orderFile`: `plan` and `commit` read the same limit, so a skipped rename detection
     yields the same delete-plus-add units on both sides.
   - Content keeps its raw bytes: diff output stays a `Buffer`, and hunk bodies, unit hashes

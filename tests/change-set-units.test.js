@@ -394,20 +394,92 @@ test('snapshot: a user diff.orderFile does not change the unit order', async (t)
   assert.deepEqual(units.map((u) => u.path), ['a.txt', 'b.txt', 'c.txt']);
 });
 
-test('snapshot: a binary file and a mode change are not built yet', async (t) => {
+// CHG-08: whole-file units per Q11's hash table, each part framed so none can pass for another.
+function blobId(c, spec) {
+  return c.git(['rev-parse', spec]).trim();
+}
+
+test('snapshot: a binary edit is one binary unit hashed over its path and full blob IDs', async (t) => {
   const c = createCase(t);
   seed(c, { 'bin.dat': Buffer.from([0, 1, 2, 10]) });
   c.writeFile('bin.dat', Buffer.from([0, 1, 3, 10]));
-  await assert.rejects(snapshot(c), /not built yet/);
+  const oldId = blobId(c, 'HEAD:bin.dat');
+  const newId = c.git(['hash-object', 'bin.dat']).trim();
 
-  // `core.fileMode` is false on Windows, where git takes the worktree mode from the index:
-  // the temporary index is reset to HEAD's mode, so a staged `--chmod` alone shows no change
-  // there (CHG-08 decides that case).
-  if (process.platform === 'win32') return;
-  const c2 = createCase(t);
-  seed(c2, { 'run.sh': 'echo\n' });
-  fs.chmodSync(path.join(c2.repoDir, 'run.sh'), 0o755);
-  await assert.rejects(snapshot(c2), /not built yet/);
+  const [unit, ...rest] = await snapshot(c);
+
+  assert.equal(rest.length, 0);
+  assert.deepEqual(
+    { status: unit.status, kind: unit.kind, range: unit.range, added: unit.added, deleted: unit.deleted, body: unit.body.length },
+    { status: 'M', kind: 'binary', range: '-0,0 +0,0', added: 0, deleted: 0, body: 0 },
+  );
+  const expected = crypto.createHash('sha256').update(`bin.dat\0blob ${oldId} ${newId}\0`).digest('hex');
+  assert.equal(unit.hash, expected);
+  assert.equal(unit.identityKey, expected);
+});
+
+test('snapshot: a new and a deleted binary file use the zero ID on the missing side', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'old.dat': Buffer.from([0, 9]) });
+  const oldId = blobId(c, 'HEAD:old.dat');
+  fs.rmSync(path.join(c.repoDir, 'old.dat'));
+  fs.writeFileSync(path.join(c.repoDir, 'new.dat'), Buffer.from([0, 7, 7]));
+  const newId = c.git(['hash-object', 'new.dat']).trim();
+  const zero = '0'.repeat(oldId.length);
+
+  const units = await snapshot(c, { candidates: ['new.dat'], stagedNew: [] });
+
+  assert.deepEqual(units.map((u) => [u.path, u.status, u.kind]), [['new.dat', 'A', 'binary'], ['old.dat', 'D', 'binary']]);
+  const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+  assert.equal(units[0].hash, sha(`new.dat\0blob ${zero} ${newId}\0`));
+  assert.equal(units[1].hash, sha(`old.dat\0blob ${oldId} ${zero}\0`));
+});
+
+test('snapshot: a deleted text file is one D unit of - lines', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n', 'b.txt': 'one\ntwo\n' });
+  fs.rmSync(path.join(c.repoDir, 'b.txt'));
+
+  const [unit, ...rest] = await snapshot(c);
+
+  assert.equal(rest.length, 0);
+  assert.deepEqual(
+    { path: unit.path, status: unit.status, kind: unit.kind, range: unit.range, added: unit.added, deleted: unit.deleted },
+    { path: 'b.txt', status: 'D', kind: 'text', range: '-1,2 +0,0', added: 0, deleted: 2 },
+  );
+  assert.equal(unit.body.toString('utf8'), '@@ -1,2 +0,0 @@\n-one\n-two\n');
+  assert.equal(unit.hash, crypto.createHash('sha256').update('b.txt\0-one\n-two\n').digest('hex'));
+});
+
+// A committed 100755 file whose worktree copy reads as 100644 under `core.fileMode=true`
+// gives a mode change on every platform (Windows has no executable bit to set).
+test('snapshot: a mode change, alone or with an edit, is one mode unit hashed over both modes', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.fileMode', 'true']);
+  seed(c, { 'run.sh': 'echo\n', 'ed.sh': '1\n2\n' });
+  c.git(['update-index', '--chmod=+x', '--', 'run.sh', 'ed.sh']);
+  c.git(['commit', '-q', '-m', 'exec']);
+  for (const file of ['run.sh', 'ed.sh']) fs.chmodSync(path.join(c.repoDir, file), 0o644);
+  c.writeFile('ed.sh', '1\ntwo\n');
+
+  const units = await snapshot(c);
+
+  assert.deepEqual(units.map((u) => [u.path, u.status, u.kind, u.range]), [
+    ['ed.sh', 'M', 'mode', '-1,2 +1,2'],
+    ['run.sh', 'M', 'mode', '-0,0 +0,0'],
+  ]);
+  const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+  assert.equal(units[0].hash, sha('ed.sh\0mode 100755 100644\0-2\n+two\n'));
+  assert.equal(units[1].hash, sha('run.sh\0mode 100755 100644\0'));
+  assert.equal(units[1].body.length, 0);
+});
+
+test('snapshot: a type change is not built yet (CHG-09)', { skip: process.platform === 'win32' && 'no symlinks without privileges' }, async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n', 'l': 'x\n' });
+  fs.rmSync(path.join(c.repoDir, 'l'));
+  fs.symlinkSync('a.txt', path.join(c.repoDir, 'l'));
+  await assert.rejects(snapshot(c), /a T change \(l\) is not built yet \(CHG-09\)/);
 });
 
 // CHG-05: the temporary index. `snapshot` copies the real index, resets the copy to HEAD,
@@ -566,18 +638,6 @@ test('snapshot: a failing git add -N is git-failed', async (t) => {
     snapshot(c, { candidates: ['ign.txt'], stagedNew: [] }),
     (err) => err.domainCode === 'git-failed' && /^git add failed/.test(err.message),
   );
-});
-
-test('snapshot: an untracked binary file and a deletion are not built yet', async (t) => {
-  const c = createCase(t);
-  seed(c, { 'a.txt': 'a\n' });
-  fs.writeFileSync(path.join(c.repoDir, 'bin.dat'), Buffer.from([0x61, 0x00, 0x62]));
-  await assert.rejects(snapshot(c, { candidates: ['bin.dat'], stagedNew: [] }), /binary\) is not built yet \(CHG-08\)/);
-
-  const c2 = createCase(t);
-  seed(c2, { 'a.txt': 'a\n', 'b.txt': 'b\n' });
-  fs.rmSync(path.join(c2.repoDir, 'b.txt'));
-  await assert.rejects(snapshot(c2), /a D change \(b\.txt\) is not built yet/);
 });
 
 test('assignIds mints h1..hN in unit order and leaves the input alone', async (t) => {

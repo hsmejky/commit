@@ -26,6 +26,7 @@ const PINNED_DIFF_OPTIONS = [
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
   '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
+  '--full-index',
 ];
 
 const NUL = 0x00;
@@ -42,6 +43,10 @@ const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
 const LOSSY_UTF8 = new TextDecoder('utf-8');
 const BINARY_SNIFF_BYTES = 8000;
 const BINARY_PATCH = Buffer.from('Binary files ');
+// A section header's `index <old>..<new>[ <mode>]` line, full IDs under `--full-index`.
+const INDEX_LINE = /^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: [0-7]+)?\n$/;
+const NO_MODE = '000000';
+const REGULAR_MODES = new Set(['100644', '100755']);
 
 /**
  * Reads the working tree's state: every path `git status` reports (tracked changes and
@@ -721,16 +726,18 @@ function decodePath(bytes) {
 }
 
 // Opens a section for its raw record. `M` (content edit), `A` (a new file from the
-// temporary index's intent-to-add entries, old mode 000000) and `R<score>` (a rename, the
-// score dropped) are built; every other status, a mode change and a non-regular entry throw
-// for CHG-08/CHG-09.
+// temporary index's intent-to-add entries, old mode 000000), `D` (a deleted file, new mode
+// 000000) and `R<score>` (a rename, the score dropped) are built, with or without a mode
+// change between 100644 and 100755 (CHG-08); every other status (`T`) and a non-regular
+// entry (symlink, gitlink) throw for CHG-09.
 function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
   const path = decodePath(pathBytes);
-  const kind = status === 'M' || status === 'A' ? status : (/^R\d*$/.test(status) ? 'R' : null);
-  if (kind === null) throw new Error(`a ${status} change (${path}) is not built yet (CHG-08)`);
-  if (kind !== 'A' && oldMode !== newMode) throw new Error(`a mode change (${path}) is not built yet (CHG-08)`);
-  if (newMode !== '100644' && newMode !== '100755') {
-    throw new Error(`a ${newMode} entry (${path}) is not built yet (CHG-09)`);
+  const kind = /^[MAD]$/.test(status) ? status : (/^R\d*$/.test(status) ? 'R' : null);
+  if (kind === null) throw new Error(`a ${status} change (${path}) is not built yet (CHG-09)`);
+  for (const mode of [oldMode, newMode]) {
+    if (mode !== NO_MODE && !REGULAR_MODES.has(mode)) {
+      throw new Error(`a ${mode} entry (${path}) is not built yet (CHG-09)`);
+    }
   }
   return {
     path,
@@ -738,14 +745,17 @@ function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
     oldPath: kind === 'R' ? decodePath(oldPathBytes) : null,
     oldPathBytes,
     status: kind,
+    modes: (kind === 'M' || kind === 'R') && oldMode !== newMode ? `${oldMode} ${newMode}` : null,
+    blobs: null,
     binary: false,
     hunks: [],
   };
 }
 
-// One patch line of an open section. The header lines before the first `@@` are dropped
-// (only a `Binary files` line is noted); each hunk keeps its own lines, copied out of the
-// chunk so no chunk stays referenced.
+// One patch line of an open section. The header lines before the first `@@` are dropped;
+// only the `index` line (its blob IDs, full under `--full-index`) and a `Binary files` line
+// are noted. Each hunk keeps its own lines, copied out of the chunk so no chunk stays
+// referenced.
 function sectionLine(section, line) {
   if (startsWith(line, HUNK_START)) {
     const m = HUNK_HEADER.exec(line.toString('latin1'));
@@ -756,21 +766,32 @@ function sectionLine(section, line) {
   const hunk = section.hunks[section.hunks.length - 1];
   if (hunk === undefined) {
     if (startsWith(line, BINARY_PATCH)) section.binary = true;
+    const m = INDEX_LINE.exec(line.toString('latin1'));
+    if (m !== null) section.blobs = `${m[1]} ${m[2]}`;
     return;
   }
   hunk.lines.push(Buffer.from(line));
 }
 
-// The units of a closed section: one per hunk for an `M` (Q11 hunk-level units), each with
-// an occurrence index among the identical hunks before it in the file; one whole-file unit
-// for an `A` or `R`, whose identity key is its hash (a path has one whole-file unit).
+// The units of a closed section (Q11 hash table, CHG-08). A content-only `M`: one unit per
+// hunk (Q11 hunk-level units), each with an occurrence index among the identical hunks
+// before it in the file. Every other section is one whole-file unit whose identity key is
+// its hash (a path has one whole-file unit): an `A`, `D` or `R` (`kind: "text"`), a mode
+// change with or without content edits (`kind: "mode"`), and a file git reports as binary
+// (`kind: "binary"`, also with a mode change: its body is none either way, C:plan-hunks).
+// The whole-file hash frames its parts so none can pass for another: `[old path, NUL,] path,
+// NUL`, then `mode <old> <new>` and a NUL for a mode change, then `blob <old> <new>` and a NUL
+// (the `index` line's full blob IDs, all zeros on the missing side) for a binary, else the
+// `-`/`+` lines (which start with `-`, `+` or `\`, never `m` or `b`).
 function unitsOf(section) {
-  const { path, pathBytes, oldPath, oldPathBytes, status, hunks } = section;
-  if (section.binary || (hunks.length === 0 && status === 'M')) {
-    throw new Error(`a section without a text hunk (${path}: binary) is not built yet (CHG-08)`);
+  const { path, pathBytes, oldPath, oldPathBytes, status, modes, blobs, binary, hunks } = section;
+  if (binary && blobs === null) throw new Error(`a binary section without an index line (${path})`);
+  if (status === 'M' && !binary && modes === null && hunks.length === 0) {
+    throw new Error(`a modified section without a hunk (${path})`);
   }
-  const base = { path, pathBytes, oldPath, status, kind: 'text' };
-  if (status === 'M') {
+  const kind = binary ? 'binary' : (modes === null ? 'text' : 'mode');
+  const base = { path, pathBytes, oldPath, status, kind };
+  if (status === 'M' && kind === 'text') {
     const occurrences = new Map();
     return hunks.map((hunk) => {
       const identity = createHash('sha256').update(pathBytes).update(Buffer.from([NUL]));
@@ -787,6 +808,8 @@ function unitsOf(section) {
   const whole = createHash('sha256');
   if (status === 'R') whole.update(oldPathBytes).update(Buffer.from([NUL]));
   whole.update(pathBytes).update(Buffer.from([NUL]));
+  if (modes !== null) whole.update(Buffer.from(`mode ${modes}\0`));
+  if (binary) whole.update(Buffer.from(`blob ${blobs}\0`));
   const counts = { added: 0, deleted: 0, addedLines: [] };
   for (const hunk of hunks) {
     const one = hashHunk(hunk, whole);
@@ -795,7 +818,8 @@ function unitsOf(section) {
     counts.addedLines.push(...one.addedLines);
   }
   const hash = whole.digest('hex');
-  // An `A`/`R` section without a hunk: an empty new file or a pure rename (Q11).
+  // A section without a hunk: an empty new or deleted file, a pure rename, a mode-only
+  // change, a binary file (Q11).
   const range = hunks.length === 0 ? '-0,0 +0,0' : rangeOf(hunks);
   return [{
     ...base, hash, identityKey: hash, ...counts, range, body: Buffer.concat(hunks.flatMap((hunk) => hunk.lines)),

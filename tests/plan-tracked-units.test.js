@@ -27,7 +27,7 @@ const PINNED_DIFF_CALL = [
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
   '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
-  '-z', '--raw', '-p',
+  '--full-index', '-z', '--raw', '-p',
 ];
 // CHG-05: the inventory's own staged-paths read, the only other `diff` call.
 const INVENTORY_DIFF_CALL = [
