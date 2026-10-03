@@ -7,6 +7,7 @@
 import { Buffer } from 'node:buffer';
 import { segments } from './shell-tokenizer.mjs';
 import { classify } from './command-classifier.mjs';
+import { redactCommand, writeHeartbeat } from './heartbeat.mjs';
 
 const NO_OUTPUT = Object.freeze({ stdout: '', stderr: '' });
 
@@ -71,6 +72,18 @@ export function runHook(stdinText, context = {}) {
     const shell = SHELL_OF[toolName];
     const parsed = segments(command, shell);
     const result = classify(parsed, { agentType: payload.agent_type, shell });
+    // S1 (GRD-15): a `plan` script call writes the heartbeat before the decision is emitted,
+    // so a denied compound command that also calls `plan` still counts. A throw here is a
+    // crash like any other and fails open below.
+    const planCall = result.scriptCalls.find((call) => call.subcommand === 'plan');
+    if (planCall) {
+      writeHeartbeat({
+        claudeHome: context.claudeHome,
+        cwd: typeof payload.cwd === 'string' ? payload.cwd : null,
+        command: redactCommand(planCall),
+        now: context.now,
+      });
+    }
     if (result.decision === 'deny') return { stdout: denyOutput(result.message), stderr: '' };
     return NO_OUTPUT;
   } catch {
