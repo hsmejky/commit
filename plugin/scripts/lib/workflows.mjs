@@ -478,8 +478,8 @@ async function storeAndLock(ctx) {
   ctx.provisional.write('state.json', `${JSON.stringify(ctx.storedState)}\n`);
   // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
   // `plan`'s `finally` deletes only this call's own provisional folder. `holder` (the
-  // `planId`/`created`/`touched` the failure shape defines) rides along for RPL-04 to wire
-  // into the `failed` reply.
+  // `planId`/`created`/`touched` the failure shape defines) rides along for RUN-07 to wire
+  // into the `failed` reply's `lock` handback.
   const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
   if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
   ctx.run = acquired.run;
@@ -767,7 +767,8 @@ export async function plan(values, injected, { cwd }) {
     // error becomes a notice and never changes the outcome. A `release()` that could not
     // remove the lock (`busy`) reports `kept: true` and the folder is left alone too, so the
     // lock and its folder stay consistent for the next `/commit` (review-CHG-03b finding 2);
-    // only a reply carries notices so far; a refusal or `internal` drops it (KD-R64).
+    // a `nothing`/`failed` reply carries notices since RPL-04 (`planRefusalFailure` below);
+    // an `internal` throw still drops them (KD-R64, RUN-12).
     if (facts === undefined || facts.hunks === undefined) {
       const released = ctx.run?.release() ?? { notice: null, kept: false };
       if (released.notice !== null) ctx.notices.push(released.notice);
@@ -930,27 +931,24 @@ function refusalFailure(refusal) {
 
 // RPL-04: `plan`'s own refusal failure, built with the M17 `failed` reply (C:reply-and-
 // handback, "Every pre-folder refusal... carries a `failed` reply with the base `callerRule`
-// and no handback"). `facts.refusal` reaches here from every step of `PLAN_STEPS` that can
-// end the run with one (`preFolderRefusals` today; a later step's own refusal, once built,
-// shares this same branch in `plan()`), so this is `plan`'s single refusal→reply seam, not
-// only the merge case. The tree state is read when `ctx.probe.repo` is a usable worktree
-// (every refusal that reaches this point with one: an `env` row found on an old git still
-// inside a repo, or any `state` row); a `not-a-repo`/`bare`/`timed-out` repo, or no git at
-// all, has no tree to read (C:reply-and-handback), so `treeState` is left `undefined` and
-// `text` ends after the refusal's own message. `release`, `commit`, `check` and `infer` keep
-// `refusalFailure` above unchanged: their own `reply` wiring (`infer` has no `reply` field at
-// all, C:infer) is later slices' (INT-02 and after).
+// and no handback"). `facts.refusal` reaches here from every `plan` refusal, pre- and
+// post-folder alike — every step of `PLAN_STEPS` that can end the run with one — so this is
+// `plan`'s single refusal→reply seam, not only the merge case. A lock refusal (`held`,
+// `EEXIST`) reaches it too and gets this same plain `failed` reply with no handback, until
+// RUN-07, INT-05 and RPL-05 replace it with the documented `lock` handback. `release`,
+// `commit`, `check` and `infer` keep `refusalFailure` above unchanged: their own `reply`
+// wiring (`infer` has no `reply` field at all, C:infer) is later slices' (INT-02 and after;
+// KD-R73 tracks the gap for `release`/`commit`). `ctx.toplevel` is not set yet this early in
+// `plan()` (it is set from step 2), so the usable-worktree check below is done on
+// `ctx.probe.repo` directly and passed to the shared `finalReply` as its `toplevel`.
 async function planRefusalFailure(refusal, ctx) {
   const { repo } = ctx.probe;
-  const { env, now } = ctx.injected;
-  const treeStateFacts = repo !== null && repo.kind === 'worktree'
-    ? await treeState({ toplevel: repo.toplevel, env, now })
-    : undefined;
+  const toplevel = repo !== null && repo.kind === 'worktree' ? repo.toplevel : undefined;
   return {
     failure: {
       kind: kindForDomainCode(refusal.code),
       message: refusal.message,
-      reply: reply({ status: 'failed', message: refusal.message, treeState: treeStateFacts, notices: ctx.notices }),
+      reply: await finalReply({ status: 'failed', message: refusal.message, notices: ctx.notices }, ctx, { toplevel }),
     },
   };
 }
@@ -958,17 +956,21 @@ async function planRefusalFailure(refusal, ctx) {
 // Every reply ends with the tree state, read after the call's last git call (M10) — except
 // past a given `deadline` (RUN-03, `release`'s `releaseDeadline`): the read is skipped
 // entirely (never spawned) and the reply omits the tree state, since the call it would report
-// on (here, the release itself) is already complete.
+// on (here, the release itself) is already complete. `toplevel` defaults to `ctx.toplevel`
+// (the usual case, set from `plan` step 2 or `release` step 1 onward); `planRefusalFailure`
+// passes its own, since a `plan` refusal can end before `ctx.toplevel` is set, and `undefined`
+// (no usable worktree: `not-a-repo`, `bare`, `timed-out`, or no git at all, C:reply-and-
+// handback) skips the read the same way a spent `deadline` does.
 //
 // GIT-07 (docs/roadmap/06-git-adapters.md): once M2 calls take `timeoutMs` from a deadline,
 // this read's own `timeoutMs` must come from `deadline - now()` too, and a read that times out
 // must land here as `treeState: undefined` (the line below only skips a read that hasn't
 // started), not as a thrown `internal` failure from `change-set.mjs`'s `treeState`.
-async function finalReply(facts, ctx, { deadline } = {}) {
+async function finalReply(facts, ctx, { deadline, toplevel = ctx.toplevel } = {}) {
   const { env, now } = ctx.injected;
-  if (deadline !== undefined && now() >= deadline) {
+  if (toplevel === undefined || (deadline !== undefined && now() >= deadline)) {
     return reply({ ...facts, treeState: undefined });
   }
-  const finalTree = await treeState({ toplevel: ctx.toplevel, env, now });
+  const finalTree = await treeState({ toplevel, env, now });
   return reply({ ...facts, treeState: finalTree });
 }

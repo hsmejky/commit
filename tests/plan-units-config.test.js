@@ -300,7 +300,8 @@ test('the case-rename refusal cuts long paths so its error stays within 1 kB', a
   assert.equal(result.json.error.message,
     caseRenameText(`${shown.map((p) => `${cut(p)} → ${cut(p.toUpperCase())}`).join(', ')} and 1 more`));
   // The 1 kB cap is on `plan`'s own fields, excluding `hunks` and `reply` (RPL-04 added
-  // `reply` to a pre-folder `state` refusal; docs/spec/testing-modules.md, Q24).
+  // `reply` to `plan`'s `case-rename` refusal, a post-folder one; docs/spec/testing-
+  // modules.md, Q24).
   const { reply, ...withoutReply } = result.json;
   assert.ok(Buffer.byteLength(JSON.stringify(withoutReply)) <= 1024, JSON.stringify(withoutReply));
 });

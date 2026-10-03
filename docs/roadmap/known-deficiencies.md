@@ -49,6 +49,12 @@ fixed, delete it here; IDs are never reused.
 - **KD-R18.** EXE-14's "(with no extra commit — this is EXE-06's case)" reads backwards.
   Reword (see KD-R41).
 - **KD-R19.** MSG-01's header-mismatch criterion lacks its seam ("Seam 3 table").
+- **KD-R73.** C:cli-and-exit-codes says every output that ends the worker's part of a run,
+  failures included, carries `reply`. RPL-04 built the `failed` reply for every `plan`
+  refusal, but `release`'s and `commit`'s own `env` refusals, and `commit`'s and `check`'s
+  lint/scan failures, still go through the plain `refusalFailure` with no `reply` at all. No
+  roadmap criterion currently names this gap. Fix: add it as an explicit INT-02-or-later
+  criterion, or a dedicated slice, before 0.1.0 closes.
 
 ## Test mechanisms
 
@@ -85,11 +91,11 @@ fixed, delete it here; IDs are never reused.
   fires the mismatch notice.
 - **KD-R33.** RUN-12's `internal`-throw path to `cleanupDeadline` is untested; combine an
   FND-10 `EIO` on the `plan.json` rename with a clock step past 540 s.
-- **KD-R64.** RUN-05's `plan` turns a provisional folder it cannot discard into a notice,
-  but only the `nothing` reply carries notices yet: a refusal after step 3 or an `internal`
-  throw drops it (the outcome stays right). Fix: RUN-12 (`internal` with notices) and RUN-07
-  (the first refusal after step 3) pass `plan`'s collected notices into their output; both
-  slices point here.
+- **KD-R64.** RUN-05's `plan` turns a provisional folder it cannot discard into a notice.
+  RPL-04's `planRefusalFailure` now passes `plan`'s collected notices into every refusal's
+  `reply.notices` (the `nothing` reply already carried them), so this is fixed for refusals,
+  RUN-07's `lock` refusal included. An `internal` throw still drops them (the outcome stays
+  right). Fix: RUN-12 passes `plan`'s collected notices into its `internal` output.
 
 ## Design sync
 

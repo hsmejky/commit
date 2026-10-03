@@ -167,7 +167,8 @@ hit gets the two manual lines per C:reply-and-handback (`!git --literal-pathspec
 user fills in (Q10); a path it cannot quote safely (`'`, U+2018–U+201B, a control
 character) gets only "commit by hand". Every `ReplyFacts` variant carries the M10
 `treeState`, except `release`'s past its 45 s budget (M15 `releaseDeadline`), which omits
-it since the release already completed, and a `not-a-repo` refusal, which has no tree to
+it since the release already completed, and a `not-a-repo`/bare refusal or one with no git
+to read at start-up (no git found, or `git --version` timed out), which has no tree to
 read; rendered as "working tree clean", or "N files left: …" (singular "1 file left"),
 the paths joined by ", ", with up to 10 paths plus "+N more".
 Every path M17 renders anywhere in `text` has its control characters escaped per

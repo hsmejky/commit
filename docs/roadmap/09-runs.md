@@ -207,9 +207,6 @@ handback itself is built by INT-05.
 
 **Sources:** Q22, C:plan step 3, M12 `peek`, M17 `lock` rule, stories 188, 191.
 
-KD-R64: this is `plan`'s first refusal after step 3; its `lock` output carries `plan`'s
-collected notices (the provisional-folder discard notice included) instead of dropping them.
-
 - [ ] Seam 1: a fresh lock held by another `planId` → exit 6 `lock` with the "another
       /commit run is in progress (started HH:MM, last active N s ago)" text. No new
       folder and no temporary index are left.

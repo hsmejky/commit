@@ -180,6 +180,8 @@ handles it the same way.
   git call, so the caller needs no `git log` / `git status` call and does not add a trailer
   by hand (Q25).
   In `release`, this read is bounded by the 45 s budget above; a reply that misses it omits
-  the tree state. A `state` refusal for `not-a-repo` or a bare repository omits it too:
-  there is no working tree to read. The worker-built fallback reply ([worker
-  input](worker-input.md)) has none either (Q25 as amended by the PRE-15 decision pass).
+  the tree state. A `state` refusal for `not-a-repo` or a bare repository omits it too, as
+  does an `env` refusal when git itself could not be read at start-up (no git found, or the
+  `git --version` call timed out): there is no working tree to read. The worker-built
+  fallback reply ([worker input](worker-input.md)) has none either (Q25 as amended by the
+  PRE-15 decision pass).

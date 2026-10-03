@@ -19,6 +19,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
+const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
 
 const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const SHIM_SKIP = process.platform === 'win32'
@@ -113,6 +114,10 @@ test('plan --reword on a clean tree exits 0 and takes the lock; release then rem
 test('plan whose step-7 HEAD re-read finds a commit made after the lock was taken releases it and exits 6 head-moved', { skip: SHIM_SKIP }, async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
+  // Detached, so step 1 pushes the detached-HEAD notice (`ctx.notices`): a post-folder
+  // refusal that reaches it, like this one, must still carry it in `reply.notices` (RPL-04,
+  // KD-R64), not only the clean-tree `nothing` reply.
+  c.git(['checkout', '-q', '--detach']);
   c.writeFile('a.txt', 'one\nmore\n');
   const shim = gitShim(c, {
     condition: '[ -e .commit-plan/lock ] && [ "$*" = "rev-parse --verify -q HEAD" ]',
@@ -125,6 +130,16 @@ test('plan whose step-7 HEAD re-read finds a commit made after the lock was take
   assert.equal(result.json.error.message, 'HEAD moved since plan (commit made elsewhere?), run /commit again');
   assert.ok(fs.existsSync(shim.marker), 'the shim never saw the step-7 HEAD read');
   assert.equal(c.git(['log', '-1', '--format=%s']).trim(), 'moved');
+
+  // RPL-04: a post-folder refusal (not only the pre-folder merge/not-a-repo cases) also
+  // carries a `failed` reply with the base `callerRule`, no handback, and `plan`'s notices
+  // collected before the refusal.
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.planId, null);
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
+  assert.deepEqual(reply.notices, ['HEAD is detached: new commits will not be on any branch']);
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
   assert.deepEqual(folderNames(c), []);
 });

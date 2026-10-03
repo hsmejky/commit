@@ -71,6 +71,15 @@ test('plan in a bare repository exits 6 state and creates no .commit-plan', asyn
   assertRefusal(result, 'state', 6);
   assert.match(result.json.error.message, /bare repository/);
   assertNoRunFolder(bare);
+
+  // RPL-04: a bare repository has no working tree to read either (C:reply-and-handback), so
+  // its `failed` reply also omits the tree-state line, like `not-a-repo`.
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.planId, null);
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
+  assert.equal(reply.text, result.json.error.message);
 });
 
 test('plan with no git binary on PATH exits 1 env and creates no .commit-plan', async (t) => {
@@ -382,6 +391,16 @@ test('plan with unparseable repo config JSON exits 1 config, naming the repo lay
   assert.match(result.json.error.message, /repo/);
   assert.match(result.json.error.message, /\.claude[/\\]commit\.json/);
   assertNoRunFolder(c.repoDir);
+
+  // RPL-04: a `config` refusal still has a usable worktree, unlike `not-a-repo`/bare/no-git,
+  // so its `failed` reply's `text` ends with the tree state: the written config file is
+  // itself untracked (C:reply-and-handback).
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.planId, null);
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
+  assert.equal(reply.text, `${result.json.error.message}\n1 file left: .claude/commit.json`);
 });
 
 test('plan with no repo config file gets no config refusal and goes on', async (t) => {
