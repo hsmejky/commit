@@ -360,31 +360,35 @@ async function collapseCandidates(ctx) {
  * `git-failed` refusal. A clean tree takes no snapshot. The scan part is CHG-16's.
  */
 async function snapshotUnits(ctx) {
-  if (ctx.mode === 'reword') {
-    // RUN-06: `reword` takes no snapshot of the working tree (C:plan-hunks: HEAD's own diff,
-    // CHG-15's). Until CHG-15 lands its units are empty, so the hunk index is too.
-    ctx.units = [];
-    ctx.unitTable = [];
-    ctx.idMap = {};
-    ctx.tracked = [];
-    return undefined;
-  }
-  if (ctx.inventory.clean) return undefined;
+  if (ctx.mode !== 'reword' && ctx.inventory.clean) return undefined;
   let units;
   try {
-    units = assignIds(await snapshot({
-      mode: 'split',
-      tracked: ctx.inventory.tracked,
-      storedLists: {
-        candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
-        stagedNew: ctx.inventory.stagedNew,
-      },
-      indexPath: `${ctx.provisional.runDir}/git-index`,
-      unborn: ctx.state.unborn,
-      toplevel: ctx.toplevel,
-      env: ctx.injected.env,
-      now: ctx.injected.now,
-    }));
+    units = assignIds(ctx.mode === 'reword'
+      // CHG-15 (Q20, C:plan-hunks "what is diffed"): HEAD's own diff against its single
+      // parent, or the empty tree on a root commit (GIT-09's `rewordFacts.root`, read at
+      // step 1). No temporary index, so staged changes never reach these units and the real
+      // index is untouched (RUN-06).
+      ? await snapshot({
+        mode: 'reword',
+        head: ctx.expectedHead,
+        root: ctx.reword.root,
+        toplevel: ctx.toplevel,
+        env: ctx.injected.env,
+        now: ctx.injected.now,
+      })
+      : await snapshot({
+        mode: 'split',
+        tracked: ctx.inventory.tracked,
+        storedLists: {
+          candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
+          stagedNew: ctx.inventory.stagedNew,
+        },
+        indexPath: `${ctx.provisional.runDir}/git-index`,
+        unborn: ctx.state.unborn,
+        toplevel: ctx.toplevel,
+        env: ctx.injected.env,
+        now: ctx.injected.now,
+      }));
   } catch (err) {
     // C:plan: a non-zero `git add -N` into the temporary index is exit 4 `git`.
     if (err.domainCode === 'git-failed') return { refusal: { code: 'git-failed', message: err.message } };
@@ -396,8 +400,11 @@ async function snapshotUnits(ctx) {
   }));
   ctx.idMap = Object.fromEntries(units.map((unit) => [unit.id, unit.hash]));
   // An untracked candidate's `A` unit is listed under `untracked.candidates`, not `tracked`.
-  // CHG-06: one `tracked` entry per file, summing its hunk-level units' counts.
-  const candidatePaths = new Set(ctx.inventory.candidates.map((candidate) => candidate.path));
+  // CHG-06: one `tracked` entry per file, summing its hunk-level units' counts. `reword`
+  // has no candidates, so every unit counts (C:plan: "tracked lists every change").
+  const candidatePaths = new Set(
+    ctx.mode === 'reword' ? [] : ctx.inventory.candidates.map((candidate) => candidate.path),
+  );
   const byPath = new Map();
   for (const { path, oldPath, status, added, deleted } of units) {
     if (status === 'A' && candidatePaths.has(path)) continue;

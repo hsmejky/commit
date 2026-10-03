@@ -520,8 +520,20 @@ function byteOrder(a, b) {
  *   if some paths were added (C:plan); a plain Error when another git call fails, the
  *   sections do not pair with the records, or on a change kind not built yet.
  */
-export async function snapshot({ mode, storedLists, tracked, indexPath, unborn, toplevel, env, now }) {
-  if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14, CHG-15)`);
+export async function snapshot({
+  mode, storedLists, tracked, indexPath, unborn, head, root, toplevel, env, now,
+}) {
+  if (mode === 'reword') {
+    // CHG-15 (Q20, C:plan-hunks "what is diffed"): HEAD's own diff against its single
+    // parent, or the empty tree for a root commit (`root`, GIT-09's `rewordFacts.root`,
+    // read by the caller before the lock). No temporary index: the real index is never
+    // read or written here, so staged changes never reach these units (unlike `split`,
+    // `reword`'s IDs are never staged, Q20).
+    if (typeof head !== 'string') throw new Error('snapshot in reword mode needs head (CHG-15)');
+    const from = root ? await emptyTreeId({ toplevel, env, now }) : `${head}^`;
+    return diffUnits([from, head], { toplevel, env, now });
+  }
+  if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14)`);
   // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
   // would get a modified tracked filtered file as per-hunk `text` units, whose hashes never
   // match `plan`'s one `filtered` unit.
@@ -880,10 +892,17 @@ export async function writeTree({ toplevel, env, now }) {
  * @throws {Error} when a git call fails or the sections do not pair with the records.
  */
 export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
-  const from = fromTree ?? (await gitOk(['hash-object', '-t', 'tree', '--stdin'], {
+  const from = fromTree ?? await emptyTreeId({ toplevel, env, now });
+  return diffUnits([from, toTree], { toplevel, env, now });
+}
+
+// The empty tree's object ID (CHG-15, EXE-02): `git hash-object -t tree --stdin` on empty
+// input, used as the diff's "from" side when there is no real tree to compare against (an
+// unborn HEAD's backstop diff, or a `reword` of a root commit, Q20).
+async function emptyTreeId({ toplevel, env, now }) {
+  return (await gitOk(['hash-object', '-t', 'tree', '--stdin'], {
     cwd: toplevel, env, now, readOnly: true, input: Buffer.alloc(0),
   })).toString('utf8').trim();
-  return diffUnits([from, toTree], { toplevel, env, now });
 }
 
 /**
