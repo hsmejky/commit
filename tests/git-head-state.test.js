@@ -56,6 +56,8 @@ test('plan on a branch with one commit stores the branch state and the expected 
 test('plan on an unborn repo stores unborn: true and a null expected HEAD, with no error', async (t) => {
   const c = createCase(t);
   const log = path.join(c.root, 'spawns.jsonl');
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', 'new.txt']);
 
   const result = await runCommit(c, ['plan'], {
     nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
@@ -63,12 +65,9 @@ test('plan on an unborn repo stores unborn: true and a null expected HEAD, with 
   });
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
-  // An unborn HEAD has no tracked modification to reach step 7 with until the inventory
-  // takes added files, so `plan.json` and `state.json` are not observable here yet; the
-  // stdout stand-in is gone all the same (KD-R66, narrowed from KD-R65).
-  assert.equal(Object.hasOwn(result.json, 'state'), false);
-  assert.equal(Object.hasOwn(result.json, 'expectedHead'), false);
-  assert.equal(result.json.reply.status, 'nothing');
+  const { state, head } = storedFacts(c, result);
+  assert.deepEqual(state, { kind: 'branch', branch: 'main', unborn: true });
+  assert.equal(head, null);
 
   // Story 182: config at HEAD is skipped on an unborn HEAD, so no `git show` call is made.
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));

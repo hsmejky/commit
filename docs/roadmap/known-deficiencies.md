@@ -130,11 +130,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   misleading. Where: `plugin/scripts/lib/process-adapter.mjs` `toplevel`,
   `plugin/scripts/lib/repo-probe.mjs` `classifyNoWorkTree`. Fix: detect the refusal (e.g. from
   stderr text) and give it its own state or message. Slice: GIT-03 or GIT-04.
-- **KD-R66.** GIT-02 AC3's unborn `state`/`head` is unobservable: an unborn repo has no
-  tracked modification to reach step 7 with until a later slice lets its inventory take an
-  added file (CHG-05 area). `tests/git-head-state.test.js:56-70` only asserts the stdout
-  stand-in fields are gone, not `plan.json` `state.unborn: true` or `state.json` `head: null`
-  (review-CHG-03b finding 6). Fix: that slice adds a Seam-1 case asserting both.
 - **KD-R67.** CHG-03b's hunks path (`plan` reaching step 8) drops `ctx.notices` — the
   detached-HEAD notice, and any takeover or discard notice kept from earlier steps — instead
   of storing them: C:plan step 8 stores notices only once GRD-15 (S1 `guardState`) lands,
@@ -171,7 +166,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 1. KD-R1 (on both critical paths).
 2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35, KD-R33 and KD-R64.
 3. KD-R28, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
-4. The CHG-03b area: KD-R24, KD-R60, KD-R66, KD-R67.
+4. The CHG-03b area: KD-R24, KD-R60, KD-R67.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R49, KD-R50, KD-R45.
