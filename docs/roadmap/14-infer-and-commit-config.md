@@ -110,11 +110,11 @@ counts.
 
 **Blocked by:** INF-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q7, C:infer (`types`, `droppedTypes`), stories 129, 130.
 
-- [ ] Seam 1: a history without `revert` still proposes it; `deps` at 7% kept with
+- [x] Seam 1: a history without `revert` still proposes it; `deps` at 7% kept with
       `evidence.deps`; `wip` at 3 commits listed as `{ type: "wip", count: 3 }`.
 
 
