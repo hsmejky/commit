@@ -519,14 +519,21 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    by the blanket rule (step 2).
 4. Skip git global options: `-C <path>`, `-c <k=v>`, `--config-env[=]<k=env>`,
    `--git-dir[=]<p>`, `--work-tree[=]<p>`,
-   `--namespace[=]<n>`, `--no-pager`, `-P`, `-p`, `--paginate`, `--bare`, `--no-replace-objects`,
-   `--literal-pathspecs`, `--glob-pathspecs`, `--noglob-pathspecs`, `--icase-pathspecs`,
-   `--no-optional-locks`. Git matches each by its exact spelling; a value-taking one takes
+   `--namespace[=]<n>`, `--attr-source[=]<tree>`, `--exec-path=<p>` (joined value only),
+   `--no-pager`, `-P`, `-p`, `--paginate`, `--bare`, `--no-replace-objects`,
+   `--literal-pathspecs`, `--no-literal-pathspecs`, `--glob-pathspecs`, `--noglob-pathspecs`,
+   `--icase-pathspecs`, `--no-optional-locks`, `--no-advice`, `--no-lazy-fetch`. Git
+   matches each by its exact spelling; a value-taking one takes
    the next token as its value (`-C commit status` runs `status`), a long one also a value
-   joined with `=`. An unknown option starting with `-` (`-Cdir`, `--NO-PAGER`,
-   `--exec-path=x`) followed later by a `commit` token → deny; the tokens after it are only
-   searched for that `commit` token, since which of them is a value or the subcommand is not
-   known, so none is read as one (the unknown option itself must be literal). PowerShell
+   joined with `=`. Git older than an option rejects it (exit 129) before running any
+   subcommand. Any other token starting with `-` is an unknown option (`-Cdir`,
+   `--NO-PAGER`, bare `--exec-path`, `--shallow-file`, `--super-prefix`, and `--help`,
+   `-h`, `--version`, `-v`, which git turns into its help or version command). An unknown
+   option may still be one a newer git accepts, and which token after it is a value or the
+   subcommand is not known: so every token after it up to the end of git's arguments must
+   be literal (a non-literal one → the literal-arguments row, whether or not a `commit`
+   token follows: `git --bogus $x; echo commit` is an accepted false deny), and a literal
+   `commit` token among them → deny with the unknown-option row. PowerShell
    splits an unquoted `-name.rest` token at the dot (`git -C. commit -m x` runs
    `git -C . commit -m x` in 5.1 and 7); G2 keeps it one token, an unknown option, so it is
    denied when a `commit` token follows, and the `.rest` part can never be the subcommand
@@ -535,7 +542,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    token after the global options is the subcommand. Steps 4 and 5
    read git's arguments from the token after `git` up to the segment's end, a `cut` token
    (step 2), or a `)` token or, in PowerShell, a `}` token; no option value, subcommand or
-   `commit` argument is read past it. Every token read there, as a global option, an
+   `commit` argument is read past it. Every token read there, as a global option, a token
+   after an unknown option, an
    option's value, the subcommand or one of `commit`'s arguments or their values, must be
    literal: a token the shell may turn into another word or into several arguments is denied
    (fail closed), since it may resolve to `commit` or smuggle in an option. A token is not

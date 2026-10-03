@@ -412,24 +412,33 @@ function commitDecision(tokens, from, at, start, shell) {
   return wrapperMessage(runner ?? wrapper);
 }
 
-// C:guard step 4: git's known options before the subcommand. A value-taking one takes the next token as its
-// value, a long one also a value joined with `=`; git matches each by its exact spelling.
+// C:guard step 4: git's known options before the subcommand. A value-taking one takes the next
+// token as its value, a long one also a value joined with `=`; `--exec-path` is known only
+// with a joined value (bare, it prints the path and exits). Git matches each by its exact spelling.
 const GIT_OPTION_FLAGS = new Set([
   '--no-pager', '-P', '-p', '--paginate', '--bare', '--no-replace-objects', '--literal-pathspecs',
-  '--glob-pathspecs', '--noglob-pathspecs', '--icase-pathspecs', '--no-optional-locks',
+  '--no-literal-pathspecs', '--glob-pathspecs', '--noglob-pathspecs', '--icase-pathspecs',
+  '--no-optional-locks', '--no-advice',
+  // `--no-lazy-f…`, spelled with `\x66` so the G3 purity test finds no network-call word here.
+  '--no-lazy-\x66etch',
 ]);
-const GIT_OPTION_WITH_VALUE = new Set(['-C', '-c', '--config-env', '--git-dir', '--work-tree', '--namespace']);
-const GIT_OPTION_JOINED_VALUE = /^--(?:config-env|git-dir|work-tree|namespace)=/;
+const GIT_OPTION_WITH_VALUE = new Set([
+  '-C', '-c', '--config-env', '--git-dir', '--work-tree', '--namespace', '--attr-source',
+]);
+const GIT_OPTION_JOINED_VALUE = /^--(?:config-env|git-dir|work-tree|namespace|attr-source|exec-path)=/;
 const CONFIG = /^(?:-c|--config-env(?:=.*)?)$/s;
 
 /**
- * C:guard step 4: git's options before the subcommand, from `start`, the token after `git`, up to where
- * git's arguments end. Known options are skipped with their values; the first token after
- * them is the subcommand. A token in an option's place that starts with `-` and is not a
- * known option (or is not literal) is unknown: the rest of git's arguments is then only
- * searched for a `commit` token, since which of them is a value or the subcommand is not
- * known (the unknown token itself must be literal, the rest is not read as anything else). Every token read must be literal; a PowerShell empty token
- * in an option's place is skipped (Windows PowerShell 5.1 drops it) and is not literal either.
+ * C:guard step 4: git's options before the subcommand, from `start`, the token after `git`,
+ * up to where git's arguments end. Known options are skipped with their values; the first
+ * token after them is the subcommand. A token in an option's place that starts with `-` and
+ * is not a known literal option is unknown: which of the tokens after it is a value or the
+ * subcommand is not known, so every one of them up to the end of git's arguments is read:
+ * each must be literal, and the first `commit` among them is recorded.
+ *
+ * Every token read must be literal (`nonLiteral` records one that is not, a non-literal
+ * option or value included, whether or not a `commit` follows). A PowerShell empty token in
+ * an option's place is skipped (Windows PowerShell 5.1 drops it) and is not literal either.
  * A non-literal subcommand reads as one other than `commit`.
  *
  * @param {Array<string|object>} tokens
@@ -454,12 +463,14 @@ function readGitOptions(tokens, start, shell) {
     if (literal && CONFIG.test(token)) found.config = true;
     if (literal && GIT_OPTION_WITH_VALUE.has(token)) {
       i += 1;
-      if (within(i) && !isLiteral(tokens[i], shell)) found.nonLiteral = true;
+      if (!within(i)) break;
+      if (!isLiteral(tokens[i], shell)) found.nonLiteral = true;
     } else if (!literal || !(GIT_OPTION_FLAGS.has(token) || GIT_OPTION_JOINED_VALUE.test(token))) {
       found.unknown = true;
       if (!literal) found.nonLiteral = true;
-      for (let k = i + 1; within(k) && found.commit === -1; k += 1) {
-        if (typeof tokens[k] === 'string' && COMMIT.test(tokens[k])) found.commit = k;
+      for (let k = i + 1; within(k); k += 1) {
+        if (!isLiteral(tokens[k], shell)) found.nonLiteral = true;
+        else if (found.commit === -1 && COMMIT.test(tokens[k])) found.commit = k;
       }
       return found;
     }

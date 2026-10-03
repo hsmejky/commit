@@ -110,9 +110,9 @@ const table = [
   // classified (an accepted false deny for a denied form inside, C:guard step 3).
   ['Write-Output { git commit --amend --no-edit }', null],
   ['saps git commit -m x', 'wrapper:saps'],
-  // GRD-11: the `-ArgumentList` after the outer `git` reads as an unknown git option followed
-  // by a `commit` token, a row above the wrapper row.
-  ['Start-Process git -ArgumentList { git commit -m x }', 'unknownOption'],
+  // GRD-11: the `-ArgumentList` after the outer `git` reads as an unknown git option; the
+  // `{` token after it is not literal, the literal-arguments row, a row above the wrapper row.
+  ['Start-Process git -ArgumentList { git commit -m x }', 'literalArguments'],
   // Start-Process builds git's arguments from its own parameters: denied like `sudo git commit`.
   ['Start-Process git -ArgumentList "commit --fixup HEAD"', 'wrapper:Start-Process'],
   ['saps git commit,--fixup,HEAD', 'wrapper:saps'],

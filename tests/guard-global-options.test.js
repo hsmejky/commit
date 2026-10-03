@@ -5,8 +5,9 @@
 // messages; Q3, Q4). The known global options are skipped, a value-taking one with its value
 // (joined with `=` for the long ones, or the next token); the first token after them is the
 // subcommand. `-c` and `--config-env` before `commit` deny for any key; an unknown option
-// followed later by a `commit` token denies; every token read among the global options must
-// be literal. These rows rank above the `commit` argument rows (C:guard Precedence).
+// followed later by a `commit` token denies; every token read among the global options, and
+// every token after an unknown option, must be literal. These rows rank above the `commit`
+// argument rows (C:guard Precedence).
 
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -70,6 +71,12 @@ const both = [
   ['git -p --paginate --bare --no-replace-objects commit -m x', 'bare'],
   ['git --literal-pathspecs --glob-pathspecs --noglob-pathspecs commit -m x', 'bare'],
   ['git --icase-pathspecs --no-optional-locks commit -m x', 'bare'],
+  ['git --no-advice --no-lazy-fetch --no-literal-pathspecs commit -m x', 'bare'],
+  ['git --attr-source HEAD --attr-source=HEAD --exec-path=x commit -m x', 'bare'],
+  ['git --no-advice commit --no-edit', null],
+  ['git --no-advice log --grep commit', null],
+  ['git --attr-source commit log --grep commit', null],
+  ['git --exec-path=x log --grep commit', null],
   ['git -C dir COMMIT -m x', 'bare'],
   ['git -C dir commit --no-edit', null],
   ['git --git-dir=.git --work-tree=. commit --no-edit', null],
@@ -95,7 +102,13 @@ const both = [
   // An unknown option followed later by a `commit` token.
   ['git --unknown commit', 'unknownGlobalOption'],
   ['git --frob commit --no-edit', 'unknownGlobalOption'],
-  ['git --exec-path=x commit --no-edit', 'unknownGlobalOption'],
+  ['git --exec-path commit --no-edit', 'unknownGlobalOption'],
+  ['git --shallow-file x commit -m x', 'unknownGlobalOption'],
+  ['git --super-prefix=x commit -m x', 'unknownGlobalOption'],
+  ['git --help commit', 'unknownGlobalOption'],
+  ['git -h commit', 'unknownGlobalOption'],
+  ['git --version commit', 'unknownGlobalOption'],
+  ['git -v commit', 'unknownGlobalOption'],
   ['git -Cdir commit -m x', 'unknownGlobalOption'],
   ['git --NO-PAGER commit -m x', 'unknownGlobalOption'],
   ['git -C dir --bogus x commit', 'unknownGlobalOption'],
@@ -121,10 +134,18 @@ const both = [
   ['git --git-dir=$d commit --no-edit', 'literalArguments'],
   ['git -C $dir log; echo commit', 'literalArguments'],
   ['git --unknown$x commit', 'literalArguments'],
-  // After an unknown option the tokens are only searched for `commit`: which is a value or the
-  // subcommand is not known, so none is read as anything else.
-  ['git --bogus $x commit', 'unknownGlobalOption'],
-  ['git --bogus $x; echo commit', null],
+  // After an unknown option which token is a value or the subcommand is not known, so every
+  // token up to the end of git's arguments must be literal, with or without a `commit` token
+  // (`git --bogus $x; echo commit` is an accepted false deny).
+  ['git --bogus $x commit', 'literalArguments'],
+  ['git --bogus $x; echo commit', 'literalArguments'],
+  ['c=commit; git --bogus "$c" --no-verify -m x', 'literalArguments'],
+  ['c=commit; git --shallow-file x "$c" -m x', 'literalArguments'],
+  ['c=commit; git --exec-path "$c" -m x', 'literalArguments'],
+  ['git --bogus log; echo $x commit', null],
+  // A value-taking option's value ends where git's arguments end.
+  ['(git -C) commit -m x', null],
+  ['(git -c) commit', null],
   ['git -C dir commit --fixup $s', 'literalArguments'],
   ['git -c $k commit --no-edit', 'config'],
   ['git -c k=v -C $dir commit', 'config'],
@@ -136,6 +157,12 @@ const both = [
 const table = [
   ...both.flatMap(([command, expected]) => [['bash', command, expected], ['powershell', command, expected]]),
   ['bash', 'git -C {.,commit} status', 'literalArguments'],
+  ['bash', 'git --bogus {commit,-m,x}', 'literalArguments'],
+  ['bash', 'c=commit; git --bogus x "$c" -m x', 'literalArguments'],
+  ['powershell', "$c='commit'; git --bogus $c -m x", 'literalArguments'],
+  ['powershell', "$a='commit','-m','x'; git --bogus @a", 'literalArguments'],
+  ['powershell', 'git --bogus ,commit -m x', 'literalArguments'],
+  ['powershell', "git --bogus '' commit -m x", 'literalArguments'],
   ['bash', 'git -C .,commit status', null],
   ['powershell', 'git -C .,commit status', 'literalArguments'],
   ['powershell', 'git -C (Get-Location) commit -m x', 'literalArguments'],
