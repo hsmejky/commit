@@ -714,7 +714,34 @@ test('a post-commit hook of group 1 creates index.lock → group 1 kept, group 2
   // group 1's own (c) phase already set `indexReset`, so `unstaged` reflects that reset, not
   // a reset group 2 never ran (it was refused in phase (a), before touching the real index).
   assert.deepEqual(result.json.unstaged, []);
+  // No reset ran for group 2: nothing is staged, and b.txt/c.txt are still plain unstaged
+  // working-tree modifications, exactly as group 1's own reset+stage left them.
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'nothing is staged after the refusal');
+  assert.match(c.git(['status', '--porcelain']), /^ M b\.txt\r?\n M c\.txt\r?\n?$/, 'groups 2 and 3 untouched, nothing staged');
   assert.equal(fs.existsSync(lockPath), true, 'the hook\'s own index.lock is left in place, not removed by this refusal');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('an outside git add plus an index.lock → diff-changed (index-changed) wins, not index-lock: the fingerprint check (ls-files, no lock taken) runs before the lock check', async (t) => {
+  const { c, planId, runDir } = await groupedRun(t);
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('other.txt', 'other\n');
+  c.git(['add', '--', 'other.txt']);
+  const lockPath = path.join(c.repoDir, '.git', 'index.lock');
+  fs.writeFileSync(lockPath, 'foreign lock\n');
+  const indexPath = path.join(c.repoDir, '.git', 'index');
+  const indexBefore = fs.readFileSync(indexPath);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, INDEX_CHANGED_TEXT);
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'nothing committed');
+  assert.equal(fs.readFileSync(lockPath, 'utf8'), 'foreign lock\n', 'the lock file is untouched');
+  assert.deepEqual(fs.readFileSync(indexPath), indexBefore, 'the index is byte-identical to before the call');
   assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });

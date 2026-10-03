@@ -119,6 +119,7 @@ the state; tests assert the domain code and that the state is named, not an exac
 | --- | --- | --- | --- |
 | `head-moved` (`head-moved`) | M18 (`plan` after `acquire`), `plan --hunks`, M16 (`commit`) | HEAD moved since plan (commit made elsewhere?), run /commit again | Q18 |
 | `index-changed` (`diff-changed`) | M18 (`plan` step 7), M16 (`commit`) | the index changed since plan (staged elsewhere?), run /commit again | Q18 |
+| `index-locked` (`index-lock`) | M16 (`commit`), M18 (`plan` step 3 takeover repair) | another git process is running in this repo | Q18 |
 | `signing-locked` (`signing`) | M11 via M15 (`plan`) | signing key locked — unlock it (e.g. sign once in a terminal), then `/commit` | Q18 |
 | `merge` (`state`), reword only | M3 via M15 (`plan --reword`) | HEAD is a merge commit; reword it by hand | Q20 |
 | `in-progress` (`state`): merge, cherry-pick or revert | M3 via M15 (`plan`) | finish it with `git commit --no-edit`, or abort it | Q21 |
