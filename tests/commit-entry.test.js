@@ -31,6 +31,8 @@ function installEntryWithStubLib(c, stubSource) {
   const entry = path.join(dir, 'commit.cjs');
   fs.copyFileSync(COMMIT_ENTRY, entry);
   fs.writeFileSync(path.join(dir, 'lib', 'cli.mjs'), stubSource);
+  // The real S1 leaf: the entry point resolves the Claude home through it (GRD-17).
+  fs.copyFileSync(path.join(path.dirname(COMMIT_ENTRY), 'lib', 'heartbeat.mjs'), path.join(dir, 'lib', 'heartbeat.mjs'));
   return { entry, marker: path.join(dir, 'lib', 'imported') };
 }
 

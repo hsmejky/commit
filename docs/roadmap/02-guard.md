@@ -357,7 +357,7 @@ for a fresh, matching heartbeat and `not-seen` with the guard notice otherwise.
 **Sources:** Q23, C:guard (Heartbeat), S1, stories 34, 36.
 
 Note (GRD-15 review): this slice also stores `ctx.notices` into `state.json`'s `notices`
-field next to `env.guard`, as C:plan step 8 specifies (KD-R67; delete that row when done).
+field next to `env.guard`, as C:plan step 8 specifies (KD-R67, retired by this slice).
 
 - [ ] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the guard notice, verbatim from the C:cli-and-exit-codes recorded-texts table ("Guard hook did not run: `node` missing from the hook's PATH, …"), and the run goes on.
 - [ ] Path matching is realpathed with `\` → `/`, case-folded on Windows and macOS (a case-differing `cwd` matches there).

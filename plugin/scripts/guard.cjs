@@ -13,7 +13,9 @@ if (major >= 22) {
     var env = process.env;
     var claudeHome;
     try {
-      claudeHome = env.CLAUDE_CONFIG_DIR || require('node:path').join(require('node:os').homedir(), '.claude');
+      // S1's one resolution (re-exported by G1), shared with the commit entry point, so
+      // guard and `plan` find the same Claude home (C:guard Heartbeat, GRD-17).
+      claudeHome = g1.resolveClaudeHome(env, require('node:os').homedir);
     } catch (e) {
       // The Claude home is only ever needed for the heartbeat write (S1); a lookup failure
       // here (e.g. no HOME/USERPROFILE and no passwd entry) must not drop the guard's

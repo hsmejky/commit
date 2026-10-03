@@ -10,7 +10,7 @@ line do not persist. `plan` judges `active` (under 15 minutes old,
 and the realpathed hook `cwd` inside the toplevel or vice versa) versus `not-seen`.
 `writeHeartbeat({ claudeHome, cwd, command, now })`; `guardState({ claudeHome, toplevel, now
 })`; pure `samePathTree(a, b, { caseFold })` over already-realpathed paths, `caseFold` true
-on Windows and macOS. Sources: Q23, C:guard.
+on Windows and macOS; `guardState` never throws (an absent, malformed, non-regular or `null`-`cwd` heartbeat is `not-seen`). `resolveClaudeHome(env, homedir)` is the one Claude-home resolution both entry points call (the guard's through G1's re-export). Sources: Q23, C:guard.
 
 **S2 ScriptCall.** The definition of a script call (C:guard), in two widths, plus the
 worker-only rule's scan. The wide `recognise`, for the guard's heartbeat only: `node` or `node.exe` after

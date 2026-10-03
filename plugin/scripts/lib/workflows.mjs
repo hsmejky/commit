@@ -39,7 +39,7 @@
 // `projectDir` (CFG-08/CFG-09's `toplevel` param, always ignored, is dropped), so the
 // project-local and project settings layers feed `resolveAttribution` ahead of the user
 // layer. Later
-// slices insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in
+// slices insert the other rows (3 lock peek, 5 scan) in their place in
 // PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
@@ -73,6 +73,7 @@ import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
 import { probeSigning } from './signing-probe.mjs';
+import { guardState } from './heartbeat.mjs';
 
 // GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
 // C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
@@ -81,6 +82,11 @@ const DETACHED_HEAD_NOTICE = 'HEAD is detached: new commits will not be on any b
 // GIT-10: the signing prompt notice (Q18, story 171), recorded verbatim in
 // C:cli-and-exit-codes; queued when M11 reports `ready: "prompt"`.
 const SIGNING_PROMPT_NOTICE = 'signing enabled; a passphrase prompt may appear';
+
+// GRD-17: the guard notice for a `not-seen` guard state (Q23), recorded verbatim in
+// C:cli-and-exit-codes; the run goes on.
+const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
+  + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
 
 // RUN-06: the `head-moved` refusal text (Q18), recorded verbatim in C:cli-and-exit-codes.
 const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
@@ -442,7 +448,8 @@ async function readHistory(ctx) {
  */
 async function storeAndLock(ctx) {
   const { planId, runDir } = ctx.provisional;
-  ctx.provisional.write('state.json', `${JSON.stringify({
+  // Kept on `ctx` so step 8 (`storeNotices`) rewrites it with `notices` added.
+  ctx.storedState = {
     version: STATE_VERSION,
     mode: ctx.mode,
     interactive: ctx.values['no-user'] !== true,
@@ -463,7 +470,8 @@ async function storeAndLock(ctx) {
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
     // commit, which CHG-15's snapshot diffs against the empty tree.
     ...(ctx.mode === 'reword' ? { oldMessage: ctx.oldMessage, rootCommit: ctx.reword.root } : {}),
-  })}\n`);
+  };
+  ctx.provisional.write('state.json', `${JSON.stringify(ctx.storedState)}\n`);
   // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
   // `plan`'s `finally` deletes only this call's own provisional folder. `holder` (the
   // `planId`/`created`/`touched` the failure shape defines) rides along for RPL-04 to wire
@@ -485,6 +493,13 @@ async function storeAndLock(ctx) {
     && await indexFingerprint({ toplevel: ctx.toplevel, env, now }) !== ctx.indexFingerprint) {
     return { refusal: { code: 'index-changed', message: INDEX_CHANGED_TEXT } };
   }
+  // GRD-17 (C:plan step 8 "Guard state"): S1 `guardState`, read here, ahead of the sweep,
+  // so `plan.json` carries the guard state and is still written before the sweep (the RUN-08
+  // sweep test keys its clock shift on `plan.json`); the sweep touches only the run-folder
+  // directory, so the order is not observable. `not-seen` queues the guard notice first,
+  // ahead of the notices of earlier steps (C:reply-and-handback example).
+  ctx.guard = guardState({ claudeHome: ctx.injected.claudeHome, toplevel: ctx.toplevel, now: ctx.injected.now });
+  if (ctx.guard === 'not-seen') ctx.notices.unshift(GUARD_NOTICE);
   ctx.run.write('plan.json', entryPerLine({
     version: 1,
     ok: true,
@@ -506,13 +521,26 @@ async function storeAndLock(ctx) {
     attribution: ctx.attribution.trailer === null ? null : ctx.attribution,
     // GIT-10: M11's result from step 6 (C:plan `signing`).
     signing: ctx.signing,
+    // C:plan `env`: step 1's versions and the guard state read above.
+    env: { node: ctx.probe.node.text, git: ctx.probe.git.version.text, guard: ctx.guard },
     recentSubjects: ctx.recentSubjects,
     warnings: ctx.warnings,
   }));
   // RUN-08 (C:plan step 7): then the sweep of old run folders and leftover lock temporary
   // files. Its cleanup errors are notices, never a changed outcome; step 8 stores them in
-  // `state.json` with the others once that write lands (S1).
+  // `state.json` with the others.
   ctx.notices.push(...sweep({ toplevel: ctx.toplevel, now: ctx.injected.now }));
+  return undefined;
+}
+
+/**
+ * Step 8 (GRD-17, C:plan): the notices, stored only now so they include the guard notice,
+ * step 1's (detached HEAD, config warnings), step 6's signing prompt, the takeover's kept
+ * since step 3 and the sweep's cleanup errors, are added to `state.json` in one more atomic
+ * write (M12 `run.write`), so none computed after step 7 is lost (KD-R67).
+ */
+async function storeNotices(ctx) {
+  ctx.run.write('state.json', `${JSON.stringify({ ...ctx.storedState, notices: ctx.notices })}\n`);
   return undefined;
 }
 
@@ -531,7 +559,7 @@ function entryPerLine(object) {
 /**
  * Step 8 (CHG-03b, `plan --hunks` part): M13 `renderHunks` over the snapshot's units, in
  * process; M12 writes `hunks.txt` and the output object becomes `plan`'s stdout `hunks`.
- * Guard state and the stored notices are S1's and later slices'; the effective config
+ * Guard state and the stored notices come before it (GRD-17); the effective config
  * values are CFG-05's (empty until then); the spill to `hunks.json` is CHG-18's.
  */
 async function renderHunkIndex(ctx) {
@@ -552,7 +580,8 @@ async function renderHunkIndex(ctx) {
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
   refuseCaseRenames,
-  collapseCandidates, snapshotUnits, postScanRefusals, readHistory, storeAndLock, renderHunkIndex,
+  collapseCandidates, snapshotUnits, postScanRefusals, readHistory, storeAndLock, storeNotices,
+  renderHunkIndex,
 ]);
 
 /**

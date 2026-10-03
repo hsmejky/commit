@@ -10,6 +10,10 @@ import { segments } from './shell-tokenizer.mjs';
 import { classify } from './command-classifier.mjs';
 import { redactCommand, writeHeartbeat, COMMAND_LIMIT } from './heartbeat.mjs';
 
+// GRD-17: S1's Claude-home resolution, re-exported so the guard entry point keeps its one
+// guarded dynamic import and still resolves the Claude home exactly as the commit entry point.
+export { resolveClaudeHome } from './heartbeat.mjs';
+
 const NO_OUTPUT = Object.freeze({ stdout: '', stderr: '' });
 
 // C:guard's decision inputs: the only two shells the guard understands. Anything else is

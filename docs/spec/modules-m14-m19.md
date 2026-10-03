@@ -234,11 +234,13 @@ the reply with M17.
      committed since the inventory) releases and refuses `head-moved`;
      a changed index fingerprint with an unchanged HEAD releases and refuses
      `index-changed` (CLI kind `diff-changed`, not checked in `reword`, which `--amend --only`
-     never touches); otherwise that fingerprint is stored for M16; M12 `sweep`.
+     never touches); otherwise that fingerprint is stored for M16; S1 `guardState` (read here, ahead of
+     the sweep, so `plan.json` carries `env.guard`; the order is not observable); write
+     `plan.json` (the full `plan` output) through M12; M12 `sweep`.
 
-  8. S1 `guardState`; then the notices (`env.guard: "not-seen"`, the takeover's notices
+  8. The notices (`env.guard: "not-seen"`, the takeover's notices
      kept since step 3, the sweep's cleanup errors, plus the earlier ones) are stored in one more atomic `state.json` write, so none computed after step 7
-     is lost; write `plan.json` (the full `plan` output) through M12; then `plan --hunks`
+     is lost; then `plan --hunks`
      in-process unless `--dictated`.
 - **`plan --hunks`.** A separate call takes its own M15 `deadline` (540 s from its start)
   for every M2 call of its work (exceeded → `timeout`) and `cleanupDeadline` for a refusal's

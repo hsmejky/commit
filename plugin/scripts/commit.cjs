@@ -60,7 +60,9 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
   var injected = {
     now: function () { return Date.now(); },
     osHome: osHome,
-    claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(osHome, '.claude'),
+    // Set once S1 (`lib/heartbeat.mjs`) has loaded, below: its `resolveClaudeHome` is the
+    // one resolution the guard entry point uses too (C:guard Heartbeat, GRD-17).
+    claudeHome: null,
     managedDir: resolveManagedDir(process.platform),
     osUser: osUser,
     cwd: process.cwd(),
@@ -85,9 +87,13 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
   // never a throw from that same `.then` call's own success handler, so building the output
   // string in the same handler that would throw, then a dedicated `.catch`, is what keeps
   // every throw path making it to the one final write below.
-  import(url.pathToFileURL(path.join(__dirname, 'lib', 'cli.mjs')).href)
-    .then(function (cli) {
-      return cli.main(process.argv.slice(2), injected);
+  Promise.all([
+    import(url.pathToFileURL(path.join(__dirname, 'lib', 'cli.mjs')).href),
+    import(url.pathToFileURL(path.join(__dirname, 'lib', 'heartbeat.mjs')).href),
+  ])
+    .then(function (modules) {
+      injected.claudeHome = modules[1].resolveClaudeHome(process.env, function () { return osHome; });
+      return modules[0].main(process.argv.slice(2), injected);
     })
     .then(function (result) {
       return { text: JSON.stringify(result.stdoutJson) + '\n', code: result.exitCode };
