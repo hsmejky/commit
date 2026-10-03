@@ -189,8 +189,8 @@ async function postScanRefusals(ctx) {
  * Step 7 (CHG-03b): in contract order (C:run-folder, C:plan step 7), M12 writes `state.json`
  * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the unit
  * table and the `id → hash` map; the later rows arrive with their slices), then takes the run
- * lock (`acquire`, no takeover: RUN-06 adds `held`, the step-7 re-reads and the takeover
- * path), then writes `plan.json`. A lock is never taken without `state.json` in place. From
+ * lock (`acquire`, no takeover; RUN-06: a lost race → `held`, then the HEAD re-read; the
+ * takeover path is RUN-21's), then writes `plan.json`. A lock is never taken without `state.json` in place. From
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
  */
 async function storeAndLock(ctx) {
@@ -203,7 +203,11 @@ async function storeAndLock(ctx) {
     units: ctx.unitTable,
     idMap: ctx.idMap,
   })}\n`);
-  ctx.run = ctx.provisional.acquire({ now: ctx.injected.now }).run;
+  // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
+  // `plan`'s `finally` deletes only this call's own provisional folder.
+  const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
+  if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message } };
+  ctx.run = acquired.run;
   // RUN-06: re-read HEAD once the lock is held, against the HEAD step 1 recorded (C:plan
   // step 7): another run that committed since the inventory ends this one with `head-moved`,
   // and `plan`'s `finally` releases the lock and deletes the folder.

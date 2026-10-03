@@ -577,7 +577,8 @@ function runFolderRefusal(trackedAs) {
  *   which variant.
  * @returns {{ ok: true, provisional: { planId: string, runDir: string,
  *   write: (name: string, data: string | Uint8Array) => void,
- *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null },
+ *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null }
+ *     | { ok: false, code: 'held', message: string },
  *   discard: () => string | null } }
  *   | { ok: false, code: 'run-folder', message: string }}
  *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
@@ -648,8 +649,10 @@ export function lockTempName(planId) {
 // CHG-03b finding 1); once the link has succeeded the lock is in place regardless of what
 // happens to its temporary file, so that removal is best-effort too and a leftover goes to
 // the sweep (RUN-07, C:run-folder "leftover lock temporary files") rather than failing an
-// acquire whose lock already stands. Any link error throws for now: RUN-06 maps `EEXIST` to
-// `held`, RUN-09 the Windows `EPERM`/`EBUSY` retries and the probe.
+// acquire whose lock already stands. A link that fails with `EEXIST` is a race lost to
+// another run's lock (RUN-06): `held`, naming that lock, and nothing of it is touched. Any
+// other link error throws for now: RUN-09 maps the Windows `EPERM`/`EBUSY` retries and the
+// probe.
 function acquireLock(runDir, planId, folder, now) {
   const temp = insideRunDir(runDir, lockTempName(planId));
   const lock = insideRunDir(runDir, 'lock');
@@ -663,6 +666,7 @@ function acquireLock(runDir, planId, folder, now) {
       // The lock was never linked: a leftover temp here is not even a lock-shaped file the
       // sweep targets, but it is harmless and the original link error is what matters.
     }
+    if (err.code === 'EEXIST') return held(runDir, now);
     throw err;
   }
   try {
@@ -671,6 +675,58 @@ function acquireLock(runDir, planId, folder, now) {
     // Leftover lock temporary file: the sweep's (RUN-07), not this call's to fail over.
   }
   return { ok: true, run: ownRun(runDir, planId, folder), takeover: null };
+}
+
+/**
+ * The `held` refusal text (C:cli-and-exit-codes, failure shape): the holder's start time
+ * (`created`, local `HH:MM`) and how long ago it was last active (`touched`, the lock's
+ * mtime, against the injected clock). An unparseable lock, or one whose `planId` is not in
+ * the minted form, gets the unreadable-lock text instead; a lock gone again by the time it is
+ * read names no holder.
+ *
+ * @param {{ planId: string | null, created: string | null, touched: number } | null} holder
+ *   `null` when no lock could be read.
+ * @param {number} nowMs
+ * @returns {string}
+ */
+export function heldMessage(holder, nowMs) {
+  if (holder === null) return 'another /commit run is in progress';
+  const started = holder.created === null ? Number.NaN : Date.parse(holder.created);
+  if (holder.planId === null || Number.isNaN(started)) {
+    return 'the /commit lock is unreadable (corrupt or not written by /commit)';
+  }
+  const date = new Date(started);
+  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const idle = Math.max(0, Math.round((nowMs - holder.touched) / 1000));
+  return `another /commit run is in progress (started ${hhmm}, last active ${idle} s ago)`;
+}
+
+// `acquire`'s lost race (RUN-06): reads the lock now in place, without following a link, to
+// name its holder. A file-in-use error on that read names no holder rather than failing the
+// refusal. The full `lock` failure fields (`planId`, `created`, `touched`) are RUN-07's.
+function held(runDir, now) {
+  let file = null;
+  try {
+    file = readLockFile(insideRunDir(runDir, 'lock'));
+  } catch (err) {
+    if (!(err instanceof InUse)) throw err;
+  }
+  const holder = file === null ? null : {
+    planId: lockPlanId(file.bytes),
+    created: lockCreated(file.bytes),
+    touched: file.stats.mtimeMs,
+  };
+  return { ok: false, code: 'held', message: heldMessage(holder, now()) };
+}
+
+function lockCreated(bytes) {
+  if (bytes === null) return null;
+  try {
+    const content = JSON.parse(bytes.toString('utf8'));
+    return content !== null && typeof content.created === 'string' ? content.created : null;
+  } catch {
+    return null;
+  }
 }
 
 // The run `acquire` returns: `write` as before the lock, and `release()`, which removes the

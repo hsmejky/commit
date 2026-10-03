@@ -116,3 +116,42 @@ test('plan whose step-7 HEAD re-read finds a commit made after the lock was take
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
   assert.deepEqual(folderNames(c), []);
 });
+
+test('plan that loses the lock race to a lock placed after its folder exists exits 6 lock (held), leaving that lock and folder alone', { skip: SHIM_SKIP }, async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const placed = JSON.stringify({ planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
+  const shim = gitShim(c, {
+    // The first git call once a provisional folder exists and no lock does: the inventory's.
+    condition: '[ ! -e .commit-plan/lock ] && [ -n "$(find .commit-plan -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]',
+    action: () => [
+      `mkdir .commit-plan/${OTHER_PLAN_ID}`,
+      `printf '%s' 'kept' > .commit-plan/${OTHER_PLAN_ID}/state.json`,
+      `printf '%s' '${placed}' > .commit-plan/lock`,
+    ],
+  });
+
+  const result = await runCommit(c, ['plan'], { env: shim.env });
+
+  assertLockRefusal(result, 'lock');
+  assert.match(result.json.error.message, /^another \/commit run is in progress \(started 13:58, last active \d+ s ago\)$/);
+  assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed);
+  assert.equal(fs.readFileSync(path.join(runDirOf(c), OTHER_PLAN_ID, 'state.json'), 'utf8'), 'kept');
+  assert.deepEqual(folderNames(c), [OTHER_PLAN_ID]);
+});
+
+test('plan whose lock link fails with EEXIST exits 6 lock and deletes its own provisional folder', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+
+  const result = await runCommit(c, ['plan'], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_LINK_BASENAME: 'lock=EEXIST' },
+  });
+
+  assertLockRefusal(result, 'lock');
+  assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
+  assert.deepEqual(folderNames(c), []);
+});
