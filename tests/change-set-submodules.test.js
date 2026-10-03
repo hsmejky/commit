@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -170,7 +171,9 @@ test('a file replaced by a submodule is one T unit of kind submodule', async (t)
   const units = await snapshot(c);
   assert.equal(units.length, 1);
   const [unit] = units;
-  assert.deepEqual([unit.path, unit.status, unit.kind, unit.body.length], ['f', 'T', 'submodule', 0]);
+  assert.deepEqual([unit.path, unit.status, unit.kind], ['f', 'T', 'submodule']);
+  // C:plan-hunks: a file↔submodule `T`'s body is its file side; the gitlink line is left out.
+  assert.equal(unit.body.toString(), '@@ -1 +0,0 @@\n-x\n');
   assert.deepEqual(unit.addedLines, []);
   assert.equal(unit.hash, sha256(`T\0f\0mode 100644 160000\0-x\n+Subproject commit ${head}\n`));
 });
@@ -206,6 +209,135 @@ test('a file replaced by a symlink is one T unit of kind symlink', { skip: NO_SY
   const units = await snapshot(c);
   assert.deepEqual(units.map((u) => [u.path, u.status, u.kind, u.range]), [['l', 'T', 'symlink', '-1 +1']]);
   assert.equal(units[0].hash, sha256(`T\0l\0mode 100644 120000\0-x\n+a.txt\n${NO_EOL}`));
+});
+
+test('a submodule replaced by a file is one T unit of kind submodule whose body is the file', async (t) => {
+  const c = createCase(t);
+  const sub = withSubmodule(c);
+  fs.rmSync(sub.inner, { recursive: true, force: true });
+  c.writeFile('libs/x', 'p\nq\n');
+
+  const units = await snapshot(c);
+  assert.equal(units.length, 1);
+  const [unit] = units;
+  assert.deepEqual(
+    [unit.path, unit.status, unit.kind, unit.added, unit.deleted],
+    ['libs/x', 'T', 'submodule', 2, 0],
+  );
+  assert.equal(unit.body.toString(), '@@ -0,0 +1,2 @@\n+p\n+q\n');
+  assert.deepEqual(unit.addedLines, [{ line: 1, text: 'p' }, { line: 2, text: 'q' }]);
+  assert.equal(unit.hash, sha256(`T\0libs/x\0mode 160000 100644\0-Subproject commit ${sub.head}\n+p\n+q\n`));
+
+  // C:plan-hunks: unlike a pointer change, it has a block, so the worker sees the file.
+  const hunkIndex = await loadLib('hunk-index');
+  const { stdoutObj } = hunkIndex.renderHunks(
+    { runDir: 'C:/r', mode: 'split', config: { values: { scanIgnore: [] } } },
+    [{ ...unit, id: 'h1' }],
+  );
+  assert.equal(stdoutObj.hunks[0].body, 'file');
+});
+
+test('submodule ignore=all hides no pointer change from the inventory (review-CHG-09 finding 1)', async (t) => {
+  const c = createCase(t);
+  const sub = withSubmodule(c);
+  c.git(['config', '-f', '.gitmodules', 'submodule.libs/x.ignore', 'all']);
+  c.git(['commit', '-q', '-am', 'ignore all']);
+  c.git(['config', 'diff.ignoreSubmodules', 'all']);
+  c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
+
+  const inv = await inventory(c);
+  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [false, ['libs/x'], []]);
+  assert.deepEqual(
+    (await snapshot(c)).map((unit) => [unit.path, unit.status, unit.kind]),
+    [['libs/x', 'M', 'submodule']],
+  );
+});
+
+test('a dirty submodule whose path is not UTF-8 is listed in its \\xNN form (review-CHG-09 finding 8)', async (t) => {
+  const c = createCase(t);
+  const sub = withSubmodule(c);
+  const name = Buffer.from('s\xff', 'latin1');
+  const dir = Buffer.concat([Buffer.from(c.repoDir + path.sep), name]);
+  try {
+    fs.mkdirSync(dir);
+  } catch {
+    t.skip('the filesystem cannot hold a name that is not valid UTF-8');
+    return;
+  }
+  if (!fs.readdirSync(c.repoDir, { encoding: 'buffer' }).some((entry) => entry.equals(name))) {
+    t.skip('the filesystem cannot hold a name that is not valid UTF-8');
+    return;
+  }
+  fs.rmdirSync(dir);
+  // Cloned under a UTF-8 name, then renamed: argv cannot carry the byte 0xff.
+  c.git(['clone', '-q', sub.source, 'tmpsub']);
+  fs.renameSync(path.join(c.repoDir, 'tmpsub'), dir);
+  const indexInfo = Buffer.concat([Buffer.from(`160000 ${sub.head}\t`), name, Buffer.from('\n')]);
+  const added = spawnSync('git', ['update-index', '--add', '--index-info'], {
+    cwd: c.repoDir, env: c.env, input: indexInfo,
+  });
+  assert.equal(added.status, 0, String(added.stderr));
+  c.git(['commit', '-q', '-m', 'non-UTF-8 gitlink']);
+  fs.writeFileSync(Buffer.concat([dir, Buffer.from('/build.out')]), 'junk\n');
+
+  const inv = await inventory(c);
+  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [true, [], ['s\\xff']]);
+});
+
+test('a gitlink without .gitmodules: a pointer change is a unit, dirt alone is not reported', async (t) => {
+  const c = createCase(t);
+  const source = sourceRepo(c);
+  c.writeFile('a.txt', 'a\n');
+  c.git(['clone', '-q', source, 'emb']);
+  c.git(['add', 'a.txt', 'emb']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const inner = path.join(c.repoDir, 'emb');
+  fs.writeFileSync(path.join(inner, 'build.out'), 'junk\n');
+
+  // C:plan `dirtySubmodules`: only a tree with a `.gitmodules` file is checked for dirt.
+  const dirty = await inventory(c);
+  assert.deepEqual([dirty.clean, dirty.tracked, dirty.dirtySubmodules], [true, [], []]);
+
+  c.git(['checkout', '-q', 'HEAD~1'], { cwd: inner });
+  const moved = await inventory(c);
+  assert.deepEqual([moved.clean, moved.tracked, moved.dirtySubmodules], [false, ['emb'], []]);
+  assert.deepEqual((await snapshot(c)).map((unit) => [unit.path, unit.kind]), [['emb', 'submodule']]);
+});
+
+test('an untracked embedded repository is no candidate and no unit; alone it leaves the tree clean', async (t) => {
+  const c = createCase(t);
+  const source = sourceRepo(c);
+  c.writeFile('a.txt', 'a\n');
+  c.git(['add', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.git(['clone', '-q', source, 'nested']);
+
+  const inv = await inventory(c);
+  assert.deepEqual([inv.clean, inv.candidates, inv.embeddedRepos], [true, [], ['nested']]);
+  assert.deepEqual(await snapshot(c), []);
+
+  const result = await runCommit(c, ['plan']);
+  assert.equal(result.exitCode, 0, result.stdout + result.stderr);
+  assert.equal(result.json.reply.status, 'nothing');
+});
+
+test('an untracked embedded repository next to an edit is stored in embeddedRepos, never planned', async (t) => {
+  const c = createCase(t);
+  const source = sourceRepo(c);
+  c.writeFile('a.txt', 'a\n');
+  c.git(['add', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.git(['clone', '-q', source, 'nested']);
+  c.writeFile('a.txt', 'b\n');
+
+  const result = await runCommit(c, ['plan']);
+  assert.equal(result.exitCode, 0, result.stdout + result.stderr);
+  const plan = readJson(path.join(result.json.runDir, 'plan.json'));
+  const state = readJson(path.join(result.json.runDir, 'state.json'));
+  assert.deepEqual(state.embeddedRepos, ['nested']);
+  assert.deepEqual(state.candidates, []);
+  assert.deepEqual(plan.untracked.candidates, []);
+  assert.deepEqual(plan.tracked.map((entry) => entry.path), ['a.txt']);
 });
 
 // Crafted output, the shape git prints (checked with `git diff --raw -p`): a type change's

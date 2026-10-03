@@ -67,7 +67,7 @@ and of the real index.
   line's full commit IDs, in place of the lines, no body and no added lines; a `T` hashes
   `T`, NUL, path, NUL, `mode <old> <new>`, NUL, then its delete section's and its new-file
   section's lines or `blob` IDs in that order, and a gitlink side's `Subproject commit` line
-  is hashed but not scanned), and is its own identity key. The status
+  is hashed but neither scanned nor in the body, so a file↔submodule `T`'s body is its file side), and is its own identity key. The status
   tag (CHG-08 decision) keeps the rename framing (`old path, NUL, path, NUL`) from being read
   as another status's `mode`/`blob` marker: without it, a pure rename to a path spelled like
   that marker hashes the same as the marker's own unit. **Hidden by an attribute**: for a path git

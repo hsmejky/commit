@@ -172,7 +172,7 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   emits the IDs and refuses if its diff differs (Q9, Q10).
 - `clean`: `true` when no tracked change and no candidate is left. Hidden-only or
   collapsed-only untracked files, staged-new paths in `stagedExcluded`, paths that are not
-  valid UTF-8, and `dirtySubmodules` are clean; `plan` still reports them (the `nothing`
+  valid UTF-8, `dirtySubmodules` and `embeddedRepos` are clean; `plan` still reports them (the `nothing`
   reply names them), and the index is left as it is.
   The inventory's tracked-change read is `git status --porcelain -z --untracked-files=no
   --no-renames`: a rename's old path is its own deletion there, so a tracked file renamed
@@ -189,7 +189,15 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
 - `dirtySubmodules`: submodules whose own working tree has changes (edits or untracked
   files) but whose pointer did not change. Not units; `check` adds them to `notIncluded`
   ("libs/x has uncommitted changes inside — commit inside the submodule first"). A
-  submodule with a pointer change is a unit whatever its dirt (Q11).
+  submodule with a pointer change is a unit whatever its dirt (Q11). Computed only when
+  the worktree has a `.gitmodules` file (the dirt of a gitlink added without one is not
+  reported); a non-UTF-8 path is written as `\xNN`. The inventory's status read pins
+  `--ignore-submodules=dirty` too, so a `submodule.<name>.ignore=all` setting hides no
+  pointer change from `clean`.
+- `embeddedRepos` (`state.json` only): untracked embedded repositories (C:untracked-files),
+  never candidates or units; `check` adds them to `notIncluded` ("nested is an embedded
+  git repository — add it as a submodule by hand"). They leave the tree clean, and the
+  `nothing` reply names them. `[]` in `reword`.
 - `mode`: `split`, `staged`, `reword` (`--reword`). Without a flag `plan` never picks
   `staged`: index empty → `split`; index holds every change → `split`; index plus other
   changes (unstaged tracked changes or candidates) → `mode: null`, no `planId`, no lock left

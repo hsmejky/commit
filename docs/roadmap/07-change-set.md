@@ -506,6 +506,7 @@ released.
 - [ ] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing → `stage-failed`, index unstaged, run released.
 - [ ] Seam 1 (Windows): a rename group of a few thousand paths that would exceed the command-line limit on argv → committed.
 - [ ] Seam 1: a pointer change in a submodule with untracked files inside (CHG-09), and a staged 60-file new directory under `--staged` (CHG-14), each committed (Q11).
+- [ ] Seam 1: a pointer change in a submodule with `ignore = all` in `.gitmodules` → staged with `git add -A -f` (a plain add skips it with a hint, and exits 0), committed (review-CHG-09 finding 1; check git 2.34's behavior).
 
 
 ## CHG-22: Byte-exact commits across line-ending settings

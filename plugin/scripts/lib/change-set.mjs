@@ -88,7 +88,8 @@ export async function indexFingerprint({ toplevel, env, now }) {
  * submodule), none writes the index.
  * - candidates: `git ls-files --others --exclude-standard -z` after `hideFilter`, each with
  *   its `lstat` size and `binary` (a NUL in the first 8000 bytes; `.gitattributes` is not
- *   read here, CHG-08/CHG-11).
+ *   read here, CHG-08/CHG-11). An entry ending in `/` is an untracked embedded repository:
+ *   no candidate, it goes to `embeddedRepos` without the slash (C:untracked-files).
  * - preStaged: every path of `git diff --cached --ita-visible-in-index --no-renames
  *   --name-status -z` but the intent-to-add ones (an empty index column, ` A` or ` D`
  *   when the worktree file is gone: no staged content); its `A` paths are the staged-new
@@ -97,8 +98,10 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   `stagedNew` with `ignored`: listed by `git ls-files --cached --ignored
  *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore`
  *   refuses M2's `GIT_LITERAL_PATHSPECS=1`).
- * - tracked: the `git status --untracked-files=no --no-renames` entries that are not
- *   staged-new (a rename's old path is its own deletion) nor in `dirtySubmodules`.
+ * - tracked: the `git status --untracked-files=no --no-renames --ignore-submodules=dirty`
+ *   entries that are not staged-new (a rename's old path is its own deletion). The pin
+ *   matches the pinned diff, so a submodule's `ignore=all` setting hides no pointer change
+ *   and dirt alone is no entry.
  * - dirtySubmodules (CHG-09): the submodules with dirt inside but no pointer change, in byte
  *   order (`dirtySubmodulePaths`); not units, and dirt alone leaves the tree `clean`.
  * - caps (CHG-13): not this function's job. `collapsed` is always `[]` and `stagedExcluded`
@@ -117,7 +120,7 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   stagedNew: Array<{ path: string, ignored: boolean }>,
  *   stagedExcluded: Array<{ path: string, reason: 'hidden' }
  *     | { dir: string, count: number, reason: 'collapsed' }>, notUtf8: string[],
- *   dirtySubmodules: string[] }>}
+ *   dirtySubmodules: string[], embeddedRepos: string[] }>}
  *   `notUtf8` (CHG-12, Q11): every path of the three listings whose bytes are not valid
  *   UTF-8, left out of every other list (never a unit, never in the temporary index) and
  *   written by `escapeNonUtf8`, each once, in byte order, for `notIncluded` ("path is not
@@ -147,7 +150,12 @@ export async function inventory({ toplevel, env, now }) {
     else untracked.push(path);
   }
   const filtered = hideFilter(untracked);
-  const candidates = candidateFacts(toplevel, filtered.candidates);
+  // C:untracked-files: `ls-files --others` lists an untracked embedded repository (a
+  // directory holding its own `.git`) as one `dir/` entry instead of its files. It is no
+  // candidate (`git add` would commit a gitlink without a `.gitmodules` entry, which git
+  // itself warns about); it is reported for `notIncluded` (review-CHG-09 finding 2).
+  const embeddedRepos = filtered.candidates.filter((path) => path.endsWith('/')).map((path) => path.slice(0, -1));
+  const candidates = candidateFacts(toplevel, filtered.candidates.filter((path) => !path.endsWith('/')));
   // The hidden rule runs on a non-UTF-8 path's `\xNN` form too: a hidden one (`.env\xe9`)
   // is counted as hidden, not reported as "commit by hand" (review-CHG-12 finding 7).
   // `hideFilter` only partitions by the escaped string's own content, so colliding entries
@@ -168,7 +176,12 @@ export async function inventory({ toplevel, env, now }) {
 
   // `--no-renames`: a rename's old path is its own deletion, kept in `tracked` also when the
   // new path is staged-new or hidden (C:plan).
-  const status = await statusEntries({ toplevel, env, now, untracked: 'no', renames: false, notUtf8 });
+  // `--ignore-submodules=dirty`, as the pinned diff: a `submodule.<name>.ignore=all` or
+  // `diff.ignoreSubmodules=all` setting must not hide from `clean` a pointer change the
+  // snapshot finds (review-CHG-09 finding 1), and dirt alone is no entry here.
+  const status = await statusEntries({
+    toplevel, env, now, untracked: 'no', renames: false, ignoreSubmodules: 'dirty', notUtf8,
+  });
   // An intent-to-add entry (` A`: nothing in the index column) stages no content, so it is
   // staged-new but not pre-staged (C:plan).
   // Keyed by the path's bytes (`latin1` maps each byte to one character), so a non-UTF-8
@@ -196,16 +209,16 @@ export async function inventory({ toplevel, env, now }) {
   const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
 
   const staged = [];
-  for (let i = 1; i < cached.length; i += 2) staged.push(cached[i].toString('utf8'));
-  const dirtySubmodules = await dirtySubmodulePaths(status, staged, toplevel, opts);
-  const notTracked = new Set([...added, ...dirtySubmodules]);
+  for (let i = 1; i < cached.length; i += 2) staged.push(stringPath(cached[i]));
+  const dirtySubmodules = await dirtySubmodulePaths(staged, toplevel, opts);
+  const notTracked = new Set(added);
   const tracked = status
     .filter((entry) => entry.path !== null && !notTracked.has(entry.path))
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
     tracked, preStaged, candidates, collapsed: [], hidden, stagedNew, stagedExcluded,
-    notUtf8: notUtf8List(notUtf8), dirtySubmodules,
+    notUtf8: notUtf8List(notUtf8), dirtySubmodules, embeddedRepos,
   };
 }
 
@@ -213,27 +226,22 @@ export async function inventory({ toplevel, env, now }) {
 // (edits or untracked files) but whose pointer did not change. Those are the paths that
 // `git diff --ignore-submodules=none --name-only` lists (worktree against index) and
 // `--ignore-submodules=dirty` does not, less every path the index changes against HEAD (a
-// staged pointer change is a unit whatever its dirt). The two calls run only when the tree
-// can hold a submodule: a `.gitmodules` file, or a tracked change that is a directory in the
-// worktree (a gitlink added without one).
-async function dirtySubmodulePaths(status, staged, toplevel, opts) {
-  const maybe = existsInWorktree(toplevel, '.gitmodules') || status.some((entry) => entry.path !== null
-    && entry.xy[1] === 'M' && isDirectory(toplevel, entry.path));
-  if (!maybe) return [];
-  const names = async (ignore) => nulList(await gitOk(
+// staged pointer change is a unit whatever its dirt). The two calls run only when the
+// worktree has a `.gitmodules` file: the dirt of a gitlink added without one is not
+// reported (the tree is clean either way; review-CHG-09 finding 3). A path that is not
+// UTF-8 is written in its `\xNN` form (CHG-12; review-CHG-09 finding 8).
+async function dirtySubmodulePaths(staged, toplevel, opts) {
+  if (!existsInWorktree(toplevel, '.gitmodules')) return [];
+  const names = async (ignore) => nulFields(await gitOk(
     ['diff', `--ignore-submodules=${ignore}`, '--no-renames', '--no-ext-diff', '--name-only', '-z'], opts,
-  ));
+  )).map(stringPath);
   const pointerOrStaged = new Set([...await names('dirty'), ...staged]);
   return (await names('none')).filter((path) => !pointerOrStaged.has(path)).sort(byteOrder);
 }
 
-function isDirectory(toplevel, path) {
-  try {
-    return lstatSync(join(toplevel, path)).isDirectory();
-  } catch (err) {
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false;
-    throw err;
-  }
+// A path's bytes as a string: UTF-8, else its `\xNN` form (`escapeNonUtf8`).
+function stringPath(bytes) {
+  return utf8Path(bytes) ?? escapeNonUtf8(bytes);
 }
 
 /**
@@ -832,10 +840,12 @@ export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs
 
 // One `git status --porcelain -z --untracked-files=<untracked>` call, as `{ xy, path }`
 // entries. The inventory passes `no`: its candidates come from `ls-files --others`, so the
-// untracked walk would only be discarded. `renames: false` adds `--no-renames` (git 2.18).
-async function statusEntries({ toplevel, env, now, untracked, renames = true, notUtf8 }) {
+// untracked walk would only be discarded. `renames: false` adds `--no-renames` (git 2.18);
+// `ignoreSubmodules` adds `--ignore-submodules=<value>`.
+async function statusEntries({ toplevel, env, now, untracked, renames = true, ignoreSubmodules, notUtf8 }) {
   const args = ['status', '--porcelain', '-z', `--untracked-files=${untracked}`];
   if (!renames) args.push('--no-renames');
+  if (ignoreSubmodules !== undefined) args.push(`--ignore-submodules=${ignoreSubmodules}`);
   const result = await run('git', args, {
     cwd: toplevel,
     env,
@@ -856,7 +866,7 @@ async function statusEntries({ toplevel, env, now, untracked, renames = true, no
     const xy = records[i].toString('latin1', 0, 2);
     const bytes = records[i].subarray(3);
     if (/[RC]/.test(xy)) i += 1;
-    const path = notUtf8 === undefined ? (utf8Path(bytes) ?? escapeNonUtf8(bytes)) : utf8Path(bytes, notUtf8);
+    const path = notUtf8 === undefined ? stringPath(bytes) : utf8Path(bytes, notUtf8);
     entries.push({ xy, path, bytes });
   }
   return entries;
@@ -1071,8 +1081,8 @@ function unitsOf(section) {
 // parts in order (the delete, then the new file), as a whole-file unit hashes its one
 // section (`blob <old> <new>` and a NUL for a binary part, else its `-`/`+` lines). The range
 // spans the old side of the first part and the new side of the second. A gitlink side's
-// `Subproject commit` line is hashed but neither counted, scanned nor in the body; a
-// `submodule` unit has no body (C:plan-hunks), but a file side's added lines are scanned.
+// `Subproject commit` line is hashed but neither counted, scanned nor in the body, so a
+// file↔submodule `T`'s body is its file side (C:plan-hunks; review-CHG-09 finding 4).
 function typeChangeUnit(section) {
   const { path, pathBytes, oldPath, entryKind, modes, gitlink, first } = section;
   const parts = [first, { blobs: section.blobs, binary: section.binary, hunks: section.hunks }];
@@ -1092,7 +1102,7 @@ function typeChangeUnit(section) {
       counts.added += one.added;
       counts.deleted += one.deleted;
       counts.addedLines.push(...one.addedLines);
-      if (entryKind !== 'submodule') body.push(...hunk.lines);
+      body.push(...hunk.lines);
     }
   });
   const hash = whole.digest('hex');

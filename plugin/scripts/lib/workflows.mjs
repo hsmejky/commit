@@ -467,6 +467,8 @@ async function storeAndLock(ctx) {
     // CHG-12 (C:run-folder): the paths that are not UTF-8, each bad byte as `\xNN`, for
     // `check`'s `notIncluded` (PLN-04); `[]` in `reword`, which commits no tree path.
     notUtf8: ctx.mode === 'reword' ? [] : ctx.inventory.notUtf8,
+    // C:run-folder: untracked embedded repositories, for `check`'s `notIncluded` (CHG-09).
+    embeddedRepos: ctx.mode === 'reword' ? [] : ctx.inventory.embeddedRepos,
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root

@@ -15,7 +15,11 @@ later subcommands use the stored lists (Q11).
 | Category | Rule | Worker sees it |
 | --- | --- | --- |
 | hidden | a path segment starts with `.`, unless it is a hidden exception; `.env` and `.env.*` always, except the three templates below | no (count and 5 names in `plan`) |
+| embedded repository | an untracked directory holding its own `.git` (`ls-files --others` lists it as one `dir/` entry); committing it would add a gitlink without a `.gitmodules` entry | no: in `embeddedRepos`, and `check` adds it to `notIncluded` ("nested is an embedded git repository — add it as a submodule by hand") |
 | candidate | everything else, with `binary: true\|false` | yes |
+
+The hidden rule runs first: a hidden embedded repository is counted as hidden. An embedded
+repository is never counted toward the caps, and alone it leaves the tree clean.
 
 Hidden exceptions: `.github/**`, `.gitignore`, `.gitattributes`, `.editorconfig`,
 `.env.example`, `.env.sample`, `.env.template`, `.claude/commit.json`,

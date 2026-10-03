@@ -136,7 +136,8 @@
     | new, deleted, binary, summary-only file | path + `-` / `+` lines (binary: path + blob IDs) |
     | **renamed** file | old and new path + `-` / `+` lines |
     | mode change (`chmod +x`), with or without content edits | path + old and new mode + `-` / `+` lines |
-    | symlink added, changed or type change (`T`) | path + old and new target |
+    | symlink added or changed | path + old and new target |
+    | type change (`T`: file↔symlink, file↔submodule) | path + old and new mode + both sides' `-` / `+` lines (binary side: blob IDs; a gitlink side: its `Subproject commit` line), exact framing in M10 (`docs/spec/modules-m10-m13.md`) |
     | submodule pointer (gitlink) | path + old and new commit ID |
     | file with a `filter` attribute (`git check-attr filter`: LFS, git-crypt, `nbstripout`) | path + `-` / `+` lines of the cleaned form (binary: path + blob IDs) |
 
@@ -317,6 +318,23 @@
   dropped for this reason, it cannot double-count a path the first pass already turned into
   a unit, and it cannot misattribute: the unit is the new path's whole-file content, and at
   commit time `stage` only ever adds that new path (review-CHG-12).
+- **Amended.** By the review-CHG-09 fix (2026-10-03):
+  - The inventory's `git status` pins `--ignore-submodules=dirty` like the diff, so a
+    `submodule.<name>.ignore=all` (often committed in `.gitmodules`) or
+    `diff.ignoreSubmodules=all` setting cannot hide a pointer change from `clean` while the
+    snapshot makes it a unit. `git add` skips such a submodule unless forced, so its
+    staging is CHG-21's (a `-f` add).
+  - `dirtySubmodules` is computed only when the worktree has a `.gitmodules` file: the dirt
+    of a gitlink added without one is not reported (its pointer change is still a unit, and
+    dirt leaves the tree clean either way). A non-UTF-8 path in it is written as `\xNN`.
+  - An untracked embedded repository (a directory with its own `.git`, which
+    `git ls-files --others` lists as one `dir/` entry) is never a candidate or unit:
+    committing it would add a gitlink without a `.gitmodules` entry, which git itself warns
+    against. `plan` reports it in `embeddedRepos` and `check` adds it to `notIncluded`
+    ("nested is an embedded git repository — add it as a submodule by hand"); alone it
+    leaves the tree clean, like `dirtySubmodules` (C:untracked-files).
+  - A file↔submodule `T` unit keeps its file side's lines as its body (the gitlink line
+    left out), so the worker sees the file it commits (C:plan-hunks).
 - **Rejected.**
   - A top-level-directory split rule; dropping split detection.
   - Hunk IDs of the form `file#n`: they collide with paths containing `#`, spaces or commas.

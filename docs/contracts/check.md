@@ -107,7 +107,8 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   `[]`.
 - `notIncluded`: the worker's entries plus every collapsed directory, every
   `stagedExcluded` path or directory and every `dirtySubmodules` path (`split` only), and
-  every path that is not valid UTF-8 ("path is not UTF-8 — commit by hand"), each
+  every `embeddedRepos` path ("nested is an embedded git repository — add it as a
+  submodule by hand"), every path that is not valid UTF-8 ("path is not UTF-8 — commit by hand"), each
   non-UTF-8 byte written as `\xNN` ([plan](plan.md)).
   Unstaging note (`split`, at least one group): a `stagedExcluded` entry, and a worker
   entry for a staged-new unit, gets "committing this plan unstages it", plus "and

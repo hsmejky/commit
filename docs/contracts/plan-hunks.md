@@ -102,7 +102,10 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   hunk covering the whole file.
 - `kind`: `text`, `binary`, `mode` (mode change, with or without content), `symlink`,
   `submodule` (a pointer change only; dirt inside the submodule is ignored by the pinned
-  `--ignore-submodules=dirty` and reported in `plan.dirtySubmodules`). A binary file with a
+  `--ignore-submodules=dirty` and reported in `plan.dirtySubmodules`). A `T` unit's `kind` is
+  `submodule` when either side is a gitlink, else `symlink`; a file↔submodule `T` has the
+  file side's lines as its body (the `Subproject commit` line left out), so it has a block
+  like a text unit, while a pointer change has none. A binary file with a
   mode change is still `kind: "binary"`: the mode is hashed too, but the body stays `none`
   like any binary unit. `filtered` (a
   `filter` attribute: whole file, body = the cleaned diff, `body: "none"` when that is
@@ -120,7 +123,7 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   raw pass under this rule is `internal` (exit 1), never a guess.
 - The unit's `hash` (see [commit](commit-release.md)) is kept in the state file, not printed.
 - Body in `hunks.txt`: the hunk text as produced by the pinned diff options (Q11); no block
-  for binary, submodule and summary-only files, or past the cap (`body: "cap"`). No block
+  for binary and summary-only files, a submodule pointer change, or past the cap (`body: "cap"`). No block
   either for a unit with a pattern hit (`body: "none"`, `"scan": ["github-token"]`): it
   goes to `notIncluded` whatever it holds, so the secret never reaches `hunks.txt` or the
   worker's context (Q10). A whole-file unit with a hit (a new file) loses its whole body;

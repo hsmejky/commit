@@ -421,7 +421,8 @@ after the mode decision and only when it resolves to `split` (C:plan step 4); ke
 
 **What to build:** M15 `planRefusal` after the scan: `staged-hit`, then clean-tree
 detection, then `signing`. A tree with only hidden files, only collapsed directories, only
-`stagedExcluded` paths or only dirty submodules counts as clean. The `nothing` reply names
+`stagedExcluded` paths, only dirty submodules or only untracked embedded repositories
+(`embeddedRepos`) counts as clean. The `nothing` reply names
 their counts and paths. `reword` skips the clean check. This covers every "counts as
 clean" case, hidden-only included.
 

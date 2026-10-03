@@ -69,7 +69,7 @@ group or all in `notIncluded`; `files[].hunks` counts the path's hunks in the gr
 
 **What to build:** reject a unit with a scan hit, a collapsed-directory path or a
 `dirtySubmodules` path in a group; add the extras to `notIncluded` (collapsed directories,
-`stagedExcluded` paths and directories, `dirtySubmodules`, non-UTF-8 paths with `\xNN`), the
+`stagedExcluded` paths and directories, `dirtySubmodules`, `embeddedRepos`, non-UTF-8 paths with `\xNN`), the
 unstaging note (`split`, at least one group) for `stagedExcluded` entries and staged-new
 units left out, with the `.gitignore` clause when `ignored`; notices for hits left out and one
 per `indexOnly` path.

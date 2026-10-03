@@ -50,7 +50,7 @@ function inventory(c) {
 
 const EMPTY_INVENTORY = Object.freeze({
   clean: true, tracked: [], preStaged: [], candidates: [], collapsed: [], hidden: { count: 0, sample: [] },
-  stagedNew: [], stagedExcluded: [], notUtf8: [], dirtySubmodules: [],
+  stagedNew: [], stagedExcluded: [], notUtf8: [], dirtySubmodules: [], embeddedRepos: [],
 });
 
 // `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file, or
@@ -130,7 +130,7 @@ test('inventory: untracked candidates, hidden files, staged-new and pre-staged p
     stagedNew: [{ path: 'ign.txt', ignored: true }, { path: 'staged.txt', ignored: false }],
     stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],
     notUtf8: [],
-    dirtySubmodules: [],
+    dirtySubmodules: [], embeddedRepos: [],
   });
 });
 
