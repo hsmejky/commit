@@ -107,7 +107,7 @@ the privacy-guard test and its self-test scan and where the runner-name segment 
 
 **Sources:** Q10, Q15, C:scan-patterns (`local-path`), Modules and how "Other checks", M8.
 
-- [x] One file set is named for both the test and its self-test (docs, README, manifests, test sources; whether fixtures are in it): tracked files only (`git ls-files`), per Q15 and testing-modules.md.
+- [x] One file set is named for both the test and its self-test (docs, README, manifests, test sources; whether fixtures are in it): tracked files (`git ls-files`) plus untracked non-ignored files (`git ls-files --others --exclude-standard`), per Q15 and testing-modules.md.
 - [x] The docs state whether the runner-name segment check is a matcher the test owns (with its reason against "do not duplicate library logic") or an exemption-off option of M8 `scanText`, since `scanText` always applies the service-user list that holds `runner` and `root`.
 - [x] The "any user name" wording of the `local-path` part is aligned with C:scan-patterns' placeholder and service-user exemptions.
 

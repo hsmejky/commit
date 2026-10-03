@@ -27,8 +27,8 @@ const MANIFEST_PATHS = new Set([
   '.claude-plugin/marketplace.json',
 ]);
 
-function splitLines(text) {
-  return text.split('\n').filter((line) => line.length > 0);
+function splitNulTerminated(text) {
+  return text.split('\0').filter((line) => line.length > 0);
 }
 
 // Repo-relative paths (forward-slash, as `git ls-files` prints them) in the FND-06 file
@@ -42,24 +42,37 @@ function isPrivacyScannedPath(relPath) {
   return false;
 }
 
-// Lists the FND-06 file set under `root`, sorted, de-duplicated.
-function listPrivacyFileSet(root) {
-  const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
-  const untracked = execFileSync(
+// `-c core.quotePath=false` so a non-ASCII or special-character path comes back as plain
+// UTF-8 rather than C-quoted (tests/glob-oracle.test.js uses the same form); `-z` so paths
+// are NUL-terminated and never need unquoting or escaping.
+function gitLsFiles(root, extraArgs) {
+  const stdout = execFileSync(
     'git',
-    ['ls-files', '--others', '--exclude-standard'],
+    ['-c', 'core.quotePath=false', 'ls-files', '-z', ...extraArgs],
     { cwd: root, encoding: 'utf8' },
   );
-  const all = new Set([...splitLines(tracked), ...splitLines(untracked)]);
+  return splitNulTerminated(stdout);
+}
+
+// Lists the FND-06 file set under `root`, sorted, de-duplicated.
+function listPrivacyFileSet(root) {
+  const tracked = gitLsFiles(root, []);
+  const untracked = gitLsFiles(root, ['--others', '--exclude-standard']);
+  const all = new Set([...tracked, ...untracked]);
   return Array.from(all).filter(isPrivacyScannedPath).sort();
 }
 
-// Reads each listed path under `root` into `{ path, content }` entries.
+// Reads each listed path under `root` into `{ path, content }` entries. A path that no
+// longer exists on disk (e.g. a tracked file deleted in the worktree) is skipped rather
+// than thrown on.
 function readFileSet(root, relPaths) {
-  return relPaths.map((relPath) => ({
-    path: relPath,
-    content: fs.readFileSync(path.join(root, relPath), 'utf8'),
-  }));
+  const entries = [];
+  for (const relPath of relPaths) {
+    const full = path.join(root, relPath);
+    if (!fs.existsSync(full)) continue;
+    entries.push({ path: relPath, content: fs.readFileSync(full, 'utf8') });
+  }
+  return entries;
 }
 
 function escapeRegExp(value) {
@@ -94,7 +107,6 @@ module.exports = {
   isPrivacyScannedPath,
   listPrivacyFileSet,
   readFileSet,
-  escapeRegExp,
   buildSegmentRegex,
   findSegmentHits,
 };

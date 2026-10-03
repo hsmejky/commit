@@ -88,6 +88,12 @@ jobs:
           git config --global --unset-all user.name || true
           git config --global --unset-all user.email || true
 
+      - name: Trust the checked-out workspace
+        # git 2.34.1 carries the CVE-2022-24765 safe.directory backport; the container runs
+        # as root over a workspace actions/checkout wrote as the host runner user, which
+        # without this is "dubious ownership" (FND-07).
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Install Node 22
         uses: actions/setup-node@v4
         with:
