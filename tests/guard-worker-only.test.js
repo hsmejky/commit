@@ -31,7 +31,7 @@ function denyJson(message) {
 }
 
 // The quoted form every handback and worker runs (S2 `build`), in a Windows and a POSIX path.
-const call = (subcommand, args = '') => `node "C:/Users/x/plugin/scripts/commit.cjs" ${subcommand}${args}`;
+const call = (subcommand, args = '') => `node "C:/Users/app/plugin/scripts/commit.cjs" ${subcommand}${args}`;
 const posixCall = (subcommand, args = '') => `node "/opt/x/plugin/scripts/commit.cjs" ${subcommand}${args}`;
 
 test('the handback text is the fixed C:guard text', () => {

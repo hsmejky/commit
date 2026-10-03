@@ -315,7 +315,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    PowerShell `git commit -m "a“"b"` and `git commit -m 'e’'f'` (deny) and
    `git status "x“"; git commit -m x"` (no output: one string argument). Script-call
    exemption (tokenized, no output): Bash `node "/opt/a#b/commit.cjs" plan`,
-   `node "/home/u/‘q’/commit.cjs" plan` and `node "/opt/x@(y)/commit.cjs" plan` (the `@(`
+   `node "/home/app/‘q’/commit.cjs" plan` and `node "/opt/x@(y)/commit.cjs" plan` (the `@(`
    stays a plain character in the quoted path; it is not an unquoted extglob opener), PowerShell
    `& node "C:/a#b/commit.cjs" check --plan <planId>` and
    `node "C:/x@(y)/commit.cjs" plan`; not exempt (blanket, deny): Bash

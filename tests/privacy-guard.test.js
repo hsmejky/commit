@@ -3,22 +3,24 @@
 // FND-07 (docs/roadmap/01-foundation.md): the privacy-guard test that fails when the CI
 // runner's user name appears as a path segment in the FND-06 file set, plus its self-test
 // (the same check run locally with the name set to `runner` and to `root`, since those are
-// service-user exemptions everywhere else, M8 `scanText`, C:scan-patterns). FND-08 adds the
-// `local-path` scan and every other scan pattern on top of this file set; this file only
-// covers the segment matcher and self-test (testing-modules.md "Other checks").
+// service-user exemptions everywhere else, M8 `scanText`, C:scan-patterns). FND-08 (below)
+// adds the `local-path` scan (through the production scanner, with its exemptions) over the
+// same file set, and every other scan pattern over test sources only (testing-modules.md
+// "Other checks").
 //
 // Like every other scan pattern test in this repo (Q10 "Consequences": "a test builds such
 // a string at run time"), no case below writes a literal `<separator><name><separator>`
-// substring in its own source: this file is itself part of the scanned file set (a test
-// source), and the matcher below applies no exemption. Path strings are built by
-// concatenation so the raw source never holds the joined form.
+// substring, or a literal secret token, in its own source: this file is itself part of the
+// scanned file set (a test source). Path and token strings are built by concatenation so the
+// raw source never holds the joined form.
 
-const { test } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createCase } = require('./helpers/process-seam');
+const { loadLib } = require('./helpers/load-lib');
 
 const {
   isPrivacyScannedPath,
@@ -26,9 +28,17 @@ const {
   readFileSet,
   buildSegmentRegex,
   findSegmentHits,
+  isTestSourcePath,
+  scanFileEntriesForPatterns,
 } = require('./helpers/privacy-guard');
 
 const REPO_ROOT = path.join(__dirname, '..');
+
+let scanText;
+
+beforeEach(async () => {
+  ({ scanText } = await loadLib('scanner'));
+});
 
 function fileSet() {
   const relPaths = listPrivacyFileSet(REPO_ROOT);
@@ -198,3 +208,88 @@ for (const name of ['runner', 'root']) {
     assert.ok(hits.length >= 2, `expected the planted "${name}" paths to be caught`);
   });
 }
+
+// FND-08 (docs/roadmap/01-foundation.md; C:scan-patterns; testing-modules.md "Other
+// checks"): the privacy-guard test's scan part. `local-path` runs, through M8's own
+// `scanText`, over the same FND-06 file set as FND-07 (docs, README, manifests and test
+// sources); every other scan pattern runs over test sources only, since docs and contracts
+// legitimately quote example tokens and paths in prose (C:scan-patterns itself documents
+// `local-path`'s fixed shapes with literal examples).
+
+// A name that is neither a `local-path` placeholder/service user nor the current OS user,
+// built from fragments so this file's own source never holds the joined form (Q10).
+function nonExemptName() {
+  return 'j' + 'doe1';
+}
+
+test('local-path (AC1): a home-directory path with a non-exempt user name is caught on every OS shape, planted at run time', () => {
+  const name = nonExemptName();
+  const shapes = [
+    'C:' + '\\Users\\' + name + '\\work', // Windows
+    '/Users/' + name, // macOS
+    '/home/' + name, // Linux
+  ];
+  for (const text of shapes) {
+    const hits = scanText(text, { osUser: null });
+    assert.ok(
+      hits.some((hit) => hit.patternId === 'local-path'),
+      `expected a local-path hit for "${text}"`,
+    );
+  }
+});
+
+test('local-path (AC1): a service-user or placeholder name is not caught on any OS shape', () => {
+  for (const name of ['node', 'runner', 'root']) {
+    const shapes = ['C:' + '\\Users\\' + name + '\\work', '/Users/' + name, '/home/' + name];
+    for (const text of shapes) {
+      const hits = scanText(text, { osUser: null }).filter((hit) => hit.patternId === 'local-path');
+      assert.deepEqual(hits, [], `expected no local-path hit for "${text}"`);
+    }
+  }
+});
+
+test('every other scan pattern (AC2): a test source holding a literal token fails, a token built at run time does not', () => {
+  // Simulates a test source file's raw content: a literal, joined secret token (as if a
+  // developer had typed it directly rather than building it at run time). The token itself
+  // is built here from fragments so this file's own source never holds the joined form.
+  const literalToken = 'gh' + 'p_' + 'x'.repeat(36);
+  const plantedContent = "const token = '" + literalToken + "';\n";
+  const literalHits = scanFileEntriesForPatterns(
+    scanText,
+    [{ path: 'tests/planted.test.js', content: plantedContent }],
+    { osUser: null },
+  );
+  assert.ok(
+    literalHits.some((hit) => hit.patternId === 'github-token'),
+    'expected the literal token to be caught',
+  );
+
+  // The same token, but as a real test source would hold it: built by a call at run time, so
+  // the raw source text never holds the joined token.
+  const runtimeBuiltContent =
+    "function githubToken(fill) { return 'gh' + 'p_' + fill.repeat(36); }\n" +
+    "const token = githubToken('x');\n";
+  const runtimeHits = scanFileEntriesForPatterns(
+    scanText,
+    [{ path: 'tests/safe.test.js', content: runtimeBuiltContent }],
+    { osUser: null },
+  );
+  assert.deepEqual(runtimeHits, [], `expected no hit on run-time-built content: ${JSON.stringify(runtimeHits)}`);
+});
+
+test('privacy guard (AC3): local-path finds no un-exempted path anywhere in the FND-06 file set', () => {
+  const osUser = currentOsUserName();
+  const hits = scanFileEntriesForPatterns(scanText, fileSet(), { osUser }).filter(
+    (hit) => hit.patternId === 'local-path',
+  );
+  assert.deepEqual(hits, [], `found local-path hits: ${JSON.stringify(hits)}`);
+});
+
+test('privacy guard (AC3): every other scan pattern finds no literal token in test sources', () => {
+  const relPaths = listPrivacyFileSet(REPO_ROOT).filter(isTestSourcePath);
+  const entries = readFileSet(REPO_ROOT, relPaths);
+  const hits = scanFileEntriesForPatterns(scanText, entries, { osUser: null }).filter(
+    (hit) => hit.patternId !== 'local-path',
+  );
+  assert.deepEqual(hits, [], `found scan-pattern hits in test sources: ${JSON.stringify(hits)}`);
+});

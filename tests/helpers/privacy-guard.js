@@ -102,6 +102,34 @@ function findSegmentHits(name, fileEntries) {
   return hits;
 }
 
+// A test source within the FND-06 file set (`tests/**`, fixtures already excluded by
+// `isPrivacyScannedPath`). FND-08 scans only this narrower subset for every scan pattern
+// other than `local-path` (testing-modules.md "Other checks"): docs and the contracts that
+// describe these patterns legitimately quote example tokens and paths in prose.
+function isTestSourcePath(relPath) {
+  return relPath.startsWith('tests/');
+}
+
+// A 1-based line number for an offset into `content`, for reporting only (M8 `scanText`
+// itself returns UTF-16 offsets, not line numbers).
+function lineAtOffset(content, offset) {
+  return content.slice(0, offset).split('\n').length;
+}
+
+// Runs M8's `scanText` (injected: this file stays CommonJS, the scanner is an ES module
+// reached only through `tests/helpers/load-lib.js`'s dynamic `import()`) over every entry in
+// `fileEntries`, treating each file's content as one text. Returns one entry per hit:
+// `{ path, patternId, line }`.
+function scanFileEntriesForPatterns(scanText, fileEntries, options) {
+  const hits = [];
+  for (const entry of fileEntries) {
+    for (const hit of scanText(entry.content, options)) {
+      hits.push({ path: entry.path, patternId: hit.patternId, line: lineAtOffset(entry.content, hit.start) });
+    }
+  }
+  return hits;
+}
+
 module.exports = {
   MANIFEST_PATHS,
   isPrivacyScannedPath,
@@ -109,4 +137,6 @@ module.exports = {
   readFileSet,
   buildSegmentRegex,
   findSegmentHits,
+  isTestSourcePath,
+  scanFileEntriesForPatterns,
 };

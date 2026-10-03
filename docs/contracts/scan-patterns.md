@@ -125,8 +125,8 @@ hex-shaped callee, and a well-shaped callee with a digit-affected argument
 when" clause (a bare call, a `snake_case` call, a dotted method call with an argument), and
 `local-path` a negative for
 `/home/node/app`
-and for a name that stops at a backtick (`` `/home/node` ``), and a positive for a name that
-stops at a backtick (`` `/Users/jdoe` ``). `slack-token` has one positive per prefix form; `private-key` has
+and for a name that stops at a backtick (`` `/home/node` ``), and a positive for a non-exempt
+name that likewise stops at a backtick with no trailing slash. `slack-token` has one positive per prefix form; `private-key` has
 a negative for a header with no body (a placeholder), a negative for an encrypted PEM
 header (`Proc-Type` and `DEK-Info` lines) with no body, a positive for an encrypted PEM
 with `Proc-Type` and `DEK-Info` lines before the body, and a positive for a key flattened
