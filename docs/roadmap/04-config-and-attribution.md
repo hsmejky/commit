@@ -148,18 +148,18 @@ to print.
 
 **Blocked by:** CFG-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q6, Q10, M4, stories 107, 109, 113.
 
-- [ ] Seam 1: repo `body: "required"` with user `body: "optional"` → effective `optional`,
+- [x] Seam 1: repo `body: "required"` with user `body: "optional"` → effective `optional`,
       source `user`, one warning naming the value.
-- [ ] Seam 1: `workerModel: "haiku"` in the repo layer → an unknown-key warning, no effect
+- [x] Seam 1: `workerModel: "haiku"` in the repo layer → an unknown-key warning, no effect
       (story 113).
-- [ ] Seam 1: `scanIgnore` in the user layer → wrong-layer warning, effective `scanIgnore`
+- [x] Seam 1: `scanIgnore` in the user layer → wrong-layer warning, effective `scanIgnore`
       unaffected.
-- [ ] Seam 1: no warning makes `plan` fail.
-- [ ] Seam 1: a warning case also writes the same warning text to stderr.
+- [x] Seam 1: no warning makes `plan` fail.
+- [x] Seam 1: a warning case also writes the same warning text to stderr.
 
 
 ## CFG-07: `scanIgnore` read at HEAD and compiled
