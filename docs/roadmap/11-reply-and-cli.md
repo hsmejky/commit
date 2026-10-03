@@ -122,7 +122,8 @@ stories 55, 56, 57, 60, 228.
       with commits the trailer line names the appended trailer or "no trailer" with its
       source (story 55), and a reply with no commits (`nothing`, a refusal) has no trailer
       line
-- [ ] A `not-a-repo` refusal's reply carries no tree state at all (it has no tree to read); a
+- [ ] A `not-a-repo` refusal's reply carries no tree state at all (it has no tree to read),
+      like a bare repository or an `env` refusal with no git to read at start-up (RPL-04); a
       `release` reply past its 45 s budget omits the tree state too, distinct from "working
       tree clean"
 - [ ] Seam 1: a live lock met by `plan --no-user` → `status: "failed"`, `text` with no
