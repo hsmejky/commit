@@ -48,7 +48,8 @@
 //
 // `commit` (RUN-04) also runs its own step table (`COMMIT_STEPS`) the same way: probe, the
 // shared `subcommandRefusals`, M12 `open`, then (EXE-02) the M16 per-group loop
-// (`commit-executor.mjs`), releasing the run once no group remains.
+// (`commit-executor.mjs`), releasing the run once no group remains, or on a `head-moved`
+// refusal (EXE-06), which also ends the run.
 
 import {
   HEAD_MOVED_TEXT, commitEncoding, head, headState, historyMessages, inProgressState, isTracked,
@@ -840,7 +841,8 @@ export async function release(values, injected, { cwd }) {
  * `ended` (no lock, or a state `version` mismatch) are refused before any group-commit work;
  * `busy` covers only a live `call.lock`. A matched lock's call then runs M16 `commitAll`
  * over the stored groups (EXE-02) and releases the run (lock and folder) once no group
- * remains. `run.close()` always runs for a call that reached a successful `open` (success or
+ * remains, or on a `head-moved` refusal (EXE-06, C:cli-and-exit-codes), which also ends the
+ * run. `run.close()` always runs for a call that reached a successful `open` (success or
  * a later failure alike), never when `open` itself failed (there is then no call.lock to
  * close). A run with no stored groups (or all committed) is refused `no-groups` (exit 1
  * `usage`, EXE-05) before any group work, right after the lock check: the run is kept (no

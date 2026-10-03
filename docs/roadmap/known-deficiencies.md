@@ -121,8 +121,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   the clause there (contract, Q18, criteria).
 - **KD-R45.** A hook-made commit is reported with the hook's SHA (EXE-06); no disposition is
   recorded. Record one in Q18 or the README.
-- **KD-R46.** No M3 operation reads HEAD's first parent (GIT-02, EXE-06). Add
-  `parentOf(sha)` or a `firstParent` field; root commit → `null`.
 - **KD-R47.** The `infer` state refusal is only in C:infer and C:cli-and-exit-codes: M18's
   `infer` steps lack it, the table sources it to M15, no Q7/Q21 amendment (KD-S20). INF-01
   implements it via M15 `planRefusal` over the probe (workflows.mjs `inferRefusals`); only
@@ -204,7 +202,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 3. KD-R28, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
 4. The CHG-03b area: KD-R60.
 5. KD-R5, KD-R6.
-6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
+6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R47;
    KD-R49, KD-R50, KD-R45.
 7. Edges: KD-R7, KD-R30, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R26.
