@@ -206,6 +206,8 @@ export async function commitAll(run, { now, osUser, env }) {
     const current = await snapshot({
       mode: 'split',
       storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
+      // CHG-10: the stored units' paths, so a filtered file is classified as `plan` did.
+      tracked: state.units.map((unit) => unit.path),
       indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
       unborn: state.head === null,
       ...git,

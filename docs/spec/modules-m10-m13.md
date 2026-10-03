@@ -12,7 +12,10 @@ and of the real index.
   `lstat` of the old path finds the new path's file (same device and inode); empty on a
   case-sensitive filesystem with `core.ignorecase=false`. Read-only; one `git config` call,
   only when a pair exists (Q11, CHG-07 decision).
-- `snapshot({ mode, storedLists, indexPath })` → units. Builds the temporary index by
+- `snapshot({ mode, storedLists, tracked, indexPath })` → units. `tracked` (required, never
+  defaulted): the tracked paths whose units it must classify, queried by the `check-attr`
+  call below with the stored lists; `plan` passes the inventory's tracked paths, a later
+  subcommand the paths of the run's stored units (review-CHG-10 finding 2). Builds the temporary index by
   copying the real index and running `git reset -q -- .` on the copy (no ref written;
   empty when unborn), then
   `git add -N` of the stored lists, skipping missing paths (Q11 steps 1-3); paths with
@@ -56,7 +59,8 @@ and of the real index.
   `A` unit. Whole-file unit categories: new,
   deleted, binary, summary-only via M9, rename, mode, symlink, submodule, filtered: one
   `check-attr --stdin -z` call queries `filter` and `linguist-generated` together, and the
-  latter goes in `stats` to M9 `summaryOnly`; hashes with `crypto.createHash`. **Unit hash** (CHG-06; CHG-08/09 extend
+  latter goes in `stats` to M9 `summaryOnly` (carried on each unit as `generated`, true for
+  the bare form and `=true`; CHG-17 passes it as `stats.generated`); hashes with `crypto.createHash`. **Unit hash** (CHG-06; CHG-08/09 extend
   it for mode, symlink, submodule and binary units): a hunk unit hashes its path, NUL, its
   `-`/`+` (and qualifying `\`) lines, NUL, its occurrence index in decimal ASCII; its identity
   key is the same hash without the last two parts; a whole-file unit hashes its one-letter
@@ -105,7 +109,8 @@ and of the real index.
   C:commit-release).
 - Real index: `stage(groupUnits, { ignoredPaths })` (reset, apply the patch built from current ranges with
   `git apply --cached --whitespace=nowarn`, whole-file adds, then verify the staged hash
-  set; typed: `mismatch`, or `stage-failed` when `apply` or `add` fails after the reset;
+  set, with one `check-attr` call over the group's paths so a filtered file hashes as its
+  stored unit; typed: `mismatch`, or `stage-failed` when `apply` or `add` fails after the reset;
   ignored whole-file paths go in a separate `git add -A -f` call, and a non-zero `git add`
   exit counts as `stage-failed` even when some paths were added). The built patch reuses,
   per file, git's own header lines from the current diff verbatim (`diff --git`, mode,

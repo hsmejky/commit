@@ -117,7 +117,7 @@ test('renderHunks over a real snapshot: h1 and h2 point at their ### blocks', as
   c.writeFile('a b/c.txt', 'new\n');
   c.writeFile('z.txt', '1\nTWO\n3\n');
   const units = changeSet.assignIds(await changeSet.snapshot({
-    mode: 'split', storedLists: { candidates: [], stagedNew: [] },
+    mode: 'split', storedLists: { candidates: [], stagedNew: [] }, tracked: ['z.txt'],
     indexPath: path.join(c.root, 'git-index'), unborn: false,
     toplevel: c.repoDir, env: c.env, now: () => 0,
   }));

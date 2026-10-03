@@ -495,12 +495,16 @@ function byteOrder(a, b) {
  * new path its `A` unit, so the UTF-8 side is not lost (review-CHG-12 finding 1).
  *
  * @param {{ mode: 'split', storedLists: { candidates: string[],
- *   stagedNew: Array<{ path: string, ignored: boolean }> }, indexPath: string,
- *   unborn: boolean, toplevel: string, env: object, now?: () => number }} options
- *   `storedLists`: the inventory's lists as stored in `state.json`; `indexPath`: the run
- *   folder's `git-index`.
+ *   stagedNew: Array<{ path: string, ignored: boolean }> }, tracked: string[],
+ *   indexPath: string, unborn: boolean, toplevel: string, env: object,
+ *   now?: () => number }} options
+ *   `storedLists`: the inventory's lists as stored in `state.json`; `tracked` (required,
+ *   CHG-10): the tracked paths whose units this snapshot must classify, which go to the
+ *   `check-attr` call with the stored lists (`plan`: the inventory's `tracked`; a later
+ *   subcommand: the paths of the run's stored units, the only ones it must reproduce);
+ *   `indexPath`: the run folder's `git-index`.
  * @returns {Promise<Array<{ path: string, oldPath: string|null, status: 'M'|'A'|'R',
- *   kind: 'text', hash: string, added: number, deleted: number, range: string,
+ *   kind: 'text', hash: string, generated: boolean, binary: boolean, added: number, deleted: number, range: string,
  *   body: Buffer }>>} sorted by path in UTF-8 byte order (the user's `diff.orderFile` never
  *   decides the order, Q11). `oldPath`: a rename's old path, else null. `hash`: SHA-256 hex
  *   over the old path bytes and a NUL (a rename only), the path bytes, a NUL, then every
@@ -516,19 +520,23 @@ function byteOrder(a, b) {
  *   if some paths were added (C:plan); a plain Error when another git call fails, the
  *   sections do not pair with the records, or on a change kind not built yet.
  */
-export async function snapshot({ mode, storedLists, indexPath, unborn, toplevel, env, now }) {
+export async function snapshot({ mode, storedLists, tracked, indexPath, unborn, toplevel, env, now }) {
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14, CHG-15)`);
+  // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
+  // would get a modified tracked filtered file as per-hunk `text` units, whose hashes never
+  // match `plan`'s one `filtered` unit.
+  if (!Array.isArray(tracked)) throw new Error('snapshot needs the tracked paths for its check-attr call (CHG-10)');
   await buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, env, now });
   const opts = { toplevel, env, now, indexPath };
   // CHG-10: one `check-attr` call, over every path the snapshot could turn into a unit
   // (tracked, candidate and staged-new), before the diff pass runs: `filter`-attributed
   // paths get `kind: "filtered"` at section-open time (openSection), and `linguist-generated`
   // is carried on every unit as `generated`, for M9 `summaryOnly` (CHG-17).
-  const attrPaths = [
-    ...(storedLists.tracked ?? []),
+  const attrPaths = [...new Set([
+    ...tracked,
     ...storedLists.candidates,
     ...storedLists.stagedNew.map((entry) => entry.path),
-  ];
+  ])];
   const attrs = await checkAttrs(attrPaths, opts);
   const reader = await pinnedDiff([], opts, attrs);
   const units = reader.end();
@@ -565,7 +573,8 @@ async function checkAttrs(paths, { toplevel, env, now, indexPath }) {
     const value = fields[i + 2].toString('utf8');
     const entry = out.get(path) ?? { filtered: false, generated: false };
     if (attr === 'filter' && value !== 'unspecified' && value !== 'unset') entry.filtered = true;
-    if (attr === 'linguist-generated' && value === 'set') entry.generated = true;
+    // Linguist reads the bare form (`set`) and `=true` alike (review-CHG-10 finding 3).
+    if (attr === 'linguist-generated' && (value === 'set' || value === 'true')) entry.generated = true;
     out.set(path, entry);
   }
   return out;
@@ -787,9 +796,10 @@ export function matchIds(idMap, units) {
 }
 
 // One `git <args> -z --raw -p` diff with the pinned options, streamed through the patch-pass
-// reader into units (the same pass `snapshot` runs).
-async function diffUnits(args, { toplevel, env, now }) {
-  const reader = createDiffReader();
+// reader into units (the same pass `snapshot` runs). `attrs`: the `check-attr` results, so
+// a filtered path is the same `filtered` unit `snapshot` made (CHG-10).
+async function diffUnits(args, { toplevel, env, now }, attrs = new Map()) {
+  const reader = createDiffReader(attrs);
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...args],
@@ -810,7 +820,8 @@ function sameHashes(units, hashes) {
  * apply for hunk subsets): `git reset -q -- .` (the pathspec form, C:commit-release (c)),
  * then `git add -A` over every path of the group's units (both paths of a rename), on stdin
  * NUL-separated, never on argv; ignored paths in a separate `git add -A -f`. Then verifies
- * that the index diff against HEAD holds exactly the group's hashes.
+ * that the index diff against HEAD holds exactly the group's hashes (one `check-attr` call
+ * over the group's paths first, so a filtered file hashes as its stored unit, CHG-10).
  *
  * @param {{ units: Array<{ path: string, oldPath: string | null, hash: string }>,
  *   ignoredPaths?: string[], toplevel: string, env: object, now?: () => number }} options
@@ -836,7 +847,10 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
       return { ok: false, code: 'stage-failed', gitOutput: `${added.stdout.toString('utf8')}${added.stderr}` };
     }
   }
-  const staged = await diffUnits(['--cached'], { toplevel, env, now });
+  // The real index's attributes for the group's paths (CHG-10): without them a filtered
+  // file's staged diff splits into `text` hunks that never match its stored unit.
+  const attrs = await checkAttrs(units.map((unit) => unit.path), { toplevel, env, now });
+  const staged = await diffUnits(['--cached'], { toplevel, env, now }, attrs);
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
 }
 
@@ -1096,7 +1110,7 @@ function unitsOf(section) {
     throw new Error(`a modified section without a hunk (${path})`);
   }
   const kind = entryKind ?? (binary ? 'binary' : (modes === null ? 'text' : 'mode'));
-  const base = { path, pathBytes, oldPath, status, kind, generated };
+  const base = { path, pathBytes, oldPath, status, kind, generated, binary };
   if (status === 'M' && kind === 'text') {
     const occurrences = new Map();
     return hunks.map((hunk) => {
@@ -1173,7 +1187,7 @@ function typeChangeUnit(section) {
   const range = `-${parts[0].hunks[0]?.old.text ?? '0,0'} +${parts[1].hunks[0]?.new.text ?? '0,0'}`;
   return {
     path, pathBytes, oldPath, status: 'T', kind: entryKind, hash, identityKey: hash, ...counts, range,
-    generated, body: Buffer.concat(body),
+    generated, binary: parts.some((part) => part.binary), body: Buffer.concat(body),
   };
 }
 

@@ -39,7 +39,7 @@ function seed(c, files) {
 // The temporary index lives under the case's own root, never inside the repo.
 function snapshot(c, storedLists = { candidates: [], stagedNew: [] }, unborn = false) {
   return changeSet.snapshot({
-    mode: 'split', storedLists, indexPath: path.join(c.root, 'git-index'), unborn,
+    mode: 'split', storedLists, tracked: [], indexPath: path.join(c.root, 'git-index'), unborn,
     toplevel: c.repoDir, env: c.env, now: NOW,
   });
 }

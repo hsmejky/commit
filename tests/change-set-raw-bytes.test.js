@@ -29,7 +29,7 @@ const NOW = () => Date.UTC(2026, 0, 1);
 
 function snapshot(c, storedLists = { candidates: [], stagedNew: [] }) {
   return changeSet.snapshot({
-    mode: 'split', storedLists, indexPath: path.join(c.root, 'git-index'), unborn: false,
+    mode: 'split', storedLists, tracked: [], indexPath: path.join(c.root, 'git-index'), unborn: false,
     toplevel: c.repoDir, env: c.env, now: NOW,
   });
 }

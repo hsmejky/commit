@@ -34,10 +34,12 @@ export function renderHunks(runState, units) {
   for (const unit of units) {
     // CHG-08, CHG-09: a binary unit or a submodule pointer change has no block (`body:
     // "none"`, C:plan-hunks); a file↔submodule `T` with file lines has one. CHG-10: a
-    // `filtered` unit whose cleaned form is binary has no block either.
+    // `filtered` unit whose cleaned form is binary has no block either (its own `binary`
+    // flag, not an empty body: an empty filtered new file still gets one, review-CHG-10
+    // finding 9).
     if (
       unit.kind === 'binary'
-      || (unit.kind === 'filtered' && unit.body.length === 0)
+      || (unit.kind === 'filtered' && unit.binary === true)
       || (unit.kind === 'submodule' && unit.body.length === 0)
     ) {
       hunks.push({

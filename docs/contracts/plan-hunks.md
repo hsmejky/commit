@@ -109,7 +109,12 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   mode change is still `kind: "binary"`: the mode is hashed too, but the body stays `none`
   like any binary unit. `filtered` (a
   `filter` attribute: whole file, body = the cleaned diff, `body: "none"` when that is
-  binary; staged with `git add`). An attribute-binary text file (git reports it as binary
+  binary; staged with `git add`). Any `filter` value other than `unspecified` or `unset`
+  counts, also a bare `filter` or a driver with no `filter.<name>.*` command, which git
+  does not run: the conservative choice, since the unit is whole-file and `git add`
+  either way. The kind's precedence is `submodule`, then `symlink`, then `filtered`, then
+  `binary` or `mode`: a filtered file with a mode change or a binary cleaned form stays
+  `kind: "filtered"`. An attribute-binary text file (git reports it as binary
   through a `-diff` or `binary` attribute or a custom `diff` driver, but its new content has no NUL byte in the first
   8000 bytes, [plan](plan.md)) has `kind: "text"`: one whole-file unit staged with `git add`,
   `body: "none"` like a summary-only file (no block), its added lines still scanned, read
