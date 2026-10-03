@@ -56,7 +56,9 @@ commit it by hand, or drop it with `git reset --merge`"); `i18n.commitEncoding` 
 compared case-insensitively with `utf-8` and `utf8` (story 186); git and Node versions; for
 `reword`, unborn, merge commit, root commit and pushed (one `for-each-ref --contains` over
 remote-tracking refs, skipped when unborn); `head()`; `headTree()` (the tree ID of
-`HEAD^{tree}`, which M16 compares with the tree its backstop scanned); `isTracked(name, { cwd, env, now })` (one `ls-files -z --cached` call with no pathspec, matched in JS: whether the index holds `name` or a path under it in any ASCII case, so no `GIT_*_PATHSPECS` variable or git version changes the answer; M18 passes it to M12 `create` for the `.commit-plan` check); history reads (`recentSubjects`,
+`HEAD^{tree}`, which M16 compares with the tree its backstop scanned); `firstParent(sha)`
+(the first parent of `sha`, `null` on a root commit, via `--verify -q`; M16's post-commit
+`head-moved` check, EXE-06); `isTracked(name, { cwd, env, now })` (one `ls-files -z --cached` call with no pathspec, matched in JS: whether the index holds `name` or a path under it in any ASCII case, so no `GIT_*_PATHSPECS` variable or git version changes the answer; M18 passes it to M12 `create` for the `.commit-plan` check); history reads (`recentSubjects`,
 `oldMessage`, and the last 200 non-merge messages for `infer`). Its refusal texts (`head-moved`, the merge-commit reword, the in-progress states, `unmerged`) are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, Q20, Q21, C:plan, C:commit-release, C:cli-and-exit-codes.
 
 **M4 Config loader.** Read the user layer from the Claude home and the repo layer from the

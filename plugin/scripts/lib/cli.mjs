@@ -253,10 +253,11 @@ export async function main(argv, env) {
     // (`commits`/`failed`/`remaining`/`unstaged`/`notices`, C:commit-release) that no other
     // subcommand's failure shape has. Forward whatever is there generically instead of
     // naming each field, so a future failure shape with its own extra keys needs no change
-    // here.
+    // here. `extra` spreads first, so a future failure shape that happens to carry its own
+    // `version`/`ok`/`error` can never overwrite the envelope `failure()` built.
     const { kind, message, errors, reply, ...extra } = result.failure;
     const built = failure(kind, message, errors, reply);
-    return { ...built, stdoutJson: { ...built.stdoutJson, ...extra } };
+    return { ...built, stdoutJson: { ...extra, ...built.stdoutJson } };
   }
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }

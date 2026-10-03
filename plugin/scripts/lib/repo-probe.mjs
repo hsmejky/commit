@@ -178,6 +178,12 @@ export async function inProgressState({ cwd, env, now }) {
   return null;
 }
 
+// The `head-moved` refusal text (Q18), recorded verbatim in C:cli-and-exit-codes. Both
+// `plan`'s own check (RUN-06, workflows.mjs) and `commit`'s (EXE-06, commit-executor.mjs)
+// refuse with it; a single export (review-EXE-06 Low-6) keeps the two in sync instead of
+// each holding its own byte-for-byte copy.
+export const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
+
 /**
  * The current HEAD SHA, read on its own (GIT-09's reword facts, EXE's `head-moved` check
  * against a run's stored expected HEAD) rather than from the status call `headState` already

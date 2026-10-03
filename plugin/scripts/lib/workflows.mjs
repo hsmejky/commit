@@ -51,8 +51,8 @@
 // (`commit-executor.mjs`), releasing the run once no group remains.
 
 import {
-  commitEncoding, head, headState, historyMessages, inProgressState, isTracked, oldMessage, probe,
-  recentSubjects, rewordFacts,
+  HEAD_MOVED_TEXT, commitEncoding, head, headState, historyMessages, inProgressState, isTracked,
+  oldMessage, probe, recentSubjects, rewordFacts,
 } from './repo-probe.mjs';
 import {
   assignIds, indexFingerprint, inventory as takeInventory, snapshot, trackedDirectories, treeState,
@@ -88,9 +88,6 @@ const SIGNING_PROMPT_NOTICE = 'signing enabled; a passphrase prompt may appear';
 // C:cli-and-exit-codes; the run goes on.
 const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
   + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
-
-// RUN-06: the `head-moved` refusal text (Q18), recorded verbatim in C:cli-and-exit-codes.
-const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
 
 // CHG-04: the `index-changed` refusal text. C:cli-and-exit-codes records no text for it, so
 // tests assert the domain code's kind and that the text names the index.
@@ -651,26 +648,34 @@ async function openRun(ctx) {
 }
 
 // `commit` step 4 (EXE-02, extended by EXE-04's mid-loop `touch` and EXE-06's `head-moved`):
-// M16 `commitAll` over the stored groups, then the run's release
-// once it ends with no refusal (C:commit-release: the lock and the run folder go after the
-// last group; the folder takes this call's `call.lock` with it, so the `finally`'s `close`
-// finds nothing left). EXE-05's phase (a) `no-groups` refusal (no stored groups, or every
-// stored group already committed) is `commitAll`'s own, after the lock check (M12 `open`,
-// step 3) and before any group work. A refusal (`no-groups` here; `taken-over`/`busy`
-// mid-loop) keeps the run (no `releaseOpen`; only this call's `call.lock` goes, via the
-// `finally` in `commit()` below — `ctx.opened` is already true by the time this step runs),
-// matching `usage`/`lock` not ending the run (C:cli-and-exit-codes).
+// M16 `commitAll` over the stored groups, then the run's release once it ends with no
+// refusal, or with `head-moved` (C:commit-release: the lock and the run folder go after the
+// last group, and "on every failure that ends the run"; the folder takes this call's
+// `call.lock` with it, so the `finally`'s `close` finds nothing left). EXE-05's phase (a)
+// `no-groups` refusal (no stored groups, or every stored group already committed) is
+// `commitAll`'s own, after the lock check (M12 `open`, step 3) and before any group work. A
+// `no-groups`/`taken-over`/`busy` refusal keeps the run instead (no `releaseOpen`; only this
+// call's `call.lock` goes, via the `finally` in `commit()` below — `ctx.opened` is already
+// true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`
+// ends it like `diff-changed`/`index-lock` do (C:cli-and-exit-codes).
 // The release's notice and the `reply` with `status: "committed"` are INT-02's
 // (C:reply-and-handback).
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { env, now, osUser } = ctx.injected;
   const outcome = await commitAll(run, { now, osUser, env });
-  // `remaining.length === 0` is also required here (not just `!outcome.refusal`): EXE-16's
-  // budget stop ends `commitAll` with no `refusal` but a non-empty `remaining`, and that
-  // outcome must keep the run (EXE-16 AC1), same as a mid-loop `taken-over`/`busy` refusal
-  // does today. Once RUN-27's `runEnd` lands, it replaces this condition outright.
-  if (!outcome.refusal && outcome.remaining.length === 0) releaseOpen(run);
+  // `remaining.length === 0` is also required for the no-refusal case (not just
+  // `!outcome.refusal`): EXE-16's budget stop ends `commitAll` with no `refusal` but a
+  // non-empty `remaining`, and that outcome must keep the run (EXE-16 AC1), same as a
+  // mid-loop `taken-over`/`busy` refusal does today. `head-moved` releases regardless of
+  // `remaining` (review-EXE-06 Medium-1): C:cli-and-exit-codes lists it with
+  // `diff-changed`/`index-lock`/`internal` among the refusals that "end the run: they
+  // release the lock and delete the run folder, so the next `/commit` starts fresh" — a
+  // moved HEAD is not something a retry within this run can fix. Once RUN-27's `runEnd`
+  // lands, it replaces this condition outright.
+  if ((!outcome.refusal && outcome.remaining.length === 0) || outcome.refusal?.code === 'head-moved') {
+    releaseOpen(run);
+  }
   return outcome;
 }
 

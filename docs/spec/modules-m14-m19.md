@@ -108,11 +108,12 @@ created between groups are both caught:
   commit did not finish in 9 min — a pre-commit hook or a signing prompt may be waiting",
   Q18, plus, when M10 returns `lockLeft`, the notice that `index.lock` was left in place and
   should be checked and removed by hand if no git process is running); after
-  a commit, M3 `head()` reads the new HEAD and checks its first parent against the SHA
-  expected before this commit (an unborn branch: HEAD has no parent) — except in `reword`,
-  where `--amend --only` gives the new commit the same parent as the one it replaced, so
-  there M3 compares HEAD's first parent against the expected HEAD's own first parent (both
-  none, on a root commit); when it matches, HEAD is the group's SHA; when it does not (a
+  a commit, M3 `head()` reads the new HEAD and M3 `firstParent()` checks its first parent
+  against the SHA expected before this commit (an unborn branch: HEAD has no parent) —
+  except in `reword`, where `--amend --only` gives the new commit the same parent as the one
+  it replaced, so there `firstParent()` compares HEAD's first parent against the expected
+  HEAD's own first parent (both none, on a root commit); when it matches, HEAD is the
+  group's SHA; when it does not (a
   hook or another process committed as well), the
   group is still reported committed, with the SHA HEAD holds, a notice names the group
   ("another commit was made during group <n>; later groups refused"), and the next group's

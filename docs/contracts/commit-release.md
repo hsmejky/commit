@@ -167,6 +167,10 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
 - Exit 4 fills `gitOutput` with git's stdout and stderr verbatim (unescaped, uncut); what a
   caller shows through `text` is the capped, escaped copy of it ([Reply and
   handback](reply-and-handback.md)). Exit 3 fills `error` and adds `hits`.
+- `notices`: present on every `commit --all` output, `[]` unless this call hit the EXE-06
+  "another commit was made during group `n`; later groups refused" case. Interim: INT-02
+  moves this into `reply.notices` alongside `plan`'s own collected notices; this top-level
+  field goes away once that lands.
 - `unstaged`: present on every `commit --all` output, run-ending or mid-run (e.g. a `lock`
   refusal between groups), gated only by the state file's `indexReset: true`; `indexReset`
   decides only this report, never whether to unstage. `[]` once `indexReset` is true (an

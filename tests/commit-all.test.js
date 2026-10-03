@@ -460,11 +460,12 @@ test("group 1's pre-commit hook rewrites the lock to another planId → group 1 
 // before each group, and M3 `firstParent` of each group's own commit after it, catch a commit
 // made elsewhere (manually, or by a hook) between `plan` and `commit`, or between two groups.
 
-test('a manual commit between plan and commit → exit 6 head-moved, no commit beyond it, index untouched', async (t) => {
-  const { c, planId } = await groupedRun(t);
+test('a manual commit between plan and commit → exit 6 head-moved, no commit beyond it, index untouched, the run released', async (t) => {
+  const { c, planId, runDir } = await groupedRun(t);
   c.git(['commit', '-q', '--allow-empty', '-m', 'manual']);
   const headAfterManual = c.git(['rev-parse', 'HEAD']).trim();
-  const statusBefore = c.git(['status', '--porcelain']);
+  const indexPath = path.join(c.repoDir, '.git', 'index');
+  const indexBefore = fs.readFileSync(indexPath);
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
@@ -480,7 +481,13 @@ test('a manual commit between plan and commit → exit 6 head-moved, no commit b
   assert.deepEqual(result.json.remaining, [1]);
   assert.deepEqual(result.json.notices, []);
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headAfterManual, 'no commit beyond the manual one');
-  assert.equal(c.git(['status', '--porcelain']), statusBefore, 'the index is byte-identical to before the call');
+  // Byte-for-byte, not `git status --porcelain` (review-EXE-06 Low-4): porcelain only shows
+  // content state and would not catch a rewritten index with the same tracked-file content.
+  assert.deepEqual(fs.readFileSync(indexPath), indexBefore, 'the index is byte-identical to before the call');
+  // review-EXE-06 Medium-1: `head-moved` ends the run per C:cli-and-exit-codes, like
+  // `diff-changed`/`index-lock`, unlike the `no-groups`/`lock` refusals that keep it.
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });
 
 test('a post-commit hook that commits again during group 1 of three → group 1 reported with HEAD\'s SHA and a notice, group 2 refused head-moved', async (t) => {
@@ -513,8 +520,71 @@ test('a post-commit hook that commits again during group 1 of three → group 1 
   assert.equal(result.json.failed, 2);
   assert.deepEqual(result.json.remaining, [2, 3]);
   assert.deepEqual(result.json.notices, ['another commit was made during group 1; later groups refused']);
-  assert.equal(fs.existsSync(runDir), true, 'the run folder is not released');
-  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
-  assert.equal(state.head, seed, "the expected HEAD is left stale so group 2's check catches it");
-  assert.deepEqual(state.groups.map((group) => group.committed), [true, false, false]);
+  // review-EXE-06 Medium-1: `head-moved` ends the run per C:cli-and-exit-codes, like
+  // `diff-changed`/`index-lock`, so the lock and run folder are released here too, not kept
+  // as an earlier version of this test asserted.
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('group 1 already committed at the expected HEAD, but another commit landed elsewhere before group 2 → group 2 refused head-moved by the pre-group check, run released', async (t) => {
+  let group1;
+  let extra;
+  const { c, planId, seed, runDir } = await threeGroupRun(t, {
+    edit: async (state, repo) => {
+      repo.git(['commit', '-q', '-m', THREE_HEADERS[0], '--', 'a.txt']);
+      group1 = repo.git(['rev-parse', 'HEAD']).trim();
+      state.groups[0].committed = true;
+      state.head = group1;
+      state.indexFingerprint = await changeSet.indexFingerprint({ toplevel: repo.repoDir, env: repo.env });
+      // Not through this run: the state file still expects `group1`, but HEAD has since
+      // moved past it, so group 2's own (a) `head()` check must catch this before it ever
+      // reaches `firstParent()` (that check only runs after this run's own `git commit`).
+      repo.git(['commit', '-q', '--allow-empty', '-m', 'elsewhere']);
+      extra = repo.git(['rev-parse', 'HEAD']).trim();
+    },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'head-moved', detail(result));
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.deepEqual(shas, [group1, extra], 'nothing of group 2 or 3 was attempted');
+  assert.deepEqual(result.json.commits, [], 'this call committed nothing (group 1 was already committed before it ran)');
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  assert.deepEqual(result.json.notices, []);
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('a post-commit hook that commits again during the only group → exit 0, the commit reported with HEAD\'s SHA and a notice, the run still released', async (t) => {
+  const { c, planId, runDir } = await groupedRun(t);
+  const marker = path.join(c.root, 'extra-commit-done');
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    "const { execFileSync } = require('node:child_process');",
+    `const marker = ${JSON.stringify(marker)};`,
+    `const repoDir = ${JSON.stringify(c.repoDir)};`,
+    'if (!fs.existsSync(marker)) {',
+    '  fs.writeFileSync(marker, "1");',
+    "  execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'extra'], { cwd: repoDir });",
+    '}',
+    '',
+  ].join('\n'), 'post-commit');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.ok, true);
+  const sha = c.git(['rev-parse', 'HEAD']).trim();
+  assert.deepEqual(result.json.commits, [{ n: 1, sha, header: HEADER }]);
+  assert.equal(result.json.failed, null);
+  assert.deepEqual(result.json.remaining, []);
+  // KD-R44: the text still says "later groups refused" although there is no later group in
+  // this single-group run (a known, documented gap, not asserted away here).
+  assert.deepEqual(result.json.notices, ['another commit was made during group 1; later groups refused']);
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });

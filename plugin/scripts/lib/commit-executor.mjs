@@ -23,7 +23,7 @@
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
 
-import { firstParent, head } from './repo-probe.mjs';
+import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, matchIds, snapshot, stage, treeDiffUnits, writeTree,
 } from './change-set.mjs';
@@ -42,9 +42,6 @@ function notBuilt(what, slice) {
 // `already-committed`).
 const NO_GROUPS_TEXT = 'no groups to commit: none are stored, or every stored group is already '
   + 'committed';
-
-// EXE-06: the recorded text of C:cli-and-exit-codes, verbatim (Q18).
-const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
 
 // EXE-06: the notice when a hook or another process committed during group `n`, so that
 // group's own commit landed but is not HEAD's first parent any more.
@@ -113,8 +110,9 @@ function refused(state, group, commits, refusal, notices) {
  *   `failed` that group and `remaining` the groups not committed (never empty); `head-moved`
  *   when HEAD is not the SHA this run expects (EXE-06). `notices` holds any "another commit
  *   was made during group `<n>`" notices from groups this call already committed before a
- *   `head-moved` refusal (EXE-06), `[]` otherwise. Neither refusal kind releases the run
- *   (`usage`/`lock`, M18's call per C:cli-and-exit-codes).
+ *   `head-moved` refusal (EXE-06), `[]` otherwise. `no-groups`/`taken-over`/`busy`
+ *   (`usage`/`lock`, M18's call) keep the run; the caller releases it on `head-moved`
+ *   instead, like `diff-changed`/`index-lock` (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
 export async function commitAll(run, { now, osUser, env }) {
