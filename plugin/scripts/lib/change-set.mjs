@@ -602,7 +602,8 @@ export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
 }
 
 /**
- * M10 `commitGuarded`, the plain form (EXE-02): one `git commit` spawn through M2, with no
+ * M10 `commitGuarded`, the plain form (EXE-02): one `git commit` spawn through M2 in its
+ * `commit` environment (GIT-06: only the redirecting `GIT_*` removed, no pins), with no
  * markers, no timeout kill and no `index.lock` handling yet (EXE-17, EXE-18, EXE-21).
  *
  * @param {{ args: string[], input: string, toplevel: string, env: object,
@@ -612,7 +613,9 @@ export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
  *   lockRemoved: false, lockLeft: false }>}
  */
 export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs }) {
-  const result = await run('git', args, { cwd: toplevel, env, now, input: Buffer.from(input, 'utf8'), timeoutMs });
+  const result = await run('git', args, {
+    cwd: toplevel, env, now, commit: true, input: Buffer.from(input, 'utf8'), timeoutMs,
+  });
   return {
     code: result.code,
     stdout: result.stdout.toString('utf8'),

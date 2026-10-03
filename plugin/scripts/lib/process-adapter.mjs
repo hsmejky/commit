@@ -4,8 +4,8 @@
 // INT-01 built `toplevel` and an asynchronous `run`; GIT-01 adds `gitVersion`, the fixed
 // short timeout of the two start-up `spawnSync` calls, typed start-up results (git missing,
 // timed out) and `run`'s `timedOut` and `spawnedAt`. RUN-05 adds `gitPath`. GIT-05 adds the `GIT_*` environment
-// hygiene, the config pins, `readOnly`, `index`, `history` and `input`; GIT-07 the
-// deadline-driven timeout and process-tree kill.
+// hygiene, the config pins, `readOnly`, `index`, `history` and `input`; GIT-06 `git commit`'s
+// own environment (`commit`); GIT-07 the deadline-driven timeout and process-tree kill.
 
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -58,6 +58,32 @@ function gitEnv(env, { readOnly = false, index, history = false } = {}) {
     out[`GIT_CONFIG_KEY_${i}`] = key;
     out[`GIT_CONFIG_VALUE_${i}`] = value;
   });
+  return out;
+}
+
+// The inherited variables `git commit` removes (M2, story 147, GIT-06): only the ones that
+// redirect which repository, index, config or object store it uses. Every other variable,
+// `GIT_AUTHOR_*`/`GIT_COMMITTER_*` and the user's own `GIT_*` included, reaches the hooks.
+const COMMIT_REMOVE = new Set([
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_CONFIG_COUNT',
+  'GIT_CONFIG_PARAMETERS', 'GIT_ATTR_SOURCE', 'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+]);
+const COMMIT_REMOVE_PREFIXES = ['GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_'];
+
+// Builds the environment of `git commit` (M2): the redirecting variables are removed,
+// matched case-insensitively like `gitEnv`, and neither `GIT_LITERAL_PATHSPECS` nor the
+// config pins are set, so the user's hooks run in the user's own git environment. `index`
+// is the optional alternate index, as for every other call.
+function commitEnv(env, { index } = {}) {
+  if (!env) throw new Error('commitEnv: env is required');
+  const out = {};
+  for (const [key, value] of Object.entries(env)) {
+    const upper = key.toUpperCase();
+    if (COMMIT_REMOVE.has(upper) || COMMIT_REMOVE_PREFIXES.some((prefix) => upper.startsWith(prefix))) continue;
+    out[key] = value;
+  }
+  if (index != null) out.GIT_INDEX_FILE = index;
   return out;
 }
 
@@ -145,16 +171,20 @@ export async function gitPath(names, { cwd, env, now }) {
  *
  * `cmd` is matched against `git` by basename, case-insensitively and with an `.exe` suffix
  * stripped, so a resolved or absolute git path still gets the hygiene below; every other
- * `cmd` runs with `env` untouched. For git (every call so far; `git commit`'s own
- * environment is GIT-06's) the call runs with the hygiene of M2: every inherited `GIT_*`
- * variable outside `GIT_ENV_KEEP_SET` is removed, `GIT_LITERAL_PATHSPECS=1`,
- * `core.quotePath=false` and `diff.suppressBlankEmpty=false` are pinned, and the options
- * below add the rest.
+ * `cmd` runs with `env` untouched. For git, except with `commit`, the call runs with the
+ * hygiene of M2: every inherited `GIT_*` variable outside `GIT_ENV_KEEP_SET` is removed,
+ * `GIT_LITERAL_PATHSPECS=1`, `core.quotePath=false` and `diff.suppressBlankEmpty=false` are
+ * pinned, and the options below add the rest. With `commit` (the `git commit` spawn only)
+ * just the redirecting variables are removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+ * `GIT_COMMON_DIR`, `GIT_CONFIG_COUNT`/`KEY_*`/`VALUE_*`, `GIT_CONFIG_PARAMETERS`,
+ * `GIT_ATTR_SOURCE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`), nothing is
+ * pinned and every other variable is kept for the user's hooks; `readOnly` and `history`
+ * do not apply.
  *
  * @param {string} cmd
  * @param {string[]} args
  * @param {{ cwd: string, env: object, now?: () => number, readOnly?: boolean,
- *   index?: string, history?: boolean, input?: string|Buffer }} options `cwd`: the toplevel
+ *   index?: string, history?: boolean, commit?: boolean, input?: string|Buffer }} options `cwd`: the toplevel
  *   for git; `env`: the injected process environment; `now`: the injected clock, read once
  *   when the child has spawned; `readOnly`: a read-only call, which gets
  *   `GIT_OPTIONAL_LOCKS=0` (never a staging call); `index`: an alternate index file
@@ -177,10 +207,11 @@ export async function gitPath(names, { cwd, env, now }) {
  *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` is `true` only past
  *   `timeoutMs`.
  */
-export function run(cmd, args, { cwd, env, now, readOnly, index, history, input, onStdout, timeoutMs }) {
+export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit, input, onStdout, timeoutMs }) {
   return new Promise((resolve, reject) => {
     const isGit = path.basename(cmd, '.exe').toLowerCase() === 'git';
-    const childEnv = isGit ? gitEnv(env, { readOnly, index, history }) : env;
+    let childEnv = env;
+    if (isGit) childEnv = commit ? commitEnv(env, { index }) : gitEnv(env, { readOnly, index, history });
     const child = spawn(cmd, args, {
       cwd,
       env: childEnv,

@@ -31,10 +31,6 @@ const BODY = 'Some body.';
 // group naming every unit, as `check` stores it (PLN-01).
 async function groupedRun(t) {
   const c = createCase(t);
-  // GIT-06 builds `git commit`'s own environment (the inherited identity kept); until then
-  // M2 strips every `GIT_*`, so the repo carries an identity of its own.
-  c.git(['config', 'user.name', 'Commit Test Author']);
-  c.git(['config', 'user.email', 'author@example.com']);
   c.writeFile('a.txt', 'one\n');
   c.writeFile('b.txt', 'two\n');
   c.git(['add', '--', 'a.txt', 'b.txt']);
@@ -108,8 +104,6 @@ test('with no pre-staging, unstaged is [] (the run set indexReset), not null', a
 // C:plan "A partially staged file appears in both lists") plus the usual two-file group.
 async function partiallyStagedRun(t) {
   const c = createCase(t);
-  c.git(['config', 'user.name', 'Commit Test Author']);
-  c.git(['config', 'user.email', 'author@example.com']);
   c.writeFile('a.txt', 'one\n');
   c.writeFile('b.txt', 'two\n');
   c.git(['add', '--', 'a.txt', 'b.txt']);
@@ -148,8 +142,6 @@ test('a pre-staged file refuses before any group: no commit, the real index unto
 
 test('a backstop hit after staging resets the real index before throwing, and commits nothing', async (t) => {
   const c = createCase(t);
-  c.git(['config', 'user.name', 'Commit Test Author']);
-  c.git(['config', 'user.email', 'author@example.com']);
   c.writeFile('a.txt', 'one\n');
   c.writeFile('b.txt', 'two\n');
   c.git(['add', '--', 'a.txt', 'b.txt']);
