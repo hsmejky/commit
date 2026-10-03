@@ -130,7 +130,7 @@ test('classify: a blanket-denied worker command gets its blanket row, not the ha
 });
 
 test('classify: a worker command holding both a `commit` call and a direct `git commit` gets the handback text', () => {
-  // Precedence is not given by C:guard; the handback rule is checked first (the worker must
+  // C:guard Precedence checks the worker-only rule before every git row (the worker must
   // stop, Q25), so a direct commit next to it never hides the stop instruction.
   const result = decide(`git commit -m x; ${call('commit')}`);
   assert.equal(result.message, HANDBACK);
@@ -140,4 +140,64 @@ test('classify: a worker command holding both a `commit` call and a direct `git 
 test('classify: a handback deny still reports every script call', () => {
   const result = decide(`${call('plan', ' --intent x')}; ${call('commit')}`);
   assert.deepEqual(result.scriptCalls.map((c) => c.subcommand), ['plan', 'commit']);
+});
+
+test('classify: the worker-only rule ranks above the Start-Process wrapper row and a git-option deny', () => {
+  const wrapped = decide(`Start-Process git; ${call('commit')}`, 'powershell');
+  assert.equal(wrapped.message, HANDBACK);
+  assert.notEqual(decide('Start-Process git', 'powershell').decision, 'none');
+  const option = decide(`git -c a=b commit; ${call('commit')}`);
+  assert.equal(option.message, HANDBACK);
+  assert.equal(decide('git -c a=b commit').message, MESSAGES.config);
+});
+
+// The worker-only rule's own wider scan (C:guard Worker-only rule): any token naming
+// `commit.cjs`, in any case, directly followed by `commit` or `release`, whatever word starts
+// the command. Only a call inside a quoted nested shell stays a documented gap.
+test("classify: the worker's own `commit` call is denied whatever starts the command (Bash)", () => {
+  const p = '"C:/x/commit.cjs"';
+  for (const command of [
+    `if true; then node ${p} commit; fi`,
+    `for i in 1; do node ${p} commit; done`,
+    `case a in a) node ${p} commit;; esac`,
+    `f(){ node ${p} commit; }; f`,
+    `coproc node ${p} commit`,
+    `X=1 node ${p} commit`,
+    `env node ${p} release`,
+    `command node ${p} commit`,
+    `exec node ${p} commit`,
+    `nohup node ${p} commit`,
+    `node -- ${p} commit`,
+    `node /x/Commit.CJS release`,
+  ]) {
+    const result = decide(command);
+    assert.equal(result.message, HANDBACK, command);
+  }
+});
+
+test("classify: the worker's own `commit` call is denied whatever starts the command (PowerShell)", () => {
+  const p = '"C:/x/commit.cjs"';
+  for (const command of [
+    `$r = node ${p} commit`,
+    `if ($true) { node ${p} commit }`,
+    `foreach ($i in 1) { node ${p} release }`,
+    `try { node ${p} commit } catch {}`,
+    `cmd /c node ${p} commit`,
+  ]) {
+    const result = decide(command, 'powershell');
+    assert.equal(result.message, HANDBACK, command);
+  }
+});
+
+test('classify: the wider scan needs `commit.cjs` directly followed by `commit` or `release`, exactly', () => {
+  for (const command of [
+    'node /x/commit.cjs plan commit',
+    'node /x/commit.cjs Commit',
+    'node /x/commit.cjs.bak commit',
+    'node /x/other.cjs commit',
+    'echo commit.cjs',
+  ]) {
+    assert.equal(decide(command).decision, 'none', command);
+  }
+  assert.equal(decide('X=1 node /x/commit.cjs commit', 'bash', 'general-purpose').decision, 'none');
 });

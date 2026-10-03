@@ -1,6 +1,7 @@
 // S2 ScriptCall (docs/spec/modules-shared-and-guard.md; C:guard Script call). Pure, imports
 // nothing. The definition of a script call, in two widths: `recognise` reads one from a G2
-// segment widely, for the guard's denies and heartbeat only; `build` emits the one narrow
+// segment widely, for the guard's denies and heartbeat only; `named` scans wider still, for
+// the worker-only rule; `build` emits the one narrow
 // quoted form every handback and worker runs and the caller's shape check accepts (Q16,
 // Q23, Q25).
 
@@ -62,6 +63,28 @@ export function recognise(tokens) {
   const args = [];
   for (i += 3; i < words.length && typeof words[i] === 'string'; i += 1) args.push(words[i]);
   return { subcommand, args };
+}
+
+/**
+ * S2 `named`: the subcommands that directly follow a token naming the entry point, in a G2
+ * segment. The worker-only rule's own wider, fail-closed scan (C:guard Worker-only rule):
+ * any word with the basename `commit.cjs`, compared case-insensitively, wherever it stands,
+ * whatever word starts the command (an assignment, a runner, a keyword, `--`, `cmd /c`);
+ * the next word counts when it is a subcommand of the fixed list, compared exactly.
+ * Redirections are dropped with their target, as in `recognise`.
+ *
+ * @param {Array<string|object>} tokens one G2 segment.
+ * @returns {string[]}
+ */
+export function named(tokens) {
+  const words = tokens.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));
+  const found = [];
+  for (let i = 0; i + 1 < words.length; i += 1) {
+    const [word, next] = [words[i], words[i + 1]];
+    if (typeof word !== 'string' || basename(word).toLowerCase() !== ENTRY) continue;
+    if (typeof next === 'string' && SUBCOMMANDS.includes(next)) found.push(next);
+  }
+  return found;
 }
 
 /**

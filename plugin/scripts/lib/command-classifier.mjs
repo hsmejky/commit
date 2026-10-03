@@ -12,13 +12,13 @@
 // what would otherwise be allowed (the wrapper row), and the bare/`-m`/`-F`/`--message`/
 // `--file` row applies only when nothing else matches. Each segment's script call (S2) is
 // reported in `scriptCalls`, a denied command's included; a blanket result has none.
-// As `commit:commit-worker`, a script call to `commit` or `release` in any segment denies
-// with the handback text before any git row (the worker-only rule, Q25).
+// As `commit:commit-worker`, a word naming `commit.cjs` followed by `commit` or `release` in
+// any segment denies with the handback text before any git row (the worker-only rule, Q25).
 // Git's own options before the subcommand are skipped (step 4): `-c`/`--config-env`
 // before `commit` and an unknown option followed later by a `commit` token deny, ranking
 // above the `commit` argument rows; every token read among them must be literal.
 
-import { recognise } from './script-call.mjs';
+import { named, recognise } from './script-call.mjs';
 
 /** C:guard `<route>`. It never names the `/commit` skill, which the model cannot invoke (Q2, Q8). */
 export const ROUTE =
@@ -537,9 +537,10 @@ export function classify(parsed, context = {}) {
   // for a `plan` call before the decision is emitted (C:guard Heartbeat).
   const scriptCalls = parsed.map((segment) => recognise(segment)).filter((call) => call !== null);
   // The worker-only rule (C:guard, Q25) is checked before the git rows: the worker answering
-  // its own handback is told to stop even when the command also commits directly.
+  // its own handback is told to stop even when the command also commits directly. Its scan
+  // (S2 `named`) is wider than `recognise`: any word naming the entry point counts.
   const { agentType } = context;
-  if (agentType === WORKER_AGENT && scriptCalls.some((call) => HANDBACK_SUBCOMMANDS.has(call.subcommand))) {
+  if (agentType === WORKER_AGENT && parsed.some((segment) => named(segment).some((s) => HANDBACK_SUBCOMMANDS.has(s)))) {
     return { decision: 'deny', message: HANDBACK_MESSAGE, scriptCalls };
   }
   // A Start-Process word denies the command with the wrapper row, which ranks just above the
