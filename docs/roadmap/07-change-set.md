@@ -164,14 +164,14 @@ stored; `hunks.txt` one block per hunk.
 
 **Blocked by:** CHG-03b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11 (pass 4 amendment), C:plan-hunks, glossary "unit", stories 63-65, 67, M10, M13.
 
-- [ ] Seam 1: a file with two separated edits → two units with their own ranges; edits within `-U3` of each other → one unit.
-- [ ] Seam 1: two identical hunks in one file → distinct IDs, same identity key in the unit table.
-- [ ] Seam 1: `offset`/`lines` let a `Read` of `hunks.txt` return exactly one block; the `###` line shows `<old> -> <new>` for a rename.
-- [ ] Seam 1 parser oracle holds on every fixture repo of this slice.
+- [x] Seam 1: a file with two separated edits → two units with their own ranges; edits within `-U3` of each other → one unit.
+- [x] Seam 1: two identical hunks in one file → distinct IDs, same identity key in the unit table.
+- [x] Seam 1: `offset`/`lines` let a `Read` of `hunks.txt` return exactly one block; the `###` line shows `<old> -> <new>` for a rename.
+- [x] Seam 1 parser oracle holds on every fixture repo of this slice.
 
 
 ## CHG-07: Units independent of the user's diff config and working directory
