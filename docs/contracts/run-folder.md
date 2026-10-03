@@ -188,8 +188,14 @@ failed call whose unstage did not happen keeps its run, below):
   they get the same 24 hours, since a fresh one may be another `plan`'s between its write and
   its link. A chain's folders are every `planId` a `lock.<planId>` file names, in its name or
   its content; when the lock or one of those files cannot be read, no folder is swept that
-  time. A removal error is the notice "`` `.commit-plan/<name>` `` was not swept (<code>); the
-  next /commit retries it" (C:cli-and-exit-codes recorded texts).
+  time (lock temporary files still are, since they carry no chain), and a notice is pushed
+  rather than left silent: "`` `.commit-plan/<name>` `` could not be read (<code>); old run
+  folders were not swept" (`<name>` is `lock` or a `lock.<planId>`). A removal error is the
+  notice "`` `.commit-plan/<name>` `` was not swept (<code>); the 24-hour sweep retries it"
+  (`<name>` empty, shown as `` `.commit-plan` ``, for a `readdir` failure on the directory
+  itself); a removal that fails partway may have already unlinked some children, which
+  refreshes the entry's own mtime, so it is not necessarily the very next `plan` that retries
+  it successfully (C:cli-and-exit-codes recorded texts).
 - Stdout budgets, each tested on its own (Q24): `plan`'s own fields 1 kB ([plan](plan.md));
   a `reply` 2 kB without its `text`, and its `text` 4 kB with every list at its cap
   ([Reply and handback](reply-and-handback.md)); `plan --hunks` 20 000 characters, also when

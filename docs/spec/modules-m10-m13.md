@@ -235,7 +235,8 @@ forward slashes.
   `call.lock` (the calling `commit` holds its own, which goes with the folder), never
   throwing, like the `release()` of the run `acquire` returns. `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
   false` for the no-op when the lock does not hold `planId`; `{ ok: false, code: 'busy' }`
-  on a live `call.lock`, RUN-02), `Run.sweep(now)`. Every M12 static entry takes `toplevel`
+  on a live `call.lock`, RUN-02), `Run.sweep({ toplevel, now }) → string[]` (the notices, one
+  per entry it could not remove or read; RUN-08). Every M12 static entry takes `toplevel`
   explicitly, alongside its own arguments, since M18 already holds it from the probe (Q9).
 Sources: Q9, Q22, C:run-folder.
 

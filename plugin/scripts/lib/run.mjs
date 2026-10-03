@@ -116,10 +116,15 @@ export const STALE_AFTER_MS = 15 * 60 * 1000;
 // unlink: "someone else is on it", `busy`, never `internal` (Q22, C:run-folder).
 const IN_USE = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
-class InUse extends Error {}
+class InUse extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
+}
 
 function inUse(err) {
-  return err && IN_USE.has(err.code) ? new InUse(err.message) : err;
+  return err && IN_USE.has(err.code) ? new InUse(err.message, err.code) : err;
 }
 
 /**
@@ -727,8 +732,9 @@ function cleanupLockTemp(temp) {
   try {
     fs.rmSync(temp, { force: true });
   } catch {
-    // The lock was never linked: a leftover temp here is not even a lock-shaped file the
-    // sweep targets, but it is harmless and the original link error is what matters.
+    // The lock was never linked: a leftover temp here is `lock-<planId>.tmp`, which RUN-08's
+    // sweep removes once it is 24 hours old; this best-effort cleanup only shortens the wait,
+    // and the original link error is what matters here.
   }
 }
 
@@ -992,8 +998,10 @@ const RENAMED_LOCK_PREFIX = 'lock.';
 const LOCK_TEMP_PATTERN = /^lock-(.+)\.tmp$/;
 
 /**
- * The notice for an entry the sweep could not remove (RUN-08): the outcome is unchanged, and
- * the next `plan`'s sweep tries again (C:run-folder, C:cli-and-exit-codes recorded texts).
+ * The notice for an entry the sweep could not remove (RUN-08): the outcome is unchanged. A
+ * removal that fails partway may unlink some children first, which refreshes the entry's own
+ * mtime, so it is not necessarily the very next `plan` that retries it successfully
+ * (C:run-folder, C:cli-and-exit-codes recorded texts).
  *
  * @param {string} name the entry's name in the run-folder directory, `''` for the directory.
  * @param {string} code the error code.
@@ -1001,32 +1009,55 @@ const LOCK_TEMP_PATTERN = /^lock-(.+)\.tmp$/;
  */
 export function sweepNotice(name, code) {
   const shown = name === '' ? RUN_DIR_NAME : `${RUN_DIR_NAME}/${name}`;
-  return `\`${shown}\` was not swept (${code}); the next /commit retries it`;
+  return `\`${shown}\` was not swept (${code}); the 24-hour sweep retries it`;
+}
+
+/**
+ * The notice for a lock-type file (`lock` or a `lock.<planId>`) the sweep could not read
+ * (RUN-08 review finding 7): rather than degrade silently, this call sweeps no folder at all
+ * (the safe choice: an unreadable file might be hiding a chain), though it still sweeps aged
+ * lock temporary files, which never carry a chain (C:cli-and-exit-codes recorded texts).
+ *
+ * @param {string} name the lock-type file's name in the run-folder directory.
+ * @param {string} code the error code.
+ * @returns {string}
+ */
+export function sweepKeepsNotice(name, code) {
+  return `\`${RUN_DIR_NAME}/${name}\` could not be read (${code}); old run folders were not swept`;
 }
 
 // The `planId`s whose folders the sweep must keep whatever their age, or `null` when one of
-// the lock-type files could not be read (the folders are then left for the next sweep): the
-// one the lock names, and every run on a renamed lock file's chain (C:run-folder "Orphan
-// renamed locks"). A chain links `lock.<A>` (A's provisional folder) to the run its content
-// names, X, and on from X through `lock.X`, which is itself one of the listed files, so
-// collecting the name and the content of every `lock.<planId>` covers every chain without
-// walking one. Nothing here follows a link (`readLockFile` reads by `lstat`).
-function sweepKeeps(runDir, names) {
+// the lock-type files could not be read (the folders are then left for a later sweep, and a
+// notice is pushed via `sweepKeepsNotice` rather than left silent, finding 7): the one the
+// lock names, and every run on a renamed lock file's chain (C:run-folder "Orphan renamed
+// locks"). A chain links `lock.<A>` (A's provisional folder) to the run its content names, X,
+// and on from X through `lock.X`, which is itself one of the listed files, so collecting the
+// name and the content of every `lock.<planId>` covers every chain without walking one.
+// Nothing here follows a link (`readLockFile` reads by `lstat`).
+function sweepKeeps(runDir, names, notices) {
   const keep = new Set();
+  let holder;
   try {
-    const holder = lockHolder(runDir);
-    if (holder !== null) keep.add(holder);
-    for (const name of names) {
-      if (!name.startsWith(RENAMED_LOCK_PREFIX)) continue;
-      const renamer = name.slice(RENAMED_LOCK_PREFIX.length);
-      if (!isValidPlanId(renamer)) continue;
-      keep.add(renamer);
-      const file = readLockFile(insideRunDir(runDir, name));
-      const named = file === null ? null : lockPlanId(file.bytes);
-      if (named !== null) keep.add(named);
-    }
-  } catch {
+    holder = lockHolder(runDir);
+  } catch (err) {
+    notices.push(sweepKeepsNotice('lock', err.code || 'error'));
     return null;
+  }
+  if (holder !== null) keep.add(holder);
+  for (const name of names) {
+    if (!name.startsWith(RENAMED_LOCK_PREFIX)) continue;
+    const renamer = name.slice(RENAMED_LOCK_PREFIX.length);
+    if (!isValidPlanId(renamer)) continue;
+    keep.add(renamer);
+    let file;
+    try {
+      file = readLockFile(insideRunDir(runDir, name));
+    } catch (err) {
+      notices.push(sweepKeepsNotice(name, err.code || 'error'));
+      return null;
+    }
+    const named = file === null ? null : lockPlanId(file.bytes);
+    if (named !== null) keep.add(named);
   }
   return keep;
 }
@@ -1051,10 +1082,12 @@ function sweepKind(name, stats) {
  * lock file (`lock.<planId>`, its own or a release's put-back) nor a folder on such a file's
  * chain: adoption owns them (RUN-20b). A fresh lock temporary file may be another `plan`'s,
  * between its write and its link, so the 24 hours apply to it too. Never throws: a cleanup
- * error becomes a notice (`sweepNotice`) and never changes the outcome.
+ * error becomes a notice (`sweepNotice`), and a lock-type file the sweep cannot read becomes
+ * one too (`sweepKeepsNotice`, finding 7) rather than silently skipping every folder; neither
+ * ever changes the outcome.
  *
  * @param {{ toplevel: string, now?: () => number }} options the clock, injectable for tests.
- * @returns {string[]} the notices, one per entry that could not be removed.
+ * @returns {string[]} the notices, one per entry that could not be removed or read.
  */
 export function sweep({ toplevel, now = Date.now }) {
   const runDir = runDirOf(toplevel);
@@ -1067,7 +1100,7 @@ export function sweep({ toplevel, now = Date.now }) {
     notices.push(sweepNotice('', err.code || 'error'));
     return notices;
   }
-  const keep = sweepKeeps(runDir, names);
+  const keep = sweepKeeps(runDir, names, notices);
   const cutoff = now() - SWEEP_AFTER_MS;
   for (const name of names) {
     try {

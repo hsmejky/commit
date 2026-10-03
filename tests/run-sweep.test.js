@@ -94,11 +94,45 @@ test('sweep turns a removal error into a notice and goes on with the other entri
     const stuck = folder(toplevel, A);
     fs.writeFileSync(path.join(stuck, 'nested'), 'x');
     fs.chmodSync(stuck, 0o555); // its entries cannot be unlinked
-    t.after(() => fs.chmodSync(stuck, 0o755));
     folder(toplevel, B);
 
-    const notices = run.sweep({ toplevel, now: later });
+    // The mode is restored before `toplevelOf`'s own `t.after` removes the tree: `node:test`
+    // runs `after` hooks in registration order, and a tree removal while `stuck` is still
+    // read-only would throw EACCES itself, failing the test on its own teardown rather than
+    // on the assertions above (review-RUN-08 finding 1).
+    let notices;
+    try {
+      notices = run.sweep({ toplevel, now: later });
+    } finally {
+      fs.chmodSync(stuck, 0o755);
+    }
 
-    assert.deepEqual(notices, [`\`.commit-plan/${A}\` was not swept (EACCES); the next /commit retries it`]);
+    assert.deepEqual(notices, [`\`.commit-plan/${A}\` was not swept (EACCES); the 24-hour sweep retries it`]);
     assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', B)), false, 'the next entry is still swept');
+  });
+
+test('sweep keeps every folder and notices an unreadable lock file, but still sweeps an aged lock temp file',
+  { skip: (process.platform === 'win32' || process.getuid?.() === 0) && 'needs POSIX permissions as non-root' },
+  (t) => {
+    const toplevel = toplevelOf(t);
+    folder(toplevel, B); // on lock.A's chain, which becomes unreadable below
+    folder(toplevel, D); // not on any chain
+    lockFile(toplevel, `lock.${A}`, B);
+    const lockA = path.join(toplevel, '.commit-plan', `lock.${A}`);
+    fs.chmodSync(lockA, 0o000); // unreadable: EACCES on read, not on lstat
+
+    const tempFile = path.join(toplevel, '.commit-plan', `lock-${E}.tmp`);
+    fs.writeFileSync(tempFile, JSON.stringify({ planId: E, created: new Date().toISOString() }));
+
+    let notices;
+    try {
+      notices = run.sweep({ toplevel, now: later });
+    } finally {
+      fs.chmodSync(lockA, 0o644);
+    }
+
+    assert.deepEqual(notices, [`\`.commit-plan/lock.${A}\` could not be read (EACCES); old run folders were not swept`]);
+    assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', B)), true, 'the chain folder survives');
+    assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', D)), true, 'the non-chain folder survives too');
+    assert.equal(fs.existsSync(tempFile), false, 'an aged lock temp file is swept all the same');
   });
