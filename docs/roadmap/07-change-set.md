@@ -344,6 +344,13 @@ misses, [known deficiencies](../spec/known-deficiencies.md)).
 - [ ] Seam 1: a force-added hidden file under `--staged` → `staged-hit` (exit 6); a staged 60-file new directory under `--staged` → scanned units, no collapse.
 - [ ] Seam 1: with `core.ignorecase=true`, `plan --staged` on a staged case-only `git mv` → not refused (`case-rename` is `split`-only, C:plan step 4; review-CHG-07 finding 1).
 
+**Note (review-CHG-12 finding 9):** a staged non-UTF-8 path is in `preStaged` (its `\xNN`
+form) and in the stored non-UTF-8 list that `check` reports in `notIncluded` ("path is not
+UTF-8 — commit by hand"). `staged` commits the index as-is, so it would commit that path
+(under its real bytes, not mangled) while `notIncluded` tells the user to commit it by hand.
+This slice settles which one holds in `staged`: leave the path out of `notIncluded` there,
+or keep it out of the commit, and documents the choice in C:plan.
+
 
 ## CHG-15: `reword` snapshot
 

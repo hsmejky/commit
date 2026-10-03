@@ -28,7 +28,7 @@
 122. As a developer, I want every message linted before the first commit, so that lint never leaves a run half done. [Q18]
 123. As a developer, I want the lowercase rule to pass acronyms, digits and symbols, so that `API` subjects are fine. [C:message-grammar]
 124. As a developer, I want messages normalised (BOM, UTF-16, CRLF and lone CR) and invalid UTF-8 rejected, so that encoding never corrupts history. [Q9]
-219. As a developer with a file whose name is not valid UTF-8, I want it reported in `notIncluded` and never planned, so that it is not committed under a mangled name. [Q11]
+219. As a developer with a file whose name is not valid UTF-8, I want it reported in `notIncluded` (or, when such paths are the only changes, in the `nothing` reply) and never planned, so that it is not committed under a mangled name. [Q11]
 125. As a developer, I want messages committed verbatim regardless of `commit.cleanup`, so that history equals what lint approved. [Q18]
 126. As a developer, I want multi-line messages to survive every shell, PowerShell included, so that quoting never breaks a commit. [Q9]
 127. As a developer, I want lint failures to end deterministically: at most one worker retry (none when the failing text is my dictated text), then a `lintFailed` question (`retry`, `no`, or any typed change, dictated text included), and with no user present the failure that ends the retries ending the run, so that loops end. [Q17, Q18]
