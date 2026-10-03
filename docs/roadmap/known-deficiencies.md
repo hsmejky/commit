@@ -77,9 +77,9 @@ fixed, delete it here; IDs are never reused.
 
 - **KD-R30.** EXE-10 may leave the phase (c) `diff-changed` uncovered, which fails INT-31
   unless the README lists it. EXE-10 adds the accepted-gap entry.
-- **KD-R31.** GRD-05 and GRD-11 test deny precedence only against the bare row. Add pairs
-  such as `--amend --squash=HEAD`, `--squash -n`, `-n --fixup=amend:x`, `git -c k=v commit
-  --amend`, `git --unknown commit --amend`.
+- **KD-R31.** GRD-05 tests deny precedence only against the bare row. Add pairs such as
+  `--amend --squash=HEAD`, `--squash -n`, `-n --fixup=amend:x` (GRD-11's pairs, `git -c k=v
+  commit --amend` and `git --unknown commit --amend`, are in `tests/guard-global-options.test.js`).
 - **KD-R32.** EXE-20 has only the negative reword case; add a `post-commit` hook commit that
   fires the mismatch notice.
 - **KD-R33.** RUN-12's `internal`-throw path to `cleanupDeadline` is untested; combine an

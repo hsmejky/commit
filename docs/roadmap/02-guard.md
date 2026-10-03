@@ -225,7 +225,7 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 
 **Sources:** Q3, Q4, C:guard (Parsing step 4, Deny messages), stories 14, 15, 31.
 
-- [ ] `git -C $dir commit -m x`, `git --no-pager -P commit -m x`, `git --git-dir=x commit -m x` → `Direct git commit is blocked. <route>` (the bare/`-m` row: a skipped global option is not itself a matched row, per C:guard's precedence, D2); `git -C x status commit` (a pathspec named `commit`) → no output.
+- [ ] `git -C dir commit -m x`, `git --no-pager -P commit -m x`, `git --git-dir=x commit -m x` → `Direct git commit is blocked. <route>` (the bare/`-m` row: a skipped global option is not itself a matched row, per C:guard's precedence, D2; `git -C $dir commit -m x` gets the literal-arguments row, C:guard step 4); `git -C x status commit` (a pathspec named `commit`) → no output.
 - [ ] `git -c k=v commit --no-edit` and `git --config-env=k=E commit --no-edit` → the `-c` row; `git -c k=v log --grep commit` → no output.
 - [ ] `git --unknown commit` → the "Could not parse git options" row.
 - [ ] `git -c k=v commit --amend` and `git -c k=v commit -n` → the `-c` row; `git --bogus commit --squash=HEAD` → the unknown-global-option row: these deferred rows run before `argumentsDecision` (GRD-05), so they outrank the `--amend`, `-n` and `--squash` specific rows.
