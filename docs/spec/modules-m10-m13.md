@@ -183,7 +183,8 @@ forward slashes.
   (`excludePath` from M2 `gitPath`, `tracked` from M3 `isTracked`: M12 spawns nothing); `provisional.peek()` (typed, `held` with holder, or
   ok when no live lock, carrying the stale holder when there is one, and the orphan
   renamed locks when there is no lock, which M18 treats like a stale lock; read-only);
-  `provisional.acquire({ takeOver? })` (typed, `held` with holder, `busy`, `taken-over`,
+  `provisional.write(name, data)` (the same atomic write as `run.write`, so step 7 writes
+  `state.json` before the lock exists), `provisional.acquire({ takeOver? })` (typed, `held` with holder, `busy`, `taken-over`,
   `ended` (a `--take-over` run already gone), `run-folder`) or `provisional.discard()` (never
   throws and never removes through a `.commit-plan` that became a link: `null`, or the notice
   for a folder it could not remove, left for the sweep).

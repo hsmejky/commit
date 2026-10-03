@@ -158,8 +158,8 @@ check), M12 `create`/`discard`, M18 `plan` step 3, stories 196, 207.
       holds in a linked worktree, whose exclude line goes to the common dir (story 196).
 - [x] Seam 1: `runDir` in `plan`'s output is absolute, `path.resolve`d from the toplevel,
       and uses forward slashes even on Windows (C:run-folder). RUN-05 asserts it in-process
-      on M12 `create` only (a clean tree prints `runDir: null`); the Seam-1 check is deferred
-      to INT-02 or CHG-03b (KD-R63).
+      on M12 `create` only (a clean tree prints `runDir: null`); the Seam-1 check is made
+      by CHG-03b (KD-R63, retired).
 - [x] Seam 1: `plan` on a clean tree → no `<planId>/` folder and no lock remain.
 
 

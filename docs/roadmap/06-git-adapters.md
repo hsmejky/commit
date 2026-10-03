@@ -43,9 +43,9 @@ unborn) and adds the detached-HEAD notice.
 
 **Sources:** Q21, C:plan (`state.kind`, notices), stories 182, 183, M3.
 
-KD-R65: `plan.json` `state` and `state.json` `head` cannot be observed until CHG-03b writes
-either file; this slice asserts the first two criteria below against `plan`'s stdout
-`state`/`expectedHead` instead, a Seam-1 stand-in CHG-03b removes.
+KD-R65 (retired by CHG-03b): this slice first asserted the first two criteria below against
+`plan`'s stdout `state`/`expectedHead`, a Seam-1 stand-in; CHG-03b moved them to `plan.json`
+`state` and `state.json` `head` and dropped the stdout fields.
 
 - [x] Seam 1: on a branch → `plan.json` `state: { kind: "branch", branch, unborn: false }` and the stored expected HEAD equals `git rev-parse HEAD`.
 - [x] Seam 1: detached HEAD → `state.kind: "detached"` and the detached-HEAD notice in the stored notices (reply `notices` once RPL renders them).

@@ -61,8 +61,9 @@ absolute in the same form, because `Read` and `Write` need absolute paths.
   the folder. No
   outcome without a lock leaves a folder: the refusals above come before it exists, and
   the rest (`clean`, `modeChoice`, `staged-empty`, `staged-hit`, `signing`, `lock`,
-  `git-failed`, `timeout`, a `run-folder` lock link, and a `head-moved` or `index-changed`
-  after the lock) delete it before `plan` exits; after a takeover at [`plan`](plan.md)
+  `git-failed`, `timeout`, `internal` (an unexpected throw), a `run-folder` lock link, and a `head-moved` or `index-changed`
+  after the lock) delete it before `plan` exits, releasing the lock first when the throw or
+  refusal comes after step 7's `acquire`; after a takeover at [`plan`](plan.md)
   step 3 they (and `killed-leftover`) release the lock and delete the folder. Two
   concurrent `plan`s both build; the one that loses the exclusive create of `lock` gets
   `lock` and deletes its folder.
