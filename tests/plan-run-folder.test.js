@@ -119,6 +119,36 @@ test('two linked worktrees of one repo each plan with work, kept independently, 
     ['lock', side.json.planId].sort(),
   );
 
+  // review-RUN-11 finding 2: order-proof even with main planning first. A per-worktree write
+  // would leave a trace at the worktree's own `info/exclude` (which lives under the common
+  // dir's `worktrees/linked/`, not inside `linked` itself); the run must never create one, and
+  // a stray file dropped into the linked run folder afterwards must still be hidden by the one
+  // line in the common dir, leaving only the known README change in status.
+  assert.equal(
+    fs.existsSync(path.join(c.repoDir, '.git', 'worktrees', 'linked', 'info', 'exclude')),
+    false,
+  );
+  fs.writeFileSync(path.join(linked, '.commit-plan', 'stray'), 'x\n');
+  const linkedStatus = c.git(['status', '--porcelain', '-uall'], { cwd: linked })
+    .split(/\r?\n/)
+    .filter((line) => line !== '' && line !== ' M README.md');
+  assert.deepEqual(linkedStatus, [], 'the run folder must stay hidden in the linked worktree too');
+
+  // review-RUN-11 finding 3: story 221 and the M12 testing row also name the index; each
+  // worktree resolves its own, and staging in one is invisible from the other.
+  const gitPathFor = (cwd) => path.resolve(cwd, c.git(['rev-parse', '--git-path', 'index'], { cwd }).trim());
+  assert.notEqual(
+    gitPathFor(c.repoDir), gitPathFor(linked),
+    'each worktree must resolve its own index path',
+  );
+  fs.writeFileSync(path.join(linked, 'linked-only.txt'), 'x\n');
+  c.git(['add', 'linked-only.txt'], { cwd: linked });
+  assert.equal(c.git(['diff', '--cached', '--name-only'], { cwd: linked }).trim(), 'linked-only.txt');
+  assert.equal(
+    c.git(['diff', '--cached', '--name-only']).trim(), '',
+    "main's index must not see the linked worktree's staged file",
+  );
+
   // The exclude line lives once in the dir every worktree shares (RUN-05), even though
   // both worktrees just created their own run-folder directory through it.
   assert.deepEqual(excludeLines(commonExclude), [EXCLUDE_LINE]);
