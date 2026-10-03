@@ -417,3 +417,62 @@ test('the purity check fails on a validateLayer-shaped body that calls fs.readFi
     assert.AssertionError,
   );
 });
+
+// CFG-06 (docs/roadmap/04-config-and-attribution.md): unknown keys, unknown values of a
+// known key, and a key in the wrong layer warn and fall back instead of refusing `plan`
+// (Q6). Unit-level coverage of `loadConfig`'s warnings; Seam 1 coverage (stdout/stderr,
+// `plan.warnings`) lives in tests/plan-config-warnings.test.js.
+test('loadConfig warns and ignores an unknown key in the repo layer, with no effect on other keys', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(toplevel, config.REPO_CONFIG_PATH),
+    JSON.stringify({ workerModel: 'haiku', types: ['feat'] }),
+  );
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.deepEqual(result.values.types, ['feat']);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /workerModel/);
+});
+
+test('loadConfig warns and falls back to the user layer when the repo layer has an unknown value for a known key', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  fs.writeFileSync(claudeHomeConfigPath(claudeHome), JSON.stringify({ body: 'optional' }));
+  fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), JSON.stringify({ body: 'required' }));
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.equal(result.values.body, 'optional');
+  assert.equal(result.sources.body, 'user');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /required/);
+});
+
+test('loadConfig warns and ignores scanIgnore given in the user layer (repo only)', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  fs.writeFileSync(claudeHomeConfigPath(claudeHome), JSON.stringify({ scanIgnore: ['*.log'] }));
+
+  const result = config.loadConfig({ toplevel, claudeHome });
+
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /scanIgnore/);
+});
+
+test('loadConfig returns an empty warnings array when every key is known, valid and in the right layer', (t) => {
+  const toplevel = tempToplevel(t);
+  const claudeHome = tempClaudeHome(t);
+  const result = config.loadConfig({ toplevel, claudeHome });
+  assert.deepEqual(result.warnings, []);
+});
+
+function claudeHomeConfigPath(claudeHome) {
+  return path.join(claudeHome, config.USER_CONFIG_FILENAME);
+}

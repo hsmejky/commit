@@ -194,7 +194,7 @@ test('M1 receives argv after the script path and the injected environment', asyn
   assert.deepEqual(result.json.argv, ['plan', '--split']);
   assert.deepEqual(
     result.json.keys,
-    ['claudeHome', 'cwd', 'env', 'managedDir', 'now', 'osHome', 'osUser', 'projectDir', 'scriptPath'],
+    ['claudeHome', 'cwd', 'env', 'managedDir', 'now', 'osHome', 'osUser', 'projectDir', 'scriptPath', 'stderr'],
   );
   assert.equal(result.json.claudeHome, c.claudeHome);
   assert.equal(result.json.osHome, c.osHome);

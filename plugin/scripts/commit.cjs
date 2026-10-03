@@ -77,6 +77,11 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
     // process was actually invoked with.
     scriptPath: process.argv[1],
     env: process.env,
+    // CFG-06: M18's `loadConfigLayers` writes each config warning here as it queues it onto
+    // `plan.warnings` (Q6 "Warnings go to plan.warnings and stderr"); the real stream,
+    // injected like every other ambient fact instead of read from `process` deep inside the
+    // library.
+    stderr: process.stderr,
   };
 
   // Every step from here on runs inside the chain, including the `JSON.stringify` of M1's

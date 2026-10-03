@@ -37,6 +37,60 @@ const MAX_SUBJECT_LENGTH = 200;
 /** Keys whose only CFG-03 check is "must be a string" (enum membership is CFG-06's warning). */
 const STRING_KEYS = ['scope', 'body', 'subjectCase'];
 
+/**
+ * The allowed values of a known, well-typed key whose string value can still be unknown
+ * (Q6, CFG-06): a future `body: "required"` is the motivating case. `types` and
+ * `maxSubjectLength` have no such list (their CFG-03 range/shape check is the only one);
+ * `scanIgnore`'s values are CFG-07's (M7 `compileGlob`).
+ */
+const ENUM_VALUES = Object.freeze({
+  scope: Object.freeze(['forbidden', 'optional', 'required']),
+  body: Object.freeze(['forbidden', 'optional']),
+  subjectCase: Object.freeze(['lower', 'any']),
+});
+
+/** Keys allowed only in the repo layer (Q6): a personal file cannot silence a team's scan. */
+const REPO_ONLY_KEYS = Object.freeze(['scanIgnore']);
+
+/**
+ * Computes CFG-06's warnings for one already-validated (error-free) layer object, and a
+ * sanitized copy with every warned key removed, so `effectiveConfig`'s existing per-key
+ * fallback (repo, then user, then default) applies to it unchanged: removing a key from a
+ * layer is exactly "ignored, falls back to the next layer" (Q6). Three cases, none of them
+ * an error: a key `effectiveConfig` never reads (not in `DEFAULT_VALUES`); a known, repo-only
+ * key given in the user layer (`scanIgnore`, Q6, story 107); and a known key's well-typed
+ * string value outside its enum (`ENUM_VALUES`). Pure: no file reads, no ambient state.
+ *
+ * @param {object} obj the parsed, already-validated layer object (never null/non-object:
+ *   `validateLayer` already refused that case as an error).
+ * @param {string} layer the layer's display label (same wording `validateLayer` uses).
+ * @param {'user' | 'repo'} kind the layer's identity, to check `REPO_ONLY_KEYS` against
+ *   (CFG-06 forward note: `validateLayer`'s `layer` string names the layer for messages only,
+ *   never its identity, so the wrong-layer check needs this separate parameter).
+ * @returns {{ warnings: string[], sanitized: object }}
+ */
+function collectConfigWarnings(obj, layer, kind) {
+  const warnings = [];
+  const sanitized = { ...obj };
+  for (const key of Object.keys(sanitized)) {
+    if (!Object.hasOwn(DEFAULT_VALUES, key)) {
+      warnings.push(`unknown config key '${key}' ignored (${layer})`);
+      delete sanitized[key];
+      continue;
+    }
+    if (REPO_ONLY_KEYS.includes(key) && kind !== 'repo') {
+      warnings.push(`${key} is only valid in the repo layer; ignored in the ${layer}`);
+      delete sanitized[key];
+      continue;
+    }
+    if (Object.hasOwn(ENUM_VALUES, key) && !ENUM_VALUES[key].includes(sanitized[key])) {
+      warnings.push(`unknown value ${JSON.stringify(sanitized[key])} for ${key} ignored (${layer})`);
+      delete sanitized[key];
+    }
+  }
+  return { warnings, sanitized };
+}
+
 // Exported only so `validateLayer`'s own static purity test (tests/config.test.js) can read
 // this helper's source directly: M4 itself is effectful (this file imports `fs` and `path`
 // at module level), so the whole-module `assertPureSource` helper other pure modules use
@@ -130,10 +184,13 @@ const CONFIG_MAX_BYTES = 65536;
  * @param {string} filePath absolute path to the layer's file.
  * @param {string} layer the layer's display label (used in every message, and passed to
  *   `validateLayer` so a key error names the same layer).
- * @returns {{ error: string } | { value: object | null }} `value: null` when the file is
- *   absent; otherwise the parsed and validated layer object. `error` names `layer`.
+ * @param {'user' | 'repo'} kind the layer's identity (CFG-06: `collectConfigWarnings`'
+ *   wrong-layer check).
+ * @returns {{ error: string } | { value: object | null, warnings: string[] }} `value: null`
+ *   when the file is absent; otherwise the parsed, validated and CFG-06-sanitized layer
+ *   object. `error` names `layer`.
  */
-function readLayer(filePath, layer) {
+function readLayer(filePath, layer, kind) {
   let stats;
   try {
     // Follows a link (read only, never write), so a link to a huge file or a FIFO is caught
@@ -143,7 +200,7 @@ function readLayer(filePath, layer) {
     // No layer at all: no config, no error (Q6, CFG-02 seam "a repo with no config file gets
     // no `config` refusal"). ENOTDIR: a path component (e.g. the repo layer's `.claude`, or
     // the user layer's Claude home) is a file, which is just as absent a layer as ENOENT.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null };
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null, warnings: [] };
     // EACCES, EPERM, ELOOP and the like: the layer exists but cannot be inspected. A `config`
     // refusal naming the layer, not an uncaught throw ending as `internal`
     // (review-CFG-02 finding 1).
@@ -164,7 +221,7 @@ function readLayer(filePath, layer) {
     buffer = fs.readFileSync(filePath);
   } catch (err) {
     // The layer vanished, or turned unreadable, between the stat and the read.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null };
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null, warnings: [] };
     return { error: `the ${layer} cannot be read (${err.code})` };
   }
 
@@ -194,7 +251,12 @@ function readLayer(filePath, layer) {
   // finds; this reports the first, same as `loadConfig` did before CFG-03 collected every
   // error (review-CFG-03 finding 2).
   const result = validateLayer(parsed, layer);
-  return result ? { error: result.errors[0] } : { value: parsed };
+  if (result) return { error: result.errors[0] };
+  // CFG-06: unknown keys, an unknown value of a known key, and a known, repo-only key given
+  // in the wrong layer warn and fall back instead of refusing (Q6); `sanitized` is `parsed`
+  // with every warned key removed, so `effectiveConfig`'s existing per-key fallback applies.
+  const { warnings, sanitized } = collectConfigWarnings(parsed, layer, kind);
+  return { value: sanitized, warnings };
 }
 
 /** The repo layer's display label, matching `REPO_CONFIG_PATH`. */
@@ -254,29 +316,34 @@ export function effectiveConfig({ user, repo }) {
  * Loads the config layers: the user layer, read from `commit.json` directly under the
  * Claude home (CFG-04, Q5, Q6), then, when `toplevel` names a worktree, the repo layer, read
  * from `.claude/commit.json` under it (CFG-02); on success, folds both into the effective
- * values and sources (CFG-05 `effectiveConfig`). No `scanIgnore` at HEAD yet (CFG-07), no
- * warnings for unknown keys or values yet (CFG-06).
+ * values and sources (CFG-05 `effectiveConfig`), over each layer already sanitized of
+ * CFG-06's warned keys (unknown key, unknown value of a known key, a known repo-only key
+ * given in the user layer). No `scanIgnore` at HEAD yet (CFG-07).
  *
  * @param {{ toplevel: string | null, claudeHome: string }} options `toplevel`: the working
  *   tree's toplevel (M3), or `null` when `plan` is not inside one (the user layer is still
  *   read and validated: C:plan step 2 puts `config` ahead of `state`). `claudeHome`: the
  *   Claude home the entry point resolved once and injected (`CLAUDE_CONFIG_DIR`, else
  *   `.claude` in the OS home, Q5).
- * @returns {{ error: string } | { values: object, sources: object }} `error` names
- *   whichever layer errored first (user, then repo, matching Q6's layer order)
+ * @returns {{ error: string } | { values: object, sources: object, warnings: string[] }}
+ *   `error` names whichever layer errored first (user, then repo, matching Q6's layer order)
  *   (C:cli-and-exit-codes); otherwise the effective config (CFG-05), even with neither layer
- *   present (every source `default`).
+ *   present (every source `default`), plus every CFG-06 warning from either layer, user
+ *   first (`plan.warnings`, C:plan).
  */
 export function loadConfig({ toplevel, claudeHome }) {
-  const userResult = readLayer(path.join(claudeHome, USER_CONFIG_FILENAME), USER_LAYER);
+  const userResult = readLayer(path.join(claudeHome, USER_CONFIG_FILENAME), USER_LAYER, 'user');
   if (userResult.error !== undefined) return { error: userResult.error };
 
   let repoValue = null;
+  let repoWarnings = [];
   if (toplevel !== null && toplevel !== undefined) {
-    const repoResult = readLayer(path.join(toplevel, REPO_CONFIG_PATH), REPO_LAYER);
+    const repoResult = readLayer(path.join(toplevel, REPO_CONFIG_PATH), REPO_LAYER, 'repo');
     if (repoResult.error !== undefined) return { error: repoResult.error };
     repoValue = repoResult.value;
+    repoWarnings = repoResult.warnings;
   }
 
-  return effectiveConfig({ user: userResult.value, repo: repoValue });
+  const { values, sources } = effectiveConfig({ user: userResult.value, repo: repoValue });
+  return { values, sources, warnings: [...userResult.warnings, ...repoWarnings] };
 }

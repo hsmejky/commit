@@ -166,13 +166,31 @@ async function readHeadState(ctx) {
  * passes `ctx.injected.managedDir` (the entry point's platform-derived managed directory,
  * never read from `env`, PRE-16) so M5 reads the managed layer ahead of every other one.
  * CFG-05: on success `ctx.config` is M4's effective `{ values, sources }` (never bare
- * `null` any more), read by `storeAndLock` (step 7) into `state.json` and `plan.json`.
+ * `null` any more), read by `storeAndLock` (step 7) into `state.json` and `plan.json`. CFG-06
+ * adds `loadConfig`'s own `warnings` (unknown key, unknown value of a known key, a known
+ * repo-only key given in the wrong layer, Q6): stripped off `ctx.config` before it is stored
+ * (which stays exactly `{ values, sources }`, C:plan `config`) and queued the same way as
+ * M5's warnings, onto `ctx.notices` and `ctx.warnings`; each is also written to stderr as it
+ * is queued (the entry point injects the real stream as `ctx.injected.stderr`, read only
+ * here, so a direct `workflows.plan` call with no `stderr` injected is unaffected,
+ * `?.`-guarded).
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
     ? ctx.probe.repo.toplevel
     : null;
-  ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
+  const configResult = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
+  if (configResult.error !== undefined) {
+    ctx.config = configResult;
+  } else {
+    const { values, sources, warnings: configWarnings } = configResult;
+    ctx.config = { values, sources };
+    for (const warning of configWarnings) {
+      ctx.notices.push(warning);
+      ctx.warnings.push(warning);
+      ctx.injected.stderr?.write(`${warning}\n`);
+    }
+  }
   const { trailer, source, warnings } = resolveAttribution({
     env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, projectDir: ctx.injected.projectDir,
     managedDir: ctx.injected.managedDir,
