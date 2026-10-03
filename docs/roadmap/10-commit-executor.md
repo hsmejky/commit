@@ -136,15 +136,15 @@ every group is committed, placed after `lock` in phase (a). EXE-22 later inserts
 
 **Blocked by:** EXE-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:commit-release phase (a), C:cli-and-exit-codes, M16.
 
-- [ ] Seam 1: `commit --plan <id> --all` after `plan`, before `check` has stored any groups
+- [x] Seam 1: `commit --plan <id> --all` after `plan`, before `check` has stored any groups
       → exit 1 `usage` (`no-groups`), the run kept per M15 `runEnd`, and `call.lock` absent
       after the refusal.
-- [ ] Seam 1: every group committed → `no-groups`.
-- [ ] Seam 1: the lock holds another `planId` and no groups are stored → `lock`
+- [x] Seam 1: every group committed → `no-groups`.
+- [x] Seam 1: the lock holds another `planId` and no groups are stored → `lock`
       (`taken-over`), not `no-groups`.
 
 
