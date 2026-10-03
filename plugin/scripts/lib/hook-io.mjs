@@ -2,7 +2,8 @@
 //
 // Reads the PreToolUse JSON from stdin to its end and decides what the hook prints. A
 // command that does not mention `commit` ends early with no output. The guard's outputs are
-// a deny or nothing (C:guard Output); a crash or unreadable input fails open.
+// a deny or nothing (C:guard Output); a crash or unreadable input fails open, while a failed
+// heartbeat write leaves the decision standing.
 
 import { Buffer } from 'node:buffer';
 import { segments } from './shell-tokenizer.mjs';
@@ -72,22 +73,35 @@ export function runHook(stdinText, context = {}) {
     const shell = SHELL_OF[toolName];
     const parsed = segments(command, shell);
     const result = classify(parsed, { agentType: payload.agent_type, shell });
-    // S1 (GRD-15): a `plan` script call writes the heartbeat before the decision is emitted,
-    // so a denied compound command that also calls `plan` still counts. A throw here is a
-    // crash like any other and fails open below.
-    const planCall = result.scriptCalls.find((call) => call.subcommand === 'plan');
-    if (planCall) {
-      writeHeartbeat({
-        claudeHome: context.claudeHome,
-        cwd: typeof payload.cwd === 'string' ? payload.cwd : null,
-        command: redactCommand(planCall),
-        now: context.now,
-      });
-    }
-    if (result.decision === 'deny') return { stdout: denyOutput(result.message), stderr: '' };
-    return NO_OUTPUT;
+    // S1 (GRD-15): the first `plan` script call writes the heartbeat before the decision is
+    // emitted, so a denied compound command that also calls `plan` still counts. A failed
+    // write does not change the decision already computed (C:guard Output, Heartbeat): `plan`
+    // then reports the guard `not-seen`, a false warning, never a lost deny.
+    const heartbeatFailed = writePlanHeartbeat(result.scriptCalls, payload.cwd, context);
+    const stdout = result.decision === 'deny' ? denyOutput(result.message) : '';
+    const stderr = heartbeatFailed && debug ? formatDebugLine({ ...known, heartbeat: 'failed' }) : '';
+    return stdout === '' && stderr === '' ? NO_OUTPUT : { stdout, stderr };
   } catch {
     return failOpen(known, debug);
+  }
+}
+
+// Writes the heartbeat for the first `plan` script call, if any; a missing or non-string
+// `cwd` is stored as null, which `plan` never matches. Returns whether a write was due and
+// failed; the failure itself is swallowed so it cannot drop the decision.
+function writePlanHeartbeat(scriptCalls, cwd, context) {
+  const planCall = scriptCalls.find((call) => call.subcommand === 'plan');
+  if (!planCall) return false;
+  try {
+    writeHeartbeat({
+      claudeHome: context.claudeHome,
+      cwd: typeof cwd === 'string' ? cwd : null,
+      command: redactCommand(planCall),
+      now: context.now,
+    });
+    return false;
+  } catch {
+    return true;
   }
 }
 

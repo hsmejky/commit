@@ -53,7 +53,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 
 - Deny: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"<message>"}}`
 - Otherwise: no output. The guard never returns `allow`.
-- Crash or unreadable input: no output (fail open), no heartbeat.
+- Crash or unreadable input: no output (fail open), no heartbeat. A failed heartbeat write
+  is not a crash: the decision already computed stands (Heartbeat, below).
 - Node older than 22: no output (fail open), no heartbeat; the guard entry point checks
   `process.versions.node` before it loads the shared library (Q1).
 - Debug log: with `COMMIT_GUARD_DEBUG=1`, one JSON object on one stderr line, with keys
@@ -63,12 +64,19 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   message text or other segments), cut to 200 characters. A blanket deny (parsing step 2)
   logs the decision and the trigger kind instead of the command. A crash or unreadable input
   logs the same way (one line, with the fields known so far), still with no stdout and exit
-  0. GRD-16 extends this with the same keys once deny decisions are logged; it defines no
-  new ones.
+  0. A failed heartbeat write (below) adds the key `heartbeat` with the value `"failed"` to
+  the line, with the fields known so far (`{"agent_id":"…","heartbeat":"failed"}`), and
+  leaves stdout as decided. GRD-16 extends this with the same keys once deny decisions are
+  logged, on the same one line; it defines no new ones.
 - Heartbeat: when any segment is a script call with subcommand `plan` (below), write
   `<Claude home>/commit-guard/heartbeat.json` (the Claude home is `CLAUDE_CONFIG_DIR` when
   set, else `<os.homedir()>/.claude`; guard and `plan` resolve it the same way) =
-  `{ "ts": <ms>, "cwd": "<raw cwd>", "command": "<redacted>" }` before deciding (Q23).
+  `{ "ts": <ms>, "cwd": "<raw cwd>", "command": "<redacted>" }` before deciding (Q23),
+  for the first `plan` script call when there are several. A missing or non-string `cwd`
+  is stored as `null`, which `plan` never matches (`not-seen`). A failed write (the Claude
+  home path is a file or read-only, a full disk, a rename refused) does not change the
+  decision: a deny is still emitted, anything else still gives no output, and `plan` then
+  reports the guard `not-seen` (a false warning, never a lost deny; Q3, Q23).
   `command` is redacted: only the script-call form, `commit.cjs <subcommand> <flags>`
   without the script path and any other segment of the command, cut to 200 characters,
   so arguments a caller passed on the command line do not persist. The file is written

@@ -34,8 +34,8 @@ beforeEach(async () => {
   ({ runHook } = await loadLib('hook-io'));
 });
 
-function denies(command) {
-  const { stdout } = runHook(JSON.stringify({ tool_name: 'Bash', tool_input: { command } }));
+function denies(command, claudeHome) {
+  const { stdout } = runHook(JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), { env: {}, claudeHome, now: () => 0 });
   return stdout.includes('"permissionDecision":"deny"');
 }
 
@@ -83,6 +83,8 @@ test('bash runs no seed case as a git command the guard would deny, unless the g
   if (bash === null) return;
   fs.mkdirSync(path.join(dir, 'empty'));
   fs.mkdirSync(path.join(dir, 'work'));
+  // The guard's own Claude home, so a case with a `plan` call writes its heartbeat there.
+  const home = path.join(dir, 'claude-home');
   bashCases.forEach((c, i) => fs.writeFileSync(path.join(dir, `case-${i}.sh`), c.command, 'utf8'));
   fs.writeFileSync(path.join(dir, 'driver.sh'), driver(bashCases.length), 'utf8');
   const env = { LC_ALL: 'C', HOME: dir, GIT_DIR: path.join(dir, 'no-repo'), GIT_CEILING_DIRECTORIES: path.dirname(dir) };
@@ -94,14 +96,14 @@ test('bash runs no seed case as a git command the guard would deny, unless the g
 
   const leaks = [];
   bashCases.forEach((c, i) => {
-    const deniedPlain = calls.get(i).find((args) => denies(`git ${args.map(quote).join(' ')}`));
-    if (deniedPlain === undefined || denies(c.command)) return;
+    const deniedPlain = calls.get(i).find((args) => denies(`git ${args.map(quote).join(' ')}`, home));
+    if (deniedPlain === undefined || denies(c.command, home)) return;
     if (!NOT_DENIED.has(c.id)) leaks.push(`${c.id}: bash runs git ${JSON.stringify(deniedPlain)}`);
   });
   assert.deepEqual(leaks, []);
   for (const id of NOT_DENIED.keys()) {
     const c = bashCases.find((x) => x.id === id);
-    assert.ok(c && !denies(c.command), `${id} is denied now: drop it from NOT_DENIED`);
+    assert.ok(c && !denies(c.command, home), `${id} is denied now: drop it from NOT_DENIED`);
   }
 
   if (bash.major < 4) {

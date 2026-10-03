@@ -320,7 +320,7 @@ redacted.
 - [ ] A denied compound command that also calls `plan` and holds no blanket-rule construct still writes the heartbeat; a blanket-denied one (`node "…/commit.cjs" plan # x`), `check`, `commit` or a crash write none.
 - [ ] The write goes through a temporary name with pid and random part, renamed into place; no temporary file remains.
 - [ ] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).
-- [ ] Seam 2 with `COMMIT_GUARD_DEBUG=1`: a `plan` script call whose Claude home path is an existing file, not a directory, throws on the write, caught by GRD-02's fail-open (no stdout, exit 0, one debug stderr line); without the variable, no stderr.
+- [ ] Seam 2 with the Claude home path an existing file, not a directory: the write fails and the decision stands (Q3, C:guard Heartbeat). A `plan` call alone → no stdout, exit 0; `node "…/commit.cjs" plan && git commit -m x` → still the deny JSON, exit 0. With `COMMIT_GUARD_DEBUG=1`, each logs one stderr line `{"agent_id":"…","heartbeat":"failed"}`; without the variable, no stderr.
 
 Note (GRD-13 review): S2 `recognise`'s `args` are everything node receives up to the first
 operator token, message text (`-m "…"`), unexpanded `$HOME` and a PowerShell `--%` tail
@@ -355,8 +355,12 @@ for a fresh, matching heartbeat and `not-seen` with the guard notice otherwise.
 
 **Sources:** Q23, C:guard (Heartbeat), S1, stories 34, 36.
 
+Note (GRD-15 review): this slice also stores `ctx.notices` into `state.json`'s `notices`
+field next to `env.guard`, as C:plan step 8 specifies (KD-R67; delete that row when done).
+
 - [ ] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the guard notice, verbatim from the C:cli-and-exit-codes recorded-texts table ("Guard hook did not run: `node` missing from the hook's PATH, …"), and the run goes on.
 - [ ] Path matching is realpathed with `\` → `/`, case-folded on Windows and macOS (a case-differing `cwd` matches there).
+- [ ] Seam 1: a fresh heartbeat whose `cwd` is `null` (C:guard Heartbeat), or a heartbeat file that is not valid JSON or not a regular file → `not-seen` with the guard notice; `guardState` does not throw.
 - [ ] Seam 1: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, `guardState` reads the heartbeat from the same `<OS home>/.claude` fallback the guard used (GRD-15), confirming guard and `plan` resolve the Claude home the same way (C:guard).
 
 

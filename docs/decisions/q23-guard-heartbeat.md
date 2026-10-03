@@ -39,6 +39,11 @@
 - **Amended.** By spec pass 3 (2026-09-27): the heartbeat's temporary
   name carries the pid and a random part; the debug log holds the redacted command, never
   message text; the one global heartbeat with parallel sessions is an accepted gap.
+- **Amended.** By user decision after the GRD-15 review (2026-10-03): a failed heartbeat
+  write leaves the guard's decision standing (a deny is still emitted; Q3) and is logged
+  under `COMMIT_GUARD_DEBUG=1`; `plan` then reports `not-seen`. A missing or non-string
+  hook `cwd` is stored as `null` and never matches. With several `plan` calls in one
+  command, the first is recorded. Each errs toward a false warning, never a false all-clear.
 - **Rejected.**
   - Inferring the hook's state from settings: managed settings and runtime state are not all
     visible to the script; the heartbeat measures what actually happened.

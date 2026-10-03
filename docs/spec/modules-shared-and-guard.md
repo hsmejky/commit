@@ -48,7 +48,10 @@ character removed, then every `'`, `"`, `\`, backtick and typographic quote
 (U+2018-U+201B, U+201C-U+201E) removed (C:guard step 1); then tokenise (G2) → classify (G3) → when the classification's
 `scriptCalls` holds a `plan` call, write the heartbeat (S1) before the decision is emitted
 (C:guard: "before deciding"), so a denied compound command that also calls `plan` still
-counts → emit the deny JSON or nothing, never `allow`. A crash anywhere, including in the classifier, fails open (exit 0, no output, no
+counts → emit the deny JSON or nothing, never `allow`. The heartbeat write has its own
+catch: a failed write leaves the decision already computed standing (a deny is still
+emitted) and `plan` reports the guard `not-seen`; under `COMMIT_GUARD_DEBUG=1` it adds
+`"heartbeat":"failed"` to the debug line. A crash anywhere else, including in the classifier, fails open (exit 0, no output, no
 heartbeat); under `COMMIT_GUARD_DEBUG=1`, `formatDebugLine` writes one JSON object on one
 stderr line, with keys `agent_id`, `decision`, `reason` and `command`, each key left out
 when unknown; `command` is in the same redacted form as the heartbeat (script-call form or

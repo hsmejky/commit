@@ -120,7 +120,7 @@ test('Seam 2: without CLAUDE_CONFIG_DIR the heartbeat lands under <OS home>/.cla
   assert.ok(fs.existsSync(expectedPath));
 });
 
-test('Seam 2: a failed rename leaves no temporary file and no heartbeat (fail open)', async (t) => {
+test('Seam 2: a failed rename leaves no temporary file and no heartbeat, and no output', async (t) => {
   const c = createCase(t);
   const result = await runGuard(c, { command: 'node "/opt/plugin/commit.cjs" plan' }, {
     nodeArgs: ['--import', FAULT_PRELOAD],
@@ -133,24 +133,45 @@ test('Seam 2: a failed rename leaves no temporary file and no heartbeat (fail op
   assert.deepEqual(guardDirEntries(c.claudeHome), []);
 });
 
-test('Seam 2: a Claude home that is a file throws on the write, caught by fail-open', async (t) => {
-  const c = createCase(t);
+// A broken Claude home: the path is an existing file, not a directory, so the write throws.
+function fileClaudeHome(c) {
   const fileHome = path.join(c.root, 'claude-file');
   fs.writeFileSync(fileHome, 'not a directory');
+  return fileHome;
+}
+
+test('Seam 2: a Claude home that is a file fails the write; the allowed plan call stays allowed', async (t) => {
+  const c = createCase(t);
+  const fileHome = fileClaudeHome(c);
   const hook = { command: 'node "/opt/plugin/commit.cjs" plan', extra: { agent_id: 'a1' } };
 
   const debugged = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome, COMMIT_GUARD_DEBUG: '1' } });
   assert.equal(debugged.stdout, '');
   assert.equal(debugged.exitCode, 0);
   assert.equal(debugged.heartbeat, null);
-  const lines = debugged.stderr.split('\n').filter(Boolean);
-  assert.equal(lines.length, 1);
-  assert.deepEqual(JSON.parse(lines[0]), { agent_id: 'a1' });
+  assert.equal(debugged.stderr, '{"agent_id":"a1","heartbeat":"failed"}\n');
 
   const plain = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome } });
   assert.equal(plain.stdout, '');
   assert.equal(plain.stderr, '');
   assert.equal(plain.exitCode, 0);
+  assert.equal(fs.readFileSync(fileHome, 'utf8'), 'not a directory');
+});
+
+test('Seam 2: a denied compound command with a plan call is still denied when the write fails', async (t) => {
+  const c = createCase(t);
+  const fileHome = fileClaudeHome(c);
+  const hook = { command: 'node "/opt/plugin/commit.cjs" plan && git commit -m x', extra: { agent_id: 'a2' } };
+
+  const debugged = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome, COMMIT_GUARD_DEBUG: '1' } });
+  assert.equal(debugged.exitCode, 0);
+  assert.equal(JSON.parse(debugged.stdout).hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(debugged.stderr, '{"agent_id":"a2","heartbeat":"failed"}\n');
+
+  const plain = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome } });
+  assert.equal(plain.exitCode, 0);
+  assert.equal(plain.stdout, debugged.stdout);
+  assert.equal(plain.stderr, '');
   assert.equal(fs.readFileSync(fileHome, 'utf8'), 'not a directory');
 });
 
@@ -189,6 +210,16 @@ test('Seam 3: a missing or non-string cwd is stored as null', (t) => {
   const claudeHome = tempHome(t);
   runHook(payload('node "/p/commit.cjs" plan', { cwd: 42 }), { env: {}, claudeHome, now: () => 5 });
   assert.equal(JSON.parse(fs.readFileSync(heartbeat.heartbeatPath(claudeHome), 'utf8')).cwd, null);
+});
+
+test('Seam 3: runHook keeps the decision when the heartbeat write fails', (t) => {
+  const claudeHome = path.join(tempHome(t), 'claude-file');
+  fs.writeFileSync(claudeHome, 'x');
+  const denied = runHook(payload('node "/p/commit.cjs" plan && git commit -m x'), { env: {}, claudeHome, now: () => 1 });
+  assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(denied.stderr, '');
+  const allowed = runHook(payload('node "/p/commit.cjs" plan'), { env: { COMMIT_GUARD_DEBUG: '1' }, claudeHome, now: () => 1 });
+  assert.deepEqual({ ...allowed }, { stdout: '', stderr: '{"heartbeat":"failed"}\n' });
 });
 
 test('Seam 3: redactCommand keeps only --flag words and planIds, cut at --% and at 200', () => {

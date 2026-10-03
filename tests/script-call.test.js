@@ -6,9 +6,10 @@
 // reports every segment's script call in `scriptCalls`; a caller's script calls get no guard
 // output, and the ScriptCall round trip (docs/spec/testing-seams.md) holds in both shells.
 
-const { test, beforeEach } = require('node:test');
+const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { loadLib } = require('./helpers/load-lib');
 const { assertPureSource } = require('./helpers/assert-pure-source');
@@ -44,9 +45,27 @@ function callsIn(command, shell) {
   return parsed.map((segment) => recognise(segment)).filter((call) => call !== null);
 }
 
+// A temporary Claude home, so a `plan` call is classified and writes its heartbeat rather
+// than reaching the decision with a missing home (runHook's caller always injects one).
+let claudeHome;
+before(() => {
+  claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-script-call-'));
+});
+after(() => fs.rmSync(claudeHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+
+const heartbeatFile = () => path.join(claudeHome, 'commit-guard', 'heartbeat.json');
+
 function hook(command, toolName, extra = {}) {
+  fs.rmSync(heartbeatFile(), { force: true });
   const stdinText = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: { command }, cwd: '/w', ...extra });
-  return runHook(stdinText, { env: {}, now: () => 0 });
+  return runHook(stdinText, { env: {}, claudeHome, now: () => 0 });
+}
+
+// After hook(): a `plan` call wrote the heartbeat, any other subcommand none.
+function assertHeartbeat(subcommand, label) {
+  const written = fs.existsSync(heartbeatFile()) ? JSON.parse(fs.readFileSync(heartbeatFile(), 'utf8')) : null;
+  if (subcommand === 'plan') assert.match(written ? written.command : '', /^commit\.cjs plan\b/, label);
+  else assert.equal(written, null, label);
 }
 
 test('S2 is pure and imports nothing', () => {
@@ -195,6 +214,7 @@ for (const [input, expected] of BUILDS) {
       assert.ok(isExemptScriptCall(command, shell), `${shell}: in the step 2 exemption form`);
       assert.deepEqual(callsIn(command, shell), [{ subcommand: input.subcommand, args: input.args ?? [] }], shell);
       assert.deepEqual(hook(command, TOOL[shell]), { stdout: '', stderr: '' }, `${shell}: no guard output`);
+      assertHeartbeat(input.subcommand, shell);
     }
   });
 }
@@ -259,8 +279,10 @@ for (const id of EXEMPT_NONE) {
     const c = seedCase(id);
     assert.equal(c.decision, 'none');
     assert.ok(isExemptScriptCall(c.command, c.shell));
-    assert.equal(callsIn(c.command, c.shell).length, 1);
+    const calls = callsIn(c.command, c.shell);
+    assert.equal(calls.length, 1);
     assert.deepEqual(hook(c.command, TOOL[c.shell]), { stdout: '', stderr: '' });
+    assertHeartbeat(calls[0].subcommand, id);
   });
 }
 
