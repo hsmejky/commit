@@ -131,7 +131,7 @@ created between groups are both caught:
   `cleanupDeadline`, `unstaged` is `null`, the outcome keeps its original cause, and the run
   is kept for the next run's takeover repair (M15 `cleanupDeadline`, C:run-folder).
 
-`commitAll(run, { now, osUser }) → Outcome`, with `osUser` passed by M18 for the backstop's
+`commitAll(run, { now, osUser, env }) → Outcome` (`env`: the injected environment its M10/M3 calls take), with `osUser` passed by M18 for the backstop's
 M8 `scanUnits` and never stored in the run state (Q10 as amended by EXE-01), where `Outcome` holds exactly the output fields of
 C:commit-release. `hits` is present on a backstop-scan refusal (exit 3), `sha` after exit 4 or 5, and before an
 `internal` reply (exit 1), when HEAD moved anyway; a budget stop is `ok` with `failed: null` and a non-empty `remaining`. M18

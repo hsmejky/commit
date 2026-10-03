@@ -1228,3 +1228,64 @@ test('create: an exclude line with a trailing tab is not the exclude line; trail
   assert.equal(fs.readFileSync(tabbed, 'utf8'), '/.commit-plan\t\n/.commit-plan\n');
   assert.equal(fs.readFileSync(spaced, 'utf8'), '/.commit-plan  \n');
 });
+
+// EXE-02: M12 `touch()` before each group, and the release of a run `open` returned.
+test('touch: a lock still holding planId gets its mtime refreshed', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  const lockPath = path.join(f.runDir, 'lock');
+  fs.utimesSync(lockPath, new Date(T0 - MINUTE), new Date(T0 - MINUTE));
+
+  const result = run.touch({ toplevel: f.toplevel, planId }, { now: () => T0 });
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(fs.statSync(lockPath).mtimeMs, T0);
+});
+
+test('touch: a lock holding another planId → taken-over, the lock untouched', (t) => {
+  const holder = crypto.randomUUID();
+  const f = runFixture(t, holder);
+  const lockPath = path.join(f.runDir, 'lock');
+  fs.utimesSync(lockPath, new Date(T0 - MINUTE), new Date(T0 - MINUTE));
+
+  const result = run.touch({ toplevel: f.toplevel, planId: crypto.randomUUID() }, { now: () => T0 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'taken-over');
+  assert.equal(fs.statSync(lockPath).mtimeMs, T0 - MINUTE);
+});
+
+test('touch: no lock at all → taken-over', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  fs.rmSync(path.join(f.runDir, 'lock'));
+
+  const result = run.touch({ toplevel: f.toplevel, planId }, { now: () => T0 });
+
+  assert.equal(result.code, 'taken-over');
+});
+
+test('releaseOpen: removes the lock and the run folder, call.lock included', (t) => {
+  const planId = crypto.randomUUID();
+  const f = runFixture(t, planId);
+  writeCallLockAt(f.callLock, { pid: 7, host: HOST }, T0);
+
+  const result = run.releaseOpen({ toplevel: f.toplevel, planId });
+
+  assert.deepEqual(result, { notice: null, kept: false });
+  assert.equal(fs.existsSync(path.join(f.runDir, 'lock')), false);
+  assert.equal(fs.existsSync(f.folder), false);
+});
+
+test('releaseOpen: a lock holding another planId is left alone, with the folders', (t) => {
+  const holder = crypto.randomUUID();
+  const f = runFixture(t, holder);
+  const planId = crypto.randomUUID();
+  fs.mkdirSync(path.join(f.runDir, planId));
+
+  const result = run.releaseOpen({ toplevel: f.toplevel, planId });
+
+  assert.deepEqual(result, { notice: null, kept: false });
+  assert.equal(fs.existsSync(path.join(f.runDir, 'lock')), true);
+  assert.equal(fs.existsSync(f.folder), true);
+});

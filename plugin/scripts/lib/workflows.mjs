@@ -47,8 +47,8 @@
 // RUN-03 the 45 s M15 `releaseDeadline` (`run-policy.mjs`) on the tree-state read.
 //
 // `commit` (RUN-04) also runs its own step table (`COMMIT_STEPS`) the same way: probe, the
-// shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
-// commits; EXE-02 replaces the stub with the real per-group loop.
+// shared `subcommandRefusals`, M12 `open`, then (EXE-02) the M16 per-group loop
+// (`commit-executor.mjs`), releasing the run once no group remains.
 
 import {
   commitEncoding, head, headState, inProgressState, isTracked, oldMessage, probe, recentSubjects,
@@ -60,9 +60,10 @@ import {
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
 import {
-  releaseById, open, close, create, readState, readWorkerPlan, writeState, RUN_DIR_NAME,
-  STATE_VERSION,
+  releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState,
+  RUN_DIR_NAME, STATE_VERSION,
 } from './run.mjs';
+import { commitAll } from './commit-executor.mjs';
 import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
@@ -561,14 +562,23 @@ async function openRun(ctx) {
   return undefined;
 }
 
-// `commit` step 4 (temporary): ends the call at once with no commits. With no group-commit
-// behaviour built yet (M14/M16), a matched lock's call falls straight through to this stub;
-// EXE-02 replaces it with the real per-group loop.
-async function stubEnd() {
-  return { commits: [] };
+// `commit` step 4 (EXE-02): M16 `commitAll` over the stored groups, then the run's release
+// once no group remains (C:commit-release: the lock and the run folder go after the last
+// group; the folder takes this call's `call.lock` with it, so the `finally`'s `close` finds
+// nothing left). A run with no stored groups still ends the call at once with no commits,
+// the run kept, until EXE-05 builds the `no-groups` refusal. The release's notice and the
+// `reply` with `status: "committed"` are INT-02's (C:reply-and-handback).
+async function commitGroups(ctx) {
+  const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
+  const { groups } = readState(run);
+  if (!Array.isArray(groups) || groups.every((group) => group.committed)) return { commits: [] };
+  const { env, now, osUser } = ctx.injected;
+  const outcome = await commitAll(run, { now, osUser, env });
+  if (outcome.remaining.length === 0) releaseOpen(run);
+  return outcome;
 }
 
-const COMMIT_STEPS = Object.freeze([probeRepo, commitRefusals, openRun, stubEnd]);
+const COMMIT_STEPS = Object.freeze([probeRepo, commitRefusals, openRun, commitGroups]);
 
 /** `check` step 2: see `subcommandRefusals`. */
 async function checkRefusals(ctx) {
@@ -698,19 +708,16 @@ export async function release(values, injected, { cwd }) {
  * `open` is the whole call's own lock check (RUN-04): `taken-over` (the lock holds another
  * `planId`, or its own lock/`call.lock`/folder vanishes mid-call with a late `ENOENT`) and
  * `ended` (no lock, or a state `version` mismatch) are refused before any group-commit work;
- * `busy` covers only a live `call.lock`. With no group-commit behaviour built yet (M14/M16),
- * a matched lock's call falls straight through to a stub that ends it at once, exit 0, with
- * no commits; EXE-02 replaces the stub with the real per-group loop. `run.close()` always
- * runs for a call that reached a successful `open` (success or a later failure alike), never
- * when `open` itself failed (there is then no call.lock to close).
+ * `busy` covers only a live `call.lock`. A matched lock's call then runs M16 `commitAll`
+ * over the stored groups (EXE-02) and releases the run (lock and folder) once no group
+ * remains. `run.close()` always runs for a call that reached a successful `open` (success or
+ * a later failure alike), never when `open` itself failed (there is then no call.lock to
+ * close). A run with no stored groups (or all committed) still ends the call at once, exit 0,
+ * with `commits: []` and the run kept, until EXE-05 builds `no-groups`.
  *
- * The success envelope is kept bare on purpose: the full `commits`/`failed`/`remaining`/
- * `reply` shape (C:commit-release, C:reply-and-handback) needs a real `reply.status` the
- * stub cannot honestly report (`"committed"` requires at least one commit; `"nothing"`'s
- * `reason` union does not yet have an entry for this stub). The `reply` with
- * `status: "committed"` is asserted first in INT-02 (docs/roadmap/12-integration.md), which
- * is the natural place to build that reply surface instead of inventing a placeholder here
- * that it would have to reconcile or rip out; EXE-02 builds the per-group loop itself.
+ * The output holds C:commit-release's fields (`commits`, `failed`, `remaining`, `error`,
+ * `gitOutput`, `unstaged`) but no `reply` yet: the `reply` with `status: "committed"` is
+ * asserted first in INT-02 (docs/roadmap/12-integration.md), which builds that reply surface.
  *
  * @param {{ plan: string }} values the parsed and validated `commit` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.

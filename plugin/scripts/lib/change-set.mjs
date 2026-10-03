@@ -6,6 +6,8 @@
 // modifications of tracked files only), `snapshot` in `split` (one whole-file unit per
 // modified file, diffed against HEAD) and `assignIds`; CHG-05 adds the temporary index,
 // CHG-06 the streamed hunk-level pass, CHG-08 onward the other change kinds.
+// EXE-02 adds M16's thin whole-file `matchIds`, `stage`, `writeTree`, `treeDiffUnits` and
+// a plain `commitGuarded` (CHG-19 to CHG-23 widen them).
 
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, openSync, readSync, rmSync, statSync } from 'node:fs';
@@ -497,6 +499,127 @@ export function createDiffReader() {
  */
 export function assignIds(units) {
   return units.map((unit, i) => ({ id: `h${i + 1}`, ...unit }));
+}
+
+/**
+ * M10 `matchIds` (EXE-02, C:commit-release phase (b)): every ID of `idMap` must name a hash
+ * one of the current `units` (a fresh `snapshot` of the temporary index) carries.
+ *
+ * @param {Record<string, string>} idMap unit ID → hash, as stored in `state.json`.
+ * @param {Array<{ hash: string }>} units
+ * @returns {{ ok: true } | { ok: false, code: 'unmatched', unmatched: string[] }} the IDs
+ *   whose hash is missing, in `idMap` order.
+ */
+export function matchIds(idMap, units) {
+  const current = new Set(units.map((unit) => unit.hash));
+  const unmatched = Object.keys(idMap).filter((id) => !current.has(idMap[id]));
+  return unmatched.length === 0 ? { ok: true } : { ok: false, code: 'unmatched', unmatched };
+}
+
+// One `git <args> -z --raw -p` diff with the pinned options, streamed through the patch-pass
+// reader into units (the same pass `snapshot` runs).
+async function diffUnits(args, { toplevel, env, now }) {
+  const reader = createDiffReader();
+  const result = await run(
+    'git',
+    [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...args],
+    { cwd: toplevel, env, now, readOnly: true, onStdout: (chunk) => reader.push(chunk) },
+  );
+  if (result.code !== 0) throw new Error(`git diff failed (${result.code}): ${result.stderr}`);
+  return reader.end();
+}
+
+function sameHashes(units, hashes) {
+  const a = units.map((unit) => unit.hash).sort();
+  const b = [...hashes].sort();
+  return a.length === b.length && a.every((hash, i) => hash === b[i]);
+}
+
+/**
+ * M10 `stage` on the real index, the thin whole-file form (EXE-02; CHG-19 adds the patch
+ * apply for hunk subsets): `git reset -q -- .` (the pathspec form, C:commit-release (c)),
+ * then `git add -A` over every path of the group's units (both paths of a rename), on stdin
+ * NUL-separated, never on argv; ignored paths in a separate `git add -A -f`. Then verifies
+ * that the index diff against HEAD holds exactly the group's hashes.
+ *
+ * @param {{ units: Array<{ path: string, oldPath: string | null, hash: string }>,
+ *   ignoredPaths?: string[], toplevel: string, env: object, now?: () => number }} options
+ *   `units`: the group's stored units; `ignoredPaths`: those of their paths `plan` stored
+ *   with `ignored: true`.
+ * @returns {Promise<{ ok: true } | { ok: false, code: 'mismatch' }
+ *   | { ok: false, code: 'stage-failed', gitOutput: string }>}
+ * @throws {Error} when the reset or the verify's diff fails.
+ */
+export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
+  const reset = await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now });
+  if (reset.code !== 0) throw new Error(`git reset failed (${reset.code}): ${reset.stderr}`);
+  const ignored = new Set(ignoredPaths);
+  const paths = [...new Set(units.flatMap((unit) => (unit.oldPath === null ? [unit.path] : [unit.oldPath, unit.path])))];
+  for (const [list, flags] of [[paths.filter((p) => !ignored.has(p)), []], [paths.filter((p) => ignored.has(p)), ['-f']]]) {
+    if (list.length === 0) continue;
+    const added = await run(
+      'git',
+      ['add', '-A', ...flags, '--pathspec-from-file=-', '--pathspec-file-nul'],
+      { cwd: toplevel, env, now, input: Buffer.from(list.map((p) => `${p}\0`).join(''), 'utf8') },
+    );
+    if (added.code !== 0) {
+      return { ok: false, code: 'stage-failed', gitOutput: `${added.stdout.toString('utf8')}${added.stderr}` };
+    }
+  }
+  const staged = await diffUnits(['--cached'], { toplevel, env, now });
+  return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
+}
+
+/**
+ * M10 `writeTree` (EXE-02): records the real index's tree (`git write-tree`).
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<string>} the tree ID.
+ * @throws {Error} when `git write-tree` fails.
+ */
+export async function writeTree({ toplevel, env, now }) {
+  return (await gitOk(['write-tree'], { cwd: toplevel, env, now })).toString('utf8').trim();
+}
+
+/**
+ * M10 `treeDiffUnits` (EXE-02, thin: CHG-20 adds the attribute-hidden `--text` pass and the
+ * 1 MB scan limit): the units of the diff from `fromTree` (the expected HEAD, or `null` for
+ * the empty tree when unborn) to `toTree`, with the same pinned options and patch pass as
+ * `snapshot`, so the backstop scans the recorded tree as `plan` scanned the snapshot.
+ *
+ * @param {string | null} fromTree
+ * @param {string} toTree
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<object[]>} units in `snapshot`'s shape, `addedLines` included.
+ * @throws {Error} when a git call fails or the sections do not pair with the records.
+ */
+export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
+  const from = fromTree ?? (await gitOk(['hash-object', '-t', 'tree', '--stdin'], {
+    cwd: toplevel, env, now, readOnly: true, input: Buffer.alloc(0),
+  })).toString('utf8').trim();
+  return diffUnits([from, toTree], { toplevel, env, now });
+}
+
+/**
+ * M10 `commitGuarded`, the plain form (EXE-02): one `git commit` spawn through M2, with no
+ * markers, no timeout kill and no `index.lock` handling yet (EXE-17, EXE-18, EXE-21).
+ *
+ * @param {{ args: string[], input: string, toplevel: string, env: object,
+ *   now?: () => number, timeoutMs?: number }} options `args`: `git commit`'s argv after
+ *   `git`; `input`: the message on stdin.
+ * @returns {Promise<{ code: number | null, stdout: string, stderr: string, timedOut: boolean,
+ *   lockRemoved: false, lockLeft: false }>}
+ */
+export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs }) {
+  const result = await run('git', args, { cwd: toplevel, env, now, input: Buffer.from(input, 'utf8'), timeoutMs });
+  return {
+    code: result.code,
+    stdout: result.stdout.toString('utf8'),
+    stderr: result.stderr,
+    timedOut: result.timedOut,
+    lockRemoved: false,
+    lockLeft: false,
+  };
 }
 
 // One `git status --porcelain -z --untracked-files=<untracked>` call, as `{ xy, path }`

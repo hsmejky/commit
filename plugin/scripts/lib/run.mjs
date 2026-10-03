@@ -843,18 +843,21 @@ function ownRun(runDir, planId, folder, sleep) {
   return {
     planId,
     write: (name, data) => writeAtomic(folder, name, data, sleep),
-    release: () => {
-      if (!isPlainDirectory(runDir)) return { notice: null, kept: false };
-      let outcome;
-      try {
-        outcome = removeOwnRun(runDir, planId);
-      } catch (err) {
-        return { notice: discardNotice(planId, err.code || 'error'), kept: false };
-      }
-      if (outcome === 'busy') return { notice: lockKeptNotice(planId), kept: true };
-      return { notice: null, kept: false };
-    },
+    release: () => releaseOwn(runDir, planId),
   };
+}
+
+// The never-throwing release shared by `ownRun`'s `release()` and `releaseOpen`.
+function releaseOwn(runDir, planId) {
+  if (!isPlainDirectory(runDir)) return { notice: null, kept: false };
+  let outcome;
+  try {
+    outcome = removeOwnRun(runDir, planId);
+  } catch (err) {
+    return { notice: discardNotice(planId, err.code || 'error'), kept: false };
+  }
+  if (outcome === 'busy') return { notice: lockKeptNotice(planId), kept: true };
+  return { notice: null, kept: false };
 }
 
 /**
@@ -929,6 +932,57 @@ export function open(planId, {
   if (!call.ok) return call;
   if (call.path === null) return takenOver();
   return { ok: true, run: { toplevel, planId, callLockPath: call.path } };
+}
+
+/**
+ * M12 `run.touch()` (EXE-02): the verify-and-touch M16 runs before each group. Reads the run
+ * lock without following a link; when it still holds `planId`, refreshes its mtime
+ * (`touched`) against the injected clock. A lock that is gone, unreadable as a minted
+ * `planId`, holds another `planId`, or vanishes before the touch → `taken-over` (the call's
+ * own `open` matched it, so the run was taken over since); a file-in-use error → `busy`.
+ *
+ * @param {{ toplevel: string, planId: string }} run the run `open` returned.
+ * @param {{ now?: () => number }} options the clock, injectable for tests.
+ * @returns {{ ok: true } | { ok: false, code: 'taken-over' | 'busy', message: string }}
+ * @throws {Error} on an unexpected filesystem error.
+ */
+export function touch({ toplevel, planId }, { now = Date.now } = {}) {
+  const runDir = runDirOf(toplevel);
+  if (!isPlainDirectory(runDir)) return takenOver();
+  const lock = insideRunDir(runDir, 'lock');
+  let holder;
+  try {
+    holder = lockHolder(runDir);
+  } catch (err) {
+    if (err instanceof InUse) return busy(true);
+    throw err;
+  }
+  if (holder !== planId) return takenOver();
+  try {
+    const d = new Date(now());
+    fs.utimesSync(lock, d, d);
+  } catch (err) {
+    if (err.code === 'ENOENT') return takenOver();
+    if (IN_USE.has(err.code)) return busy(true);
+    throw err;
+  }
+  return { ok: true };
+}
+
+/**
+ * M12 release of a run `open` returned (EXE-02, M18 after the last group): removes the lock
+ * while it still holds `planId` (`moveAsideVerified`, a takeover's lock is put back), then
+ * the run folder (its `call.lock` with it, so the call's later `close()` has nothing left
+ * to do). Unlike `releaseById` it takes no `call.lock`: the calling `commit` already holds
+ * its own. Never throws, like the release `acquire` returns: a removal error becomes a
+ * `discardNotice`, and a lock rename hit by a file-in-use error keeps the run
+ * (`kept: true`, `lockKeptNotice`).
+ *
+ * @param {{ toplevel: string, planId: string }} run the run `open` returned.
+ * @returns {{ notice: string | null, kept: boolean }}
+ */
+export function releaseOpen({ toplevel, planId }) {
+  return releaseOwn(runDirOf(toplevel), planId);
 }
 
 /**

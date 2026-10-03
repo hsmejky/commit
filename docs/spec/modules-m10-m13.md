@@ -227,8 +227,11 @@ forward slashes.
   point's signal handler (once GIT-08 builds it).
 - `readState(run)`, `writeState(run, state)`, `readWorkerPlan(run)` (PLN-01): free functions
   over `{ toplevel, planId }`, not methods on a run object, following the `open`/`close`
-  precedent above. `run.touch()`,
-  `run.release()`, `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
+  precedent above. `touch(run, { now }) → { ok: true } | { ok: false, code: 'taken-over' |
+  'busy' }` and `releaseOpen(run) → { notice, kept }` (EXE-02): free functions over the same
+  `{ toplevel, planId }`; `releaseOpen` ends a run `open` returned without taking a
+  `call.lock` (the calling `commit` holds its own, which goes with the folder), never
+  throwing, like the `release()` of the run `acquire` returns. `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
   false` for the no-op when the lock does not hold `planId`; `{ ok: false, code: 'busy' }`
   on a live `call.lock`, RUN-02), `Run.sweep(now)`. Every M12 static entry takes `toplevel`
   explicitly, alongside its own arguments, since M18 already holds it from the probe (Q9).
