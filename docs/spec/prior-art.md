@@ -5,5 +5,7 @@ None in this repo (new). Borrowed test cases, adapted and credited in fixture he
   footer rules.
 - M8: gitleaks generator samples and secretlint's preset (MIT), Nosey Parker examples
   (Apache-2.0).
-- G2, G3: bypass cases (`bash -c` wrappers, reordered flags, env prefixes) from
-  claude-code-safety-net (kenryu42) and destructive_command_guard (Dicklesworthstone).
+- G2, G3: bypass cases (`bash -c` wrappers, reordered flags, env prefixes, `xargs`) from
+  claude-code-safety-net (kenryu42, MIT), in `tests/fixtures/guard/prior-art/`.
+  destructive_command_guard (Dicklesworthstone) is not a source: its licence adds a rider
+  that restricts who may use it, which the Dependency policy rules out.
