@@ -75,8 +75,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   for the first `plan` script call when there are several. A missing or non-string `cwd`
   is stored as `null`, which `plan` never matches (`not-seen`). A failed write (the Claude
   home path is a file or read-only, a full disk, a rename refused) does not change the
-  decision: a deny is still emitted, anything else still gives no output, and `plan` then
-  reports the guard `not-seen` (a false warning, never a lost deny; Q3, Q23).
+  decision: a deny is still emitted, anything else still gives no stdout, and `plan` then
+  reports the guard `not-seen`, unless an earlier fresh heartbeat for the repo is still in
+  place, in which case `plan` reports `active` instead (never a lost deny; Q3, Q23).
   `command` is redacted: only the script-call form, `commit.cjs <subcommand> <flags>`
   without the script path and any other segment of the command, cut to 200 characters,
   so arguments a caller passed on the command line do not persist. The file is written

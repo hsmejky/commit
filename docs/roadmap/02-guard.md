@@ -342,6 +342,7 @@ trigger kind instead).
 
 - [ ] Seam 3 `runHook`: a deny logs the matched `git commit` segment's options only (never message text or other segments), cut to 200 characters; a `plan` call logs the script-call form; the line carries `agent_id`.
 - [ ] Without the variable, stderr is empty; stdout is identical with and without it.
+- [ ] A deny whose `plan` heartbeat write failed logs one stderr line holding both the decision fields (`agent_id`, decision, reason or trigger kind, command) and `"heartbeat":"failed"` (GRD-15 review I1).
 
 
 ## GRD-17: Guard status seen by `plan`

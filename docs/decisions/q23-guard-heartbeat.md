@@ -41,7 +41,8 @@
   message text; the one global heartbeat with parallel sessions is an accepted gap.
 - **Amended.** By user decision after the GRD-15 review (2026-10-03): a failed heartbeat
   write leaves the guard's decision standing (a deny is still emitted; Q3) and is logged
-  under `COMMIT_GUARD_DEBUG=1`; `plan` then reports `not-seen`. A missing or non-string
+  under `COMMIT_GUARD_DEBUG=1`; `plan` then reports `not-seen`, unless an earlier fresh
+  heartbeat for the repo is still in place. A missing or non-string
   hook `cwd` is stored as `null` and never matches. With several `plan` calls in one
   command, the first is recorded. Each errs toward a false warning, never a false all-clear.
 - **Rejected.**

@@ -339,7 +339,8 @@
 - **Amended.** By user decision after the GRD-15 review (2026-10-03): a failed heartbeat
   write (Q23) is not a crash and does not fail open. The decision already computed stands,
   so `node …/commit.cjs plan && git commit -m x` is still denied when the Claude home path
-  is a file, read-only or full; `plan` then reports the guard `not-seen`. Fail open exists
+  is a file, read-only or full; `plan` then reports the guard `not-seen`, unless an earlier
+  fresh heartbeat for the repo is still in place. Fail open exists
   so a guard bug does not block every shell call, and keeping a computed deny blocks
   nothing more, while dropping it would let one plain file at `commit-guard` turn off every
   compound deny holding a `plan` call.

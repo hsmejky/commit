@@ -50,7 +50,8 @@ character removed, then every `'`, `"`, `\`, backtick and typographic quote
 (C:guard: "before deciding"), so a denied compound command that also calls `plan` still
 counts → emit the deny JSON or nothing, never `allow`. The heartbeat write has its own
 catch: a failed write leaves the decision already computed standing (a deny is still
-emitted) and `plan` reports the guard `not-seen`; under `COMMIT_GUARD_DEBUG=1` it adds
+emitted) and `plan` reports the guard `not-seen`, unless an earlier fresh heartbeat for the
+repo is still in place; under `COMMIT_GUARD_DEBUG=1` it adds
 `"heartbeat":"failed"` to the debug line. A crash anywhere else, including in the classifier, fails open (exit 0, no output, no
 heartbeat); under `COMMIT_GUARD_DEBUG=1`, `formatDebugLine` writes one JSON object on one
 stderr line, with keys `agent_id`, `decision`, `reason` and `command`, each key left out
