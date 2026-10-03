@@ -211,7 +211,29 @@ test('inventory: a hidden non-UTF-8 path is counted as hidden; a non-UTF-8-only 
   assert.deepEqual([...state.paths].sort(), ['.env\\xe9', 'bad\\xff.txt']);
 });
 
-test('snapshot: a rename from a non-UTF-8 path makes its UTF-8 new path an A unit', async (t) => {
+test('inventory: two untracked paths that escape to the same \\xNN string both survive', async (t) => {
+  const c = createCase(t);
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip(NO_NON_UTF8_NAMES);
+    return;
+  }
+  c.writeFile('ok.txt', 'a\n');
+  c.git(['add', '-A']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  // Two distinct byte sequences that escape to the identical string: a literal `\xe9` (four
+  // valid ASCII bytes, kept as written) followed by one invalid byte, and two invalid bytes
+  // standing for the same text (review-CHG-12 finding 1). Both are invalid UTF-8 overall
+  // (the trailing byte), so both reach the non-UTF-8 branch.
+  writeRaw(c, Buffer.from([0x61, 0x5c, 0x78, 0x65, 0x39, 0xff]), 'one\n');
+  writeRaw(c, Buffer.from([0x61, 0xe9, 0xff]), 'two\n');
+
+  const listed = await inventory(c);
+
+  // Before the fix, a `Map` keyed by the escaped string kept only the last of the two.
+  assert.deepEqual(listed.notUtf8, ['a\\xe9\\xff', 'a\\xe9\\xff']);
+});
+
+test('snapshot: a rename from a non-UTF-8 path makes its UTF-8 new path an A unit, without double-counting the rest', async (t) => {
   const c = createCase(t);
   if (!holdsNonUtf8Names(c.repoDir)) {
     t.skip(NO_NON_UTF8_NAMES);
@@ -219,9 +241,13 @@ test('snapshot: a rename from a non-UTF-8 path makes its UTF-8 new path an A uni
   }
   const old = Buffer.concat([Buffer.from(c.repoDir + path.sep), Buffer.from('t\xe9.txt', 'latin1')]);
   fs.writeFileSync(old, 'one\ntwo\nthree\n');
+  c.writeFile('ok.txt', 'a\n');
+  c.writeFile('a.txt', 'x\ny\nz\n');
   c.git(['add', '-A']);
   c.git(['commit', '-q', '-m', 'seed']);
   fs.renameSync(old, path.join(c.repoDir, 'te.txt'));
+  c.writeFile('ok.txt', 'b\n');
+  fs.renameSync(path.join(c.repoDir, 'a.txt'), path.join(c.repoDir, 'b.txt'));
 
   const listed = await inventory(c);
   const units = await snapshot(c, {
@@ -229,9 +255,17 @@ test('snapshot: a rename from a non-UTF-8 path makes its UTF-8 new path an A uni
   });
 
   assert.deepEqual(listed.notUtf8, ['t\\xe9.txt']);
-  assert.deepEqual(units.map((u) => [u.path, u.oldPath, u.status, u.added, u.deleted]), [
+  const byPath = [...units].sort((x, y) => (x.path < y.path ? -1 : 1));
+  assert.deepEqual(byPath.map((u) => [u.path, u.oldPath, u.status, u.added, u.deleted]), [
+    ['b.txt', 'a.txt', 'R', 0, 0],
+    ['ok.txt', null, 'M', 1, 1],
     ['te.txt', null, 'A', 3, 0],
   ]);
+  // Each path appears exactly once. Without the `rediff.has(unit.path)` filter in `snapshot`
+  // (review-CHG-12 finding 2), the second, no-renames pass would re-add every other unit:
+  // `ok.txt` a second time as `M`, and `a.txt`/`b.txt` as a `D`/`A` pair alongside the first
+  // pass's `R`.
+  assert.deepEqual(units.map((u) => u.path), [...new Set(units.map((u) => u.path))]);
 });
 
 test('plan --reword stores an empty non-UTF-8 path list', async (t) => {

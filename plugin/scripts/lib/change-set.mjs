@@ -130,18 +130,29 @@ export async function inventory({ toplevel, env, now }) {
   const opts = { cwd: toplevel, env, now, readOnly: true };
   const notUtf8 = [];
   const untracked = [];
-  const untrackedNotUtf8 = new Map();
+  // Entries, not a map keyed by the escaped string: two distinct byte sequences can escape
+  // to the identical `\xNN` string (a literal "\xe9" next to the escape of byte 0xe9), and a
+  // map would keep only the last one (review-CHG-12 finding 1).
+  const untrackedNotUtf8 = [];
   for (const bytes of nulFields(await gitOk(['ls-files', '--others', '--exclude-standard', '-z'], opts))) {
     const path = utf8Path(bytes);
-    if (path === null) untrackedNotUtf8.set(escapeNonUtf8(bytes), Buffer.from(bytes));
+    if (path === null) untrackedNotUtf8.push({ escaped: escapeNonUtf8(bytes), bytes: Buffer.from(bytes) });
     else untracked.push(path);
   }
   const filtered = hideFilter(untracked);
   const candidates = candidateFacts(toplevel, filtered.candidates);
   // The hidden rule runs on a non-UTF-8 path's `\xNN` form too: a hidden one (`.env\xe9`)
   // is counted as hidden, not reported as "commit by hand" (review-CHG-12 finding 7).
-  const filteredNotUtf8 = hideFilter([...untrackedNotUtf8.keys()]);
-  for (const escaped of filteredNotUtf8.candidates) notUtf8.push(untrackedNotUtf8.get(escaped));
+  // `hideFilter` only partitions by the escaped string's own content, so colliding entries
+  // (same escaped string) land in the same partition, in their original relative order;
+  // a per-escaped-string queue pairs each partitioned string back with its own bytes.
+  const byEscaped = new Map();
+  for (const entry of untrackedNotUtf8) {
+    if (!byEscaped.has(entry.escaped)) byEscaped.set(entry.escaped, []);
+    byEscaped.get(entry.escaped).push(entry.bytes);
+  }
+  const filteredNotUtf8 = hideFilter(untrackedNotUtf8.map((entry) => entry.escaped));
+  for (const escaped of filteredNotUtf8.candidates) notUtf8.push(byEscaped.get(escaped).shift());
   const allHidden = [...filtered.hidden, ...filteredNotUtf8.hidden];
   const hidden = {
     count: allHidden.length,
