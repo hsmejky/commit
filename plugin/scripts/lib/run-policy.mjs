@@ -90,7 +90,8 @@ function rewordRefusal(reword) {
  * folder exists).
  *
  * @param {{ git: object, node: object, repo: object|null, config?: { error: string } | null,
- *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null }}
+ *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null,
+ *   reword?: { unborn: boolean, merge: boolean, root: boolean, pushed: boolean } | null }}
  *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (`null` or
  *   omitted when no layer error was found; the user layer is checked even outside a
  *   worktree, so this can hold a user-layer error there too, CFG-04), plus M3

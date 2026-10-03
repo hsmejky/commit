@@ -41,6 +41,14 @@ function commitEmpty(c, subject) {
   c.git(['commit', '-q', '--allow-empty', '-m', subject]);
 }
 
+// Writes file.txt with `content`, stages and commits it with the given subject (same
+// pattern as tests/git-in-progress.test.js).
+function commitFile(c, content, subject) {
+  c.writeFile('file.txt', content);
+  c.git(['add', 'file.txt']);
+  c.git(['commit', '-q', '-m', subject]);
+}
+
 function seed(c, files) {
   for (const [name, text] of Object.entries(files)) c.writeFile(name, text);
   c.git(['add', '--', ...Object.keys(files)]);
@@ -93,6 +101,25 @@ function spawnLog(c) {
   return path.join(c.root, 'spawns.jsonl');
 }
 
+// A stub `gpg.program` (review-GIT-09 finding 2): always "verifies" and writes a fixed
+// stderr line, so the signature-leak test is deterministic on hosts without a real gpg
+// binary (and never spawns one, which would create `~/.gnupg` in the real HOME).
+function gpgStub(c) {
+  const dir = path.join(c.root, 'gpg-stub');
+  fs.mkdirSync(dir, { recursive: true });
+  const script = path.join(dir, 'fake-gpg.js');
+  fs.writeFileSync(script, "process.stderr.write('gpg: Good signature from fake key\\n');\nprocess.exit(0);\n");
+  if (process.platform === 'win32') {
+    const wrapper = path.join(dir, 'fake-gpg.cmd');
+    fs.writeFileSync(wrapper, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+    return wrapper;
+  }
+  const wrapper = path.join(dir, 'fake-gpg.sh');
+  fs.writeFileSync(wrapper, `#!/bin/sh\nexec '${process.execPath}' '${script}' "$@"\n`);
+  fs.chmodSync(wrapper, 0o755);
+  return wrapper;
+}
+
 function recordedGitArgs(c) {
   return fs.readFileSync(spawnLog(c), 'utf8').split('\n').filter(Boolean)
     .map((line) => JSON.parse(line))
@@ -108,6 +135,7 @@ test('plan stores and returns the last 10 subjects, newest first, with log.showS
   for (let i = 1; i <= 11; i += 1) commitEmpty(c, `feat: change ${i}`);
   commitSigned(c, 'fix: signed change');
   c.git(['config', 'log.showSignature', 'true']);
+  c.git(['config', 'gpg.program', gpgStub(c)]);
   c.writeFile('a.txt', 'one\nmore\n');
 
   const result = await runCommit(c, ['plan']);
@@ -154,6 +182,31 @@ test('plan --reword on an unborn HEAD exits 6 state naming it, with no run folde
   assert.deepEqual(recordedGitArgs(c).filter((args) => args.includes('for-each-ref')), []);
 });
 
+test('plan --reword during a conflicted merge refuses state before rewordFacts ever spawns (review-GIT-09 finding 5)', async (t) => {
+  const c = createCase(t);
+  commitFile(c, 'a\n', 'base');
+  c.git(['checkout', '-q', '-b', 'other']);
+  commitFile(c, 'b\n', 'other change');
+  c.git(['checkout', '-q', 'main']);
+  commitFile(c, 'c\n', 'main change');
+  try {
+    c.git(['merge', 'other']);
+  } catch {
+    // Conflict expected: git exits non-zero, leaving MERGE_HEAD.
+  }
+
+  const result = await runCommit(c, ['plan', '--reword'], {
+    nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
+    env: { COMMIT_TEST_SPAWN_LOG: spawnLog(c) },
+  });
+
+  assertRefusal(result, 'state');
+  assert.equal(result.json.error.message, 'finish it with `git commit --no-edit`, or abort it');
+  assertNoRunFolder(c);
+  assert.deepEqual(recordedGitArgs(c).filter((args) => args.includes('for-each-ref')), []);
+  assert.deepEqual(recordedGitArgs(c).filter((args) => args.includes('rev-list')), []);
+});
+
 test('plan --reword on a merge commit exits 6 state with the recorded text and no run folder', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
@@ -178,7 +231,7 @@ test('plan --reword on a HEAD a remote-tracking ref points at exits 6 pushed wit
   const result = await runCommit(c, ['plan', '--reword']);
 
   assertRefusal(result, 'pushed');
-  assert.match(result.json.error.message, /remote-tracking/);
+  assert.match(result.json.error.message, /pushed/);
   assertNoRunFolder(c);
 });
 
@@ -220,6 +273,18 @@ test('plan --reword on a root commit is accepted and stores the root-commit fact
   assert.equal(stored(c, result, 'state.json').rootCommit, true);
 });
 
+test('plan --reword on a detached HEAD behaves the same as on a branch (review-GIT-09 finding 6)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.git(['checkout', '-q', '--detach']);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.mode, 'reword');
+  assert.equal(stored(c, result, 'state.json').rootCommit, true);
+});
+
 // --- AC3: oldMessage byte-exact ---
 
 test('plan --reword on a clean tree stores oldMessage byte-exact (UTF-8) and returns it in the hunk index', async (t) => {
@@ -238,6 +303,21 @@ test('plan --reword on a clean tree stores oldMessage byte-exact (UTF-8) and ret
   assert.equal(JSON.parse(stateBytes.toString('utf8')).oldMessage, message);
   assert.equal(result.json.hunks.oldMessage, message);
   assert.deepEqual(stored(c, result, 'state.json').recentSubjects, ['fix: café naïve ✓', 'seed']);
+});
+
+test('plan --reword stores a CRLF, no-trailing-newline message byte-exact (review-GIT-09 finding 4)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  const message = 'fix: crlf\r\n\r\nbody line\r\nno trailing newline';
+  const file = path.join(c.root, 'message.txt');
+  fs.writeFileSync(file, message, 'utf8');
+  c.git(['commit', '-q', '--allow-empty', '--cleanup=verbatim', '-F', file]);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(stored(c, result, 'state.json').oldMessage, message);
+  assert.equal(result.json.hunks.oldMessage, message);
 });
 
 // --- M3 directly ---

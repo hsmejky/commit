@@ -84,8 +84,13 @@ async function probeRepo(ctx) {
  * spawn either status call or the config call (review-GIT-02 finding 5); since only `plan`
  * calls it, no duck-typing of `ctx.notices` is needed to tell the subcommands apart
  * (review-GIT-02 finding 11). GIT-09: with `--reword` it also reads M3 `rewordFacts` (unborn,
- * merge commit, root commit, pushed; C:plan step 1) for step 2's reword rows, concurrently
- * with the other two reads; without it `ctx.reword` stays `null` and nothing is spawned.
+ * merge commit, root commit, pushed; C:plan step 1) for step 2's reword rows, but only once
+ * `inProgress`/`unmerged`/`encoding` are known not to refuse already (review-GIT-09 finding
+ * 5): a preview `planRefusal` call over those facts, with `reword` forced `null`, decides
+ * whether to spawn it at all, one extra sequential step past the `Promise.all` below, so a
+ * throw from `rewordFacts` can never mask an earlier refusal as `internal`. Without
+ * `--reword`, or when an earlier row would already refuse, `ctx.reword` stays `null` and
+ * nothing is spawned.
  */
 async function readHeadState(ctx) {
   const { repo } = ctx.probe;
@@ -96,14 +101,20 @@ async function readHeadState(ctx) {
     ctx.expectedHead = result.head;
     if (result.kind === 'detached') ctx.notices.push(DETACHED_HEAD_NOTICE);
     ctx.unmerged = result.unmerged;
-    const [inProgress, encoding, reword] = await Promise.all([
+    const [inProgress, encoding] = await Promise.all([
       inProgressState({ cwd: repo.toplevel, env, now }),
       commitEncoding({ cwd: repo.toplevel, env, now }),
-      ctx.values.reword === true ? rewordFacts({ cwd: repo.toplevel, env, now, head: result.head }) : null,
     ]);
     ctx.inProgress = inProgress;
     ctx.commitEncoding = encoding;
-    ctx.reword = reword;
+    // review-GIT-09 finding 5: an earlier row (env, in-progress, unmerged, encoding) that
+    // would refuse anyway must stop the reword read before it ever runs.
+    const earlierRefusal = planRefusal({
+      ...ctx.probe, inProgress, unmerged: ctx.unmerged, commitEncoding: encoding, reword: null,
+    });
+    ctx.reword = earlierRefusal === null && ctx.values.reword === true
+      ? await rewordFacts({ cwd: repo.toplevel, env, now, head: result.head })
+      : null;
   }
   return undefined;
 }

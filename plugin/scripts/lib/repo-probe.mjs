@@ -227,7 +227,9 @@ async function logRecords(args, { cwd, env, now }) {
 }
 
 /**
- * The last 10 subjects, newest first (`recentSubjects`, C:plan, C:plan-hunks).
+ * The last 10 non-merge subjects, newest first (`recentSubjects`, C:plan, C:plan-hunks:
+ * review-GIT-09 finding 3, `--no-merges` so a "Merge branch 'x'" subject, noise for the
+ * worker's style examples, never appears here, matching `historyMessages` below).
  *
  * @param {{ cwd: string, env: object, now?: () => number, head: string | null }} options
  *   `cwd`: the toplevel; `head`: the recorded HEAD SHA, `null` when unborn.
@@ -236,7 +238,7 @@ async function logRecords(args, { cwd, env, now }) {
  */
 export async function recentSubjects({ cwd, env, now, head }) {
   if (head === null) return [];
-  return logRecords(['-n', '10', '--format=%s', head, '--'], { cwd, env, now });
+  return logRecords(['-n', '10', '--no-merges', '--format=%s', head, '--'], { cwd, env, now });
 }
 
 /**
