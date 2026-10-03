@@ -91,14 +91,14 @@ paragraph is not a body; shares over the Conventional Commits ones only, in `evi
 
 **Blocked by:** INF-02, MSG-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q7, C:infer (`maxSubjectLength.evidence.flagged`), story 129.
 
-- [ ] Seam 1: `API change` headers count as lower; 89% lower → `any`.
-- [ ] Seam 1: exactly 90% lowercase headers → `subjectCase: lower`.
-- [ ] Seam 1: p95 64 → 72, 90 → 100, 113 → 120 flagged, 230 → 200 flagged.
-- [ ] A static test asserts M19 imports the case-check function MSG-03 exports separately
+- [x] Seam 1: `API change` headers count as lower; 89% lower → `any`.
+- [x] Seam 1: exactly 90% lowercase headers → `subjectCase: lower`.
+- [x] Seam 1: p95 64 → 72, 90 → 100, 113 → 120 flagged, 230 → 200 flagged.
+- [x] A static test asserts M19 imports the case-check function MSG-03 exports separately
       from `lint` (no duplicate implementation).
 
 
