@@ -181,6 +181,11 @@ export async function gitPath(names, { cwd, env, now }) {
  * pinned and every other variable is kept for the user's hooks; `readOnly` and `history`
  * do not apply.
  *
+ * `commit` cannot be combined with `readOnly`, `history` or `index`: none of the three
+ * applies to `git commit`'s own environment, so a caller that set any of them alongside
+ * `commit` almost certainly meant a different, non-commit call. `run` throws synchronously
+ * (before spawning anything) rather than silently drop them.
+ *
  * @param {string} cmd
  * @param {string[]} args
  * @param {{ cwd: string, env: object, now?: () => number, readOnly?: boolean,
@@ -208,6 +213,9 @@ export async function gitPath(names, { cwd, env, now }) {
  *   `timeoutMs`.
  */
 export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit, input, onStdout, timeoutMs }) {
+  if (commit && (readOnly || history || index != null)) {
+    throw new Error('run: commit cannot be combined with readOnly, history or index');
+  }
   return new Promise((resolve, reject) => {
     const isGit = path.basename(cmd, '.exe').toLowerCase() === 'git';
     let childEnv = env;

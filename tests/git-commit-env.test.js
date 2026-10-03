@@ -11,10 +11,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { test } = require('node:test');
+const { beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { loadLib } = require('./helpers/load-lib.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
   path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
@@ -87,9 +88,15 @@ test('a pre-commit hook sees GIT_AUTHOR_NAME and a custom GIT_FOO, no GIT_LITERA
   assert.equal(seen.GIT_FOO, 'kept for hooks');
   assert.equal(seen.GIT_LITERAL_PATHSPECS, undefined);
   assert.equal(seen.GIT_CONFIG_COUNT, undefined);
-  // git itself hands a pre-commit hook `GIT_INDEX_FILE` (the index it commits), so the
-  // check is that the decoy's value never reaches the hook.
-  assert.ok(!/[\\/]decoy[\\/]/.test(seen.GIT_INDEX_FILE ?? ''), seen.GIT_INDEX_FILE);
+  // git itself hands a pre-commit hook `GIT_INDEX_FILE` (the index it commits), so a negative
+  // regex on the decoy's path is not enough (review-GIT-06 finding L2): assert positively that
+  // the value resolves inside the real repo's own `.git`, not merely that it skips "decoy".
+  const gitDirPrefix = path.join(c.repoDir, '.git') + path.sep;
+  assert.ok(seen.GIT_INDEX_FILE, 'git must export GIT_INDEX_FILE to a pre-commit hook');
+  assert.ok(
+    path.resolve(c.repoDir, seen.GIT_INDEX_FILE).startsWith(gitDirPrefix),
+    path.resolve(c.repoDir, seen.GIT_INDEX_FILE),
+  );
   assert.ok(!/[\\/]decoy[\\/]/.test(seen.GIT_DIR ?? ''), seen.GIT_DIR);
 });
 
@@ -144,4 +151,25 @@ test('the git commit spawn removes exactly the redirecting GIT_* variables and k
   assert.equal(commits.length, 1, JSON.stringify(commits));
   const kept = Object.fromEntries(Object.entries(c.env).filter(([key]) => key.startsWith('GIT_')));
   assert.deepEqual(commits[0].gitEnv, { ...kept, GIT_FOO: 'kept', GIT_NAMESPACE: 'kept-namespace' });
+});
+
+// None of readOnly/history/index applies to commit mode (it is never a staging call, never
+// a history read, and no commit caller uses an alternate index), so a caller that sets any
+// of them alongside `commit` almost certainly meant a different, non-commit call. `run`
+// throws synchronously rather than silently ignore them (review-GIT-06 finding L3).
+let processAdapter;
+beforeEach(async () => {
+  processAdapter = await loadLib('process-adapter');
+});
+
+test('run: commit combined with readOnly, history or index throws synchronously', async (t) => {
+  const c = createCase(t);
+  const base = { cwd: c.repoDir, env: c.env, commit: true };
+
+  assert.throws(() => processAdapter.run('git', ['commit', '-q', '-m', 'x'], { ...base, readOnly: true }),
+    /commit cannot be combined/);
+  assert.throws(() => processAdapter.run('git', ['commit', '-q', '-m', 'x'], { ...base, history: true }),
+    /commit cannot be combined/);
+  assert.throws(() => processAdapter.run('git', ['commit', '-q', '-m', 'x'], { ...base, index: path.join(c.root, 'alt.index') }),
+    /commit cannot be combined/);
 });
