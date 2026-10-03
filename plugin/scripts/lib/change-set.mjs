@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { copyFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { applyCaps, hideFilter } from './path-classifier.mjs';
+import { hideFilter } from './path-classifier.mjs';
 import { gitPath, run } from './process-adapter.mjs';
 
 // Q11's pinned options, every one of them, for every diff the script runs. Only M10 holds
@@ -87,16 +87,15 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   refuses M2's `GIT_LITERAL_PATHSPECS=1`).
  * - tracked: the `git status --untracked-files=no --no-renames` entries that are not
  *   staged-new (a rename's old path is its own deletion).
- * - caps (CHG-13): in `split` only, M9 `applyCaps` over the candidates and staged-new
- *   paths, with the tracked directories of `git ls-tree -r -d --name-only -z HEAD` (none on
- *   an unborn HEAD); a collapsed directory's paths leave `candidates` and `stagedNew` (so
- *   they are never added to the temporary index or scanned) for `collapsed` and
- *   `stagedExcluded`. Other modes keep `collapsed` empty (C:untracked-files).
+ * - caps (CHG-13): not this function's job. `collapsed` is always `[]` and `stagedExcluded`
+ *   holds only the hidden entries here; the workflow calls M9 `applyCaps` itself, in `split`
+ *   only, once the mode decision has counted these (pre-cap) lists (C:plan step 4 counts the
+ *   mode decision's candidates "after the hidden rule and before the caps"; step 5 is the
+ *   caps). `trackedDirectories` below is `applyCaps`'s third argument.
  * Unborn HEAD needs no other special case: `diff --cached` then lists every index entry as
  * `A`, as C:untracked-files asks.
  *
- * @param {{ toplevel: string, env: object, now?: () => number, mode?: string,
- *   unborn?: boolean }} options `mode`: the run's mode; caps apply only in `'split'`.
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
  * @returns {Promise<{ clean: boolean, tracked: string[], preStaged: string[],
  *   candidates: Array<{ path: string, size: number, binary: boolean }>,
  *   collapsed: Array<{ dir: string, count: number, bytes: number }>,
@@ -104,16 +103,17 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   stagedNew: Array<{ path: string, ignored: boolean }>,
  *   stagedExcluded: Array<{ path: string, reason: 'hidden' }
  *     | { dir: string, count: number, reason: 'collapsed' }> }>} `hidden.sample`: the first
- *   5 hidden untracked paths in UTF-8 byte order. `stagedExcluded`: the hidden entries, then
- *   the collapsed ones. `clean`: no tracked change, candidate or staged-new path left
- *   (hidden-only, collapsed-only and `stagedExcluded`-only trees are clean, C:plan).
+ *   5 hidden untracked paths in UTF-8 byte order. `clean`: no tracked change, candidate or
+ *   staged-new path left (hidden-only trees are clean, C:plan; a caller that then collapses
+ *   every remaining candidate and staged-new path away must recompute `clean`, since this
+ *   function's own `clean` is pre-cap).
  * @throws {Error} when a git call fails.
  */
-export async function inventory({ toplevel, env, now, mode, unborn = false }) {
+export async function inventory({ toplevel, env, now }) {
   const opts = { cwd: toplevel, env, now, readOnly: true };
   const untracked = nulList(await gitOk(['ls-files', '--others', '--exclude-standard', '-z'], opts));
   const filtered = hideFilter(untracked);
-  let candidates = candidateFacts(toplevel, filtered.candidates);
+  const candidates = candidateFacts(toplevel, filtered.candidates);
   const hidden = {
     count: filtered.hidden.length,
     sample: [...filtered.hidden].sort(byteOrder).slice(0, 5),
@@ -139,16 +139,7 @@ export async function inventory({ toplevel, env, now, mode, unborn = false }) {
   const ignored = new Set(split.candidates.length === 0 ? [] : nulList(
     await gitOk(['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], opts),
   ));
-  let stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
-  let collapsed = [];
-  if (mode === 'split' && candidates.length + stagedNew.length > 0) {
-    const trackedDirs = unborn ? [] : nulList(await gitOk(['ls-tree', '-r', '-d', '--name-only', '-z', 'HEAD'], opts));
-    const capped = applyCaps(candidates, stagedNew, trackedDirs);
-    candidates = capped.candidates;
-    stagedNew = capped.stagedNew;
-    collapsed = capped.collapsed;
-    stagedExcluded.push(...capped.stagedExcluded);
-  }
+  const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
 
   const addedSet = new Set(added);
   const tracked = status
@@ -156,8 +147,25 @@ export async function inventory({ toplevel, env, now, mode, unborn = false }) {
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
-    tracked, preStaged, candidates, collapsed, hidden, stagedNew, stagedExcluded,
+    tracked, preStaged, candidates, collapsed: [], hidden, stagedNew, stagedExcluded,
   };
+}
+
+/**
+ * The tracked directories caps (CHG-13) collapse into: `git ls-tree -r -d --name-only -z
+ * HEAD` (`-r` lists every depth, which implies `-t`, so intermediate trees are included; none
+ * on an unborn HEAD, which has no `HEAD` to list). Read-only. The workflow's own call, made
+ * only in `split` and only once the mode decision has counted `inventory`'s pre-cap lists
+ * (C:plan step 4), then fed with them into M9 `applyCaps` (step 5).
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number, unborn?: boolean }} options
+ * @returns {Promise<string[]>}
+ * @throws {Error} when `git ls-tree` exits non-zero.
+ */
+export async function trackedDirectories({ toplevel, env, now, unborn = false }) {
+  if (unborn) return [];
+  const opts = { cwd: toplevel, env, now, readOnly: true };
+  return nulList(await gitOk(['ls-tree', '-r', '-d', '--name-only', '-z', 'HEAD'], opts));
 }
 
 /**

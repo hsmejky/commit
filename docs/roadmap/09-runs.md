@@ -376,6 +376,10 @@ is built by INT-13.
 
 **Blocked by:** RUN-05, CHG-01, CHG-05, RPL-04.
 
+**Note (review-CHG-13 finding 3):** CHG-13 moved the caps out of `plan`'s `inventory` step
+into their own later step (`collapseCandidates`), so `ctx.inventory.candidates`/`stagedNew`
+are pre-cap for `resolveMode` to count here; do not move the caps call earlier than this step.
+
 **Status:** ready-for-agent
 
 **Sources:** Q9, Q16, C:plan (mode), M15 `resolveMode`, stories 81, 225.

@@ -51,8 +51,10 @@ import {
   commitEncoding, head, headState, inProgressState, isTracked, oldMessage, probe, recentSubjects,
   rewordFacts,
 } from './repo-probe.mjs';
-import { assignIds, indexFingerprint, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
-import { bucketOf } from './path-classifier.mjs';
+import {
+  assignIds, indexFingerprint, inventory as takeInventory, snapshot, trackedDirectories, treeState,
+} from './change-set.mjs';
+import { applyCaps, bucketOf } from './path-classifier.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME, STATE_VERSION } from './run.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
@@ -201,17 +203,44 @@ async function createRunFolder(ctx) {
  * Step 4: M10 `indexFingerprint` (CHG-04), read first, before the inventory's own git calls,
  * so step 7's re-read covers every index change since the inventory began (C:plan step 4).
  * Then M10 `inventory`: tracked changes, candidates, hidden, staged-new and pre-staged paths
- * (CHG-05). Also the
+ * (CHG-05), pre-cap (CHG-13: the caps are step 5, `collapseCandidates` below). Also the
  * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
- * full `modeChoice` (M15 `resolveMode`) is a later slice's.
+ * full `modeChoice` (M15 `resolveMode`) is a later slice's, and will count these same pre-cap
+ * `candidates`/`stagedNew` lists (C:plan step 4: "candidates for the mode decision are
+ * counted after the hidden rule and before the caps").
  */
 async function inventory(ctx) {
   ctx.indexFingerprint = await indexFingerprint({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
-  // CHG-13: the mode decides whether the count caps apply.
-  ctx.inventory = await takeInventory({
-    toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now, mode: ctx.mode, unborn: ctx.state.unborn,
+  ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+  return undefined;
+}
+
+/**
+ * Step 5 (caps part, CHG-13): M9 `applyCaps` over step 4's pre-cap `candidates` and
+ * `stagedNew`, in `split` only, now that the mode decision above has counted them (C:plan
+ * step 4; the trap this guards: counting them after the caps would see a collapsed
+ * directory's survivors only, review-CHG-13 finding 3). `trackedDirectories` is the one extra
+ * git call caps need, skipped when there is nothing to cap. A collapsed directory's paths
+ * leave `candidates` and `stagedNew` (so they never reach the temporary index or a scan) for
+ * `collapsed` and `stagedExcluded`; other modes keep `collapsed` empty (C:untracked-files).
+ * `clean` is recomputed: a tree whose only untracked/staged-new content collapses away is
+ * clean, same as `inventory`'s own pre-cap `clean` would have been with nothing to collapse.
+ */
+async function collapseCandidates(ctx) {
+  if (ctx.mode !== 'split') return undefined;
+  const { candidates, stagedNew, tracked } = ctx.inventory;
+  if (candidates.length + stagedNew.length === 0) return undefined;
+  const trackedDirs = await trackedDirectories({
+    toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now, unborn: ctx.state.unborn,
   });
+  const capped = applyCaps(candidates, stagedNew, trackedDirs);
+  ctx.inventory.candidates = capped.candidates;
+  ctx.inventory.stagedNew = capped.stagedNew;
+  ctx.inventory.collapsed = capped.collapsed;
+  ctx.inventory.stagedExcluded.push(...capped.stagedExcluded);
+  ctx.inventory.clean = tracked.length === 0
+    && ctx.inventory.candidates.length === 0 && ctx.inventory.stagedNew.length === 0;
   return undefined;
 }
 
@@ -336,6 +365,9 @@ async function storeAndLock(ctx) {
     preStaged: ctx.inventory.preStaged,
     candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
     stagedNew: ctx.inventory.stagedNew,
+    // CHG-13 (C:run-folder state.json row): empty outside `split`, same as `plan.json`'s
+    // `untracked.collapsed`.
+    collapsed: ctx.inventory.collapsed,
     stagedExcluded: stagedExcludedOf(ctx),
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
@@ -426,7 +458,7 @@ async function renderHunkIndex(ctx) {
 
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
-  snapshotUnits, postScanRefusals, readHistory, storeAndLock, renderHunkIndex,
+  collapseCandidates, snapshotUnits, postScanRefusals, readHistory, storeAndLock, renderHunkIndex,
 ]);
 
 /**

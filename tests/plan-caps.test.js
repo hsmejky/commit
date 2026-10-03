@@ -15,11 +15,9 @@ const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { FILE_CONTENT, buildFixture } = require('./helpers/fixture-generator.js');
 
-let changeSet;
 let pathClassifier;
 
 beforeEach(async () => {
-  changeSet = await loadLib('change-set');
   pathClassifier = await loadLib('path-classifier');
 });
 
@@ -71,6 +69,18 @@ const ROWS = [
     trackedDirs: ['src/img', 'src/icons', 'lib'],
     untracked: { 'src/img': 60, 'src/icons': 60, lib: 50, '.': 40 },
     collapsed: [collapsedEntry('src/icons', 60)],
+  },
+  {
+    name: 'rule 4, mixed: a new directory collapses first, then the largest loose parent',
+    trackedDirs: ['lib', 'docs'],
+    untracked: { new: 51, lib: 90, docs: 70, '.': 45 },
+    collapsed: [collapsedEntry('lib', 90), collapsedEntry('new', 51)],
+  },
+  {
+    name: 'rule 4: the root "." collapses, at its own 50 cap, as the largest remaining group',
+    trackedDirs: ['lib', 'docs', 'extra', 'foo', 'bar'],
+    untracked: { '.': 50, lib: 45, docs: 40, extra: 40, foo: 10, bar: 20 },
+    collapsed: [collapsedEntry('.', 50)],
   },
   // C:untracked-files named tests.
   {
@@ -139,29 +149,24 @@ test('caps (split): a force-added hidden staged-new file goes to stagedExcluded 
   assert.deepEqual(plan.untracked.collapsed, []);
 });
 
-// `plan --staged` is not built yet (CHG-14): the caps' mode gate is pinned on M10 directly.
-test('caps: a 60-file new directory under staged mode is not collapsed', async (t) => {
+// CHG-13 moved the caps out of M10 `inventory` into the workflow's own step (review-CHG-13
+// findings 2/3): `inventory` never caps, whatever `mode` is, so the mode gate now lives only
+// in that workflow step, exercised through the real `plan` pipeline below, on an unborn HEAD
+// too (review-CHG-13 finding 6: `unborn: ctx.state.unborn` wiring was untested).
+test('caps (split): an unborn HEAD collapses a new directory through the real pipeline', async (t) => {
   const c = createCase(t);
-  buildFixture(c, { staged: { pkg: 60 } });
+  // A lone root survivor keeps the tree non-clean (a collapsed-only tree is `nothing`,
+  // C:plan), so `plan.json`/`state.json` are actually written to check.
+  buildFixture(c, { unborn: true, untracked: { src: 51, '.': 1 } });
 
-  const result = await changeSet.inventory({ toplevel: c.repoDir, env: c.env, now: NOW, mode: 'staged' });
+  const result = await runCommit(c, ['plan']);
 
-  assert.equal(result.stagedNew.length, 60);
-  assert.deepEqual(result.collapsed, []);
-  assert.deepEqual(result.stagedExcluded, []);
-});
-
-test('caps: an unborn HEAD makes every directory new', async (t) => {
-  const c = createCase(t);
-  for (let i = 1; i <= 51; i += 1) c.writeFile(`src/f${i}.txt`, FILE_CONTENT);
-
-  const result = await changeSet.inventory({
-    toplevel: c.repoDir, env: c.env, now: NOW, mode: 'split', unborn: true,
-  });
-
-  assert.deepEqual(result.candidates, []);
-  assert.deepEqual(result.collapsed, [collapsedEntry('src', 51)]);
-  assert.equal(result.clean, true);
+  assert.equal(result.exitCode, 0, detail(result));
+  const plan = readJson(path.join(result.json.runDir, 'plan.json'));
+  const state = readJson(path.join(result.json.runDir, 'state.json'));
+  assert.deepEqual(plan.untracked.collapsed, [collapsedEntry('src', 51)]);
+  assert.deepEqual(state.collapsed, [collapsedEntry('src', 51)]);
+  assert.deepEqual(state.candidates, ['u001.txt']);
 });
 
 test('applyCaps: ties break in UTF-8 byte order, not UTF-16 code unit order', () => {
