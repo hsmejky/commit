@@ -4,10 +4,12 @@
 // INF-01 (tracer) built the `too-few-commits` outcome only. INF-02 adds the Conventional
 // Commits share split: `not-conventional` under 50%, else `proposal`. INF-03 fills in the
 // proposal's `scope` and `body` fields. INF-04 adds `subjectCase` and `maxSubjectLength`.
-// The proposal carries `scope`, `body`, `subjectCase` and `maxSubjectLength` until INF-05
-// adds its remaining field (`types`); `wouldFail` stays `null` until INF-06 computes it.
+// INF-05 adds `types` (always the 11 standard, plus non-standard ones at 5% or more) and the
+// sibling `droppedTypes` (non-standard ones under 5%, with counts). `wouldFail` stays `null`
+// until INF-06 computes it.
 
 import { headerLineOf, parse, passesLowerCase } from './message-grammar.mjs';
+import { DEFAULT_VALUES } from './config.mjs';
 
 /** Under this many non-merge commits read, `infer` proposes nothing (C:infer). */
 export const MIN_COMMITS = 20;
@@ -37,6 +39,11 @@ export const MAX_SUBJECT_LENGTH_HIGH = 100;
 
 /** `maxSubjectLength` never proposes a value above this, flagged when clamped (C:infer). */
 export const MAX_SUBJECT_LENGTH_CAP = 200;
+
+/** At or above this share of Conventional Commits messages, a non-standard type is kept in
+ * `types.value` (with its share in `evidence`); below it, the type is dropped into
+ * `droppedTypes` instead, with its raw count (C:infer). */
+export const NON_STANDARD_TYPE_THRESHOLD = 0.05;
 
 /**
  * Propose `scope` (C:infer): `required` at `SCOPE_REQUIRED_THRESHOLD` or more of the
@@ -149,20 +156,58 @@ function proposeMaxSubjectLength(conventionalMessages) {
 }
 
 /**
+ * Propose `types` and compute `droppedTypes` (C:infer): `types.value` always holds the 11
+ * standard types (`DEFAULT_VALUES.types`, M4's sole list for them — not duplicated here),
+ * plus each non-standard type (a parsed header `type` outside that list) at
+ * `NON_STANDARD_TYPE_THRESHOLD` or more of the Conventional Commits messages read, appended
+ * in alphabetical order with its share recorded in `evidence`. A non-standard type under the
+ * threshold is reported in `droppedTypes` instead, with its raw count (not a share), also in
+ * alphabetical order; C:infer does not pin an order for either list, so alphabetical gives a
+ * deterministic one.
+ *
+ * @param {readonly { header: { type: string } }[]} conventional parsed Conventional Commits
+ *   messages only; never empty when a proposal is produced.
+ * @returns {{ types: { value: string[], evidence: Record<string, number> }, droppedTypes:
+ *   { type: string, count: number }[] }}
+ */
+function proposeTypes(conventional) {
+  const counts = new Map();
+  for (const { header } of conventional) {
+    if (DEFAULT_VALUES.types.includes(header.type)) continue;
+    counts.set(header.type, (counts.get(header.type) ?? 0) + 1);
+  }
+  const kept = [];
+  const evidence = {};
+  const droppedTypes = [];
+  for (const type of [...counts.keys()].sort()) {
+    const count = counts.get(type);
+    const share = count / conventional.length;
+    if (share >= NON_STANDARD_TYPE_THRESHOLD) {
+      kept.push(type);
+      evidence[type] = share;
+    } else {
+      droppedTypes.push({ type, count });
+    }
+  }
+  return { types: { value: [...DEFAULT_VALUES.types, ...kept], evidence }, droppedTypes };
+}
+
+/**
  * M19 `infer(messages)`: the history facts and outcome of C:infer for the non-merge
  * messages read (at most 200, newest first).
  *
  * @param {readonly string[]} messages
  * @returns {{ outcome: 'too-few-commits' | 'not-conventional' | 'proposal', commitCount:
  *   number, ccShare: number | null, nonConventional: number, wouldFail: null,
- *   proposal: null | object }}
+ *   proposal: null | object, droppedTypes: null | { type: string, count: number }[] }}
  *   `ccShare` is over every message read, `null` only when `commitCount` is 0.
- *   `too-few-commits`: under `MIN_COMMITS` non-merge commits read; `proposal: null`.
- *   `not-conventional`: `MIN_COMMITS` or more read, `ccShare` under `PROPOSAL_THRESHOLD`;
- *   `proposal: null`. `proposal`: `ccShare` at or above `PROPOSAL_THRESHOLD`; `proposal` has
- *   `scope`, `body` (INF-03), `subjectCase` and `maxSubjectLength` (INF-04) only until
- *   INF-05 adds its remaining field (`types`). `wouldFail` is `null` for every outcome until
- *   INF-06 computes it.
+ *   `too-few-commits`: under `MIN_COMMITS` non-merge commits read; `proposal: null`,
+ *   `droppedTypes: null`. `not-conventional`: `MIN_COMMITS` or more read, `ccShare` under
+ *   `PROPOSAL_THRESHOLD`; `proposal: null`, `droppedTypes: null`. `proposal`: `ccShare` at or
+ *   above `PROPOSAL_THRESHOLD`; `proposal` has `scope`, `body` (INF-03), `subjectCase`,
+ *   `maxSubjectLength` (INF-04) and `types` (INF-05); `droppedTypes` (INF-05) sits alongside
+ *   `proposal`, not inside it (C:infer). `wouldFail` is `null` for every outcome until INF-06
+ *   computes it.
  */
 export function infer(messages) {
   const entries = messages.map((message) => ({ message, parsed: parse(message) }));
@@ -174,23 +219,29 @@ export function infer(messages) {
 
   let outcome;
   let proposal;
+  let droppedTypes;
   if (commitCount < MIN_COMMITS) {
     outcome = 'too-few-commits';
     proposal = null;
+    droppedTypes = null;
   } else if (ccShare < PROPOSAL_THRESHOLD) {
     outcome = 'not-conventional';
     proposal = null;
+    droppedTypes = null;
   } else {
     outcome = 'proposal';
     const conventionalParses = conventionalEntries.map((e) => e.parsed);
     const conventionalMessages = conventionalEntries.map((e) => e.message);
+    const { types, droppedTypes: dropped } = proposeTypes(conventionalParses);
+    droppedTypes = dropped;
     proposal = {
       scope: proposeScope(conventionalParses),
       body: proposeBody(conventionalParses),
       subjectCase: proposeSubjectCase(conventionalParses),
       maxSubjectLength: proposeMaxSubjectLength(conventionalMessages),
+      types,
     };
   }
 
-  return { outcome, commitCount, ccShare, nonConventional, wouldFail: null, proposal };
+  return { outcome, commitCount, ccShare, nonConventional, wouldFail: null, proposal, droppedTypes };
 }

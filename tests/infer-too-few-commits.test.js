@@ -63,6 +63,7 @@ test('infer on 5 conventional commits is too-few-commits with ccShare over the 5
     nonConventional: 0,
     wouldFail: null,
     proposal: null,
+    droppedTypes: null,
     configJson: null,
   });
   assertNoRunFolder(c.repoDir);
@@ -116,6 +117,7 @@ test('M19 infer: ccShare and nonConventional count every message read', () => {
     nonConventional: 2,
     wouldFail: null,
     proposal: null,
+    droppedTypes: null,
   });
 });
 
@@ -127,5 +129,5 @@ test('M19 infer: 19 messages are still too-few-commits', () => {
 });
 
 test('M19 history-inference module stays pure', () => {
-  assertPureSource('history-inference', { allowImports: ['./message-grammar.mjs'] });
+  assertPureSource('history-inference', { allowImports: ['./message-grammar.mjs', './config.mjs'] });
 });
