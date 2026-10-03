@@ -238,6 +238,20 @@ test('validatePlan: an ID in notIncluded that a group already holds, and an unkn
   ]);
 });
 
+test('validatePlan: a new file referenced by its hunk ID → new: true, hunks: 1, newFiles', () => {
+  const result = validate({
+    groups: [{ header: 'feat: x', hunks: ['h3', 'h4'] }],
+    notIncluded: [{ path: 'src/a.js', hunks: ['h1', 'h2'], reason: 'later' }],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.groups[0].files, [
+    { path: 'src/b.js', status: 'R', new: false, hunks: 1 },
+    { path: 'docs/new.md', status: 'A', new: true, hunks: 1 },
+  ]);
+  assert.deepEqual(result.groups[0].newFiles, ['docs/new.md']);
+});
+
 test('validatePlan: the same path twice in notIncluded', () => {
   const result = validate({
     groups: [{ header: 'feat: x', files: ['src/b.js', 'docs/new.md'] }],

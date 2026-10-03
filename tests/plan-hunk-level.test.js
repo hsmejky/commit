@@ -231,6 +231,30 @@ test('a notIncluded ID whose unit has another path than the entry → error', as
   assert.deepEqual(checked.json.errors, [{ group: null, reason: 'h4 is a hunk of g.txt, not of f.txt' }]);
 });
 
+test('an ID named twice in one notIncluded entry → "in notIncluded twice"', async (t) => {
+  const { c, planId, runDir } = await threeHunkRun(t);
+
+  const checked = await check(c, planId, runDir, {
+    groups: [group('feat: g', ['h4'])],
+    notIncluded: [{ path: 'f.txt', hunks: ['h1', 'h2', 'h3', 'h3'], reason: 'later' }],
+  });
+
+  assert.equal(checked.exitCode, 2, detail(checked));
+  assert.deepEqual(checked.json.errors, [{ group: null, reason: 'h3 (f.txt) is in notIncluded twice; place it once' }]);
+});
+
+test('an ID in a group and its whole path in notIncluded (hunks: null) → one error, not also identical', async (t) => {
+  const { c, planId, runDir } = await identicalIds(t);
+
+  const checked = await check(c, planId, runDir, {
+    groups: [group('feat: one', ['h1', 'h3'])],
+    notIncluded: [{ path: 'f.txt', hunks: null, reason: 'later' }],
+  });
+
+  assert.equal(checked.exitCode, 2, detail(checked));
+  assert.deepEqual(checked.json.errors, [{ group: null, reason: 'f.txt is in group 1 and notIncluded; place it once' }]);
+});
+
 test('validatePlan: three identical hunks in two places → one error naming all three', () => {
   const units = ['h1', 'h2', 'h3', 'h4', 'h5'].map((id) => ({
     id, path: 'f.txt', oldPath: null, status: 'M', identityKey: id === 'h2' || id === 'h4' ? id : 'same',

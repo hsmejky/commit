@@ -77,19 +77,29 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
     type, the scope, a footer token) overlapping a hit's span quotes `[<pattern-id>]` (the
     first overlapping hit's ID) in its place ("scope '[local-path]' not allowed (scope:
     forbidden)"), so no matched text reaches stdout or a `lintFailed` text;
-  - every hunk ID exists in the state file and is used at most once;
+  - every hunk ID exists in the state file ("h9 is not a hunk ID of this run") and is used at
+    most once; a `notIncluded[].hunks` ID must belong to the entry's `path` ("h4 is a hunk of
+    g.txt, not of f.txt");
   - completeness (`split` only): every unit in the state file is placed exactly once, in a
     group or in `notIncluded` (by ID, or by a `hunks: null` path entry): a unit placed nowhere
     is one error per unit ("h7 (src/c.js) not placed; put it in a group or in notIncluded",
     `group: null`), one placed twice one error per naming, naming both places (`group N` or
     `notIncluded`): "src/a.js is in group 1 and group 2; place it once", "src/a.js is in
     group 1 and notIncluded; place it once", "src/a.js is in notIncluded twice; place it
-    once" (the group number of the second naming, `null` for `notIncluded`). In `staged` and
-    `reword` the single group holds every unit implicitly;
+    once" (the group number of the second naming, `null` for `notIncluded`), or by ID: "h1
+    (f.txt) is in group 1 twice; place it once", "h3 (f.txt) is in notIncluded twice; place
+    it once". A repeat counts as a second naming whether it falls in a different group, twice
+    in the same group's `hunks` list, or twice in the same `notIncluded` entry's `hunks`
+    list. In `staged` and `reword` the single group holds every unit implicitly;
   - identical hunks (same path, same `-` / `+` lines) have the same placement: all in one
-    group, or all in `notIncluded` ("h3 and h5 are identical; place them together");
-  - `files` and `hunks` are not mixed; every path in `files` and `notIncluded` is a real
-    change; a rename is named by its new path only;
+    group, or all in `notIncluded` ("h3 and h5 are identical; place them together"). A member
+    already named in a placement error above is left out of this check (its own error already
+    says where it goes);
+  - `files` and `hunks` are not mixed ("`files` and `hunks` are mixed; use hunk IDs everywhere
+    or paths everywhere"; a `notIncluded[].hunks` ID list counts as `hunks`); every path in
+    `files` and `notIncluded` is a real change; a rename is named by its new path only; unlike
+    a repeated hunk ID, a path named twice in one group's `files` is deduplicated and placed
+    once (`groups[].files` below counts it once);
   - no collapsed directory, no `dirtySubmodules` path and no unit with a scan hit is in a
     group ("h4 has scan hit `github-token`; move it to notIncluded");
   - `staged` and `reword`: exactly one group. `split`: zero groups is valid.

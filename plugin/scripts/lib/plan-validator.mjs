@@ -201,6 +201,9 @@ export function validatePlan(planBytes, runState, options = {}) {
     errors.push({ group: null, reason: `${unit.id} (${unit.path}) not placed; put it in a group or in notIncluded` });
   }
   for (const ids of identicalClasses(runState.units)) {
+    // A member already named in a placement error has its own error saying where it goes;
+    // do not also report the class as split (the cascade PLN-03's review flagged).
+    if (ids.some((id) => placement.hadError(id))) continue;
     const places = new Set(ids.filter((id) => placement.has(id)).map((id) => placement.of(id)));
     if (places.size > 1) errors.push({ group: null, reason: `${listOf(ids)} are identical; place them together` });
   }
@@ -258,6 +261,7 @@ function resolvePath(path, table, group, errors) {
 // `notIncluded`. A second placement of a unit is one error per naming (a path, or an ID).
 class Placement {
   #where = new Map();
+  #errored = new Set();
 
   has(id) {
     return this.#where.has(id);
@@ -268,6 +272,13 @@ class Placement {
     return this.#where.get(id);
   }
 
+  // Whether this unit was already named in a placement error (as the earlier naming or the
+  // repeat). Used to skip the identical-hunks check for a class that already has its own
+  // placement error, so one mistake does not cascade into a second, derived error.
+  hadError(id) {
+    return this.#errored.has(id);
+  }
+
   place(units, { group }, label, errors) {
     const earlier = units.find((unit) => this.#where.has(unit.id));
     if (earlier !== undefined) {
@@ -276,6 +287,7 @@ class Placement {
         ? `${describePlace(group)} twice`
         : `${describePlace(before)} and ${describePlace(group)}`;
       errors.push({ group, reason: `${label} is in ${places}; place it once` });
+      for (const unit of units) this.#errored.add(unit.id);
     }
     for (const unit of units) {
       if (!this.#where.has(unit.id)) this.#where.set(unit.id, group);
