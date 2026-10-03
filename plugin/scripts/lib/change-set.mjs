@@ -114,7 +114,12 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   `notUtf8` (CHG-12, Q11): every path of the three listings whose bytes are not valid
  *   UTF-8, left out of every other list (never a unit, never in the temporary index) and
  *   written by `escapeNonUtf8`, each once, in byte order, for `notIncluded` ("path is not
- *   UTF-8 — commit by hand"); like a hidden path it does not make the tree dirty. `hidden.sample`: the first
+ *   UTF-8 — commit by hand"); like a hidden path it does not make the tree dirty (a
+ *   non-UTF-8-only tree is clean, and the `nothing` reply names it, C:plan `clean`). Two
+ *   exceptions: an untracked one the hidden rule matches in that `\xNN` form is counted in
+ *   `hidden` instead, and a staged one (not intent-to-add) is also in `preStaged`, in that
+ *   form, since the index holds its content (C:plan `preStaged`). The collapse rule does not
+ *   apply to this list (C:plan). `hidden.sample`: the first
  *   5 hidden untracked paths in UTF-8 byte order. `clean`: no tracked change, candidate or
  *   staged-new path left (hidden-only trees are clean, C:plan; a caller that then collapses
  *   every remaining candidate and staged-new path away must recompute `clean`, since this
@@ -124,14 +129,23 @@ export async function indexFingerprint({ toplevel, env, now }) {
 export async function inventory({ toplevel, env, now }) {
   const opts = { cwd: toplevel, env, now, readOnly: true };
   const notUtf8 = [];
-  const untracked = nulFields(await gitOk(['ls-files', '--others', '--exclude-standard', '-z'], opts))
-    .map((bytes) => utf8Path(bytes, notUtf8))
-    .filter((path) => path !== null);
+  const untracked = [];
+  const untrackedNotUtf8 = new Map();
+  for (const bytes of nulFields(await gitOk(['ls-files', '--others', '--exclude-standard', '-z'], opts))) {
+    const path = utf8Path(bytes);
+    if (path === null) untrackedNotUtf8.set(escapeNonUtf8(bytes), Buffer.from(bytes));
+    else untracked.push(path);
+  }
   const filtered = hideFilter(untracked);
   const candidates = candidateFacts(toplevel, filtered.candidates);
+  // The hidden rule runs on a non-UTF-8 path's `\xNN` form too: a hidden one (`.env\xe9`)
+  // is counted as hidden, not reported as "commit by hand" (review-CHG-12 finding 7).
+  const filteredNotUtf8 = hideFilter([...untrackedNotUtf8.keys()]);
+  for (const escaped of filteredNotUtf8.candidates) notUtf8.push(untrackedNotUtf8.get(escaped));
+  const allHidden = [...filtered.hidden, ...filteredNotUtf8.hidden];
   const hidden = {
-    count: filtered.hidden.length,
-    sample: [...filtered.hidden].sort(byteOrder).slice(0, 5),
+    count: allHidden.length,
+    sample: allHidden.sort(byteOrder).slice(0, 5),
   };
 
   // `--no-renames`: a rename's old path is its own deletion, kept in `tracked` also when the
@@ -139,17 +153,22 @@ export async function inventory({ toplevel, env, now }) {
   const status = await statusEntries({ toplevel, env, now, untracked: 'no', renames: false, notUtf8 });
   // An intent-to-add entry (` A`: nothing in the index column) stages no content, so it is
   // staged-new but not pre-staged (C:plan).
-  const intentToAdd = new Set(status.filter((entry) => entry.xy[0] === ' ').map((entry) => entry.path));
+  // Keyed by the path's bytes (`latin1` maps each byte to one character), so a non-UTF-8
+  // intent-to-add entry is known too.
+  const intentToAdd = new Set(status.filter((entry) => entry.xy[0] === ' ').map((entry) => entry.bytes.toString('latin1')));
   const cached = nulFields(await gitOk(
     ['diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z'], opts,
   ));
   const preStaged = [];
   const added = [];
   for (let i = 0; i + 1 < cached.length; i += 2) {
-    const path = utf8Path(cached[i + 1], notUtf8);
-    if (path === null) continue;
-    if (!intentToAdd.has(path)) preStaged.push(path);
-    if (cached[i].toString('latin1') === 'A') added.push(path);
+    const bytes = cached[i + 1];
+    const path = utf8Path(bytes, notUtf8);
+    // A staged non-UTF-8 path is no unit, but its staged content still counts for the mode
+    // decision and the `unstaged` report: it is listed in its `\xNN` form (C:plan
+    // `preStaged`, review-CHG-12 finding 2).
+    if (!intentToAdd.has(bytes.toString('latin1'))) preStaged.push(path ?? escapeNonUtf8(bytes));
+    if (path !== null && cached[i].toString('latin1') === 'A') added.push(path);
   }
   const split = hideFilter(added);
   const stagedExcluded = split.hidden.map((path) => ({ path, reason: 'hidden' }));
@@ -160,7 +179,7 @@ export async function inventory({ toplevel, env, now }) {
 
   const addedSet = new Set(added);
   const tracked = status
-    .filter((entry) => !addedSet.has(entry.path))
+    .filter((entry) => entry.path !== null && !addedSet.has(entry.path))
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
@@ -402,7 +421,9 @@ function byteOrder(a, b) {
  * a count mismatch is `internal` (C:plan-hunks). Output stays raw bytes: the body is a
  * `Buffer` and the hash is taken over bytes, never over a decode. A section whose path
  * (either side of a rename) is not valid UTF-8 makes no unit (CHG-12, Q11; the inventory's
- * `notUtf8` reports it).
+ * `notUtf8` reports it). Only when a rename's old path is not UTF-8 and its new path is, a
+ * second pinned call, the same with `--no-renames` (still no pathspecs), gives each such
+ * new path its `A` unit, so the UTF-8 side is not lost (review-CHG-12 finding 1).
  *
  * @param {{ mode: 'split', storedLists: { candidates: string[],
  *   stagedNew: Array<{ path: string, ignored: boolean }> }, indexPath: string,
@@ -429,16 +450,31 @@ function byteOrder(a, b) {
 export async function snapshot({ mode, storedLists, indexPath, unborn, toplevel, env, now }) {
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14, CHG-15)`);
   await buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, env, now });
+  const opts = { toplevel, env, now, indexPath };
+  const reader = await pinnedDiff([], opts);
+  const units = reader.end();
+  if (reader.rediff.length === 0) return units;
+  // A rename from a non-UTF-8 path: its UTF-8 new path, as the same diff shows it without
+  // rename detection, is an `A` unit; the old path stays in `notUtf8` (review-CHG-12
+  // finding 1). No pathspec (Q11: argv length), so the other paths' units are dropped.
+  const rediff = new Set(reader.rediff);
+  const again = (await pinnedDiff(['--no-renames'], opts)).end().filter((unit) => rediff.has(unit.path));
+  return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
+}
+
+// One pinned `git diff -z --raw -p` call against the temporary index, `extra` appended,
+// streamed into a diff reader.
+async function pinnedDiff(extra, { toplevel, env, now, indexPath }) {
   const reader = createDiffReader();
   const result = await run(
     'git',
-    [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p'],
+    [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...extra],
     { cwd: toplevel, env, now, readOnly: true, index: indexPath, onStdout: (chunk) => reader.push(chunk) },
   );
   if (result.code !== 0) {
     throw new Error(`git diff failed (${result.code}): ${result.stderr}`);
   }
-  return reader.end();
+  return reader;
 }
 
 // Q11 steps 1-3: copy, reset to HEAD (born) or start empty (unborn), `git add -N`.
@@ -509,13 +545,16 @@ function existsInWorktree(toplevel, path) {
  * path is ever taken from patch text. Exported so the pairing can be fed crafted bytes in
  * any chunking without spawning git.
  *
- * @returns {{ push: (chunk: Buffer) => void, end: () => object[] }} `push` throws on the
- *   first pairing error and is not called again; `end` flushes the last line, checks the
- *   section count and returns the units in `snapshot`'s shape and order.
+ * @returns {{ rediff: string[], push: (chunk: Buffer) => void, end: () => object[] }}
+ *   `push` throws on the first pairing error and is not called again; `end` flushes the
+ *   last line, checks the section count and returns the units in `snapshot`'s shape and
+ *   order. `rediff`: the new paths of the renames whose old path is not UTF-8, in diff
+ *   order (complete once `end` returns), which made no unit here.
  */
 export function createDiffReader() {
   const records = [];
   const units = [];
+  const rediff = [];
   let raw = Buffer.alloc(0);
   let inPatch = false;
   let partial = [];
@@ -538,6 +577,7 @@ export function createDiffReader() {
         throw new Error(`patch section ${sections} does not match raw record ${sections} (${escapeNonUtf8(record.pathBytes)})`);
       }
       section = openSection(record);
+      if (section.notUtf8 === true && section.rediff !== null) rediff.push(section.rediff);
       return;
     }
     if (section === null) throw new Error('the diff patch text does not start with a section');
@@ -559,6 +599,7 @@ export function createDiffReader() {
     }
   };
   return {
+    rediff,
     push(chunk) {
       if (inPatch) {
         patch(chunk);
@@ -745,16 +786,17 @@ async function statusEntries({ toplevel, env, now, untracked, renames = true, no
   }
   // Porcelain v1 `-z`: `XY <path>` records, NUL-terminated; a rename or copy (`R`/`C` in
   // either column) is followed by one more record holding its old path, skipped here.
-  // With `notUtf8`, an entry whose path is not valid UTF-8 is left out and its bytes
-  // collected there (CHG-12); without it, the path is decoded lossily (a count only).
+  // With `notUtf8`, an entry whose path is not valid UTF-8 gets `path: null` and its bytes
+  // are collected there (CHG-12); without it, such a path is written in its `\xNN` form
+  // (`treeState`'s paths reach the reply, review-CHG-12 finding 6).
   const records = nulFields(result.stdout);
   const entries = [];
   for (let i = 0; i < records.length; i += 1) {
     const xy = records[i].toString('latin1', 0, 2);
     const bytes = records[i].subarray(3);
     if (/[RC]/.test(xy)) i += 1;
-    const path = notUtf8 === undefined ? bytes.toString('utf8') : utf8Path(bytes, notUtf8);
-    if (path !== null) entries.push({ xy, path });
+    const path = notUtf8 === undefined ? (utf8Path(bytes) ?? escapeNonUtf8(bytes)) : utf8Path(bytes, notUtf8);
+    entries.push({ xy, path, bytes });
   }
   return entries;
 }
@@ -819,8 +861,11 @@ function startsWith(buf, prefix) {
 
 // A section whose path (either side of a rename) is not valid UTF-8 (CHG-12, Q11): it is
 // still paired with its raw record, but its lines are dropped and it makes no unit. The
-// inventory reports such a path for `notIncluded` (its `notUtf8`).
-const NOT_UTF8_SECTION = Object.freeze({ notUtf8: true });
+// inventory reports such a path for `notIncluded` (its `notUtf8`). A rename from a
+// non-UTF-8 path to a UTF-8 one carries its new path in `rediff`: `snapshot` diffs that
+// path again without rename detection, so it becomes an `A` unit and is not lost
+// (review-CHG-12 finding 1).
+const NOT_UTF8_SECTION = Object.freeze({ notUtf8: true, rediff: null });
 
 // Opens a section for its raw record. `M` (content edit), `A` (a new file from the
 // temporary index's intent-to-add entries, old mode 000000), `D` (a deleted file, new mode
@@ -830,7 +875,8 @@ const NOT_UTF8_SECTION = Object.freeze({ notUtf8: true });
 function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
   const path = utf8Path(pathBytes);
   const oldPath = oldPathBytes === null ? null : utf8Path(oldPathBytes);
-  if (path === null || (oldPathBytes !== null && oldPath === null)) return NOT_UTF8_SECTION;
+  if (path === null) return NOT_UTF8_SECTION;
+  if (oldPathBytes !== null && oldPath === null) return Object.freeze({ notUtf8: true, rediff: path });
   const kind = /^[MAD]$/.test(status) ? status : (/^R\d*$/.test(status) ? 'R' : null);
   if (kind === null) throw new Error(`a ${status} change (${path}) is not built yet (CHG-09)`);
   for (const mode of [oldMode, newMode]) {
@@ -856,7 +902,7 @@ function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
 // are noted. Each hunk keeps its own lines, copied out of the chunk so no chunk stays
 // referenced.
 function sectionLine(section, line) {
-  if (section === NOT_UTF8_SECTION) return;
+  if (section.notUtf8 === true) return;
   if (startsWith(line, HUNK_START)) {
     const m = HUNK_HEADER.exec(line.toString('latin1'));
     if (m === null) throw new Error(`an unreadable hunk header in ${section.path}`);
@@ -888,7 +934,7 @@ function sectionLine(section, line) {
 // `index` line's full blob IDs, all zeros on the missing side) for a binary, else the `-`/`+`
 // lines (which start with `-`, `+` or `\`, never `m` or `b`).
 function unitsOf(section) {
-  if (section === NOT_UTF8_SECTION) return [];
+  if (section.notUtf8 === true) return [];
   const { path, pathBytes, oldPath, oldPathBytes, status, modes, blobs, binary, hunks } = section;
   if (binary && blobs === null) throw new Error(`a binary section without an index line (${path})`);
   if (status === 'M' && !binary && modes === null && hunks.length === 0) {

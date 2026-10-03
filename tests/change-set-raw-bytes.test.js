@@ -104,6 +104,8 @@ test('snapshot: a section whose path is not UTF-8 is paired but makes no unit', 
   const units = reader.end();
 
   assert.deepEqual(units.map((u) => [u.path, u.status, u.added, u.deleted]), [['ok.txt', 'M', 1, 1]]);
+  // The rename's UTF-8 new path is handed back, for a second diff without renames.
+  assert.deepEqual(reader.rediff, ['new.txt']);
 });
 
 test('snapshot: Latin-1 and CRLF content under core.autocrlf=false hash over the raw bytes', async (t) => {
@@ -124,11 +126,12 @@ test('snapshot: Latin-1 and CRLF content under core.autocrlf=false hash over the
     ['crlf.txt', 'M', crlfHash],
     ['latin1.txt', 'A', latin1Hash],
   ]);
+  // The bodies keep the raw bytes: the CR before each LF, and the Latin-1 byte, which a
+  // lossy UTF-8 decode would turn into U+FFFD (and so change the hash).
+  assert.ok(units[0].body.includes(Buffer.from('-two\r\n+TWO\r\n')));
   assert.ok(units[1].body.includes(latin1));
-  // A lossy decode would change both hashes: U+FFFD for the Latin-1 byte, LF for CRLF.
   const lossy = Buffer.from(latin1.toString('utf8'), 'utf8');
   assert.notEqual(sha256('A\0', 'latin1.txt\0', Buffer.from('+'), lossy), latin1Hash);
-  assert.notEqual(sha256('crlf.txt\0', Buffer.from('-two\n+TWO\n'), '\0', '0'), crlfHash);
 });
 
 test('inventory and snapshot: a non-UTF-8 path is no unit and is listed with \\xNN', async (t) => {
@@ -156,8 +159,97 @@ test('inventory and snapshot: a non-UTF-8 path is no unit and is listed with \\x
   assert.deepEqual(listed.tracked, ['ok.txt']);
   assert.deepEqual(listed.candidates, []);
   assert.deepEqual(listed.stagedNew, []);
-  assert.deepEqual(listed.preStaged, []);
+  // The staged one's content is in the index: it still counts as pre-staged.
+  assert.deepEqual(listed.preStaged, ['st\\xfe.txt']);
   assert.deepEqual(units.map((u) => [u.path, u.status]), [['ok.txt', 'M']]);
+});
+
+test('inventory: a staged non-UTF-8 edit is pre-staged, an intent-to-add one is not', async (t) => {
+  const c = createCase(t);
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip(NO_NON_UTF8_NAMES);
+    return;
+  }
+  c.writeFile('ok.txt', 'a\n');
+  writeRaw(c, Buffer.from('t\xe9.txt', 'latin1'), 'a\n');
+  c.git(['add', '-A']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  writeRaw(c, Buffer.from('t\xe9.txt', 'latin1'), 'b\n');
+  c.git(['add', '--', 't*.txt']);
+  writeRaw(c, Buffer.from('t\xe9.txt', 'latin1'), 'c\n');
+  writeRaw(c, Buffer.from('ita\xff.txt', 'latin1'), 'new\n');
+  c.git(['add', '-N', '--', 'ita*.txt']);
+  c.writeFile('ok.txt', 'b\n');
+
+  const listed = await inventory(c);
+
+  assert.deepEqual(listed.preStaged, ['t\\xe9.txt']);
+  assert.deepEqual(listed.tracked, ['ok.txt']);
+  assert.deepEqual(listed.notUtf8, ['ita\\xff.txt', 't\\xe9.txt']);
+  assert.equal(listed.clean, false);
+});
+
+test('inventory: a hidden non-UTF-8 path is counted as hidden; a non-UTF-8-only tree is clean', async (t) => {
+  const c = createCase(t);
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip(NO_NON_UTF8_NAMES);
+    return;
+  }
+  c.writeFile('ok.txt', 'a\n');
+  c.git(['add', '-A']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  writeRaw(c, Buffer.from('.env\xe9', 'latin1'), 'SECRET=1\n');
+  writeRaw(c, Buffer.from('bad\xff.txt', 'latin1'), 'new\n');
+
+  const listed = await inventory(c);
+  const state = await changeSet.treeState({ toplevel: c.repoDir, env: c.env, now: NOW });
+
+  assert.deepEqual(listed.hidden, { count: 1, sample: ['.env\\xe9'] });
+  assert.deepEqual(listed.notUtf8, ['bad\\xff.txt']);
+  assert.equal(listed.clean, true);
+  // The tree-state reply's paths carry the same `\xNN` form, never U+FFFD.
+  assert.deepEqual([...state.paths].sort(), ['.env\\xe9', 'bad\\xff.txt']);
+});
+
+test('snapshot: a rename from a non-UTF-8 path makes its UTF-8 new path an A unit', async (t) => {
+  const c = createCase(t);
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip(NO_NON_UTF8_NAMES);
+    return;
+  }
+  const old = Buffer.concat([Buffer.from(c.repoDir + path.sep), Buffer.from('t\xe9.txt', 'latin1')]);
+  fs.writeFileSync(old, 'one\ntwo\nthree\n');
+  c.git(['add', '-A']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.renameSync(old, path.join(c.repoDir, 'te.txt'));
+
+  const listed = await inventory(c);
+  const units = await snapshot(c, {
+    candidates: listed.candidates.map((candidate) => candidate.path), stagedNew: listed.stagedNew,
+  });
+
+  assert.deepEqual(listed.notUtf8, ['t\\xe9.txt']);
+  assert.deepEqual(units.map((u) => [u.path, u.oldPath, u.status, u.added, u.deleted]), [
+    ['te.txt', null, 'A', 3, 0],
+  ]);
+});
+
+test('plan --reword stores an empty non-UTF-8 path list', async (t) => {
+  const c = createCase(t);
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip(NO_NON_UTF8_NAMES);
+    return;
+  }
+  c.writeFile('ok.txt', 'a\n');
+  c.git(['add', '-A']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  writeRaw(c, Buffer.from('bad\xff.txt', 'latin1'), 'new\n');
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  const state = JSON.parse(fs.readFileSync(path.join(result.json.runDir, 'state.json'), 'utf8'));
+  assert.deepEqual(state.notUtf8, []);
 });
 
 test('plan stores the non-UTF-8 paths with \\xNN in state.json and plans none of them', async (t) => {

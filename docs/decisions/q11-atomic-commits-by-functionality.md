@@ -227,7 +227,10 @@
     is needed. It runs over the whole diff with no pathspecs: `git diff` has no
     `--pathspec-from-file`, so a path list would go on argv and could pass the Windows
     command-line limit, and a pathspec narrows rename detection (and what counts against
-    `diff.renameLimit`), so its records could differ from the raw pass. The output is read
+    `diff.renameLimit`), so its records could differ from the raw pass. One exception: when
+    a rename's old path is not UTF-8 and its new path is, the same call runs once more with
+    `--no-renames` (still no pathspecs) and only those new paths' `A` units are kept, so
+    the UTF-8 side is not lost with its old path (review-CHG-12). The output is read
     as a stream and only what a later step needs is kept: hunks of units that carry a body
     and, for the scan, added lines up to the 1 MB limit (Q10), past which the section is
     dropped. Retained memory is bounded by the existing caps (256 KB and 1000 changed lines

@@ -173,7 +173,8 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
   earlier group's own index reset, even if nothing of `preStaged`/`indexOnly` still differs
   from HEAD); `null` only while the index has never been touched (`indexReset` still false),
   and then the report says the index is untouched. It lists the paths of the state file's `preStaged` that
-  still differ from HEAD, so the run's reset has unstaged them, plus every `indexOnly`
+  still differ from HEAD (one that is not UTF-8 is stored in its `\xNN` form, [plan](plan.md),
+  so it is matched against the `\xNN` form of the bytes git lists), so the run's reset has unstaged them, plus every `indexOnly`
   path whether or not it differs from HEAD, with its index `blob` (`null` for the others).
   `ignored` marks one that `git status` no longer shows. The report says "your earlier
   staging was reset: …", and per `blob` "staged version discarded, recover with

@@ -171,8 +171,9 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
 - The unit IDs, the `id → hash` map and the scan map are stored, not printed; `plan --hunks`
   emits the IDs and refuses if its diff differs (Q9, Q10).
 - `clean`: `true` when no tracked change and no candidate is left. Hidden-only or
-  collapsed-only untracked files, staged-new paths in `stagedExcluded`, and
-  `dirtySubmodules` are clean; `plan` still reports them, and the index is left as it is.
+  collapsed-only untracked files, staged-new paths in `stagedExcluded`, paths that are not
+  valid UTF-8, and `dirtySubmodules` are clean; `plan` still reports them (the `nothing`
+  reply names them), and the index is left as it is.
   The inventory's tracked-change read is `git status --porcelain -z --untracked-files=no
   --no-renames`: a rename's old path is its own deletion there, so a tracked file renamed
   (`git mv`, or `mv` plus `git add -N`) to a hidden path in `stagedExcluded` still leaves
@@ -259,7 +260,8 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
 - `preStaged`: paths with staged changes. An intent-to-add entry (`git add -N`) stages no
   content (a commit leaves it out of the tree), so it is not listed here; it is in
   `stagedNew` (or `stagedExcluded`), and an index holding only such entries is not
-  pre-staged. In `staged` mode `tracked` lists only the unstaged changes, and
+  pre-staged. A staged path that is not valid UTF-8 is listed in its `\xNN` form: it is no
+  unit, but its staged content counts for the mode decision and the `unstaged` report. In `staged` mode `tracked` lists only the unstaged changes, and
   `unstagedLeft` counts them. A partially staged file appears in both lists. In `split`
   mode (`--split`, or an index that holds every change), `tracked` lists every change
   against HEAD, `preStaged` is informational and `unstagedLeft` is `null`; `null` in
@@ -287,7 +289,12 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   added.
 - A path that is not valid UTF-8 is not a unit: `check` adds it to `notIncluded` ("path is
   not UTF-8 — commit by hand"), with each non-UTF-8 byte written as `\xNN`, since
-  `state.json` and the reply carry paths as strings.
+  `state.json` and the reply carry paths as strings. The hidden rule matches an untracked
+  one in that `\xNN` form, and a hidden one is counted as hidden instead. The collapse rule
+  does not apply: each such path needs the user's hand, so each is named. A staged one (not
+  intent-to-add) is also in `preStaged`, since the index holds its content. A rename from a
+  non-UTF-8 path to a UTF-8 one is split: the old path is reported as above, and the new
+  path is an `A` unit, taken from a second pinned diff with `--no-renames` (still no pathspecs).
 - Binary is decided by attributes first, then content (Q10, Q11): for a path git reports as
   binary (`-\t-` in `--numstat`), only a path whose attributes hide its diff (`-diff`,
   `binary`, or a custom `diff` driver) gets the content check — its size is checked against
