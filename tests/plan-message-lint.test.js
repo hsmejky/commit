@@ -49,8 +49,9 @@ function writeWorkerPlan(runDir, header, body) {
 
 // MSG-06 (docs/roadmap/03-message-grammar.md): byte normalisation of the worker plan `check`
 // reads, run through M6 `normalise` before `JSON.parse` (file-level BOM/UTF-16/invalid-UTF-8,
-// Q9) and again over each group's header+body (line-ending and trailing-blank steps, so a
-// CRLF or lone CR an agent wrote into a JSON string reads the same as its LF form).
+// Q9) and again via `normaliseText` over each group's header+body (line-ending and
+// trailing-blank steps, so a CRLF or lone CR an agent wrote into a JSON string reads the same
+// as its LF form).
 
 function workerPlanJson(header, body) {
   return JSON.stringify({
@@ -292,7 +293,7 @@ test('two different patterns give one scan error each, in hit order, each with i
 
 // review-MSG-06 finding 5 (Medium): C:scan-patterns gives span offsets into the normalised
 // message; a regression that scanned the raw (CRLF) text instead would shift every span
-// after the CRLF by one byte. The footer line before the secret carries a lone CR so the raw
+// after the CRLF by one byte. The footer line before the secret carries a CRLF so the raw
 // and normalised forms diverge in length before the secret is reached.
 test('MSG-06: a CRLF body\'s secret span indexes the normalised (LF) message, not the raw text', async () => {
   const { validatePlan } = await loadLib('plan-validator');
@@ -329,6 +330,28 @@ test('MSG-06: normalise trims a trailing whitespace-only line, not just empty on
   const result = normalise(Buffer.from('feat: x\n  \n\t\n', 'utf8'));
 
   assert.deepEqual(result, { ok: true, text: 'feat: x\n' });
+});
+
+// review-MSG-06 finding 5 (Low, re-review): the lone-CR tests below only assert exit 0, so a
+// regression that *deletes* a lone CR instead of turning it into LF would still pass them
+// (`Closes #12Refs #3` is one valid footer token). Pin the "CR to LF" step directly.
+test('MSG-06: normaliseText turns a lone CR into LF, not a deletion', async () => {
+  const { normaliseText } = await loadLib('message-grammar');
+
+  const result = normaliseText('a\rb');
+
+  assert.deepEqual(result, { ok: true, text: 'a\nb\n' });
+});
+
+// review-MSG-06 finding 2 (Low, re-review): the fatal decoders (first review finding 2) no
+// longer substitute U+FFFD, so a *valid* UTF-8 U+FFFD in the message must still decode and
+// pass, not be mistaken for the invalid-byte case the fatal mode now rejects.
+test('MSG-06: a valid UTF-8 U+FFFD in the message passes normalise', async () => {
+  const { normalise } = await loadLib('message-grammar');
+
+  const result = normalise(Buffer.from('feat: x �', 'utf8'));
+
+  assert.deepEqual(result, { ok: true, text: 'feat: x �\n' });
 });
 
 // FND-10 Seam 1: os.userInfo() throws, so commit.cjs falls back to USER/USERNAME; `osUser`

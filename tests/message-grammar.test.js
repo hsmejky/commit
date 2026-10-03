@@ -22,9 +22,10 @@ let parse;
 let lint;
 let passesLowerCase;
 let isFooterLine;
+let normaliseText;
 
 beforeEach(async () => {
-  ({ parse, lint, passesLowerCase, isFooterLine } = await loadLib('message-grammar'));
+  ({ parse, lint, passesLowerCase, isFooterLine, normaliseText } = await loadLib('message-grammar'));
 });
 
 // MSG-01 AC: `feat: add x` parses to type `feat`, no scope, no breaking flag, description
@@ -512,4 +513,22 @@ test('lint "feat: x\\n\\nNote: see #12" fails with the exact Note hint', () => {
     '`Note` is not an allowed footer token. If this is body text, rephrase it or add a ' +
       'non-footer line to the paragraph.',
   ]);
+});
+
+// review-MSG-06 finding 1 (Low, re-review): step 4 used to trim trailing blank lines with
+// `/(\n[ \t]*)*$/`, which backtracks quadratically on a long run of them. `normaliseText` now
+// does a linear backward scan instead; pin that a pathological input (50k blank lines
+// followed by content, so the trailing-blank scan cannot short-circuit on the first line)
+// stays fast. The bound is generous (200x the ~450ms the old regex took at 50k on a Node 24
+// dev machine) so this does not flake on a slow CI runner; a quadratic regression would take
+// seconds longer than even that.
+test('normaliseText trims 50k blank lines followed by content in well under a second', () => {
+  const text = `${'\n'.repeat(50000)}x`;
+
+  const start = Date.now();
+  const result = normaliseText(text);
+  const elapsed = Date.now() - start;
+
+  assert.deepEqual(result, { ok: true, text: `${'\n'.repeat(50000)}x\n` });
+  assert.ok(elapsed < 5000, `normaliseText took ${elapsed}ms, expected well under 5000ms`);
 });

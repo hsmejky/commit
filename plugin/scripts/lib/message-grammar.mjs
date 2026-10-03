@@ -42,7 +42,25 @@ export function normaliseText(text) {
     return { ok: false, reason: 'message not UTF-8' };
   }
   let normalised = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  normalised = `${normalised.replace(/(\n[ \t]*)*$/, '')}\n`;
+  // Linear backward scan instead of a regex (review-MSG-06 finding 1 (Low), Low 1 of the
+  // re-review): `/(\n[ \t]*)*$/` backtracks quadratically on a long run of trailing blank
+  // lines. Peel blocks of "\n" + spaces/tabs off the end one at a time; `cut` only ever moves
+  // backward, so total work across every iteration is bounded by `normalised.length`. Trailing
+  // spaces/tabs on the last content line (not preceded by a newline) are left untouched, same
+  // as the regex: the inner scan stops without finding a preceding `\n`, so `cut` is unchanged.
+  let cut = normalised.length;
+  for (;;) {
+    let i = cut;
+    while (i > 0 && (normalised[i - 1] === ' ' || normalised[i - 1] === '\t')) {
+      i--;
+    }
+    if (i > 0 && normalised[i - 1] === '\n') {
+      cut = i - 1;
+    } else {
+      break;
+    }
+  }
+  normalised = `${normalised.slice(0, cut)}\n`;
   return { ok: true, text: normalised };
 }
 

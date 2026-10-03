@@ -151,7 +151,8 @@ trailing LFs, so a CRLF or BOM message yields spans into the raw text, which do 
 with the normalised message PLN-07 stores and M17 redacts. Here M14 runs `lint`,
 `scanText` and its lint-reason redaction on `normalise`'s output, replacing
 `messageOf`'s partial trim; add one test asserting a CRLF body's span against the stored
-message.
+message. The stored half moved to PLN-07 (criterion 4); the lint-time span test is in
+plan-message-lint.test.js.
 
 
 ## MSG-07: Trailers appended to committed messages
