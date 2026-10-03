@@ -329,3 +329,56 @@ test('run: an onStdout that throws rejects the call with its error once the chil
     /consumer failed/,
   );
 });
+
+// True if `pid` still denotes a live process. On Linux this also treats a zombie (`/proc/
+// <pid>/stat` state `Z`) as gone: a SIGKILLed child can sit unreaped for a moment even under
+// an init that reaps it, and `process.kill(pid, 0)` keeps succeeding against a zombie even
+// though it is already dead.
+function isAlive(pid) {
+  if (process.platform === 'linux') {
+    let stat;
+    try {
+      stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    } catch {
+      return false; // no /proc entry: already reaped and gone
+    }
+    const state = stat.slice(stat.lastIndexOf(')') + 1).trim().split(' ')[0];
+    if (state === 'Z') return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test(
+  'run: an onStdout that throws kills the child instead of leaving it running to completion',
+  async (t) => {
+    const c = createCase(t);
+    const pidFile = path.join(c.repoDir, 'child.pid');
+    // A non-git child (M2 only touches env for git) that records its own pid, emits one
+    // stdout chunk, then hangs forever on its own: it has no reason to ever exit except
+    // being killed, so finding it dead afterwards proves the kill happened rather than the
+    // child simply finishing.
+    const script = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`
+      + "process.stdout.write('first\\n');"
+      + 'setInterval(() => {}, 1000);';
+
+    await assert.rejects(
+      processAdapter.run(process.execPath, ['-e', script], {
+        cwd: c.repoDir,
+        env: c.env,
+        onStdout: () => { throw new Error('consumer failed'); },
+      }),
+      /consumer failed/,
+    );
+
+    // Give the OS a moment to tear the killed child down before checking it is gone.
+    await new Promise((resolve) => { setTimeout(resolve, 1000); });
+    assert.ok(fs.existsSync(pidFile), `child pid file was never written: ${pidFile}`);
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    assert.equal(isAlive(pid), false, 'child was not killed after the consumer threw');
+  },
+);

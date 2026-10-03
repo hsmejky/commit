@@ -156,8 +156,10 @@ export async function gitPath(names, { cwd, env, now }) {
  *   `log.showSignature=false` and `i18n.logOutputEncoding=UTF-8`; `input`: written to the
  *   child's stdin, which is then closed (message input, path lists); without it stdin is
  *   ignored; `onStdout`: a consumer (M10's patch pass only, CHG-06) that gets each raw
- *   stdout chunk as it arrives, nothing being buffered here; if it throws, it gets no
- *   further chunk and the call rejects with that error once the child has closed;
+ *   stdout chunk as it arrives, nothing being buffered here; if it throws, the child is
+ *   killed (`SIGKILL`, the child only, same as `timeoutMs` below) instead of being left to
+ *   run to completion, it gets no further chunk, and the call rejects with that error once
+ *   the child has closed;
  *   `timeoutMs` (GIT-12, the signing probe's fixed `ssh-add` timeout): past it the child is
  *   killed (`SIGKILL`, the child only) and the call resolves at once with `timedOut: true`
  *   and `code: null`, without waiting for a process the child left holding the pipes.
@@ -217,6 +219,9 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, input,
         onStdout(chunk);
       } catch (err) {
         consumerError = err;
+        // Left running, the child would keep producing output nobody reads; killing it here
+        // matches the `timeoutMs` path below instead of waiting for it to finish on its own.
+        child.kill('SIGKILL');
       }
     });
     child.stderr.on('data', (chunk) => stderr.push(chunk));
