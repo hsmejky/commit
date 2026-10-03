@@ -66,17 +66,17 @@ as `check` would.
 
 **Blocked by:** RUN-04, RUN-06, CHG-05, SCN-05, RPL-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M16, M18 `commit`, C:commit-release, C:run-folder, Q11, Q18, stories 160, 162.
 
-- [ ] Seam 1: two modified tracked files in one stored group → exit 0, `commits` holds one
+- [x] Seam 1: two modified tracked files in one stored group → exit 0, `commits` holds one
       entry `{ n: 1, sha, header }`, `failed: null`, `remaining: []`, `error: null`,
       `gitOutput: null`.
-- [ ] Seam 1: the new commit's tree holds exactly the two files' working-tree content, its
+- [x] Seam 1: the new commit's tree holds exactly the two files' working-tree content, its
       message is the stored message byte for byte (no trailer yet), and HEAD is `sha`.
-- [ ] Seam 1: after the call, the lock and the run folder are gone and `call.lock` is absent.
-- [ ] Seam 1: with no pre-staging, `unstaged` is `[]`, not `null` (the run set
+- [x] Seam 1: after the call, the lock and the run folder are gone and `call.lock` is absent.
+- [x] Seam 1: with no pre-staging, `unstaged` is `[]`, not `null` (the run set
       `indexReset`, C:commit-release).
 
 
