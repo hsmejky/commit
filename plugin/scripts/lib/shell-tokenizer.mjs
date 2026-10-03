@@ -727,7 +727,9 @@ function tokenizePowerShell(s) {
         i = w.end;
         if (!w.quoted && !w.cut && w.value === '--%') i = readStopParsing(s, i, push);
       } else {
-        i = psRedirection(s, i, redir[0], push);
+        const target = psRedirection(s, i, redir[0], push);
+        if (target.divergent) out.blanket ??= 'escape';
+        i = target.end;
       }
     }
   }
@@ -736,19 +738,20 @@ function tokenizePowerShell(s) {
 }
 
 // Pushes the redirection `op` at `from` with its target word (null for a stream duplication
-// such as `2>&1`, or when no word follows); returns the index after it.
+// such as `2>&1`, or when no word follows); returns the index after it and whether the target
+// holds an escape 5.1 and 7 read differently.
 function psRedirection(s, from, op, push) {
   let i = from + op.length;
   if (op.includes('&')) {
     push({ redir: op, target: null }, from, i);
-    return i;
+    return { end: i, divergent: false };
   }
   while (i < s.length && isPsSpace(s[i])) i += 1;
   if (i < s.length && !isPsNewline(s[i]) && !PS_WORD_END.has(s[i])) {
     const w = readPsWord(s, i);
     push({ redir: op, target: w.value }, from, w.end);
-    return w.end;
+    return { end: w.end, divergent: w.divergent };
   }
   push({ redir: op, target: null }, from, from + op.length);
-  return from + op.length;
+  return { end: from + op.length, divergent: false };
 }

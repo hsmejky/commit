@@ -260,7 +260,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 
    | Rule | `Bash` | `PowerShell` |
    | --- | --- | --- |
-   | escape character | `\` (outside `'…'`) | `` ` `` (outside `'…'`); `` `0 `` is a NUL that ends the token's value there, as the native command line is cut at it; the tokenizer emits a `cut` token (`{"op":"cut"}`) after the cut token, which ends git's arguments (step 4): steps 4 and 5 read no token past it, but the tokens after it stay in the segment for step 3, since the shell cuts only that one native command's line and a nested command still runs (`` git commit`0x -m x `` and `` git commit`0 --no-edit `` are a bare `git commit`; `` Write-Output x`0 (git commit -m x) `` and `` if ("x`0") {git commit -m x} `` are denied; verified 2026-09-29 with PowerShell 5.1 and 7). `` `e `` and `` `u{ `` (case-sensitive; `` `E `` and `` `U{41} `` are `E` and `U{41}`) are the blanket kind `escape`, found while tokenizing, with a deny row of its own: PowerShell 7 reads `` `e `` as ESC and `` `u{…} `` as a code point (a zero one cuts the native command line like `` `0 ``), while Windows PowerShell 5.1 reads `` `e `` as `e` and `` `u{0} `` as the text `u{0}` in a string or as `u` and a script block in a bareword (`` git commit --fixup ":/`u{0}" --no-verify `` passes `--no-verify` to git in 5.1; verified 2026-10-03), so G2 picks no reading (fail closed) |
+   | escape character | `\` (outside `'…'`) | `` ` `` (outside `'…'`); `` `0 `` is a NUL that ends the token's value there, as the native command line is cut at it; the tokenizer emits a `cut` token (`{"op":"cut"}`) after the cut token, which ends git's arguments (step 4): steps 4 and 5 read no token past it, but the tokens after it stay in the segment for step 3, since the shell cuts only that one native command's line and a nested command still runs (`` git commit`0x -m x `` and `` git commit`0 --no-edit `` are a bare `git commit`; `` Write-Output x`0 (git commit -m x) `` and `` if ("x`0") {git commit -m x} `` are denied; verified 2026-09-29 with PowerShell 5.1 and 7). `` `e `` and `` `u{ `` (case-sensitive; `` `E `` and `` `U{41} `` are `E` and `U{41}`) are the blanket kind `escape`, found while tokenizing (a redirection target's word included), with a deny row of its own: PowerShell 7 reads `` `e `` as ESC and `` `u{…} `` as a code point (a zero one cuts the native command line like `` `0 ``), while Windows PowerShell 5.1 reads `` `e `` as `e` and `` `u{0} `` as the text `u{0}` in a string or as `u` and a script block in a bareword (`` git commit --fixup ":/`u{0}" --no-verify `` passes `--no-verify` to git in 5.1; verified 2026-10-03), so G2 picks no reading (fail closed) |
    | single quotes | literal, no escapes | literal; `''` is one `'` |
    | double quotes | `\"`, `\\`, `\$` escaped; `$"…"` outside double quotes (locale translation) is `"…"` with the `$` removed, while inside double quotes a `$` before the closing `"` is a plain `$` (`git $"commit" -m x` is `git commit -m x`) | `` `" `` and `""` escaped; the double-quote class is `"` and U+201C–U+201E, and inside a string opened by any of them two characters of the class in a row are one escaped quote, the second of the two, while any one character of the class closes it (`"a“"b"` is `a"b`; `“k"l` is `k` and `l`); the same for the single-quote class `'` and U+2018–U+201B inside a single-quoted string (`'e’'f'` is `e'f`); verified 2026-09-29 with PowerShell 5.1 and 7 |
    | ANSI-C quotes | `$'…'` outside double quotes, opened by a `$` that is not the second `$` of an unescaped `$$` pair (`$$` is Bash's PID variable, so `echo $$'a'` reads as `$$` followed by the plain string `a`, opening no quote): the `$` is removed and the span's end is found lexically, before any escape is decoded — from the opening `'`, every `\` pairs with whatever character comes right after it (so in `$'\c\''` the first `\'` does not close the span: its `\` pairs with the `'`, and the span goes on to the next `'`); the span's content is then decoded separately, on its own, as Bash does (`\\`, `\'`, `\"`, `\?`, `\a`, `\b`, `\e`, `\E`, `\f`, `\n`, `\r`, `\t`, `\v`, `\nnn`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cx`); an unknown escape keeps its `\` (`echo $'\''` is `echo` and `'`; `git $'commit'` is `git commit`); a decoded NUL (`\0`, `\x00`, `\u0000`, `\c@`, …) ends the `$'…'` span's value there, as in Bash (`git $'commit\0x'` is `git commit`, `$'ab\0cd'ef` is `abef`) | — |
@@ -346,15 +346,28 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    token, so it never resets this), in PowerShell a `(` or `{` token (a grouping expression, a
    subexpression or a script block). G2 reads every unquoted `{` and `}` as a token, a script
    block passed as data included, so the commands in it are classified like those of any
-   script block (fail closed, GRD-06): `Start-Process -ArgumentList { git commit --amend
-   --no-edit }` gives no output, though PowerShell stringifies the block (to a native exe
-   pwsh passes a script block as `-encodedCommand`). In PowerShell, a `git` token anywhere
-   after `Start-Process` (aliases `saps`, `start`, also module-qualified
-   `Microsoft.PowerShell.Management\Start-Process`, after an optional `&`) in its command
-   is denied with the wrapper row naming it, even when no `commit` token follows `git`:
-   Start-Process builds git's command line from its own parameters
-   (`Start-Process git -ArgumentList "commit --fixup HEAD"`, `saps git commit,--fixup,HEAD`,
-   `Start-Process -FilePath git.exe …`), an accepted false deny like `sudo git commit`.
+   script block (fail closed, GRD-06): `Write-Output { git commit --amend --no-edit }` gives
+   no output, though a block passed to a native exe is stringified (pwsh passes it as
+   `-encodedCommand`). In PowerShell, a Start-Process word anywhere in a command that
+   mentions commit denies it with the wrapper row naming it, whatever follows the word and
+   whether or not any `git` or `commit` token is read (fail closed, KD-S81). A Start-Process
+   word is a token reading, after quote and escape removal and compared case-insensitively,
+   as `Start-Process`, `saps` or `start` (also module-qualified
+   `Microsoft.PowerShell.Management\Start-Process`), alone or after an `=` in the same token
+   (`$p=saps`); the row names it without that prefix. Start-Process runs the program its
+   `-FilePath` names, with a command line it builds from its own parameters, and that program
+   can hide in many forms: `-FilePath:git`, `-f:git`, `-FilePath:'git'`, `'git '` and
+   `git.exe.` (Windows trims a trailing space or dot), `-FilePath ('git')`, a variable
+   (`$a='git'; Start-Process $a …`), splatting, or `$PSDefaultParameterValues` set in an
+   earlier statement. And the word runs in any statement form: `$p = Start-Process …` (the
+   idiomatic way to read an exit code with `-PassThru`), `$null = …`, `$p += …`,
+   `[object]$p = …`, `return …`, `. saps …`, `& ('Start-Process') …` or inside
+   `if (…) { … }`. So no target or position is read. Every other row ranks above it, the bare
+   row below it (Precedence): `saps git commit --no-verify` keeps the `--no-verify` row, while
+   `Start-Process git -ArgumentList { git commit -m x }` gets the wrapper row. Accepted false
+   denies: `start https://github.com/o/r/commit/abc`, `npm start` in a command that mentions
+   commit, `git log --grep start --grep commit`, and
+   `Start-Process -ArgumentList { git commit --amend --no-edit }`.
    Redirections are dropped before this step (step 2).
    The prefix allowlist:
    - Bash, in this order: reserved words that may start a command (`!`, `{`, `if`, `then`,
@@ -386,8 +399,7 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    (naming `case`); an assignment whose value may expand (`a='*' git …`,
    `GIT_AUTHOR_DATE=$d git …`, `GIT_DIR=~/r/.git git …`); and in
    PowerShell `. git commit --no-edit` (naming `.`), an environment prefix,
-   `& ('xargs') git …` (naming `(`) and any `git` after `Start-Process`, `saps` or `start`
-   (`Start-Process git -ArgumentList { git commit -m x }`, naming `Start-Process`).
+   `& ('xargs') git …` (naming `(`) and any Start-Process word (above, naming it).
    Fixtures: `xargs git commit --no-edit`, `printf -- -n | xargs git commit --no-edit`,
    `parallel git commit --no-edit`, `/usr/bin/xargs git commit --no-edit` (naming
    `/usr/bin/xargs`), `busybox xargs git commit --no-edit` (naming `busybox`),
@@ -425,7 +437,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    A wrapper that runs git from a string (`sh -c '…'`, `eval`, PowerShell `iex` or
    `Invoke-Expression`, a script, or a runner that re-splits one string argument into a new
    command line, `env -S 'git commit --fixup=HEAD'`) holds no `git` token: the interpreter
-   gap (Q3; `iex 'git commit -m x'` gives no output, KD-S80). An extglob pattern in an argument whose
+   gap (Q3; `iex 'git commit -m x'` gives no output, KD-S80). .NET `Process.Start` in
+   PowerShell is the same gap: `[Diagnostics.Process]::Start('git','commit --no-verify -m x')`
+   holds no `git` token (its arguments read as one token holding `,`) and gives no output,
+   and a type or method name can be built at run time, so no token test closes it (KD-S80).
+   An extglob pattern in an argument whose
    body is an allowed form as a command (step 2 reads it as one), re-split by such a runner,
    is the same gap (`env -S A=@( git commit --fixup=HEAD'\c')`).
    Known gap: expansion or aliasing in the command position, where no token is `git` until
@@ -435,7 +451,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    its arguments), a variable there (Bash
    `$GIT commit -m x`, PowerShell `& $g commit -m x`), a PowerShell expression there,
    `& ('git') commit -m x` (its `git` token is followed by the `)` that ends its arguments,
-   step 4), and a shell alias or function for git (Bash `shopt -s expand_aliases` and
+   step 4; `& ('Start-Process') git …` is denied by its Start-Process word, but a name built
+   at run time, `& ('Start-'+'Process') git …` or `& ('g'+'it') commit …`, is the same gap), and a shell alias or function for git (Bash `shopt -s expand_aliases` and
    `alias c=git` on an earlier line, then `c commit -m x`; PowerShell
    `Set-Alias g git; g commit -m x`). A substitution there (`$(echo git) commit`) is denied
    by the blanket rule (step 2).

@@ -78,11 +78,25 @@ delete it here; IDs are never reused.
   `nice`, `nohup` or `env`; and since G2 drops quoting, a quoted reserved word or
   assignment (`'if'`, `"A"=x`) that bash runs as a command of that name. In PowerShell
   a string run by `iex` or `Invoke-Expression` (`iex 'git commit -m x'`) holds no `git`
-  token and passes, like `eval` (the interpreter gap); `Start-Process`, `saps` and `start`
-  before `git` are denied as wrappers. Impact is small:
+  token and passes, like `eval` (the interpreter gap), and so does .NET `Process.Start`
+  (`[Diagnostics.Process]::Start('git','commit --no-verify -m x')`, whose type and method
+  names can be built at run time) and a command name built at run time
+  (`& ('Start-'+'Process') git …`); a Start-Process word is denied (KD-S81). Impact is small:
   the guard steers, it is no security boundary (Q3), and each needs a prepared alias,
-  function or script. Where: [C:guard](../contracts/guard.md) step 3, Q3,
+  function or script, or a deliberate string or .NET call. Where:
+  [C:guard](../contracts/guard.md) step 3, Q3,
   [out-of-scope.md](out-of-scope.md). Disposition: accepted for 0.1.0.
+- **KD-S81. Any Start-Process word denies a PowerShell command that mentions commit.**
+  C:guard step 3 (review GRD-06 round 2): `Start-Process`, `saps` or `start` anywhere in the
+  command, alone or after `=` in its token, gets the wrapper row whatever follows, since the
+  program it runs can hide in `-FilePath:git`, `'git '`, `git.exe.`, `('git')`, a variable,
+  splatting or `$PSDefaultParameterValues`, and the word runs in any statement form
+  (`$p = Start-Process …`, `return …`, `. saps …`). Accepted false denies:
+  `start https://github.com/o/r/commit/abc`, `npm start` or a `start` argument in a command
+  that mentions commit, and a script block passed to Start-Process. Where:
+  [C:guard](../contracts/guard.md) step 3. Disposition: accepted for 0.1.0 (fail closed,
+  PRE-03); narrow it only with a reading of Start-Process's target that is checked against
+  PowerShell 5.1 and 7.
 
 ## Testing
 

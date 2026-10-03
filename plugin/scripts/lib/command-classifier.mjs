@@ -155,17 +155,23 @@ function commandStarts(tokens, shell) {
   return starts;
 }
 
-// PowerShell's `Start-Process` (aliases `saps`, `start`) runs a program with arguments it
-// builds from its own parameters, so a `git` token anywhere after it in its command is
-// denied as run by a wrapper, like `sudo git commit` (C:guard step 3).
-const START_PROCESS = /^(?:Microsoft\.PowerShell\.Management\\)?(?:Start-Process|saps|start)$/i;
+// PowerShell's `Start-Process` (aliases `saps`, `start`) runs a program it may name in a
+// `-FilePath:git` token, a grouping expression or a variable, with arguments it builds out of
+// its own parameters. A Start-Process word anywhere in a PowerShell command that mentions
+// commit denies it, whatever follows (C:guard step 3, fail closed): a token reading as one of
+// the names, alone or after an `=` (`$p=saps`). The capture is the name.
+const START_PROCESS = /(?:^|=)((?:Microsoft\.PowerShell\.Management\\)?(?:Start-Process|saps|start))$/i;
 
-// The Start-Process token (as written) heading the command of the `git` token at `at`, the
-// command starting at `from` after an optional `&`; undefined when there is none.
-function startProcessAt(tokens, from, at) {
-  let i = from;
-  if (i < at && (tokens[i] === '&' || isOp(tokens[i], '&'))) i += 1;
-  return i < at && typeof tokens[i] === 'string' && START_PROCESS.test(tokens[i]) ? tokens[i] : undefined;
+// The first Start-Process name in the segments, as it reads after quote removal; undefined
+// when there is none.
+function startProcessName(segments) {
+  for (const segment of segments) {
+    for (const token of segment) {
+      const match = typeof token === 'string' ? START_PROCESS.exec(token) : null;
+      if (match !== null) return match[1];
+    }
+  }
+  return undefined;
 }
 
 // The first token before `git` (at `end`) in its command, which starts at `from`
@@ -368,6 +374,10 @@ export function classify(parsed, context = {}) {
     const message = Object.hasOwn(BLANKET_ROWS, parsed.blanket) ? BLANKET_ROWS[parsed.blanket] : MESSAGES.blanket;
     return { decision: 'deny', message, scriptCalls: [] };
   }
+  // A Start-Process word denies the command with the wrapper row, which ranks just above the
+  // bare row (C:guard step 3, Precedence).
+  const starter = shell === 'powershell' ? startProcessName(parsed) : undefined;
+  const wrapped = starter === undefined ? null : wrapperMessage(starter);
   for (const segment of parsed) {
     // Redirections are dropped with their target (C:guard step 2).
     const tokens = segment.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));
@@ -383,13 +393,11 @@ export function classify(parsed, context = {}) {
       if (typeof tokens[next] === 'string' && COMMIT.test(tokens[next])) {
         if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
         const message = commitDecision(tokens, starts[i], i, next + 1, shell);
-        if (message !== null) return { decision: 'deny', message, scriptCalls: [] };
-      } else if (shell === 'powershell') {
-        // `git commit` itself already gets the wrapper row (C:guard Precedence) via commitDecision.
-        const starter = startProcessAt(tokens, starts[i], i);
-        if (starter !== undefined) return { decision: 'deny', message: wrapperMessage(starter), scriptCalls: [] };
+        if (message !== null) {
+          return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls: [] };
+        }
       }
     }
   }
-  return { decision: 'none', scriptCalls: [] };
+  return wrapped === null ? { decision: 'none', scriptCalls: [] } : { decision: 'deny', message: wrapped, scriptCalls: [] };
 }

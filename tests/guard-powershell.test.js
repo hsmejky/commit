@@ -105,9 +105,9 @@ const table = [
   ['if ($ok) { git commit --no-edit }', null],
   ['if (Test-Path a) { git commit --no-edit }', null],
   ['& git commit --no-edit', null],
-  // A script block passed to Start-Process is still read as `{`/`}` tokens: its commands are
+  // A script block passed as data is still read as `{`/`}` tokens: its commands are
   // classified (an accepted false deny for a denied form inside, C:guard step 3).
-  ['Start-Process -ArgumentList { git commit --amend --no-edit }', null],
+  ['Write-Output { git commit --amend --no-edit }', null],
   ['Start-Process git -ArgumentList { git commit -m x }', 'wrapper:Start-Process'],
   // Start-Process builds git's arguments from its own parameters: denied like `sudo git commit`.
   ['Start-Process git -ArgumentList "commit --fixup HEAD"', 'wrapper:Start-Process'],
@@ -117,6 +117,37 @@ const table = [
   ['start git -ArgumentList commit', 'wrapper:start'],
   ["Start-Process -FilePath git.exe -ArgumentList 'commit --fixup HEAD'", 'wrapper:Start-Process'],
   ['& Microsoft.PowerShell.Management\\Start-Process git commit', 'wrapper:Microsoft.PowerShell.Management\\Start-Process'],
+  // A Start-Process word anywhere in a command that mentions commit denies it (C:guard
+  // step 3): an assignment, `return`, a dot-source or a nested command in front of it, and a
+  // target hidden in `-Name:value`, a grouping expression, a variable or a trimmed name.
+  ["$p = Start-Process -Wait -NoNewWindow git 'commit --no-verify -m x' -PassThru", 'wrapper:Start-Process'],
+  ["$p=Start-Process git 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["$p += saps git 'commit --fixup HEAD'", 'wrapper:saps'],
+  ["[object]$p = Start-Process git 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["$null = Start-Process git 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["return Start-Process git 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  [". saps git 'commit --fixup HEAD'", 'wrapper:saps'],
+  ["if ($true) { $p = saps git 'commit --fixup HEAD' }", 'wrapper:saps'],
+  ["Start-Process -Wait -NoNewWindow -FilePath:git -ArgumentList 'commit --no-verify -m x'", 'wrapper:Start-Process'],
+  ["Start-Process -FilePath:'git' -ArgumentList 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ['Start-Process -FilePath:"git.exe" -ArgumentList \'commit --fixup HEAD\'', 'wrapper:Start-Process'],
+  ["Start-Process -f:git 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ['saps -FilePath:git.exe commit,--no-verify,-m,x', 'wrapper:saps'],
+  ["Microsoft.PowerShell.Management\\Start-Process -FilePath:git -ArgumentList:'commit --amend --no-edit --no-verify'", 'wrapper:Microsoft.PowerShell.Management\\Start-Process'],
+  ["Start-Process 'git ' 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["Start-Process git.exe. 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["Start-Process -FilePath ('git') 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["$a='git'; Start-Process $a 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  ["& ('Start-Process') git 'commit --fixup HEAD'", 'wrapper:Start-Process'],
+  // Accepted false denies: no target is read, the word alone denies.
+  ['start https://github.com/o/r/commit/abc', 'wrapper:start'],
+  ['Start-Process -ArgumentList { git commit --amend --no-edit }', 'wrapper:Start-Process'],
+  // Another cmdlet whose name starts the same way is no Start-Process word.
+  ['Start-Sleep 1; git commit --amend --no-edit', null],
+  // .NET Process.Start runs a string like iex: a documented gap (KD-S80).
+  ["[Diagnostics.Process]::Start('git','commit --no-verify -m x').WaitForExit()", null],
+  // A redirection target's escape is the blanket kind `escape` too (C:guard step 2).
+  ['git commit --amend --no-edit > "x`u{0}"', 'escape'],
   // An interpreter of a string (iex, Invoke-Expression) is a documented gap, like `eval`.
   ["iex 'git commit -m x'", null],
 ];
