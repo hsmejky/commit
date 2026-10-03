@@ -327,11 +327,16 @@ export async function plan(values, injected, { cwd }) {
     // Every outcome but the hunk index ends without the lock (C:run-folder), a thrown
     // `internal` included: a throw after `acquire` (`ctx.run`) releases the lock first, one
     // before it has no lock to release. Neither `release` nor `discard` throws: a removal
-    // error becomes a notice and never changes the outcome. Only a reply carries notices so
-    // far; a refusal or `internal` drops it (KD-R64).
+    // error becomes a notice and never changes the outcome. A `release()` that could not
+    // remove the lock (`busy`) reports `kept: true` and the folder is left alone too, so the
+    // lock and its folder stay consistent for the next `/commit` (review-CHG-03b finding 2);
+    // only a reply carries notices so far; a refusal or `internal` drops it (KD-R64).
     if (facts === undefined || facts.hunks === undefined) {
-      for (const notice of [ctx.run?.release() ?? null, ctx.provisional?.discard() ?? null]) {
-        if (notice !== null) ctx.notices.push(notice);
+      const released = ctx.run?.release() ?? { notice: null, kept: false };
+      if (released.notice !== null) ctx.notices.push(released.notice);
+      if (!released.kept) {
+        const discarded = ctx.provisional?.discard() ?? null;
+        if (discarded !== null) ctx.notices.push(discarded);
       }
     }
   }

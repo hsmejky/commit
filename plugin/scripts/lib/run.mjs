@@ -534,6 +534,18 @@ export function discardNotice(planId, code) {
   return `run folder \`${RUN_DIR_NAME}/${planId}\` was not removed (${code}); the 24-hour sweep removes it`;
 }
 
+/**
+ * The notice for a `release()` that could not remove the run lock because another operation
+ * on it is in progress (`busy`, review-CHG-03b finding 2): the lock and its folder are kept
+ * together, unlike `discardNotice`'s folder-only removal failure (finding 10).
+ *
+ * @param {string} planId
+ * @returns {string}
+ */
+export function lockKeptNotice(planId) {
+  return `run lock \`${RUN_DIR_NAME}/lock\` for \`${planId}\` was not released (busy); the run and its folder stay in place`;
+}
+
 /** The `run-folder` refusal text naming the tracked variant actually found (finding 5). */
 function trackedRunFolderText(trackedAs) {
   return `\`${trackedAs}\` is tracked; remove it by hand`;
@@ -631,37 +643,58 @@ export function lockTempName(planId) {
 
 // M12 `acquire` without a takeover (CHG-03b, C:plan step 7): `{ planId, created }` written to
 // a temporary file in `.commit-plan/` and hard-linked into place as `.commit-plan/lock`
-// (`linkSync` never overwrites, so no reader sees a lock without its content); the temporary
-// file is removed whether or not the link succeeds. Any link error throws for now: RUN-06
-// maps `EEXIST` to `held`, RUN-09 the Windows `EPERM`/`EBUSY` retries and the probe.
+// (`linkSync` never overwrites, so no reader sees a lock without its content). On a link
+// failure the temporary file is removed (best-effort: the original error always wins, review-
+// CHG-03b finding 1); once the link has succeeded the lock is in place regardless of what
+// happens to its temporary file, so that removal is best-effort too and a leftover goes to
+// the sweep (RUN-07, C:run-folder "leftover lock temporary files") rather than failing an
+// acquire whose lock already stands. Any link error throws for now: RUN-06 maps `EEXIST` to
+// `held`, RUN-09 the Windows `EPERM`/`EBUSY` retries and the probe.
 function acquireLock(runDir, planId, folder, now) {
   const temp = insideRunDir(runDir, lockTempName(planId));
   const lock = insideRunDir(runDir, 'lock');
+  fs.writeFileSync(temp, JSON.stringify({ planId, created: new Date(now()).toISOString() }), { flag: 'wx' });
   try {
-    fs.writeFileSync(temp, JSON.stringify({ planId, created: new Date(now()).toISOString() }), { flag: 'wx' });
     fs.linkSync(temp, lock);
-  } finally {
+  } catch (err) {
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {
+      // The lock was never linked: a leftover temp here is not even a lock-shaped file the
+      // sweep targets, but it is harmless and the original link error is what matters.
+    }
+    throw err;
+  }
+  try {
     fs.rmSync(temp, { force: true });
+  } catch {
+    // Leftover lock temporary file: the sweep's (RUN-07), not this call's to fail over.
   }
   return { ok: true, run: ownRun(runDir, planId, folder), takeover: null };
 }
 
 // The run `acquire` returns: `write` as before the lock, and `release()`, which removes the
-// lock (only while it still holds `planId`) and the run folder. `release` never throws: a
-// removal error becomes a notice and never replaces the call's outcome or original error,
-// like `discard`.
+// lock (only while it still holds `planId`) and the run folder, returning `{ notice, kept }`.
+// `release` never throws: a removal error becomes a notice and never replaces the call's
+// outcome or original error, like `discard`. On `busy` (the lock rename hit a file-in-use
+// error, `releaseById`'s own `busy(true)` case) the lock was never removed: `kept: true`
+// tells the caller to leave the folder alone too, so the lock and its folder stay consistent
+// for the next `/commit` to find an ordinary held run (review-CHG-03b finding 2); any other
+// removal error is the folder's (finding 10), reported with `discardNotice` as before.
 function ownRun(runDir, planId, folder) {
   return {
     planId,
     write: (name, data) => writeAtomic(folder, name, data),
     release: () => {
+      if (!isPlainDirectory(runDir)) return { notice: null, kept: false };
+      let outcome;
       try {
-        if (!isPlainDirectory(runDir)) return null;
-        removeOwnRun(runDir, planId);
-        return null;
+        outcome = removeOwnRun(runDir, planId);
       } catch (err) {
-        return discardNotice(planId, err.code || 'error');
+        return { notice: discardNotice(planId, err.code || 'error'), kept: false };
       }
+      if (outcome === 'busy') return { notice: lockKeptNotice(planId), kept: true };
+      return { notice: null, kept: false };
     },
   };
 }

@@ -121,6 +121,26 @@ test('state.json stores the unit table and id map; plan.json tracked carries buc
   ]);
 });
 
+// First write of `state.json`'s `interactive` field (workflows.mjs:186): `false` under
+// `--no-user`, `true` otherwise. Not a CHG-03b criterion, but worth pinning (review finding 7).
+test('state.json interactive is false under --no-user, true otherwise', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const plain = await runCommit(c, ['plan']);
+  assert.equal(plain.exitCode, 0, detail(plain));
+  const plainState = readJson(path.join(runDirOf(c), plain.json.planId, 'state.json'));
+  assert.equal(plainState.interactive, true);
+
+  const c2 = createCase(t);
+  seed(c2, { 'a.txt': 'one\n' });
+  c2.writeFile('a.txt', 'one\nmore\n');
+  const noUser = await runCommit(c2, ['plan', '--split', '--no-user']);
+  assert.equal(noUser.exitCode, 0, detail(noUser));
+  const noUserState = readJson(path.join(runDirOf(c2), noUser.json.planId, 'state.json'));
+  assert.equal(noUserState.interactive, false);
+});
+
 // `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file.
 function numstat(c) {
   const result = spawnSync('git', ['diff', '--numstat', '-z', 'HEAD'], { cwd: c.repoDir, env: c.env });

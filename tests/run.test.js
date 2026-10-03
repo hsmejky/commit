@@ -980,6 +980,56 @@ test('discard: a removed folder returns no notice', (t) => {
   assert.equal(fs.existsSync(provisional.runDir), false);
 });
 
+// review-CHG-03b finding 1: once `linkSync` has put the lock in place, removing its now-
+// redundant temporary file is best-effort; a failure there must not fail the acquire or lose
+// the lock, because the next `/commit` would then see a lock naming a run whose folder is
+// gone. The leftover temp is for the sweep (RUN-07) to collect.
+test('acquire: a temp-file removal failure after a successful link does not fail the acquire', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const tempName = run.lockTempName(provisional.planId);
+  const realRmSync = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, options) => {
+    if (path.basename(target) === tempName) {
+      throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    }
+    return realRmSync(target, options);
+  });
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.equal(acquired.ok, true);
+  const runDir = path.join(toplevel, '.commit-plan');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), true, 'the lock is in place');
+  assert.equal(fs.existsSync(path.join(runDir, tempName)), true, 'the temp file is left for the sweep');
+});
+
+// review-CHG-03b finding 2: `release()` on a lock rename that hits a file-in-use error
+// (`busy`, like `releaseById`'s own case) must not silently lose the lock: it reports a
+// notice and `kept: true`, so `plan`'s `finally` leaves the folder in place too.
+test('release: a busy lock rename reports a notice and kept: true, the lock stays (finding 2, 10)', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const acquired = provisional.acquire({ now: () => T0 });
+  assert.equal(acquired.ok, true);
+  const lockPath = path.join(toplevel, '.commit-plan', 'lock');
+  const realRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (path.resolve(from) === lockPath) {
+      throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    }
+    return realRename(from, to);
+  });
+
+  const released = acquired.run.release();
+
+  assert.deepEqual(released, { notice: run.lockKeptNotice(provisional.planId), kept: true });
+  // finding 10: the busy-lock notice reads differently from the folder-removal notice.
+  assert.notEqual(released.notice, run.discardNotice(provisional.planId, 'EPERM'));
+  assert.equal(fs.existsSync(lockPath), true, 'the lock stays in place');
+  assert.equal(fs.existsSync(provisional.runDir), true, 'the folder stays too');
+});
+
 // review-RUN-05 finding 7: git strips only unescaped trailing spaces from an exclude line,
 // so `/.commit-plan<TAB>` does not match `.commit-plan` and the line is still added; a line
 // with trailing spaces does match and is not added again.
