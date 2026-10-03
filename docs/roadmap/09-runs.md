@@ -185,9 +185,9 @@ M12 `acquire`, M18 `plan` step 7, story 187.
       call runs → `acquire` succeeds, the re-read finds HEAD moved by that commit, the
       lock is released, the folder is deleted, and `plan` exits 6 `head-moved`.
 - [ ] Seam 1: a PATH git shim creates the lock file (as another process's `acquire` would)
-      the first time inventory's last git call runs, before step 7 hard-links its own →
-      `EEXIST` → `held`, and the placed lock and folder are unchanged; the race loser (this
-      call) deletes its own provisional folder and exits 6 `lock`.
+      the first git call once the provisional folder exists and no lock does, before step 7
+      hard-links its own → `EEXIST` → `held`, and the placed lock and folder are unchanged;
+      the race loser (this call) deletes its own provisional folder and exits 6 `lock`.
 - [ ] Seam 1: `plan --reword` on a clean tree → exit 0 and the lock is taken.
 - [ ] Seam 1: `release --plan <that planId>` then removes the lock and the folder.
 
@@ -213,10 +213,10 @@ collected notices (the provisional-folder discard notice included) instead of dr
 - [ ] Seam 1: a fresh lock held by another `planId` → exit 6 `lock` with the "another
       /commit run is in progress (started HH:MM, last active N s ago)" text. No new
       folder and no temporary index are left.
-- [ ] Seam 1: the refusal carries the same `planId`, `created` and `touched` fields
-      whether the call is interactive or `--no-user`; the `lock` handback's own shape is
-      INT-05's, and the `--no-user` reply's shape (no takeover question, no handback) is
-      RPL-05's (C:reply-and-handback).
+- [ ] Seam 1: the refusal carries the same `planId`, `created` and `touched` fields whether
+      from a `peek` refusal or a lost `acquire` (RUN-06), and whether the call is interactive
+      or `--no-user`; the `lock` handback's own shape is INT-05's, and the `--no-user`
+      reply's shape (no takeover question, no handback) is RPL-05's (C:reply-and-handback).
 - [ ] Seam 1: a fresh lock with garbage content, and a fresh lock with a non-UUID
       `planId` → `lock` with `planId: null` and no handback.
 

@@ -22,8 +22,10 @@
 // `bucketOf`, all on `ctx`). CHG-03b builds step 7 (`state.json`, the run lock with no
 // takeover, `plan.json`, in that order) and step 8's in-process hunk index, and drops GIT-02's
 // stdout `state`/`expectedHead` stand-in (KD-R65: they are stored in `plan.json` and
-// `state.json`). Later slices insert the other rows (3 lock peek, 5 scan, 7 re-reads and
-// sweep, 8 guard state) in their place in PLAN_STEPS, and widen these.
+// `state.json`). RUN-06 adds step 7's `held` and the HEAD re-read, and `--reword`'s
+// clean-tree lock; the fingerprint re-read is CHG-04's, the sweep RUN-08's. Later slices
+// insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in PLAN_STEPS,
+// and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
@@ -139,9 +141,14 @@ async function createRunFolder(ctx) {
   return undefined;
 }
 
-/** Step 4: M10 `inventory`. CHG-03: tracked modifications only (other kinds throw). */
+/**
+ * Step 4: M10 `inventory`. CHG-03: tracked modifications only (other kinds throw). Also the
+ * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
+ * full `modeChoice` (M15 `resolveMode`) is a later slice's.
+ */
 async function inventory(ctx) {
   ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+  ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
   return undefined;
 }
 
@@ -153,7 +160,6 @@ async function inventory(ctx) {
  * part is CHG-16's.
  */
 async function snapshotUnits(ctx) {
-  ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
   if (ctx.mode === 'reword') {
     // RUN-06: `reword` takes no snapshot of the working tree (C:plan-hunks: HEAD's own diff,
     // CHG-15's). Until CHG-15 lands its units are empty, so the hunk index is too.
@@ -204,9 +210,11 @@ async function storeAndLock(ctx) {
     idMap: ctx.idMap,
   })}\n`);
   // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
-  // `plan`'s `finally` deletes only this call's own provisional folder.
+  // `plan`'s `finally` deletes only this call's own provisional folder. `holder` (the
+  // `planId`/`created`/`touched` the failure shape defines) rides along for RPL-04 to wire
+  // into the `failed` reply.
   const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
-  if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message } };
+  if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
   ctx.run = acquired.run;
   // RUN-06: re-read HEAD once the lock is held, against the HEAD step 1 recorded (C:plan
   // step 7): another run that committed since the inventory ends this one with `head-moved`,

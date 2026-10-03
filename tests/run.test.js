@@ -1004,6 +1004,27 @@ test('acquire: a temp-file removal failure after a successful link does not fail
   assert.equal(fs.existsSync(path.join(runDir, tempName)), true, 'the temp file is left for the sweep');
 });
 
+// review-RUN-06 finding 1: `acquire`'s lost race (`EEXIST`) must name the holder in the
+// typed result (`planId`, `created`, `touched`), matching M12's interface ("`held` with
+// holder") and the failure shape, not just the rendered message.
+test('acquire: a lost race to a lock already in place returns held with the holder fields', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  const holderId = crypto.randomUUID();
+  const created = '2026-09-26T13:58:02.000Z';
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: holderId, created }));
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.code, 'held');
+  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
+  assert.deepEqual(acquired.holder, { planId: holderId, created, touched });
+  assert.match(acquired.message, /^another \/commit run is in progress \(started \d{2}:\d{2}, last active \d+ s ago\)$/);
+  assert.equal(fs.readFileSync(path.join(runDir, 'lock'), 'utf8'), JSON.stringify({ planId: holderId, created }), "the winner's lock is untouched");
+});
+
 // review-CHG-03b finding 2: `release()` on a lock rename that hits a file-in-use error
 // (`busy`, like `releaseById`'s own case) must not silently lose the lock: it reports a
 // notice and `kept: true`, so `plan`'s `finally` leaves the folder in place too.

@@ -578,7 +578,8 @@ function runFolderRefusal(trackedAs) {
  * @returns {{ ok: true, provisional: { planId: string, runDir: string,
  *   write: (name: string, data: string | Uint8Array) => void,
  *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null }
- *     | { ok: false, code: 'held', message: string },
+ *     | { ok: false, code: 'held', message: string,
+ *         holder: { planId: string | null, created: string | null, touched: number } | null },
  *   discard: () => string | null } }
  *   | { ok: false, code: 'run-folder', message: string }}
  *   `runDir`: the folder, absolute and `path.resolve`d from the toplevel, with forward
@@ -689,7 +690,7 @@ function acquireLock(runDir, planId, folder, now) {
  * @param {number} nowMs
  * @returns {string}
  */
-export function heldMessage(holder, nowMs) {
+function heldMessage(holder, nowMs) {
   if (holder === null) return 'another /commit run is in progress';
   const started = holder.created === null ? Number.NaN : Date.parse(holder.created);
   if (holder.planId === null || Number.isNaN(started)) {
@@ -703,7 +704,10 @@ export function heldMessage(holder, nowMs) {
 
 // `acquire`'s lost race (RUN-06): reads the lock now in place, without following a link, to
 // name its holder. A file-in-use error on that read names no holder rather than failing the
-// refusal. The full `lock` failure fields (`planId`, `created`, `touched`) are RUN-07's.
+// refusal. `holder` (`{ planId, created, touched } | null`) rides along in the typed result,
+// matching M12's interface ("`held` with holder") and the failure shape's `planId`/`created`/
+// `touched` fields; wiring it into the final `failed` reply is RPL-04's, and `peek`'s own
+// `held` is RUN-07's.
 function held(runDir, now) {
   let file = null;
   try {
@@ -716,7 +720,7 @@ function held(runDir, now) {
     created: lockCreated(file.bytes),
     touched: file.stats.mtimeMs,
   };
-  return { ok: false, code: 'held', message: heldMessage(holder, now()) };
+  return { ok: false, code: 'held', message: heldMessage(holder, now()), holder };
 }
 
 function lockCreated(bytes) {

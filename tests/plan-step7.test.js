@@ -152,6 +152,26 @@ test('plan whose lock link fails with EEXIST exits 6 lock and deletes its own pr
   });
 
   assertLockRefusal(result, 'lock');
+  // No real lock was ever written (only the link call is faulted): `held`'s read finds the
+  // lock gone again, naming no holder (review-RUN-06 finding 6).
+  assert.equal(result.json.error.message, 'another /commit run is in progress');
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
+  assert.deepEqual(folderNames(c), []);
+});
+
+test('plan whose lock link hits a real EEXIST against a garbage lock exits 6 lock with the unreadable-lock text', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  // No `peek` until RUN-07 lands, so this garbage lock survives until step 7's `acquire`
+  // hard-links onto it and hits a real `EEXIST`, cross-platform (review-RUN-06 finding 6).
+  fs.mkdirSync(runDirOf(c));
+  fs.writeFileSync(path.join(runDirOf(c), 'lock'), 'not json');
+
+  const result = await runCommit(c, ['plan']);
+
+  assertLockRefusal(result, 'lock');
+  assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
+  assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), 'not json', 'the foreign lock is left alone');
   assert.deepEqual(folderNames(c), []);
 });
