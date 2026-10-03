@@ -64,8 +64,9 @@ fixed, delete it here; IDs are never reused.
   GIT-05's argument/env case needs no shim: the spawn-record preload logs each spawn's
   `GIT_*` environment (`gitEnv`) on every platform.
 - **KD-R22.** RUN-12's first clock step fires before the provisional folder exists, so the
-  discard is never exercised; its `plan --hunks` deadline case has no clock setup or
-  observable. Tie the step to "folder exists, no lock"; add setup and exit code.
+  discard is never exercised. Tie the step to "folder exists, no lock"; add setup and exit
+  code. AC6 (a separate `plan --hunks` taking its own 540 s deadline from its own start) is
+  pinned at M15 level by RUN-12; the Seam 1 case lands with CHG-19.
 - **KD-R23.** RUN-09 AC2 (a real `FileShare.None` holder on `state.json`, released inside the
   retry window → success) has no deterministic Seam 1 case: no call renames over an existing
   `state.json` at a moment a test can hold it (`commit` is still a stub, and `plan` writes it

@@ -330,7 +330,8 @@ shares.
 ## RUN-12: `plan` has a 540-second deadline
 
 **What to build:** M15 `deadline` and `cleanupDeadline` for `plan`. Every M2 call of the
-call takes `timeoutMs = deadline - now()` at its own start. Past the deadline, `plan` ends
+call takes `timeoutMs = deadline - now()` at its own start (the per-call `timeoutMs`
+plumbing and tree kill are GIT-07's). Past the deadline, `plan` ends
 as `timeout` and discards its provisional run (it releases the run when it already holds
 the lock). After a timeout or an `internal` throw with the lock held, the cleanup and
 reporting git calls (the reply's M10 `treeState` read) take `cleanupDeadline - now()`
@@ -340,7 +341,7 @@ file-system calls and take no `timeoutMs`.
 
 **Blocked by:** RUN-05, FND-05, CHG-03b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q18, M15 `deadline`/`cleanupDeadline`, C:plan (deadline text),
 C:cli-and-exit-codes (`timeout` and `internal` rows), C:commit-release (budget text),
@@ -349,23 +350,25 @@ domain-code table (`timed-out`).
 KD-R64: the `internal` output built here carries `plan`'s collected notices (the
 provisional-folder discard notice included) instead of dropping them.
 
-- [ ] Seam 1: the stepping clock crosses 540 s before the provisional folder exists →
+- [x] Seam 1: the stepping clock crosses 540 s before the provisional folder exists →
       exit 5 `timeout`, and no folder and no lock are left (the provisional run is
       discarded).
-- [ ] Seam 1: the stepping clock crosses 540 s only after step 7 has taken the lock →
+- [x] Seam 1: the stepping clock crosses 540 s only after step 7 has taken the lock →
       exit 5 `timeout`, and the run is released (lock and folder both gone), not merely
       discarded.
-- [ ] Seam 1: the stepping clock crosses 540 s after step 7 has taken the lock, then stays
+- [x] Seam 1: the stepping clock crosses 540 s after step 7 has taken the lock, then stays
       below 580 s → the reply's tree-state read still runs (seen in the argv log of the
       PATH git shim, `docs/spec/testing-modules.md`) and the reply carries it; the lock and
       folder are gone.
-- [ ] Seam 1: the stepping clock stepped past 580 s before the cleanup → the tree-state
+- [x] Seam 1: the stepping clock stepped past 580 s before the cleanup → the tree-state
       read is not spawned (absent from the git shim's argv log), the lock and folder are
       still gone, and the reply still comes.
-- [ ] Seam 1 with the stepping clock at 530 s → `plan` completes normally.
-- [ ] Seam 1: a separate `plan --hunks` call takes its own 540 s deadline from its own
+- [x] Seam 1 with the stepping clock at 530 s → `plan` completes normally.
+- [x] Seam 1: a separate `plan --hunks` call takes its own 540 s deadline from its own
       start (M15 `deadline`, `modules-m14-m19.md`), distinct from an in-process
-      `plan --hunks` which still runs under `plan`'s own deadline.
+      `plan --hunks` which still runs under `plan`'s own deadline. Pinned here at M15
+      (pure-function) level only; the Seam 1 case for the separate call lands with CHG-19
+      (KD-R22).
 
 
 ## RUN-13: mode resolution without a takeover
