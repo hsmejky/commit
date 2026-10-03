@@ -217,7 +217,8 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 ## GRD-11: Git global options before the subcommand
 
 **What to build:** known global options are skipped, `-c` and `--config-env` before
-`commit` are denied for any key, and an unknown option before a `commit` token is denied.
+`commit` are denied for any key, and an unknown option before a `commit` token is denied;
+every token after an unknown option must be literal.
 
 **Blocked by:** GRD-10.
 
@@ -229,6 +230,8 @@ including a quoted Windows path in Bash, and treats the dashed `git-commit` bina
 - [ ] `git -c k=v commit --no-edit` and `git --config-env=k=E commit --no-edit` → the `-c` row; `git -c k=v log --grep commit` → no output.
 - [ ] `git --unknown commit` → the "Could not parse git options" row.
 - [ ] `git -c k=v commit --amend` and `git -c k=v commit -n` → the `-c` row; `git --bogus commit --squash=HEAD` → the unknown-global-option row: these deferred rows run before `argumentsDecision` (GRD-05), so they outrank the `--amend`, `-n` and `--squash` specific rows.
+- [ ] After an unknown option every token up to the end of git's arguments must be literal (C:guard step 4): `git --bogus $x commit` and `git --bogus $x; echo commit` (an accepted false deny), Bash `c=commit; git --bogus "$c" -m x` and `git --bogus {commit,-m,x}`, PowerShell `git --bogus $c -m x`, `git --bogus @a` and `git --bogus ,commit -m x` (5.1 runs `git --bogus commit -m x`) → the literal-arguments row.
+- [ ] The real options `--no-advice`, `--no-lazy-fetch`, `--no-literal-pathspecs`, `--attr-source[=]<tree>` and `--exec-path=<p>` are skipped: `git --no-advice log --grep commit` → no output, `git --attr-source HEAD commit -m x` → the bare/`-m` row; bare `--exec-path`, `--shallow-file`, `--super-prefix`, `--help`, `-h`, `--version` and `-v` stay unknown (`git --help commit` → the unknown-global-option row).
 
 
 ## GRD-12: Fail closed on an unreadable subcommand or argument
@@ -255,6 +258,7 @@ options (with GRD-11), and the PowerShell forms (with GRD-06).
 - [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
 - [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
 - [ ] Denied (review GRD-06 round 2; each runs `git commit --no-verify -m x` under PowerShell 5.1 and 7): PowerShell `git $null commit --no-verify -m x` (PowerShell drops `$null`), `git --% commit --no-verify -m x` and `git '--%' commit --no-verify -m x`.
+- [ ] After known global options (review GRD-11; each runs a commit): Bash `c=commit; git --no-advice "$c" -m x`, `c=commit; git --attr-source HEAD "$c" -m x` and `git --no-advice {commit,-m,x}`, PowerShell `git --no-advice $c -m x`, `git --no-advice @a` and `git --no-advice ,commit -m x` (5.1) → denied, as without the option.
 - [ ] PowerShell `git co$'m'mit -m x` → denied: PowerShell reads `co$mmit` (a token holding `$`) and may run `commit` at runtime; currently allowed, GRD-12's literal-subcommand rule must deny it.
 - [ ] PowerShell `git @(commit) -m x` → denied: the `@(…)` array form reads its body as the subcommand (moved from GRD-08; seed entry already expects deny).
 - [ ] `git COMMIT -m x` → denied as a commit.
