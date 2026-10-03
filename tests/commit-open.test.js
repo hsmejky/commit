@@ -2,10 +2,11 @@
 
 // RUN-04 (docs/roadmap/09-runs.md): M12 `open`, wired as `commit`'s first step. It checks
 // the lock holds the call's `--plan` planId, refreshes its mtime, checks the state
-// `version`, then holds `call.lock` for the whole call. With no group-commit behaviour
-// built yet, a matched lock falls through to a stub that ends the call at once, exit 0,
-// with no commits; EXE-02 replaces the stub with the real loop. Seam 1 only: the shipped
-// entry point as a subprocess (tests/release.test.js's fixture style, copied here).
+// `version`, then holds `call.lock` for the whole call. A matched lock then runs M16
+// `commitAll` over any stored groups (EXE-02, EXE-04); with none to run (no stored groups,
+// or every one already committed) EXE-05's `no-groups` refusal ends the call instead, the
+// run kept. Seam 1 only: the shipped entry point as a subprocess (tests/release.test.js's
+// fixture style, copied here).
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -103,7 +104,9 @@ test('commit --plan X --all with a state.json version mismatch → ended', async
   assertLockFailure(result, /this run has already ended/);
 });
 
-test('commit --plan X --all with a matching lock advances its mtime, exits 0 with no commits, and call.lock does not outlive the call', async (t) => {
+// EXE-05 (docs/roadmap/10-commit-executor.md): a matching lock with no stored groups is
+// refused `no-groups` (exit 1 `usage`), after the lock check advances the lock's mtime.
+test('commit --plan X --all with a matching lock but no stored groups advances the lock mtime, then refuses no-groups, and call.lock does not outlive the call', async (t) => {
   const c = createRepo(t);
   const { runDir, planId, folder, callLock } = matchingRun(c);
   const lockPath = path.join(runDir, 'lock');
@@ -113,15 +116,51 @@ test('commit --plan X --all with a matching lock advances its mtime, exits 0 wit
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
   const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
-  assert.equal(result.exitCode, 0, detail);
-  assert.equal(result.json.ok, true, detail);
-  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.exitCode, 1, detail);
+  assert.equal(result.json.ok, false, detail);
+  assert.equal(result.json.error.kind, 'usage', detail);
+  assert.match(result.json.error.message, /no groups/, detail);
   assert.ok(fs.statSync(lockPath).mtimeMs > before - 60_000, "the lock's mtime advanced");
   // A kept run's call.lock does not outlive its call, but the run itself (lock and folder)
-  // is kept: the stub ends the call, not the run.
+  // is kept: `no-groups` ends the call, not the run.
   assert.equal(fs.existsSync(callLock), false, 'call.lock is absent after the call ends');
   assert.equal(fs.existsSync(lockPath), true, "the run's own lock is kept");
   assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
+});
+
+// EXE-05 AC: every stored group already committed → no-groups too, not a silent exit 0.
+test('commit --plan X --all with a stored group already committed → no-groups, same as no stored groups', async (t) => {
+  const c = createRepo(t);
+  const { runDir, planId, folder } = matchingRun(c);
+  const sha = c.git(['rev-parse', 'HEAD']).trim();
+  fs.writeFileSync(path.join(folder, 'state.json'), JSON.stringify({
+    version: 1, groups: [{ n: 1, units: [], header: 'feat: x', body: null, committed: true }],
+  }));
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 1, detail);
+  assert.equal(result.json.error.kind, 'usage', detail);
+  assert.match(result.json.error.message, /no groups/, detail);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), sha, 'no new commit was made');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), true, "the run's own lock is kept");
+  assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
+});
+
+// EXE-05 AC: the lock holds another planId, and no groups are stored either → the lock
+// check (M12 `open`) refuses taken-over first; `no-groups` is never reached.
+test('commit --plan X --all with the lock held by a different planId and no groups stored anywhere → taken-over, not no-groups', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const holder = crypto.randomUUID();
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId: holder, created: CREATED });
+  writeRunFolder(runDir, holder);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assertLockFailure(result, /this run was taken over by another \/commit/);
 });
 
 test('commit --plan X --all with a live call.lock → busy, and the run is kept', async (t) => {

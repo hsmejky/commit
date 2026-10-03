@@ -466,6 +466,9 @@ async function storeAndLock(ctx) {
     // `untracked.collapsed`.
     collapsed: ctx.inventory.collapsed,
     stagedExcluded: stagedExcludedOf(ctx),
+    // CHG-12 (C:run-folder): the paths that are not UTF-8, each bad byte as `\xNN`, for
+    // `check`'s `notIncluded` (PLN-04); `[]` in `reword`, which commits no tree path.
+    notUtf8: ctx.mode === 'reword' ? [] : ctx.inventory.notUtf8,
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
@@ -642,13 +645,18 @@ async function openRun(ctx) {
 // `commit` step 4 (EXE-02): M16 `commitAll` over the stored groups, then the run's release
 // once no group remains (C:commit-release: the lock and the run folder go after the last
 // group; the folder takes this call's `call.lock` with it, so the `finally`'s `close` finds
-// nothing left). A run with no stored groups still ends the call at once with no commits,
-// the run kept, until EXE-05 builds the `no-groups` refusal. The release's notice and the
-// `reply` with `status: "committed"` are INT-02's (C:reply-and-handback).
+// nothing left). EXE-05 adds the phase (a) `no-groups` refusal, after the lock check (M12
+// `open`, step 3) and before any group work: no stored groups, or every stored group already
+// committed. The run is kept (no `releaseOpen`), only this call's `call.lock` goes, via the
+// `finally` in `commit()` below (`ctx.opened` is already true by the time this step runs).
+// The release's notice and the `reply` with `status: "committed"` are INT-02's
+// (C:reply-and-handback).
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { groups } = readState(run);
-  if (!Array.isArray(groups) || groups.every((group) => group.committed)) return { commits: [] };
+  if (!Array.isArray(groups) || groups.every((group) => group.committed)) {
+    return { refusal: { code: 'no-groups', message: 'no groups to commit; run check first, then commit again' } };
+  }
   const { env, now, osUser } = ctx.injected;
   const outcome = await commitAll(run, { now, osUser, env });
   if (outcome.remaining.length === 0) releaseOpen(run);
@@ -816,8 +824,9 @@ export async function release(values, injected, { cwd }) {
  * over the stored groups (EXE-02) and releases the run (lock and folder) once no group
  * remains. `run.close()` always runs for a call that reached a successful `open` (success or
  * a later failure alike), never when `open` itself failed (there is then no call.lock to
- * close). A run with no stored groups (or all committed) still ends the call at once, exit 0,
- * with `commits: []` and the run kept, until EXE-05 builds `no-groups`.
+ * close). A run with no stored groups (or all committed) is refused `no-groups` (exit 1
+ * `usage`, EXE-05) before any group work, right after the lock check: the run is kept (no
+ * `releaseOpen`), and `close()` still removes this call's own `call.lock`.
  *
  * The output holds C:commit-release's fields (`commits`, `failed`, `remaining`, `error`,
  * `gitOutput`, `unstaged`) but no `reply` yet: the `reply` with `status: "committed"` is

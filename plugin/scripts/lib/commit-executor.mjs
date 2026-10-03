@@ -7,9 +7,12 @@
 // `commitGuarded`; the group is marked committed and its SHA becomes the expected HEAD.
 // EXE-04 loops over every uncommitted group in order, `touch()` again before each, and
 // returns a `taken-over`/`busy` refusal from it with the earlier groups kept.
-// The phase (a) refusals (EXE-05 to EXE-08, EXE-22), the failure paths (EXE-09 to EXE-13),
-// the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers (MSG-07)
-// and the other modes (EXE-19, EXE-20) are not built yet: reaching one throws.
+// EXE-05's `no-groups` refusal (no stored groups, or every one committed) is checked by
+// `workflows.mjs`'s `commitGroups`, before `commitAll` is ever called, right after the lock
+// check (M12 `open`): there is no group loop to place it in here.
+// The other phase (a) refusals (EXE-06 to EXE-08, EXE-22), the failure paths (EXE-09 to
+// EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
+// (MSG-07) and the other modes (EXE-19, EXE-20) are not built yet: reaching one throws.
 
 import { head } from './repo-probe.mjs';
 import {
