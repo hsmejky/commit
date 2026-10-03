@@ -74,6 +74,14 @@ const bareDenies = [
   "git $'commit\\u0000' -m x",
   "git co$'m'mit -m x",
   'git com\\\nmit -m x',
+  // GRD-07: an escaped newline is joined before splitting; an unterminated quote is the rest
+  // of its line as one quoted token, and scanning continues on the next line.
+  'git \\\ncommit -m x',
+  'git \\\r\ncommit -m x',
+  'git commit -m "unterminated',
+  "git commit -m 'unterminated",
+  'echo "x\ngit commit -m x',
+  "echo 'x\ngit commit -m x",
 ];
 for (const command of bareDenies) {
   test(`Seam 3: Bash ${JSON.stringify(command)} is denied with the bare-commit text`, (t) => {

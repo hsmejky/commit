@@ -150,6 +150,18 @@ const table = [
   ['git commit --amend --no-edit > "x`u{0}"', 'escape'],
   // An interpreter of a string (iex, Invoke-Expression) is a documented gap, like `eval`.
   ["iex 'git commit -m x'", null],
+  // GRD-07: a backtick-newline (CRLF too) is joined before splitting, and dropped from the
+  // mention text even inside a word (PowerShell itself keeps that newline in the word: an
+  // accepted false deny, oracle class `escaped-newline-in-word`); an unterminated quote is
+  // the rest of its line as one quoted token, and scanning continues on the next line.
+  ['git `\ncommit -m x', 'bare'],
+  ['git `\r\ncommit -m x', 'bare'],
+  ['git com`\nmit -m x', 'bare'],
+  ['git com`\r\nmit -m x', 'bare'],
+  ['git commit -m "unterminated', 'bare'],
+  ["git commit -m 'unterminated", 'bare'],
+  ['Write-Output "x\ngit commit -m x', 'bare'],
+  ["Write-Output 'x\ngit commit -m x", 'bare'],
 ];
 
 for (const [command, expected] of table) {
