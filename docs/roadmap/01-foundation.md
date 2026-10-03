@@ -121,13 +121,13 @@ name set to `runner` and to `root`.
 
 **Blocked by:** FND-03, FND-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q15, Q10, story 138, Modules and how "Other checks".
 
-- [ ] On the CI legs, the runner's name matched as a segment (`/home/<name>/`, `/Users/<name>/`, `C:\Users\<name>\`, any other path) fails the test, without service-user or length exemptions; the bare word never does.
-- [ ] The self-test with the name `runner` and with `root` passes on today's docs and fails on a planted literal runner path (a fixture built at run time, not committed).
-- [ ] The file set is exactly the one FND-06 decided.
+- [x] On the CI legs, the runner's name matched as a segment (`/home/<name>/`, `/Users/<name>/`, `C:\Users\<name>\`, any other path) fails the test, without service-user or length exemptions; the bare word never does.
+- [x] The self-test with the name `runner` and with `root` passes on today's docs and fails on a planted literal runner path (a fixture built at run time, not committed).
+- [x] The file set is exactly the one FND-06 decided.
 
 
 ## FND-08: Privacy guard: `local-path` and every scan pattern
