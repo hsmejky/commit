@@ -466,6 +466,7 @@ async function storeAndLock(ctx) {
     // `untracked.collapsed`.
     collapsed: ctx.inventory.collapsed,
     stagedExcluded: stagedExcludedOf(ctx),
+    dirtySubmodules: dirtySubmodulesOf(ctx),
     // CHG-12 (C:run-folder): the paths that are not UTF-8, each bad byte as `\xNN`, for
     // `check`'s `notIncluded` (PLN-04); `[]` in `reword`, which commits no tree path.
     notUtf8: ctx.mode === 'reword' ? [] : ctx.inventory.notUtf8,
@@ -522,6 +523,7 @@ async function storeAndLock(ctx) {
       hidden: ctx.inventory.hidden,
     },
     stagedExcluded: stagedExcludedOf(ctx),
+    dirtySubmodules: dirtySubmodulesOf(ctx),
     attribution: ctx.attribution.trailer === null ? null : ctx.attribution,
     // GIT-10: M11's result from step 6 (C:plan `signing`).
     signing: ctx.signing,
@@ -552,6 +554,12 @@ async function storeNotices(ctx) {
 // path, so `check` must not note that the run unstages one.
 function stagedExcludedOf(ctx) {
   return ctx.mode === 'reword' ? [] : ctx.inventory.stagedExcluded;
+}
+
+// C:plan `dirtySubmodules` (CHG-09): submodules with dirt but no pointer change; `[]` in
+// `reword`, which commits no tree path.
+function dirtySubmodulesOf(ctx) {
+  return ctx.mode === 'reword' ? [] : ctx.inventory.dirtySubmodules;
 }
 
 // `plan.json` holds one top-level entry per line (C:run-folder), still one JSON object.

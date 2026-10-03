@@ -50,7 +50,7 @@ function inventory(c) {
 
 const EMPTY_INVENTORY = Object.freeze({
   clean: true, tracked: [], preStaged: [], candidates: [], collapsed: [], hidden: { count: 0, sample: [] },
-  stagedNew: [], stagedExcluded: [], notUtf8: [],
+  stagedNew: [], stagedExcluded: [], notUtf8: [], dirtySubmodules: [],
 });
 
 // `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file, or
@@ -130,6 +130,7 @@ test('inventory: untracked candidates, hidden files, staged-new and pre-staged p
     stagedNew: [{ path: 'ign.txt', ignored: true }, { path: 'staged.txt', ignored: false }],
     stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],
     notUtf8: [],
+    dirtySubmodules: [],
   });
 });
 
@@ -546,14 +547,6 @@ test('snapshot: a rename with a mode change hashes old and new path and both mod
     unit.hash,
     crypto.createHash('sha256').update('R\0old.sh\0moved.sh\0mode 100755 100644\0').digest('hex'),
   );
-});
-
-test('snapshot: a type change is not built yet (CHG-09)', { skip: process.platform === 'win32' && 'no symlinks without privileges' }, async (t) => {
-  const c = createCase(t);
-  seed(c, { 'a.txt': 'a\n', 'l': 'x\n' });
-  fs.rmSync(path.join(c.repoDir, 'l'));
-  fs.symlinkSync('a.txt', path.join(c.repoDir, 'l'));
-  await assert.rejects(snapshot(c), /a T change \(l\) is not built yet \(CHG-09\)/);
 });
 
 // CHG-05: the temporary index. `snapshot` copies the real index, resets the copy to HEAD,

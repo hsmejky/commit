@@ -22,8 +22,8 @@ const LOSSY_UTF8 = new TextDecoder('utf-8');
  * @returns {{ stdoutObj: object, hunksTxt: string }} `stdoutObj`: exactly the C:plan-hunks
  *   output shape; `hunksTxt`: one block per unit, a `### <id> <status> <kind> <range>
  *   <path>` line then the lossily decoded body. Per entry, `offset` is the 1-based line of
- *   its `###` line and `lines` the block's line count including it. A binary unit has no
- *   block: `body: "none"`, `offset` and `lines` null.
+ *   its `###` line and `lines` the block's line count including it. A binary or submodule
+ *   unit has no block: `body: "none"`, `offset` and `lines` null.
  */
 export function renderHunks(runState, units) {
   const { scanIgnore, ...values } = runState.config.values;
@@ -31,8 +31,8 @@ export function renderHunks(runState, units) {
   const hunks = [];
   let nextLine = 1;
   for (const unit of units) {
-    // CHG-08: a binary unit has no block (`body: "none"`, C:plan-hunks).
-    if (unit.kind === 'binary') {
+    // CHG-08, CHG-09: a binary or submodule unit has no block (`body: "none"`, C:plan-hunks).
+    if (unit.kind === 'binary' || unit.kind === 'submodule') {
       hunks.push({
         id: unit.id,
         path: unit.path,

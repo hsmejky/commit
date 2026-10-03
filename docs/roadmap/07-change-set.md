@@ -239,7 +239,7 @@ one whole-file unit (main and `--text` pass), and `dirtySubmodules` from
 - [ ] Seam 1: a pointer change in a submodule with untracked files inside → one `submodule` unit.
 - [ ] Seam 1: the same pointer change with `diff.submodule=log` set → the same unit and hash (the `diff.submodule=log` half of CHG-07's first criterion, which had no submodule to act on before this slice; review-CHG-07 finding 7).
 - [ ] Seam 1: dirt without a pointer change → `dirtySubmodules: ["libs/x"]`, no unit, tree clean (`nothing` once RUN's clean-tree rule is wired).
-- [ ] Seam 1: a submodule with only inner dirt (status ` M`, no pointer change) → `inventory` lists it but the pinned diff finds no unit for it; the non-clean, zero-unit case throws "not built yet (CHG-09)" explicitly rather than a bare count-mismatch `internal`.
+- [ ] Seam 1: a submodule with only inner dirt (status ` M`, no pointer change) → `inventory` lists it in `dirtySubmodules` (not in `tracked`), the pinned diff finds no unit for it, no count-mismatch `internal`, and the tree is treated as in the criterion above (dirt alone is clean).
 
 
 ## CHG-10: Filtered files and `linguist-generated`

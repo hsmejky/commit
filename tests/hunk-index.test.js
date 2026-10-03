@@ -92,6 +92,22 @@ test('renderHunks decodes non-UTF-8 bytes lossily and keeps offsets on the ### l
   assert.equal(block(hunksTxt, stdoutObj.hunks[1])[3], '\\ No newline at end of file');
 });
 
+test('renderHunks gives a submodule unit no block (CHG-09, C:plan-hunks body none)', () => {
+  const units = [
+    unit('h1', 'libs/x', '', { kind: 'submodule', range: '-0,0 +0,0' }),
+    unit('h2', 'a.md', '@@ -1 +1 @@\n-x\n+y\n'),
+  ];
+
+  const { stdoutObj, hunksTxt } = hunkIndex.renderHunks(RUN_STATE, units);
+
+  assert.deepEqual(stdoutObj.hunks[0], {
+    id: 'h1', path: 'libs/x', oldPath: null, status: 'M', kind: 'submodule', range: '-0,0 +0,0',
+    lines: null, offset: null, body: 'none',
+  });
+  assert.equal(stdoutObj.hunks[1].offset, 1);
+  assert.equal(hunksTxt, '### h2 M text -1 +1 a.md\n@@ -1 +1 @@\n-x\n+y\n');
+});
+
 test('renderHunks over a real snapshot: h1 and h2 point at their ### blocks', async (t) => {
   const c = createCase(t);
   c.writeFile('a b/c.txt', 'old\n');

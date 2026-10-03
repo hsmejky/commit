@@ -52,7 +52,7 @@ function units({ hunks, state }) {
 // `diff.interHunkContext=10`), one edit in `top.txt` outside `src/`, a staged rename
 // (`diff.renames=false`), an edit to a non-ASCII path (`core.quotePath`) and a file touched
 // but unchanged (`diff.autoRefreshIndex=false`), so every pinned option has something to
-// change. `diff.submodule=log` waits for submodule units (CHG-09), which pins it there.
+// change. `diff.submodule=log` needs a submodule: tests/change-set-submodules.test.js pins it.
 function fixture(c) {
   const lines = numbered(30);
   seed(c, {

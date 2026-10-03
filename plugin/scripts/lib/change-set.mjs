@@ -5,7 +5,8 @@
 // M17's "N files left" rendering of that tree state. CHG-03 builds the tracer `inventory` (unstaged
 // modifications of tracked files only), `snapshot` in `split` (one whole-file unit per
 // modified file, diffed against HEAD) and `assignIds`; CHG-05 adds the temporary index,
-// CHG-06 the streamed hunk-level pass, CHG-08 onward the other change kinds.
+// CHG-06 the streamed hunk-level pass, CHG-08 onward the other change kinds (CHG-09:
+// symlinks, submodule pointers, type changes and `dirtySubmodules`).
 // EXE-02 adds M16's thin whole-file `matchIds`, `stage`, `writeTree`, `treeDiffUnits` and
 // a plain `commitGuarded` (CHG-19 to CHG-23 widen them).
 
@@ -47,6 +48,8 @@ const BINARY_PATCH = Buffer.from('Binary files ');
 const INDEX_LINE = /^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: [0-7]+)?\n$/;
 const NO_MODE = '000000';
 const REGULAR_MODES = new Set(['100644', '100755']);
+const SYMLINK_MODE = '120000';
+const GITLINK_MODE = '160000';
 
 /**
  * Reads the working tree's state: every path `git status` reports (tracked changes and
@@ -81,7 +84,8 @@ export async function indexFingerprint({ toplevel, env, now }) {
 }
 
 /**
- * The inventory (C:plan step 4, Q11). Read-only: four git calls, none writes the index.
+ * The inventory (C:plan step 4, Q11). Read-only: four git calls (six when the tree can hold a
+ * submodule), none writes the index.
  * - candidates: `git ls-files --others --exclude-standard -z` after `hideFilter`, each with
  *   its `lstat` size and `binary` (a NUL in the first 8000 bytes; `.gitattributes` is not
  *   read here, CHG-08/CHG-11).
@@ -94,7 +98,9 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore`
  *   refuses M2's `GIT_LITERAL_PATHSPECS=1`).
  * - tracked: the `git status --untracked-files=no --no-renames` entries that are not
- *   staged-new (a rename's old path is its own deletion).
+ *   staged-new (a rename's old path is its own deletion) nor in `dirtySubmodules`.
+ * - dirtySubmodules (CHG-09): the submodules with dirt inside but no pointer change, in byte
+ *   order (`dirtySubmodulePaths`); not units, and dirt alone leaves the tree `clean`.
  * - caps (CHG-13): not this function's job. `collapsed` is always `[]` and `stagedExcluded`
  *   holds only the hidden entries here; the workflow calls M9 `applyCaps` itself, in `split`
  *   only, once the mode decision has counted these (pre-cap) lists (C:plan step 4 counts the
@@ -110,7 +116,8 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   hidden: { count: number, sample: string[] },
  *   stagedNew: Array<{ path: string, ignored: boolean }>,
  *   stagedExcluded: Array<{ path: string, reason: 'hidden' }
- *     | { dir: string, count: number, reason: 'collapsed' }>, notUtf8: string[] }>}
+ *     | { dir: string, count: number, reason: 'collapsed' }>, notUtf8: string[],
+ *   dirtySubmodules: string[] }>}
  *   `notUtf8` (CHG-12, Q11): every path of the three listings whose bytes are not valid
  *   UTF-8, left out of every other list (never a unit, never in the temporary index) and
  *   written by `escapeNonUtf8`, each once, in byte order, for `notIncluded` ("path is not
@@ -188,15 +195,45 @@ export async function inventory({ toplevel, env, now }) {
   ));
   const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
 
-  const addedSet = new Set(added);
+  const staged = [];
+  for (let i = 1; i < cached.length; i += 2) staged.push(cached[i].toString('utf8'));
+  const dirtySubmodules = await dirtySubmodulePaths(status, staged, toplevel, opts);
+  const notTracked = new Set([...added, ...dirtySubmodules]);
   const tracked = status
-    .filter((entry) => entry.path !== null && !addedSet.has(entry.path))
+    .filter((entry) => entry.path !== null && !notTracked.has(entry.path))
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
     tracked, preStaged, candidates, collapsed: [], hidden, stagedNew, stagedExcluded,
-    notUtf8: notUtf8List(notUtf8),
+    notUtf8: notUtf8List(notUtf8), dirtySubmodules,
   };
+}
+
+// C:plan `dirtySubmodules` (CHG-09, Q11): the submodules whose own working tree has changes
+// (edits or untracked files) but whose pointer did not change. Those are the paths that
+// `git diff --ignore-submodules=none --name-only` lists (worktree against index) and
+// `--ignore-submodules=dirty` does not, less every path the index changes against HEAD (a
+// staged pointer change is a unit whatever its dirt). The two calls run only when the tree
+// can hold a submodule: a `.gitmodules` file, or a tracked change that is a directory in the
+// worktree (a gitlink added without one).
+async function dirtySubmodulePaths(status, staged, toplevel, opts) {
+  const maybe = existsInWorktree(toplevel, '.gitmodules') || status.some((entry) => entry.path !== null
+    && entry.xy[1] === 'M' && isDirectory(toplevel, entry.path));
+  if (!maybe) return [];
+  const names = async (ignore) => nulList(await gitOk(
+    ['diff', `--ignore-submodules=${ignore}`, '--no-renames', '--no-ext-diff', '--name-only', '-z'], opts,
+  ));
+  const pointerOrStaged = new Set([...await names('dirty'), ...staged]);
+  return (await names('none')).filter((path) => !pointerOrStaged.has(path)).sort(byteOrder);
+}
+
+function isDirectory(toplevel, path) {
+  try {
+    return lstatSync(join(toplevel, path)).isDirectory();
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false;
+    throw err;
+  }
 }
 
 /**
@@ -571,13 +608,25 @@ export function createDiffReader() {
   let partial = [];
   let section = null;
   let sections = 0;
+  // A type change's (`T`) record owns two consecutive sections, a delete and then a new
+  // file, both under the record's own `diff --git` line (Q11 pass 8 amendment): while its
+  // first section is open, this holds that line and the record's path for the error.
+  let typeChange = null;
 
   const finishSection = () => {
+    if (typeChange !== null) {
+      throw new Error(`a type change (${typeChange.path}) has one patch section, not two`);
+    }
     if (section !== null) units.push(...unitsOf(section));
     section = null;
   };
   const onLine = (line) => {
     if (startsWith(line, SECTION_START)) {
+      if (typeChange !== null && line.equals(typeChange.header)) {
+        typeChange = null;
+        if (section.notUtf8 !== true) secondPart(section);
+        return;
+      }
       finishSection();
       const record = records[sections];
       sections += 1;
@@ -589,6 +638,7 @@ export function createDiffReader() {
       }
       section = openSection(record);
       if (section.notUtf8 === true && section.rediff !== null) rediff.push(section.rediff);
+      if (record.status === 'T') typeChange = { header: Buffer.from(line), path: escapeNonUtf8(record.pathBytes) };
       return;
     }
     if (section === null) throw new Error('the diff patch text does not start with a section');
@@ -880,32 +930,48 @@ const NOT_UTF8_SECTION = Object.freeze({ notUtf8: true, rediff: null });
 
 // Opens a section for its raw record. `M` (content edit), `A` (a new file from the
 // temporary index's intent-to-add entries, old mode 000000), `D` (a deleted file, new mode
-// 000000) and `R<score>` (a rename, the score dropped) are built, with or without a mode
-// change between 100644 and 100755 (CHG-08); every other status (`T`) and a non-regular
-// entry (symlink, gitlink) throw for CHG-09.
+// 000000), `R<score>` (a rename, the score dropped), with or without a mode change between
+// 100644 and 100755 (CHG-08), and `T` (a type change between a file, a symlink and a
+// gitlink, CHG-09: `modes` holds both modes, and its second section is read into the same
+// section by `secondPart`). `entryKind` (CHG-09): `submodule` when either side is a gitlink
+// (160000), else `symlink` when either side is a symlink (120000), else null.
 function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
   const path = utf8Path(pathBytes);
   const oldPath = oldPathBytes === null ? null : utf8Path(oldPathBytes);
   if (path === null) return NOT_UTF8_SECTION;
   if (oldPathBytes !== null && oldPath === null) return Object.freeze({ notUtf8: true, rediff: path });
-  const kind = /^[MAD]$/.test(status) ? status : (/^R\d*$/.test(status) ? 'R' : null);
-  if (kind === null) throw new Error(`a ${status} change (${path}) is not built yet (CHG-09)`);
-  for (const mode of [oldMode, newMode]) {
-    if (mode !== NO_MODE && !REGULAR_MODES.has(mode)) {
-      throw new Error(`a ${mode} entry (${path}) is not built yet (CHG-09)`);
+  const kind = /^[MADT]$/.test(status) ? status : (/^R\d*$/.test(status) ? 'R' : null);
+  if (kind === null) throw new Error(`an unexpected ${status} change (${path})`);
+  const modes = [oldMode, newMode];
+  for (const mode of modes) {
+    if (mode !== NO_MODE && mode !== SYMLINK_MODE && mode !== GITLINK_MODE && !REGULAR_MODES.has(mode)) {
+      throw new Error(`an unexpected ${mode} entry (${path})`);
     }
   }
+  const entryKind = modes.includes(GITLINK_MODE) ? 'submodule' : (modes.includes(SYMLINK_MODE) ? 'symlink' : null);
   return {
     path,
     pathBytes,
     oldPath: kind === 'R' ? oldPath : null,
     oldPathBytes,
     status: kind,
-    modes: (kind === 'M' || kind === 'R') && oldMode !== newMode ? `${oldMode} ${newMode}` : null,
+    entryKind,
+    modes: kind !== 'A' && kind !== 'D' && oldMode !== newMode ? `${oldMode} ${newMode}` : null,
+    // Which side of a `T` is a gitlink: its `Subproject commit` line is hashed, never scanned.
+    gitlink: [oldMode === GITLINK_MODE, newMode === GITLINK_MODE],
+    first: null,
     blobs: null,
     binary: false,
     hunks: [],
   };
+}
+
+// A type change's second section (its new side): what the first one read moves to `first`.
+function secondPart(section) {
+  section.first = { blobs: section.blobs, binary: section.binary, hunks: section.hunks };
+  section.blobs = null;
+  section.binary = false;
+  section.hunks = [];
 }
 
 // One patch line of an open section. The header lines before the first `@@` are dropped;
@@ -935,8 +1001,11 @@ function sectionLine(section, line) {
 // before it in the file. Every other section is one whole-file unit whose identity key is
 // its hash (a path has one whole-file unit): an `A`, `D` or `R` (`kind: "text"`), a mode
 // change with or without content edits (`kind: "mode"`), and a file git reports as binary
-// (`kind: "binary"`, also with a mode change: its body is none either way, C:plan-hunks).
-// The whole-file hash opens with the section's one-letter status (`A`, `D`, `M` or `R`) and
+// (`kind: "binary"`, also with a mode change: its body is none either way, C:plan-hunks),
+// a symlink (`kind: "symlink"`, also an `M`: hashed and scanned over its old and new
+// target lines) and a submodule pointer (`kind: "submodule"`: `commit <old> <new>` and a
+// NUL after the path, no body, not scanned; CHG-09). A `T` is `typeChangeUnit`'s. The
+// whole-file hash opens with the section's one-letter status (`A`, `D`, `M` or `R`) and
 // a NUL, so none of what follows can pass for another status's framing (CHG-08 decision:
 // without the tag, a pure rename to a path spelled like a mode or blob marker — for example
 // `mode 100644 100755` — hashes byte for byte the same as that marker's own unit, since both
@@ -946,12 +1015,13 @@ function sectionLine(section, line) {
 // lines (which start with `-`, `+` or `\`, never `m` or `b`).
 function unitsOf(section) {
   if (section.notUtf8 === true) return [];
-  const { path, pathBytes, oldPath, oldPathBytes, status, modes, blobs, binary, hunks } = section;
+  const { path, pathBytes, oldPath, oldPathBytes, status, entryKind, modes, blobs, binary, hunks } = section;
   if (binary && blobs === null) throw new Error(`a binary section without an index line (${path})`);
-  if (status === 'M' && !binary && modes === null && hunks.length === 0) {
+  if (status === 'T') return [typeChangeUnit(section)];
+  if (status === 'M' && entryKind === null && !binary && modes === null && hunks.length === 0) {
     throw new Error(`a modified section without a hunk (${path})`);
   }
-  const kind = binary ? 'binary' : (modes === null ? 'text' : 'mode');
+  const kind = entryKind ?? (binary ? 'binary' : (modes === null ? 'text' : 'mode'));
   const base = { path, pathBytes, oldPath, status, kind };
   if (status === 'M' && kind === 'text') {
     const occurrences = new Map();
@@ -970,6 +1040,14 @@ function unitsOf(section) {
   const whole = createHash('sha256').update(Buffer.from(`${status}\0`));
   if (status === 'R') whole.update(oldPathBytes).update(Buffer.from([NUL]));
   whole.update(pathBytes).update(Buffer.from([NUL]));
+  if (kind === 'submodule') {
+    // The `index` line's full commit IDs, all zeros on the missing side; no body, not scanned.
+    if (blobs === null) throw new Error(`a submodule section without an index line (${path})`);
+    const hash = whole.update(Buffer.from(`commit ${blobs}\0`)).digest('hex');
+    return [{
+      ...base, hash, identityKey: hash, added: 0, deleted: 0, addedLines: [], range: '-0,0 +0,0', body: Buffer.alloc(0),
+    }];
+  }
   if (modes !== null) whole.update(Buffer.from(`mode ${modes}\0`));
   if (binary) whole.update(Buffer.from(`blob ${blobs}\0`));
   const counts = { added: 0, deleted: 0, addedLines: [] };
@@ -986,6 +1064,43 @@ function unitsOf(section) {
   return [{
     ...base, hash, identityKey: hash, ...counts, range, body: Buffer.concat(hunks.flatMap((hunk) => hunk.lines)),
   }];
+}
+
+// A type change's one whole-file unit (CHG-09, Q11 pass 8 amendment), `kind` its
+// `entryKind`: `T`, NUL, path, NUL, `mode <old> <new>` and a NUL, then each of its two
+// parts in order (the delete, then the new file), as a whole-file unit hashes its one
+// section (`blob <old> <new>` and a NUL for a binary part, else its `-`/`+` lines). The range
+// spans the old side of the first part and the new side of the second. A gitlink side's
+// `Subproject commit` line is hashed but neither counted, scanned nor in the body; a
+// `submodule` unit has no body (C:plan-hunks), but a file side's added lines are scanned.
+function typeChangeUnit(section) {
+  const { path, pathBytes, oldPath, entryKind, modes, gitlink, first } = section;
+  const parts = [first, { blobs: section.blobs, binary: section.binary, hunks: section.hunks }];
+  const whole = createHash('sha256').update(Buffer.from('T\0')).update(pathBytes).update(Buffer.from([NUL]));
+  whole.update(Buffer.from(`mode ${modes}\0`));
+  const counts = { added: 0, deleted: 0, addedLines: [] };
+  const body = [];
+  parts.forEach((part, i) => {
+    if (part.binary) {
+      if (part.blobs === null) throw new Error(`a binary section without an index line (${path})`);
+      whole.update(Buffer.from(`blob ${part.blobs}\0`));
+      return;
+    }
+    for (const hunk of part.hunks) {
+      const one = hashHunk(hunk, whole);
+      if (gitlink[i]) continue;
+      counts.added += one.added;
+      counts.deleted += one.deleted;
+      counts.addedLines.push(...one.addedLines);
+      if (entryKind !== 'submodule') body.push(...hunk.lines);
+    }
+  });
+  const hash = whole.digest('hex');
+  const range = `-${parts[0].hunks[0]?.old.text ?? '0,0'} +${parts[1].hunks[0]?.new.text ?? '0,0'}`;
+  return {
+    path, pathBytes, oldPath, status: 'T', kind: entryKind, hash, identityKey: hash, ...counts, range,
+    body: Buffer.concat(body),
+  };
 }
 
 // Feeds one hunk's `-`/`+` lines into `hash` and counts them. `\ No newline at end of file`
