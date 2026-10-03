@@ -115,6 +115,10 @@ and the release comes only after the last group.
       records the lock mtime per group).
 - [ ] Seam 1: a run state with group 1 already `committed` and the expected HEAD set to its
       SHA → the call commits groups 2 and 3 only.
+- [ ] Seam 1: a fixture `pre-commit` hook of group 1 rewrites the run lock to hold another
+      `planId` → group 1 kept, group 2's `touch` refuses `taken-over` (review-EXE-02 finding
+      4: EXE-02's own `touch` throw cited `EXE-06`, which is `head-moved`; no slice asserted
+      a `taken-over`/`busy` refusal from `touch` between groups until this one).
 
 
 ## EXE-05: `no-groups` after the lock check

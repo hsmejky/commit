@@ -90,7 +90,7 @@ and of the real index.
 - Path lists never go on argv: staging, attribute and index calls pass them on stdin,
   NUL-separated, so a large rename group cannot hit the Windows command-line limit (Q11,
   C:commit-release).
-- Real index: `stage(groupUnits)` (reset, apply the patch built from current ranges with
+- Real index: `stage(groupUnits, { ignoredPaths })` (reset, apply the patch built from current ranges with
   `git apply --cached --whitespace=nowarn`, whole-file adds, then verify the staged hash
   set; typed: `mismatch`, or `stage-failed` when `apply` or `add` fails after the reset;
   ignored whole-file paths go in a separate `git add -A -f` call, and a non-zero `git add`

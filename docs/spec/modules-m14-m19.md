@@ -79,7 +79,7 @@ presentation. Each group runs the three phases of C:commit-release in order, and
 of phase (a) runs again before each group, so the advanced expected HEAD and an `index.lock`
 created between groups are both caught:
 - (a) Refusals, in C:commit-release order: `lock` (M12 `open` with its `call.lock` once per
-  call, before the first group; `run.touch()` before each group), `unconfirmed`
+  call, before the first group; `touch(run)` before each group), `unconfirmed`
 
   (first group of the call only), `no-groups` (no stored groups, or all committed), `head-moved` (M3 `head()` against the current expected
   HEAD: the one `plan` recorded, then the SHA of each group this run committed; text per

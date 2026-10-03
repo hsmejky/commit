@@ -130,6 +130,13 @@ pins, and keeps every other variable for the user's hooks.
 
 **Sources:** Q9, Q18, M2, stories 147, 163, testing-modules row M2/M3.
 
+**Note (review-EXE-02 ruling):** must land before any dogfood or the 0.1.0 release. Until
+then `git commit` strips every inherited `GIT_*`, including `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
+identity given only through the environment and `GIT_LITERAL_PATHSPECS`/the
+`GIT_CONFIG_COUNT` pins a repo hook may rely on (glob pathspecs). Not a real-world break
+today (the plugin is unreleased, and M2 keeps `HOME`/`GIT_CONFIG_GLOBAL` so config-file
+identities still work), but it would break dogfooding and any user's hooks once shipped.
+
 - [ ] Seam 1: a pre-commit hook records its environment → `GIT_AUTHOR_NAME` and a custom `GIT_FOO` exported to the entry point are present; `GIT_LITERAL_PATHSPECS` is absent; a decoy `GIT_INDEX_FILE` is absent.
 - [ ] Seam 1: the commit lands in the real repo despite a decoy `GIT_DIR`.
 
@@ -148,6 +155,14 @@ pins, and keeps every other variable for the user's hooks.
 
 **Sources:** Q9, Q18, M2, M15 `deadline`, testing-seams "Clock at Seam 1", story 43.
 
+**Note (review-process-adapter-hang finding M1):** until this lands, production `run` called
+without `timeoutMs` has no deadline at all and waits on `close` forever. The 416153b hang's
+root cause is still open: either (a) the `onStdout` chunk the consumer was waiting for never
+arrived (a stall before the child's first write), so `run` blocked with nothing to kill, or
+(b) the live process was a different, misattributed one. Both are bounded only inside the
+test harness today (case timeout, after-hook kill, self-exiting fixtures), not in production;
+(a) is closed once every call carries a deadline-derived `timeoutMs`.
+
 - [ ] Seam 1: a clean filter that sleeps, with the clock stepped to 535 s elapsed at start → `plan` ends exit 5 `timeout` within about 10 s, no run folder left, no lock left.
 - [ ] Seam 1 (POSIX and Windows): the sleeping filter's child process is gone after the call returns (tree kill, not only the direct child).
 - [ ] A cleanup call whose `timeoutMs` is at or below 0 is not spawned and reports `timed-out`.
@@ -165,6 +180,12 @@ pins, and keeps every other variable for the user's hooks.
 - [ ] Replace GIT-12's child-only `SIGKILL` path in `run` with the tree kill; M11's
       `ssh-add` takes the smaller of its fixed 5 s and `deadline - now()`; an M11
       `git --exec-path` timeout means the check was not run (review-GIT-12 finding 2).
+- [ ] The `onStdout`-throw kill in `run` (`abandon()`, process-adapter.mjs) becomes the same
+      tree kill as the timeout path above, not the child-only `SIGKILL` it uses today (416153b;
+      review-process-adapter-hang finding L2): the Git for Windows `cmd\git.exe` launcher case
+      the commit describes is exactly a surviving process the direct kill misses. `abandon()`'s
+      5 s `KILL_BACKSTOP_MS` and this criterion's own post-kill escalation overlap; reuse or
+      rename one of them instead of keeping both.
 
 
 ## GIT-08: Signal handler: Esc or session end kills the active git tree
