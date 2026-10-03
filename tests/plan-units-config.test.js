@@ -308,7 +308,11 @@ test('sparse-checkout and skip-worktree paths are never units', async (t) => {
   c.git(['sparse-checkout', 'set', '--cone', 'inside']);
   assert.equal(fs.existsSync(path.join(c.repoDir, 'outside', 'b.txt')), false);
   c.git(['update-index', '--skip-worktree', 'kept.txt']);
-  fs.rmSync(path.join(c.repoDir, 'kept.txt'));
+  // On git 2.34, `sparse-checkout set --cone inside` already removes this root-level file from
+  // the worktree (cone mode didn't yet keep top-level loose files outside the cone); newer git
+  // keeps it until skip-worktree is set, so this delete is what takes it out. Either way the
+  // state the rest of the test relies on is the same: kept.txt absent, skip-worktree set.
+  fs.rmSync(path.join(c.repoDir, 'kept.txt'), { force: true });
   c.writeFile('inside/a.txt', 'A\n');
 
   const { json, hunks, planJson } = await plan(c);
