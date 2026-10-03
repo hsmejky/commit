@@ -202,7 +202,9 @@ files (path + blob IDs), each with exactly one hunk covering the file.
 
 **Status:** ready-for-agent
 
-**Sources:** Q11 hash table, C:plan-hunks (`kind`), stories 68, 71, M10.
+**Sources:** Q11 hash table, C:plan-hunks (`kind`), stories 68, 71, M10; KD-S82 (a staged
+mode change under `core.fileMode=false` gives no unit, [known
+deficiencies](../spec/known-deficiencies.md)).
 
 - [ ] Seam 1: `chmod +x` alone and `chmod +x` plus a content edit → one `mode` unit each.
 - [ ] Seam 1: a deleted file, a renamed-and-edited file, a new binary → one unit each, `body: "none"` for the binary.
@@ -318,7 +320,9 @@ blob ID; a hidden staged-new path under `--staged` is the `staged-hit` fact.
 
 **Status:** ready-for-agent
 
-**Sources:** Q9, Q10, Q11 (index-only content), C:plan (`preStaged`, `unstagedLeft`), stories 83-85, 225, M10.
+**Sources:** Q9, Q10, Q11 (index-only content), C:plan (`preStaged`, `unstagedLeft`), stories 83-85, 225, M10;
+KD-S82 (a staged mode change under `core.fileMode=false` is index-only state `indexOnly`
+misses, [known deficiencies](../spec/known-deficiencies.md)).
 
 - [ ] Seam 1: `plan --staged` with a partial `git add -p` → units from the index only, `unstagedLeft` = count of unstaged changes, the file in both `preStaged` and `tracked`.
 - [ ] Seam 1: `git add x && rm x`, a staged edit reverted in the worktree, and `git add -p` plus more edits under `--split` → `indexOnly` stored with the blob ID, no unit, no `diff-changed`.

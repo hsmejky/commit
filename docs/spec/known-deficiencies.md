@@ -51,6 +51,16 @@ delete it here; IDs are never reused.
   `plugin/scripts/lib/run.mjs` (`takeCallLock`, `close`),
   [C:run-folder](../contracts/run-folder.md). Disposition: accepted for 0.1.0
   (review-RUN-02 finding 7).
+- **KD-S82. A staged mode change is lost under `core.fileMode=false`.** With
+  `core.fileMode=false` (the Windows default, or set by the user) `git update-index
+  --chmod=+x` is the only way to stage an executable bit. Without a content edit it gives no
+  unit: the temporary index is reset to HEAD's mode, and git compares no mode against the
+  worktree. A `split` commit's real-index reset then drops the staged mode with no notice.
+  `indexOnly` (CHG-14, "differs from HEAD and the worktree") does not catch it, since git
+  sees no worktree difference. Where: Q11 (index-only content),
+  [C:plan](../contracts/plan.md) (temporary index), M10 `snapshot`. Fix: list index entries
+  whose mode differs from HEAD while `core.fileMode=false` as a `mode` unit taken from the
+  index, or as `indexOnly` with a notice. Slices: CHG-08, CHG-14 (review-CHG-05 finding 5).
 
 ## Error tables and API contract
 
