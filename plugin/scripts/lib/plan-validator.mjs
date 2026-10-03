@@ -26,7 +26,7 @@
 // fragment overlapping a span quotes `[<pattern-id>]` in its place, so no matched text
 // reaches stdout (C:check).
 
-import { lint, parse } from './message-grammar.mjs';
+import { lint } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
@@ -53,29 +53,17 @@ function messageOf(header, body) {
 }
 
 // M6's lint reasons quote three message fragments verbatim: the type, the scope and a footer
-// token. One that overlaps a scan-hit span would put the matched text on stdout, so it is
-// quoted as `[<pattern-id>]` instead, the first overlapping hit's ID (C:check). Every
-// occurrence of the fragment in the message counts, and every occurrence in a reason is
-// replaced: over-redacting is harmless, a missed overlap is a leak.
-function redactReasons(reasons, message, hits) {
-  if (hits.length === 0 || reasons.length === 0) return reasons;
-  const { header, footer } = parse(message);
-  const fragments = [header?.type, header?.scope, ...(footer ?? []).map((entry) => entry.token)];
-  const replacements = new Map();
-  for (const fragment of fragments) {
-    if (!fragment || replacements.has(fragment)) continue;
+// token. One that overlaps a scan-hit span would put the matched text on stdout, so `lint` is
+// given this as its `quote` callback instead of letting it embed the fragment directly
+// (C:check): a fragment that overlaps a hit becomes `[<pattern-id>]`, the first overlapping
+// hit's ID; any other fragment passes through unchanged. Because the callback replaces only
+// the value `lint` quotes, never the fixed wording around it, there is nothing to re-parse or
+// pattern-match after the fact.
+function redactingQuote(message, hits) {
+  return (fragment) => {
     const hit = firstOverlappingHit(fragment, message, hits);
-    if (hit !== null) replacements.set(fragment, `[${hit.patternId}]`);
-  }
-  if (replacements.size === 0) return reasons;
-  // Longest first, in one pass: a fragment inside a longer one, or inside an inserted
-  // `[<pattern-id>]`, is never replaced on its own.
-  const alternation = [...replacements.keys()]
-    .sort((a, b) => b.length - a.length)
-    .map((fragment) => fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|');
-  const pattern = new RegExp(alternation, 'g');
-  return reasons.map((reason) => reason.replace(pattern, (fragment) => replacements.get(fragment)));
+    return hit === null ? fragment : `[${hit.patternId}]`;
+  };
 }
 
 function firstOverlappingHit(fragment, message, hits) {
@@ -137,7 +125,7 @@ export function validatePlan(planBytes, runState, options = {}) {
     if (group.hunks.length > 0) throw new Error('hunk-level worker plans are not built yet (PLN-03)');
     const message = messageOf(group.header, group.body);
     const hits = scanText(message, { osUser });
-    for (const reason of redactReasons(lint(message, messageValues), message, hits)) {
+    for (const reason of lint(message, messageValues, { quote: redactingQuote(message, hits) })) {
       errors.push({ group: n, reason });
     }
     for (const [patternId, spans] of spansByPattern(hits)) {

@@ -204,6 +204,36 @@ test('a lint reason quoting a fragment that overlaps no span keeps it verbatim',
   ]);
 });
 
+// review-PLN-06-r2 finding 1 ("Small leak"): a scope that both holds a hit and starts with
+// `'` used to let the redaction regex match starting at the type reason's opening quote
+// (shared text between the scope fragment and the quoted type), leaving the end of the type
+// value (`abcdef`) on stdout: `type [slack-token]abcdef' not in types`. Quoting only the
+// slot `lint` embeds the type in removes the shared-text coincidence entirely.
+test('a scan hit in the type leaves no leftover tail even when a scope hit shares its prefix', async () => {
+  const { validatePlan } = await loadLib('plan-validator');
+  const type = SLACK_TOKEN; // used as the type below: letters, digits and hyphens only.
+  const scope = `'${SLACK_TOKEN.slice(0, -'abcdef'.length)}`; // a leading quote, no "abcdef" tail.
+
+  const result = validateMessage(validatePlan, `${type}(${scope}): x`, null);
+
+  assert.deepEqual(result.errors[0], { group: 1, reason: "type '[slack-token]' not in types" });
+  assert.equal(JSON.stringify(result).includes('abcdef'), false, JSON.stringify(result));
+  assert.equal(JSON.stringify(result).includes(SLACK_TOKEN), false, JSON.stringify(result));
+});
+
+// review-PLN-06-r2 finding 1 ("Garbled reasons"): a short redacted fragment (here the type
+// `e`, which also occurs inside "home" and inside the fixed word "types") used to rewrite
+// the fixed wording wherever that character occurred in the reason:
+// "typ[local-path] '[local-path]' not in typ[local-path]s". Quoting only the type's own slot
+// leaves the surrounding fixed text alone.
+test('a one-character type that recurs in the fixed wording redacts only its own slot', async () => {
+  const { validatePlan } = await loadLib('plan-validator');
+
+  const result = validateMessage(validatePlan, 'e: x', `Refs: ${HOME_ROOT}`);
+
+  assert.deepEqual(result.errors[0], { group: 1, reason: "type '[local-path]' not in types" });
+});
+
 test('two different patterns give one scan error each, in hit order, each with its own spans', async () => {
   const { validatePlan } = await loadLib('plan-validator');
   const token = 'gh' + 'p_' + 'a'.repeat(36);

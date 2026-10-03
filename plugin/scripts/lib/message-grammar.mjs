@@ -168,23 +168,35 @@ export function parse(message) {
  * (`ALLOWED_FOOTER_TOKENS`) adds its own reason, case-sensitive, independent of `body`
  * (Q13, C:message-grammar) — this also catches a last paragraph such as `Note: see #12`.
  *
+ * The three reasons that quote a message fragment (the type, the scope, a footer token) pass
+ * it through `options.quote` before embedding it, instead of embedding it directly: the
+ * default is the identity function, so callers that do not pass `quote` see the fragment
+ * verbatim, unchanged from before this option existed. A caller that needs to keep some of
+ * the message off stdout (M14's redaction, PLN-06) gives `quote` a callback that returns a
+ * stand-in for a fragment instead of the fragment itself; only the quoted slot changes, the
+ * fixed wording around it never does.
+ *
  * @param {string} message
  * @param {{ types: readonly string[], scope?: 'forbidden' | 'optional' | 'required',
  *   maxSubjectLength?: number, subjectCase?: 'lower' | 'any',
  *   body?: 'forbidden' | 'optional' }} values
+ * @param {{ quote?: (fragment: string) => string }} [options] `quote` maps a quoted
+ *   fragment (the type, the scope or a footer token) to the text actually embedded in its
+ *   reason; defaults to the identity function.
  * @returns {string[]}
  */
-export function lint(message, values) {
+export function lint(message, values, options = {}) {
+  const quote = options.quote ?? ((fragment) => fragment);
   const { header, body, footer } = parse(message);
   if (header === null) {
     return [HEADER_REASON];
   }
   const reasons = [];
   if (!values.types.includes(header.type)) {
-    reasons.push(`type '${header.type}' not in types`);
+    reasons.push(`type '${quote(header.type)}' not in types`);
   }
   if (values.scope === 'forbidden' && header.scope !== null) {
-    reasons.push(`scope '${header.scope}' not allowed (scope: forbidden)`);
+    reasons.push(`scope '${quote(header.scope)}' not allowed (scope: forbidden)`);
   } else if (values.scope === 'required' && header.scope === null) {
     reasons.push('scope required (scope: required)');
   }
@@ -199,7 +211,7 @@ export function lint(message, values) {
     for (const entry of footer) {
       if (!ALLOWED_FOOTER_TOKENS.has(entry.token)) {
         reasons.push(
-          `\`${entry.token}\` is not an allowed footer token. If this is body text, rephrase ` +
+          `\`${quote(entry.token)}\` is not an allowed footer token. If this is body text, rephrase ` +
             'it or add a non-footer line to the paragraph.',
         );
       }

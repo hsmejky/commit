@@ -139,6 +139,44 @@ test('lint does not mutate the config values', () => {
   assert.equal(values.types, types);
 });
 
+// PLN-06 (review-PLN-06-r2 finding 1): `lint` quotes the type, the scope and a footer token
+// through an optional `quote` callback instead of embedding them directly, so a caller can
+// redact just that slot without touching the fixed wording around it. With no `quote`
+// option, the fragment is embedded verbatim, exactly as before this option existed.
+
+test('lint with no quote option embeds the type, scope and footer token verbatim', () => {
+  assert.deepEqual(lint('wip(api): x', config({ scope: 'forbidden' })), [
+    "type 'wip' not in types",
+    "scope 'api' not allowed (scope: forbidden)",
+  ]);
+  assert.deepEqual(lint('feat: x\n\nNote: y', config()), [
+    '`Note` is not an allowed footer token. If this is body text, rephrase it or add a ' +
+      'non-footer line to the paragraph.',
+  ]);
+});
+
+test('lint passes the type, the scope and a footer token to quote, in that order', () => {
+  const seen = [];
+  const quote = (fragment) => {
+    seen.push(fragment);
+    return fragment;
+  };
+  lint('wip(api): x\n\nNote: y', config({ scope: 'forbidden' }), { quote });
+  assert.deepEqual(seen, ['wip', 'api', 'Note']);
+});
+
+test('quote replaces only the quoted slot, leaving the fixed wording around it untouched', () => {
+  const quote = () => '[redacted]';
+  assert.deepEqual(lint('wip(api): x', config({ scope: 'forbidden' }), { quote }), [
+    "type '[redacted]' not in types",
+    "scope '[redacted]' not allowed (scope: forbidden)",
+  ]);
+  assert.deepEqual(lint('feat: x\n\nNote: y', config(), { quote }), [
+    '`[redacted]` is not an allowed footer token. If this is body text, rephrase it or add a ' +
+      'non-footer line to the paragraph.',
+  ]);
+});
+
 // MSG-02 AC: `feat(api): x` fails under `forbidden`, passes under `optional` and
 // `required`; `feat: x` fails under `required` only.
 
