@@ -105,10 +105,17 @@ test('commit --plan X --all with a state.json version mismatch → ended', async
 });
 
 // EXE-05 (docs/roadmap/10-commit-executor.md): a matching lock with no stored groups is
-// refused `no-groups` (exit 1 `usage`), after the lock check advances the lock's mtime.
+// refused `no-groups` (exit 1 `usage`), after the lock check advances the lock's mtime. A
+// real `plan --split` run, before `check` ever stores a group, is the AC's actual state
+// (state.json has `mode` and `units` but no `groups` key yet), not a hand-written skeleton.
 test('commit --plan X --all with a matching lock but no stored groups advances the lock mtime, then refuses no-groups, and call.lock does not outlive the call', async (t) => {
   const c = createRepo(t);
-  const { runDir, planId, folder, callLock } = matchingRun(c);
+  c.writeFile('README.md', 'hello\nmore\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, `stdout ${planned.stdout}\nstderr ${planned.stderr}`);
+  const { planId, runDir: folder } = planned.json;
+  const runDir = runDirOf(c);
+  const callLock = path.join(folder, 'call.lock');
   const lockPath = path.join(runDir, 'lock');
   const before = fs.statSync(lockPath).mtimeMs;
   fs.utimesSync(lockPath, new Date(before - 60_000), new Date(before - 60_000));
@@ -129,13 +136,22 @@ test('commit --plan X --all with a matching lock but no stored groups advances t
 });
 
 // EXE-05 AC: every stored group already committed → no-groups too, not a silent exit 0.
+// Builds on a real `plan --split` run (as `check` would leave it), with its one group
+// marked committed by hand, rather than a hand-written state.json shape from scratch.
 test('commit --plan X --all with a stored group already committed → no-groups, same as no stored groups', async (t) => {
   const c = createRepo(t);
-  const { runDir, planId, folder } = matchingRun(c);
+  c.writeFile('README.md', 'hello\nmore\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, `stdout ${planned.stdout}\nstderr ${planned.stderr}`);
+  const { planId, runDir: folder } = planned.json;
+  const runDir = runDirOf(c);
+  const statePath = path.join(folder, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = [{
+    n: 1, units: state.units.map((unit) => unit.id), header: 'feat: x', body: null, committed: true,
+  }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   const sha = c.git(['rev-parse', 'HEAD']).trim();
-  fs.writeFileSync(path.join(folder, 'state.json'), JSON.stringify({
-    version: 1, groups: [{ n: 1, units: [], header: 'feat: x', body: null, committed: true }],
-  }));
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
@@ -149,7 +165,10 @@ test('commit --plan X --all with a stored group already committed → no-groups,
 });
 
 // EXE-05 AC: the lock holds another planId, and no groups are stored either → the lock
-// check (M12 `open`) refuses taken-over first; `no-groups` is never reached.
+// check (M12 `open`) refuses taken-over first; `no-groups` is never reached. The calling
+// planId also gets its own run folder (with no groups), not just the holder's: without it,
+// a reversed check order would hit a missing state.json (likely `internal`) rather than
+// `no-groups`, so the test would not actually catch that ordering bug.
 test('commit --plan X --all with the lock held by a different planId and no groups stored anywhere → taken-over, not no-groups', async (t) => {
   const c = createRepo(t);
   const runDir = runDirOf(c);
@@ -157,6 +176,7 @@ test('commit --plan X --all with the lock held by a different planId and no grou
   const planId = crypto.randomUUID();
   writeLock(runDir, { planId: holder, created: CREATED });
   writeRunFolder(runDir, holder);
+  writeRunFolder(runDir, planId);
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 

@@ -7,10 +7,11 @@
 // `commitGuarded`; the group is marked committed and its SHA becomes the expected HEAD.
 // EXE-04 loops over every uncommitted group in order, `touch()` again before each, and
 // returns a `taken-over`/`busy` refusal from it with the earlier groups kept.
-// EXE-05's `no-groups` refusal (no stored groups, or every one committed) is checked by
-// `workflows.mjs`'s `commitGroups`, before `commitAll` is ever called, right after the lock
-// check (M12 `open`): there is no group loop to place it in here.
-// The other phase (a) refusals (EXE-06 to EXE-08, EXE-22), the failure paths (EXE-09 to
+// EXE-05's `no-groups` refusal (no stored groups, or every one committed) is checked at the
+// top of `commitAll`, right after the mode check: the lock (M12 `open`) already ran once in
+// the caller before `commitAll` is ever invoked, and EXE-22's `unconfirmed` belongs between
+// the two, per C:commit-release phase (a) order.
+// The other phase (a) refusals (EXE-06 to EXE-08), the failure paths (EXE-09 to
 // EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20) are not built yet: reaching one throws.
 
@@ -25,6 +26,14 @@ import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs'
 function notBuilt(what, slice) {
   return new Error(`${what} is not built yet (${slice})`);
 }
+
+// EXE-05: C:cli-and-exit-codes records no text for `no-groups`, so tests assert the domain
+// code's kind and that the text names the state. Correct whichever of the two states caused
+// it: no groups were ever stored, or every stored group is already committed (in the second
+// case, a hint to run `check` first would be wrong, since `check` itself now refuses
+// `already-committed`).
+const NO_GROUPS_TEXT = 'no groups to commit: none are stored, or every stored group is already '
+  + 'committed';
 
 // Low 2 (review-EXE-02): C:commit-release "`split` runs `git reset -q -- .` only when the
 // failing group itself reached (c)". EXE-10 builds the real M10 `unstage` and its `unstaged`
@@ -77,10 +86,12 @@ function refused(state, group, commits, refusal) {
  *   clock, the OS user for the backstop's M8 `scanUnits` (never stored), and the environment.
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: null,
- *   unstaged: Array<object> | null, refusal?: { code: 'taken-over' | 'busy',
- *   message: string } }>} C:commit-release's output fields; on a phase (a) refusal before a
- *   later group also `refusal`, with `failed` that group and `remaining` the groups not
- *   committed (never empty, so M18 does not release the run).
+ *   unstaged: Array<object> | null, refusal?: { code: 'no-groups' | 'taken-over' | 'busy',
+ *   message: string } }>} C:commit-release's output fields; `no-groups` (no stored groups,
+ *   or every one committed) refuses before any group, with `failed: null` and
+ *   `remaining: []`. On a phase (a) refusal before a later group instead, `refusal` with
+ *   `failed` that group and `remaining` the groups not committed (never empty). Neither kind
+ *   releases the run (`usage`/`lock`, M18's call per C:cli-and-exit-codes).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
 export async function commitAll(run, { now, osUser, env }) {
@@ -88,6 +99,16 @@ export async function commitAll(run, { now, osUser, env }) {
   const git = { toplevel, env, now };
   const state = readState(run);
   if (state.mode !== 'split') throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19, EXE-20');
+  // (a) Phase (a) refusals, in C:commit-release order. The lock (M12 `open`, with its
+  // `call.lock`) already ran once in the caller before this function is ever invoked, and
+  // `touch()` refreshes it again before each group below. EXE-22's `unconfirmed` belongs
+  // here, ahead of `no-groups` — leave it this way round when it lands.
+  if (!Array.isArray(state.groups) || state.groups.every((group) => group.committed)) {
+    return {
+      commits: [], failed: null, remaining: [], error: null, gitOutput: null, unstaged: null,
+      refusal: { code: 'no-groups', message: NO_GROUPS_TEXT },
+    };
+  }
   // Medium (review-EXE-02): checked before any group's (c) reset, not after the loop, so a
   // run with pre-staged paths is refused with the real index untouched and nothing committed
   // — EXE-11 (the `unstaged` report those paths would need) is not built yet.

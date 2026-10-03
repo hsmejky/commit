@@ -643,23 +643,21 @@ async function openRun(ctx) {
 }
 
 // `commit` step 4 (EXE-02): M16 `commitAll` over the stored groups, then the run's release
-// once no group remains (C:commit-release: the lock and the run folder go after the last
-// group; the folder takes this call's `call.lock` with it, so the `finally`'s `close` finds
-// nothing left). EXE-05 adds the phase (a) `no-groups` refusal, after the lock check (M12
-// `open`, step 3) and before any group work: no stored groups, or every stored group already
-// committed. The run is kept (no `releaseOpen`), only this call's `call.lock` goes, via the
-// `finally` in `commit()` below (`ctx.opened` is already true by the time this step runs).
+// once it ends with no refusal (C:commit-release: the lock and the run folder go after the
+// last group; the folder takes this call's `call.lock` with it, so the `finally`'s `close`
+// finds nothing left). EXE-05's phase (a) `no-groups` refusal (no stored groups, or every
+// stored group already committed) is `commitAll`'s own, after the lock check (M12 `open`,
+// step 3) and before any group work. A refusal (`no-groups` here; `taken-over`/`busy`
+// mid-loop) keeps the run (no `releaseOpen`; only this call's `call.lock` goes, via the
+// `finally` in `commit()` below — `ctx.opened` is already true by the time this step runs),
+// matching `usage`/`lock` not ending the run (C:cli-and-exit-codes).
 // The release's notice and the `reply` with `status: "committed"` are INT-02's
 // (C:reply-and-handback).
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
-  const { groups } = readState(run);
-  if (!Array.isArray(groups) || groups.every((group) => group.committed)) {
-    return { refusal: { code: 'no-groups', message: 'no groups to commit; run check first, then commit again' } };
-  }
   const { env, now, osUser } = ctx.injected;
   const outcome = await commitAll(run, { now, osUser, env });
-  if (outcome.remaining.length === 0) releaseOpen(run);
+  if (!outcome.refusal) releaseOpen(run);
   return outcome;
 }
 
