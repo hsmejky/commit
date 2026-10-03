@@ -12,9 +12,10 @@ Accepted gaps (Q3, Q5, Q9, Q10, Q11, Q16, Q17, Q18, Q19, Q20, Q22, Q23, Q25). Th
 every accepted gap named elsewhere in this spec is listed here; story 201, the README block
 and the module sections point here, and the README states it in full.
 - The guard is not a security boundary: every allowed form (`--no-edit`, `--amend
-  --no-edit`, `--fixup=<commit>`) commits the current index unscanned, and aliases,
-  interpreters and constructs that evaluate a string as code (`sh -c '…'`, `pwsh -c`,
-  `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
+  --no-edit`, `--fixup=<commit>`) commits the current index unscanned, and git aliases
+  (`git ci`, `git -c alias.ci=commit ci`, or one defined through `--config-env` or
+  `GIT_CONFIG_*`), interpreters and constructs that evaluate a string as code (`sh -c '…'`,
+  `pwsh -c`/`powershell -Command`, `eval`, Bash `${x@P}` and array-subscript evaluation, `Invoke-Expression`,
   `Start-Process`, a runner that re-splits one string argument into a new command line such
   as `env -S 'git commit --fixup=HEAD'`, including one that re-splits an extglob pattern
   in an argument whose body, read as a command (C:guard step 2), is an allowed form
@@ -22,7 +23,8 @@ and the module sections point here, and the README states it in full.
   shell aliases or functions for git (Bash `alias c=git` with `expand_aliases`, PowerShell
   `Set-Alias g git`), a wrapper reached through a word the prefix allowlist lets
   through (a Bash alias for one, a function or a `PATH` script named `nice`, `nohup` or
-  `env`, a quoted reserved word or assignment that bash runs as a command; C:guard step 3), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
+  `env`, a quoted reserved word or assignment that bash runs as a command; C:guard step 3),
+  a `PATH` script that runs git under another name or extension (`git.cmd`, `git.bat`), node options run as code (`node "--eval=…//commit.cjs" plan` holds no
   blanket trigger and is read as a script call by basename, C:guard step 2), and expansion in the command position (`$GIT commit`,
   PowerShell `& $g commit` or `& ('git') commit`, Bash brace expansion or a glob such as
   `{git,commit,-m,x}` or `/usr/bin/gi? commit -m x`; `$(echo git) commit` is denied by

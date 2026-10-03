@@ -397,13 +397,13 @@ accepted gap in Out of Scope.
 
 **Blocked by:** GRD-12.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, Prior art, Out of Scope (guard gaps), story 15.
 
-- [ ] Every case (wrappers such as `bash -c`, reordered flags, env prefixes, `xargs git commit`) is a Seam 3 fixture with its expected output; each no-output case names its accepted gap.
-- [ ] Fixture headers credit the source project and licence; no code is copied.
-- [ ] A static check reads each prior-art fixture header's declared licence and fails unless it is MIT, ISC, BSD, Apache-2.0 (NOTICE kept) or CC-BY-4.0 (Dependency policy).
+- [x] Every case (wrappers such as `bash -c`, reordered flags, env prefixes, `xargs git commit`) is a Seam 3 fixture with its expected output; each no-output case names its accepted gap.
+- [x] Fixture headers credit the source project and licence; no code is copied.
+- [x] A static check reads each prior-art fixture header's declared licence and fails unless it is MIT, ISC, BSD, Apache-2.0 (NOTICE kept) or CC-BY-4.0 (Dependency policy).
 
 
 ## GRD-21: Guard hand-test

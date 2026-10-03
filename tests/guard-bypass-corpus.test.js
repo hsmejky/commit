@@ -58,6 +58,22 @@ function expectedReason(deny) {
 
 const squash = (s) => s.replace(/\s+/g, ' ');
 
+// The guard-gap bullets of Out of Scope: from "The guard is not a security boundary" through
+// the end of the "Other paths to a commit" bullet. A `gap` quote must match only inside this
+// span, not anywhere in the file (the Non-goals intro, other accepted-gap bullets past this
+// span, or a heading could otherwise satisfy a vague quote).
+const GAP_START = 'The guard is not a security boundary';
+const GAP_END = 'shells provided by MCP servers.';
+
+function readGuardGaps() {
+  const squashed = squash(fs.readFileSync(OUT_OF_SCOPE, 'utf8'));
+  const start = squashed.indexOf(GAP_START);
+  assert.ok(start !== -1, `Out of Scope: "${GAP_START}" not found`);
+  const endMarker = squashed.indexOf(GAP_END, start);
+  assert.ok(endMarker !== -1, `Out of Scope: "${GAP_END}" not found after the guard-gap start`);
+  return squashed.slice(start, endMarker + GAP_END.length);
+}
+
 // The licences the Dependency policy lets test cases be borrowed from (SPDX ids).
 const ALLOWED_LICENCES = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'CC-BY-4.0']);
 
@@ -116,7 +132,7 @@ test('every prior-art fixture header credits its source and declares an allowed 
 });
 
 test('every corpus case is well formed: a tool, a command, and exactly one of deny or gap', () => {
-  const outOfScope = squash(fs.readFileSync(OUT_OF_SCOPE, 'utf8'));
+  const guardGaps = readGuardGaps();
   const seen = new Set();
   for (const file of corpusFiles()) {
     const { cases } = readJson(file);
@@ -127,7 +143,7 @@ test('every corpus case is well formed: a tool, a command, and exactly one of de
       assert.equal(typeof c.command, 'string', where);
       assert.ok(('deny' in c) !== ('gap' in c), `${where}: needs exactly one of deny, gap`);
       if ('deny' in c) expectedReason(c.deny);
-      else assert.ok(outOfScope.includes(squash(c.gap)), `${where}: gap not in Out of Scope: ${c.gap}`);
+      else assert.ok(guardGaps.includes(squash(c.gap)), `${where}: gap not in the Out of Scope guard-gap bullets: ${c.gap}`);
       const key = `${c.tool}\0${c.command}`;
       assert.ok(!seen.has(key), `${where}: duplicate case`);
       seen.add(key);
