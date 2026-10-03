@@ -26,7 +26,7 @@
 // fragment overlapping a span quotes `[<pattern-id>]` in its place, so no matched text
 // reaches stdout (C:check).
 
-import { lint } from './message-grammar.mjs';
+import { lint, normalise } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
@@ -46,10 +46,20 @@ const DEFAULT_MESSAGE_VALUES = Object.freeze({
 });
 
 // The group's message as lint and the scanner see it: the header, then (when there is a
-// body) a blank line and the body, its own trailing blank lines dropped so they cannot read
-// as an extra empty body paragraph.
+// body) a blank line and the body, run through M6 `normalise` (MSG-06) so a CRLF or lone CR
+// an agent wrote into a JSON string, or a trailing run of blank lines, reads the same as its
+// LF form; `header`/`body` are always valid JS strings already (this file's bytes were
+// decoded by `parseWorkerPlan` below), so only normalise's line-ending and trailing-blank
+// steps can fire here, never its BOM or invalid-UTF-8 steps.
 function messageOf(header, body) {
-  return body === null ? header : `${header}\n\n${body.replace(/\n+$/, '')}`;
+  const raw = body === null ? header : `${header}\n\n${body}`;
+  const normalised = normalise(new TextEncoder().encode(raw));
+  // A lone surrogate from an unpaired high-surrogate JSON escape re-encodes to U+FFFD and
+  // fails here too; that case is not among MSG-06's acceptance criteria, so it falls back to
+  // the raw text rather than silently dropping content (a later slice can wire it into
+  // `errors` as its own `message not UTF-8` entry if wanted).
+  if (!normalised.ok) return raw;
+  return normalised.text.replace(/\n$/, '');
 }
 
 // M6's lint reasons quote three message fragments verbatim: the type, the scope and a footer
@@ -243,17 +253,17 @@ function lintFailure(errors) {
 
 // Parses the plan bytes into the C:worker-plan shape, or names the first way it fails. Every
 // failure here is a shape error (`group: null`), which M15 `onLintFailure` later tells apart
-// from the other lint errors (RUN-16).
+// from the other lint errors (RUN-16). The bytes go through M6 `normalise` (MSG-06, Q9)
+// before `JSON.parse`: a UTF-8 BOM is stripped, a UTF-16 BOM selects that decoder, and
+// invalid UTF-8 fails here with `normalise`'s own reason (`message not UTF-8`) instead of a
+// generic "not valid UTF-8".
 function parseWorkerPlan(planBytes) {
   if (planBytes === null) {
     return { ok: false, reason: `${WORKER_PLAN} is missing; write it in the run folder, then run check again` };
   }
-  let text;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(planBytes);
-  } catch {
-    return { ok: false, reason: `${WORKER_PLAN} is not valid UTF-8` };
-  }
+  const normalised = normalise(planBytes);
+  if (!normalised.ok) return { ok: false, reason: normalised.reason };
+  const text = normalised.text;
   let value;
   try {
     value = JSON.parse(text);

@@ -47,6 +47,34 @@ function writeWorkerPlan(runDir, header, body) {
   }));
 }
 
+// MSG-06 (docs/roadmap/03-message-grammar.md): byte normalisation of the worker plan `check`
+// reads, run through M6 `normalise` before `JSON.parse` (file-level BOM/UTF-16/invalid-UTF-8,
+// Q9) and again over each group's header+body (line-ending and trailing-blank steps, so a
+// CRLF or lone CR an agent wrote into a JSON string reads the same as its LF form).
+
+function workerPlanJson(header, body) {
+  return JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: [{ header, body, files: ['a.txt'], hunks: [] }],
+    notIncluded: [],
+  });
+}
+
+function writeWorkerPlanBytes(runDir, bytes) {
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), bytes);
+}
+
+function toUtf16Be(text) {
+  const le = Buffer.from(text, 'utf16le');
+  const be = Buffer.alloc(le.length);
+  for (let i = 0; i < le.length; i += 2) {
+    be[i] = le[i + 1];
+    be[i + 1] = le[i];
+  }
+  return be;
+}
+
 test('a header that is not type(scope)!: description fails lint with group 1, no type check', async (t) => {
   const { c, planId, runDir } = await plannedRun(t);
   writeWorkerPlan(runDir, 'Feat: x', null);
@@ -294,4 +322,64 @@ test('FND-10: os.userInfo() throwing falls back to USER/USERNAME for the message
   const state = fs.readFileSync(path.join(runDir, 'state.json'), 'utf8');
   assert.equal(JSON.parse(state).groups.length, 1, state);
   assert.equal(state.includes('jdoe1'), false, state);
+});
+
+test('MSG-06: a UTF-8 BOM, a CRLF header and a CRLF footer with trailing blank lines normalise before lint', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+  // The header's own trailing CR would fail HEADER's regex unnormalised (`.` excludes line
+  // terminators); the footer's CRLF line and trailing blank lines exercise the same steps
+  // on the body, while staying out of `body` itself (a recognised footer paragraph is not
+  // counted as body, so this also passes under the default `body: forbidden`).
+  const json = workerPlanJson('feat: x\r', 'Closes #12\r\n\r\n\r\n');
+  const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(json, 'utf8')]);
+  writeWorkerPlanBytes(runDir, bytes);
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+});
+
+test('MSG-06: a worker plan encoded as UTF-16 LE with BOM passes check like its UTF-8 form', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+  const json = workerPlanJson('feat: x', null);
+  const bytes = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]);
+  writeWorkerPlanBytes(runDir, bytes);
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+});
+
+test('MSG-06: a worker plan encoded as UTF-16 BE with BOM passes check like its UTF-8 form', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+  const json = workerPlanJson('feat: x', null);
+  const bytes = Buffer.concat([Buffer.from([0xfe, 0xff]), toUtf16Be(json)]);
+  writeWorkerPlanBytes(runDir, bytes);
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+});
+
+test('MSG-06: a worker plan with an invalid UTF-8 byte fails check with "message not UTF-8", nothing committed', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+  const before = c.git(['rev-parse', 'HEAD']).trim();
+  const json = workerPlanJson('feat: x', null);
+  const bytes = Buffer.concat([Buffer.from(json, 'utf8'), Buffer.from([0xff])]);
+  writeWorkerPlanBytes(runDir, bytes);
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 2, detail(checked));
+  assert.deepEqual(checked.json.errors, [{ group: null, reason: 'message not UTF-8' }]);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), before);
+});
+
+test('MSG-06: a message whose lines end in a lone CR normalises to LF like its CRLF form', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+  writeWorkerPlanBytes(runDir, Buffer.from(workerPlanJson('feat: x', 'Closes #12\r\r\r'), 'utf8'));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
 });

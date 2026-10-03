@@ -188,7 +188,9 @@ for (const [label, value, reason] of [
   ['a group without a header', '{"groups":[{"files":[]}]}', 'plan.groups.json: groups[0].header must be a string'],
   ['a non-string path', '{"groups":[{"header":"feat: x","files":[1]}]}',
     'plan.groups.json: groups[0].files must be an array of paths'],
-  ['bytes that are not UTF-8', Buffer.from([0x7b, 0xff, 0x7d]), 'plan.groups.json is not valid UTF-8'],
+  // MSG-06: bytes that are not UTF-8 now fail through M6 `normalise`, whose own reason
+  // ("message not UTF-8", C:message-grammar) replaces this file's generic wording.
+  ['bytes that are not UTF-8', Buffer.from([0x7b, 0xff, 0x7d]), 'message not UTF-8'],
 ]) {
   test(`validatePlan: ${label} is a shape error with group: null`, () => {
     const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);

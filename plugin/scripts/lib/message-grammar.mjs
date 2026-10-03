@@ -20,6 +20,37 @@ const FOOTER_LINE = /^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(: | #)(.+)$/u;
 const CONTINUATION = /^[ \t]+(\S.*)$/u;
 
 /**
+ * M6 byte normalisation (C:message-grammar, MSG-06): turns `bytes` (a message `check` reads
+ * from the worker plan) into the text `lint` sees.
+ *
+ * 1. A UTF-8 BOM is stripped; a UTF-16 LE or BE BOM selects that decoder instead, which
+ *    strips its own BOM the same way.
+ * 2. Invalid UTF-8 (a lone or malformed byte, which a non-fatal decode turns into U+FFFD) is
+ *    reported instead of silently kept.
+ * 3. CRLF and lone CR become LF.
+ * 4. Trailing blank lines are trimmed to exactly one trailing LF.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {{ ok: true, text: string } | { ok: false, reason: string }}
+ */
+export function normalise(bytes) {
+  let text;
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    text = new TextDecoder('utf-16le').decode(bytes);
+  } else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    text = new TextDecoder('utf-16be').decode(bytes);
+  } else {
+    text = new TextDecoder('utf-8').decode(bytes); // strips a leading UTF-8 BOM itself
+  }
+  if (text.includes('�')) {
+    return { ok: false, reason: 'message not UTF-8' };
+  }
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  text = `${text.replace(/\n+$/, '')}\n`;
+  return { ok: true, text };
+}
+
+/**
  * The message's header line: everything up to (not including) the first `\n`, or the whole
  * message when it has none. Shared by `parse` and `lint` so the header line is split once.
  *
