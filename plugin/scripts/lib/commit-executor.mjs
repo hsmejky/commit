@@ -5,6 +5,8 @@
 // `touch()`, (b) M10 `matchIds` on the temporary index, (c) `indexReset` then M10 `stage`,
 // the backstop (M10 `writeTree`, `treeDiffUnits`, M8 `scanUnits`) and a plain M10
 // `commitGuarded`; the group is marked committed and its SHA becomes the expected HEAD.
+// EXE-04 loops over every uncommitted group in order, `touch()` again before each, and
+// returns a `taken-over`/`busy` refusal from it with the earlier groups kept.
 // The phase (a) refusals (EXE-05 to EXE-08, EXE-22), the failure paths (EXE-09 to EXE-13),
 // the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers (MSG-07)
 // and the other modes (EXE-19, EXE-20) are not built yet: reaching one throws.
@@ -48,6 +50,22 @@ function wholeFileUnits(state, group) {
   return state.units.filter((unit) => files.has(unit.path));
 }
 
+// A phase (a) refusal before `group`: the run's index untouched, the earlier groups kept.
+// `refusal` carries the domain code and text M18 maps to the failure envelope; the other
+// fields are C:commit-release's (EXE-06 surfaces `commits`/`failed`/`remaining` in the
+// failed output, not built yet: M18 reports the refusal alone for now).
+function refused(state, group, commits, refusal) {
+  return {
+    commits,
+    failed: group.n,
+    remaining: state.groups.filter((stored) => !stored.committed).map((stored) => stored.n),
+    error: null,
+    gitOutput: null,
+    unstaged: state.indexReset === true ? [] : null,
+    refusal,
+  };
+}
+
 /**
  * Commits the stored groups not yet committed, in order (M16 `commitAll`).
  *
@@ -55,8 +73,11 @@ function wholeFileUnits(state, group) {
  * @param {{ now: () => number, osUser: string | null, env: object }} options the injected
  *   clock, the OS user for the backstop's M8 `scanUnits` (never stored), and the environment.
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
- *   failed: null, remaining: number[], error: null, gitOutput: null,
- *   unstaged: Array<object> | null }>} exactly C:commit-release's output fields.
+ *   failed: number | null, remaining: number[], error: null, gitOutput: null,
+ *   unstaged: Array<object> | null, refusal?: { code: 'taken-over' | 'busy',
+ *   message: string } }>} C:commit-release's output fields; on a phase (a) refusal before a
+ *   later group also `refusal`, with `failed` that group and `remaining` the groups not
+ *   committed (never empty, so M18 does not release the run).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
 export async function commitAll(run, { now, osUser, env }) {
@@ -72,8 +93,13 @@ export async function commitAll(run, { now, osUser, env }) {
   }
   const commits = [];
   for (const group of state.groups.filter((stored) => !stored.committed)) {
+    // (a) Again before each group (EXE-04): the lock must still hold this run's `planId`
+    // and its mtime is refreshed, so a takeover between groups stops the call here with the
+    // earlier groups kept (C:commit-release (a), Q22).
     const touched = touch(run, { now });
-    if (!touched.ok) throw notBuilt(`the ${touched.code} refusal before a group`, 'EXE-04');
+    if (!touched.ok) {
+      return refused(state, group, commits, { code: touched.code, message: touched.message });
+    }
 
     // (b) Match on the temporary index, the real index untouched.
     const units = wholeFileUnits(state, group);

@@ -292,3 +292,153 @@ test('matchIds: every id whose hash a current unit carries → ok; a missing has
     { ok: false, code: 'unmatched', unmatched: ['u3'] },
   );
 });
+
+// EXE-04 (docs/roadmap/10-commit-executor.md): several groups in order, one process. Phase
+// (a) runs again before each group (M12 `touch`, the expected HEAD advanced to the previous
+// group's SHA), and the release comes only after the last group (C:commit-release, Q18, Q22).
+
+const THREE_HEADERS = ['feat: change a', 'fix: change b', 'docs: change c'];
+
+// Three committed files, each modified, a `plan --split` run, and three stored groups, one
+// per file in a, b, c order, as `check` stores them. `edit(state, c)` may change the stored
+// state (and the repo) before the state is written back.
+async function threeGroupRun(t, { edit } = {}) {
+  const c = createCase(t);
+  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}\n`);
+  c.git(['add', '--', 'a.txt', 'b.txt', 'c.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}\nmore\n`);
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = ['a', 'b', 'c'].map((name, i) => ({
+    n: i + 1,
+    units: state.units.filter((unit) => unit.path === `${name}.txt`).map((unit) => unit.id),
+    header: THREE_HEADERS[i],
+    body: null,
+    committed: false,
+  }));
+  if (edit) edit(state, c);
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return { c, planId, runDir, seed, lockPath: path.join(path.dirname(runDir), 'lock') };
+}
+
+// A fixture `pre-commit` hook that runs `script` (CommonJS source) under this Node.
+function installNodeHook(c, script) {
+  const scriptPath = path.join(c.root, 'pre-commit-hook.js');
+  fs.writeFileSync(scriptPath, script);
+  const hook = path.join(c.repoDir, '.git', 'hooks', 'pre-commit');
+  const slash = (p) => p.replace(/\\/g, '/');
+  fs.writeFileSync(hook, `#!/bin/sh\nexec "${slash(process.execPath)}" "${slash(scriptPath)}"\n`);
+  fs.chmodSync(hook, 0o755);
+}
+
+function subjectOf(c, sha) {
+  return c.git(['log', '-1', '--format=%s', sha]).trim();
+}
+
+function filesOf(c, sha) {
+  return c.git(['diff-tree', '--no-commit-id', '--name-only', '-r', sha]);
+}
+
+test('three stored groups → three commits in group order, each parent the previous one, n 1-3', async (t) => {
+  const { c, planId, seed, runDir } = await threeGroupRun(t);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 3);
+  assert.deepEqual(
+    result.json.commits,
+    shas.map((sha, i) => ({ n: i + 1, sha, header: THREE_HEADERS[i] })),
+  );
+  assert.deepEqual(shas.map((sha) => c.git(['rev-parse', `${sha}^`]).trim()), [seed, shas[0], shas[1]]);
+  assert.deepEqual(shas.map((sha) => subjectOf(c, sha)), THREE_HEADERS);
+  assert.deepEqual(shas.map((sha) => filesOf(c, sha)), ['a.txt\n', 'b.txt\n', 'c.txt\n']);
+  assert.equal(result.json.failed, null);
+  assert.deepEqual(result.json.remaining, []);
+  assert.equal(fs.existsSync(runDir), false, 'released after the last group');
+});
+
+test('the lock mtime is refreshed before each group (a pre-commit hook records it, then backdates it)', async (t) => {
+  const { c, planId, lockPath } = await threeGroupRun(t);
+  const log = path.join(c.root, 'lock-mtimes.log');
+  const old = new Date(Date.UTC(2001, 0, 1));
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    `const lock = ${JSON.stringify(lockPath)};`,
+    `fs.appendFileSync(${JSON.stringify(log)}, fs.statSync(lock).mtimeMs + '\\n');`,
+    `const old = new Date(${old.getTime()});`,
+    'fs.utimesSync(lock, old, old);',
+    '',
+  ].join('\n'));
+  fs.utimesSync(lockPath, old, old);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const mtimes = fs.readFileSync(log, 'utf8').trim().split('\n').map(Number);
+  assert.equal(mtimes.length, 3, 'the hook ran once per group');
+  for (const [i, mtime] of mtimes.entries()) {
+    assert.ok(mtime > old.getTime(), `group ${i + 1} saw a refreshed lock (mtime ${mtime})`);
+  }
+});
+
+test('group 1 already committed with the expected HEAD at its SHA → the call commits groups 2 and 3 only', async (t) => {
+  let group1;
+  const { c, planId, seed } = await threeGroupRun(t, {
+    edit: (state, repo) => {
+      repo.git(['commit', '-q', '-m', THREE_HEADERS[0], '--', 'a.txt']);
+      group1 = repo.git(['rev-parse', 'HEAD']).trim();
+      state.groups[0].committed = true;
+      state.head = group1;
+    },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 3);
+  assert.equal(shas[0], group1);
+  assert.deepEqual(result.json.commits, [
+    { n: 2, sha: shas[1], header: THREE_HEADERS[1] },
+    { n: 3, sha: shas[2], header: THREE_HEADERS[2] },
+  ]);
+  assert.equal(c.git(['rev-parse', `${shas[1]}^`]).trim(), group1);
+  assert.deepEqual(shas.slice(1).map((sha) => filesOf(c, sha)), ['b.txt\n', 'c.txt\n']);
+  assert.equal(c.git(['status', '--porcelain']), '');
+});
+
+test("group 1's pre-commit hook rewrites the lock to another planId → group 1 kept, group 2's touch refuses taken-over", async (t) => {
+  const { c, planId, seed, runDir, lockPath } = await threeGroupRun(t);
+  const other = '0b7d6a4e-3f1c-4c2a-9e5d-7a8b9c0d1e2f';
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    `const lock = ${JSON.stringify(lockPath)};`,
+    'const content = JSON.parse(fs.readFileSync(lock, \'utf8\'));',
+    `fs.writeFileSync(lock, JSON.stringify({ ...content, planId: ${JSON.stringify(other)} }));`,
+    '',
+  ].join('\n'));
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.error.kind, 'lock', detail(result));
+  assert.match(result.json.error.message, /this run was taken over by another \/commit/);
+  const shas = c.git(['rev-list', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'only group 1 was committed');
+  assert.equal(subjectOf(c, shas[0]), THREE_HEADERS[0]);
+  assert.equal(filesOf(c, shas[0]), 'a.txt\n');
+  assert.match(c.git(['status', '--porcelain']), /^ M b\.txt\r?\n M c\.txt\r?\n?$/, 'groups 2 and 3 untouched, nothing staged');
+  assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).planId, other, "the other run's lock is left alone");
+  assert.equal(fs.existsSync(runDir), true, 'the run folder is not released');
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  assert.deepEqual(state.groups.map((group) => group.committed), [true, false, false]);
+  assert.equal(state.head, shas[0]);
+});
