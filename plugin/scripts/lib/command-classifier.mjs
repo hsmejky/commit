@@ -12,7 +12,9 @@
 // what would otherwise be allowed (the wrapper row), and the bare/`-m`/`-F`/`--message`/
 // `--file` row applies only when nothing else matches. Each segment's script call (S2) is
 // reported in `scriptCalls`, a denied command's included; a blanket result has none.
-// Git's own options before the subcommand follow in a later slice.
+// Git's own options before the subcommand are skipped (step 4): `-c`/`--config-env`
+// before `commit` and an unknown option followed later by a `commit` token deny, ranking
+// above the `commit` argument rows; every token read among them must be literal.
 
 import { recognise } from './script-call.mjs';
 
@@ -35,6 +37,8 @@ export const MESSAGES = Object.freeze({
   ),
   squash: withPersonalLine(`git commit --squash opens an editor. ${ROUTE}`),
   literalArguments: withPersonalLine(`Write git's arguments literally. ${ROUTE}`),
+  config: withPersonalLine(`git -c … commit is not allowed. ${ROUTE}`),
+  unknownGlobalOption: withPersonalLine(`Could not parse git options before 'commit'. ${ROUTE}`),
   blanket: withPersonalLine(
     'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
       + ROUTE,
@@ -408,6 +412,73 @@ function commitDecision(tokens, from, at, start, shell) {
   return wrapperMessage(runner ?? wrapper);
 }
 
+// C:guard step 4: git's known options before the subcommand. A value-taking one takes the next token as its
+// value, a long one also a value joined with `=`; git matches each by its exact spelling.
+const GIT_OPTION_FLAGS = new Set([
+  '--no-pager', '-P', '-p', '--paginate', '--bare', '--no-replace-objects', '--literal-pathspecs',
+  '--glob-pathspecs', '--noglob-pathspecs', '--icase-pathspecs', '--no-optional-locks',
+]);
+const GIT_OPTION_WITH_VALUE = new Set(['-C', '-c', '--config-env', '--git-dir', '--work-tree', '--namespace']);
+const GIT_OPTION_JOINED_VALUE = /^--(?:config-env|git-dir|work-tree|namespace)=/;
+const CONFIG = /^(?:-c|--config-env(?:=.*)?)$/s;
+
+/**
+ * C:guard step 4: git's options before the subcommand, from `start`, the token after `git`, up to where
+ * git's arguments end. Known options are skipped with their values; the first token after
+ * them is the subcommand. A token in an option's place that starts with `-` and is not a
+ * known option (or is not literal) is unknown: the rest of git's arguments is then only
+ * searched for a `commit` token, since which of them is a value or the subcommand is not
+ * known (the unknown token itself must be literal, the rest is not read as anything else). Every token read must be literal; a PowerShell empty token
+ * in an option's place is skipped (Windows PowerShell 5.1 drops it) and is not literal either.
+ * A non-literal subcommand reads as one other than `commit`.
+ *
+ * @param {Array<string|object>} tokens
+ * @param {number} start
+ * @param {'bash'|'powershell'} shell
+ * @returns {{ commit: number, config: boolean, nonLiteral: boolean, unknown: boolean }}
+ *   `commit`: the index of the `commit` subcommand or, after an unknown option, of the first
+ *   `commit` token (-1 when there is none); `config`: a `-c` or `--config-env` was read.
+ */
+function readGitOptions(tokens, start, shell) {
+  const within = (k) => k < tokens.length && !endsArguments(tokens[k], shell);
+  const found = { commit: -1, config: false, nonLiteral: false, unknown: false };
+  let i = start;
+  for (; within(i); i += 1) {
+    const token = tokens[i];
+    const literal = isLiteral(token, shell);
+    if (shell === 'powershell' && token === '') {
+      found.nonLiteral = true;
+      continue;
+    }
+    if (typeof token !== 'string' || !token.startsWith('-')) break;
+    if (literal && CONFIG.test(token)) found.config = true;
+    if (literal && GIT_OPTION_WITH_VALUE.has(token)) {
+      i += 1;
+      if (within(i) && !isLiteral(tokens[i], shell)) found.nonLiteral = true;
+    } else if (!literal || !(GIT_OPTION_FLAGS.has(token) || GIT_OPTION_JOINED_VALUE.test(token))) {
+      found.unknown = true;
+      if (!literal) found.nonLiteral = true;
+      for (let k = i + 1; within(k) && found.commit === -1; k += 1) {
+        if (typeof tokens[k] === 'string' && COMMIT.test(tokens[k])) found.commit = k;
+      }
+      return found;
+    }
+  }
+  if (within(i) && isLiteral(tokens[i], shell) && COMMIT.test(tokens[i])) found.commit = i;
+  return found;
+}
+
+// The deny message of git's options before the subcommand (C:guard Precedence: the `-c`/`--config-env` row,
+// then the literal-arguments row, then the unknown-option row, all above the `commit`
+// argument rows), or null when they leave the decision to the `commit` arguments, or to
+// nothing when there is no `commit`.
+function gitOptionsDecision(found) {
+  if (found.config && found.commit !== -1) return MESSAGES.config;
+  if (found.nonLiteral) return MESSAGES.literalArguments;
+  if (found.unknown && found.commit !== -1) return MESSAGES.unknownGlobalOption;
+  return null;
+}
+
 /**
  * G3 `classify`: the guard's decision for G2's result.
  *
@@ -441,17 +512,18 @@ export function classify(parsed, context = {}) {
       const dashed = DASHED_COMMIT.test(name);
       if (!dashed && !GIT.test(name)) continue;
       starts ??= commandStarts(tokens, shell);
-      // Windows PowerShell 5.1 drops an empty argument, so `git '' commit` runs a commit.
-      let next = i + 1;
-      while (!dashed && shell === 'powershell' && tokens[next] === '') next += 1;
-      if (!dashed && !(typeof tokens[next] === 'string' && COMMIT.test(tokens[next]))) {
+      // Git's options before the subcommand come first (step 4); Windows PowerShell 5.1 drops an empty
+      // argument, so `git '' commit` runs a commit.
+      const found = dashed ? { commit: i } : readGitOptions(tokens, i + 1, shell);
+      const denial = dashed ? null : gitOptionsDecision(found);
+      if (denial !== null) return { decision: 'deny', message: denial, scriptCalls };
+      if (found.commit === -1) {
         // An argv[0] option may make this `git` run `commit` whatever follows it.
         const runner = argv0Runner(tokens, starts[i], i);
         if (runner === undefined) continue;
         return { decision: 'deny', message: wrapperMessage(runner), scriptCalls };
       }
-      if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls };
-      const message = commitDecision(tokens, starts[i], i, dashed ? next : next + 1, shell);
+      const message = commitDecision(tokens, starts[i], i, found.commit + 1, shell);
       if (message !== null) {
         return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls };
       }

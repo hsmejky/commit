@@ -422,7 +422,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `[object]$p = …`, `return …`, `. saps …`, `& ('Start-Process') …` or inside
    `if (…) { … }`. So no target or position is read. Every other row ranks above it, the bare
    row below it (Precedence): `saps git commit --no-verify` keeps the `--no-verify` row, while
-   `Start-Process git -ArgumentList { git commit -m x }` gets the wrapper row. Accepted false
+   `saps git commit -m x` gets the wrapper row, and `Start-Process git -ArgumentList { git
+   commit -m x }` the unknown-global-option row (step 4: `-ArgumentList` reads as an unknown
+   git option followed by a `commit` token). Accepted false
    denies: `start https://github.com/o/r/commit/abc`, `npm start` in a command that mentions
    commit, `git log --grep start --grep commit`, and
    `Start-Process -ArgumentList { git commit --amend --no-edit }`.
@@ -519,8 +521,18 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `--git-dir[=]<p>`, `--work-tree[=]<p>`,
    `--namespace[=]<n>`, `--no-pager`, `-P`, `-p`, `--paginate`, `--bare`, `--no-replace-objects`,
    `--literal-pathspecs`, `--glob-pathspecs`, `--noglob-pathspecs`, `--icase-pathspecs`,
-   `--no-optional-locks`. An unknown option starting with `-` followed later by a `commit`
-   token → deny. The first token after the global options is the subcommand. Steps 4 and 5
+   `--no-optional-locks`. Git matches each by its exact spelling; a value-taking one takes
+   the next token as its value (`-C commit status` runs `status`), a long one also a value
+   joined with `=`. An unknown option starting with `-` (`-Cdir`, `--NO-PAGER`,
+   `--exec-path=x`) followed later by a `commit` token → deny; the tokens after it are only
+   searched for that `commit` token, since which of them is a value or the subcommand is not
+   known, so none is read as one (the unknown option itself must be literal). PowerShell
+   splits an unquoted `-name.rest` token at the dot (`git -C. commit -m x` runs
+   `git -C . commit -m x` in 5.1 and 7); G2 keeps it one token, an unknown option, so it is
+   denied when a `commit` token follows, and the `.rest` part can never be the subcommand
+   `commit`. Verified 2026-10-03 with git 2.54, Git Bash, Windows PowerShell 5.1 and
+   PowerShell 7 running each spelling against a real repository. The first
+   token after the global options is the subcommand. Steps 4 and 5
    read git's arguments from the token after `git` up to the segment's end, a `cut` token
    (step 2), or a `)` token or, in PowerShell, a `}` token; no option value, subcommand or
    `commit` argument is read past it. Every token read there, as a global option, an

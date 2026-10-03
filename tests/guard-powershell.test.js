@@ -24,6 +24,7 @@ const TEXTS = {
   noVerify: '--no-verify is not allowed. Fix the hook or signing setup instead.',
   bare: `Direct git commit is blocked. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   literalArguments: `Write git's arguments literally. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
+  unknownOption: `Could not parse git options before 'commit'. ${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   blanket: 'This command mentions commit and holds a substitution, heredoc, here-string, comment or (Bash) typographic quote, which the guard does not parse. Keep them out of a command that mentions commit (write text to a file first, e.g. gh pr create --body-file), or to commit: '
     + `${ROUTE}\n${PERSONAL_SKILL_LINE}`,
   escape: 'This command mentions commit and holds a `e or `u{…} escape, which Windows PowerShell 5.1 and PowerShell 7 read differently. Keep them out of a command that mentions commit, or to commit: '
@@ -108,13 +109,16 @@ const table = [
   // A script block passed as data is still read as `{`/`}` tokens: its commands are
   // classified (an accepted false deny for a denied form inside, C:guard step 3).
   ['Write-Output { git commit --amend --no-edit }', null],
-  ['Start-Process git -ArgumentList { git commit -m x }', 'wrapper:Start-Process'],
+  ['saps git commit -m x', 'wrapper:saps'],
+  // GRD-11: the `-ArgumentList` after the outer `git` reads as an unknown git option followed
+  // by a `commit` token, a row above the wrapper row.
+  ['Start-Process git -ArgumentList { git commit -m x }', 'unknownOption'],
   // Start-Process builds git's arguments from its own parameters: denied like `sudo git commit`.
   ['Start-Process git -ArgumentList "commit --fixup HEAD"', 'wrapper:Start-Process'],
   ['saps git commit,--fixup,HEAD', 'wrapper:saps'],
   // A row above the wrapper row keeps precedence (C:guard Precedence).
   ['saps git commit --no-verify', 'noVerify'],
-  ['start git -ArgumentList commit', 'wrapper:start'],
+  ['start git -ArgumentList commit', 'unknownOption'],
   ["Start-Process -FilePath git.exe -ArgumentList 'commit --fixup HEAD'", 'wrapper:Start-Process'],
   ['& Microsoft.PowerShell.Management\\Start-Process git commit', 'wrapper:Microsoft.PowerShell.Management\\Start-Process'],
   // A Start-Process word anywhere in a command that mentions commit denies it (C:guard
