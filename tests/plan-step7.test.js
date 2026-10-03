@@ -7,9 +7,9 @@
 // The PATH git shim cases are POSIX-only: shell-less spawn on Windows finds only `.com` and
 // `.exe` files, so a script shim is never run there (roadmap KD-R21, spec KD-S35). The
 // fault-preload `EEXIST` case (docs/spec/testing-seams.md) covers `held` on every platform.
-// Each shim keys its action to run-folder state, not to a call count (KD-R27): the HEAD
-// shim fires at the first HEAD read once `.commit-plan/lock` exists, the lock shim at the
-// first git call once the provisional folder exists and no lock does.
+// Each shim keys its action to run-folder state, not to a call count, since step 1 reads
+// HEAD too: the HEAD shim fires at the first HEAD read once `.commit-plan/lock` exists, the
+// lock shim at the first git call once the provisional folder exists and no lock does.
 
 const fs = require('node:fs');
 const path = require('node:path');

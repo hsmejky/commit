@@ -70,8 +70,6 @@ fixed, delete it here; IDs are never reused.
   the step order in C:plan.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
-- **KD-R27.** RUN-06's HEAD-moving shim cannot tell step 7's HEAD read from step 1's. Key it
-  to the first HEAD read after `.commit-plan/lock` exists.
 - **KD-R28.** CFG-07's direct `validateLayer` call is an in-process test Seam 3 does not
   allow. Drop it (INF-07 covers it) or add M4 to Seam 3 and amend group 04's header.
 - **KD-R29.** FND-10's ESM check does not import `node:fs/promises`; add it.
@@ -172,5 +170,5 @@ Plan text that depends on a design fix; fix the design and the slice together.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R49, KD-R50, KD-R45.
 7. Edges: KD-R7, KD-R30, KD-R10.
-8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26, KD-R27.
+8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26.
 9. The rest of the text and bookkeeping items.
