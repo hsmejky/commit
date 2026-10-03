@@ -12,15 +12,23 @@ prefixes skipped are those that cannot change what node runs: the group openers 
 `{`, Bash `!` and `time` (with `-p`), and the PowerShell call operators `&` and `.` (so
 `( node … )`, `& { node … }` and `time -p node …` are script calls). An assignment or a
 runner (`X=1`, `NODE_OPTIONS=…`, `env`, `command`, `exec`) is never skipped. This is the
-wide recogniser (S2 `recognise`): the guard uses it for the worker-only rule and the
-heartbeat only, where matching more is fail-closed (more denies, a heartbeat from a guard
+wide recogniser (S2 `recognise`): the guard uses it for the heartbeat only, where
+matching more is fail-closed (more denies, a heartbeat from a guard
 that really ran), and it never feeds an allow. The narrow form is S2 `build`'s output, the
 step 2 script-call exemption's form (case-sensitive `node`, nothing before it but a
 PowerShell `&`): the exemption and the caller's `run` shape check (Q25) accept only that.
-Documented gaps of the wide recogniser, so the worker-only rule is defence in depth and not
-the deterministic boundary: `node -- "…/commit.cjs" commit` and other node options before
-the script, a nested shell (`bash -c 'node …'`), a copy or link of `commit.cjs` under
-another name, and the interpreter gap (Out of Scope). Basename: the part of a token after the last `/` or `\`, in both shells
+The worker-only rule scans wider still (S2 `named`): any
+token in any segment with the basename `commit.cjs`, compared case-insensitively, directly
+followed by `commit` or `release`, compared exactly, whatever word starts the command (an
+assignment, a runner such as `env`, `exec` or `nohup`, a Bash `if`/`for`/`case`/function
+body or `coproc`, a PowerShell `$r =` or `if`/`foreach`/`try` block, `node --`, `cmd /c`).
+Documented gaps of that scan, so the worker-only rule is defence in depth and not the
+deterministic boundary: a call inside a quoted nested shell or evaluated string (`bash -c
+'node …'`, `sh -c "…"`, `eval '…'`, `iex '…'`, `cmd /c "node …"`), a path or subcommand
+from a variable or expansion (`node $P commit`), a copy or link of `commit.cjs` under
+another name, and the interpreter gap (Out of Scope). Matching more is fail-closed: any
+worker command with a word naming `commit.cjs` followed by `commit` or `release` is denied,
+even one that does not run it (`echo x/commit.cjs commit`). Basename: the part of a token after the last `/` or `\`, in both shells
 (a Bash `commit.cjs` invocation may still carry a Windows-style path, e.g. through a quoted
 `"C:\...\commit.cjs"` argument, Q3). Tokens are compared after the shell's quote removal, so the quoted form
 every handback and worker uses (`node "C:/…/commit.cjs" plan`, Q16) matches like the unquoted
@@ -677,13 +685,13 @@ a `Skill("commit")` call could resolve to a personal commit skill (Q8). Every me
 that contains `<route>` ends with a `\n` and then the fixed line `If a personal commit skill
 sent you here, remove it (see the commit plugin README).` (Q8; nothing is detected).
 
-Worker-only rule (defence in depth: the wide recogniser's documented gaps, Script call
-above, are not covered): when `agent_type` is `commit:commit-worker` and any segment is a script
-call with subcommand `commit` or `release`, deny with `The handback is for your caller:
+Worker-only rule (defence in depth: its scan's documented gaps, Script call above, are not
+covered): when `agent_type` is `commit:commit-worker` and any segment holds a token with the
+basename `commit.cjs` directly followed by `commit` or `release` (S2 `named`), deny with `The handback is for your caller:
 return the reply verbatim and stop.` (Q25). Everything else the worker runs is left to the
 normal rules. A blanket-denied command (parsing step 2) has no segments, so this rule does
 not apply to it; it gets its blanket row. The rule is checked before any `git commit` row: a
-worker command that holds both such a script call and a denied `git commit` gets the handback
+worker command that holds both such a call and a denied `git commit` gets the handback
 text, so the instruction to stop is never hidden by another deny.
 
 **Precedence:** when a `commit` segment's expanded arguments match more than one row below,

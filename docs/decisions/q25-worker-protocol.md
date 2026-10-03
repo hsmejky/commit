@@ -254,6 +254,14 @@
   boundary "the guard makes it deterministic" above suggests: `node -- "…/commit.cjs"`,
   `bash -c '…'`, a copied or linked `commit.cjs` and the interpreter gap stay documented
   gaps; the prompt rule and the caller's planId-bound shape check remain.
+- **Amended.** By the GRD-14 review (2026-10-03): the worker-only rule gets its own wider
+  scan (S2 `named`), since the wide recogniser missed forms a worker writes (a Bash
+  `if`/`for`/function body, `X=1`, `env`, `exec`, `nohup`, a PowerShell `$r = node …` or
+  `try { … }` block, `cmd /c`). Any word with the basename `commit.cjs` (any case) directly
+  followed by `commit` or `release` denies, which also closes `node --`. The heartbeat keeps
+  the wide recogniser. Gaps that stay documented: a quoted nested shell or evaluated string
+  (`bash -c '…'`, `eval '…'`, `iex '…'`, `cmd /c "…"`), a path from a variable, a copied or
+  linked `commit.cjs`, and the interpreter gap.
 - **Rejected.**
   - The protocol in the agent description: it does not fit in 200 characters and would be
     resident in every session.

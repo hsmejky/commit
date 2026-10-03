@@ -13,8 +13,8 @@ and the realpathed hook `cwd` inside the toplevel or vice versa) versus `not-see
 })`; pure `samePathTree(a, b, { caseFold })` over already-realpathed paths, `caseFold` true
 on Windows and macOS. Sources: Q23, C:guard.
 
-**S2 ScriptCall.** The definition of a script call (C:guard), in two widths. The wide
-`recognise`, for the guard's worker-only rule and heartbeat only: `node` or `node.exe` after
+**S2 ScriptCall.** The definition of a script call (C:guard), in two widths, plus the
+worker-only rule's scan. The wide `recognise`, for the guard's heartbeat only: `node` or `node.exe` after
 any leading group openers and prefixes that cannot change what node runs (`(`, `{`, Bash `!`
 and `time [-p]`, PowerShell `&` and `.`; never an assignment or a runner such as `env`), a
 token whose basename is the commit entry point's, both basenames compared case-insensitively,
@@ -33,7 +33,11 @@ a drive letter or a UNC start as Windows, one starting with `/` as POSIX). `buil
 character the step 2 exemption keeps out of the quoted path (`"`, U+201C-U+201E, `$`, a
 backtick, `!` or a control character), a subcommand outside the list, or an argument outside
 the step 2 exemption's word characters, so its output is always in the exemption form; `recognise(tokens) → { subcommand, args } | null`, the arguments being
-the words after the subcommand up to the first operator token, redirections dropped. Sources: Q16,
+the words after the subcommand up to the first operator token, redirections dropped;
+`named(tokens) → string[]`, the worker-only rule's wider scan: the subcommands from the list
+that directly follow any word whose basename is the entry point's (case-insensitive),
+whatever word starts the command, redirections dropped (its gaps: a quoted nested shell or
+evaluated string, a path from a variable, a renamed copy, the interpreter). Sources: Q16,
 Q23, Q25, C:guard, C:reply-and-handback.
 
 **G1 Hook I/O.** Read the `PreToolUse` JSON from stdin to its end (not a synchronous read of
