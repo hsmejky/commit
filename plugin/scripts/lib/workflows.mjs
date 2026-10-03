@@ -1067,6 +1067,14 @@ async function planRefusalFailure(refusal, ctx) {
 // step table (an unbuilt flag, a module that fails to load).
 async function planInternalFailure(err, ctx) {
   const message = `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
+  // C:cli-and-exit-codes: "stderr carries debug output only." Before this function existed, a
+  // throw inside `plan` always escaped to `commit.cjs`'s backstop, which wrote the stack there
+  // (`commit: unexpected error\n<stack>`). Since RUN-12 catches the throw here instead (so the
+  // reply and notices survive it, KD-R64), nothing wrote it any more; write the same line here
+  // so an internal failure from inside `plan`'s steps stays as diagnosable as one from outside
+  // them. `ctx.injected.stderr` is `?.`-guarded like `loadConfigLayers`' warnings above, so a
+  // direct `workflows.plan` call with no `stderr` injected is unaffected.
+  ctx.injected.stderr?.write(`commit: unexpected error\n${err instanceof Error ? err.stack : String(err)}\n`);
   const facts = { status: 'failed', message, notices: ctx.notices };
   // A tree-state read that throws too (the repository that broke the step may break it)
   // never replaces the original error: the reply then omits the tree state.
@@ -1092,21 +1100,29 @@ function holderFields(holder) {
 }
 
 // Every reply ends with the tree state, read after the call's last git call (M10) — except
-// past a given `deadline` (RUN-03, `release`'s `releaseDeadline`): the read is skipped
-// entirely (never spawned) and the reply omits the tree state, since the call it would report
-// on (here, the release itself) is already complete. `toplevel` defaults to `ctx.toplevel`
-// (the usual case, set from `plan` step 2 or `release` step 1 onward); `planRefusalFailure`
-// passes its own, since a `plan` refusal can end before `ctx.toplevel` is set, and `undefined`
-// (no usable worktree: `not-a-repo`, `bare`, `timed-out`, or no git at all, C:reply-and-
-// handback) skips the read the same way a spent `deadline` does.
+// past a given `readDeadline` (RUN-03, `release`'s `releaseDeadline`; RUN-12, `plan`'s
+// `cleanupDeadline`): the read is skipped entirely (never spawned) and the reply omits the
+// tree state, since the call it would report on (here, the release itself) is already
+// complete. `toplevel` defaults to `ctx.toplevel` (the usual case, set from `plan` step 2 or
+// `release` step 1 onward); `planRefusalFailure` passes its own, since a `plan` refusal can
+// end before `ctx.toplevel` is set, and `undefined` (no usable worktree: `not-a-repo`,
+// `bare`, a pre-toplevel start-up `spawnSync` `timed-out` (M2, before the probe has run; a
+// `plan` refusal past RUN-12's own 540 s `deadline` already has a toplevel by then and is
+// caught by the `readDeadline` check below instead, not by this one), or no git at all,
+// C:reply-and-handback) skips the read the same way a spent `readDeadline` does.
 //
 // GIT-07 (docs/roadmap/06-git-adapters.md): once M2 calls take `timeoutMs` from a deadline,
 // this read's own `timeoutMs` must come from `deadline - now()` too, and a read that times out
 // must land here as `treeState: undefined` (the line below only skips a read that hasn't
 // started), not as a thrown `internal` failure from `change-set.mjs`'s `treeState`.
-async function finalReply(facts, ctx, { deadline, toplevel = ctx.toplevel } = {}) {
+//
+// The option is named `deadline` at every call site (`release`'s own, `planRefusalFailure`'s
+// `replyDeadline`, `planInternalFailure`'s `ctx.cleanupDeadline`); read into `readDeadline`
+// here only, so it never shadows the M15 `deadline()` function this module imports
+// (review-RUN-12 finding 2).
+async function finalReply(facts, ctx, { deadline: readDeadline, toplevel = ctx.toplevel } = {}) {
   const { env, now } = ctx.injected;
-  if (toplevel === undefined || (deadline !== undefined && now() >= deadline)) {
+  if (toplevel === undefined || (readDeadline !== undefined && now() >= readDeadline)) {
     return reply({ ...facts, treeState: undefined });
   }
   const finalTree = await treeState({ toplevel, env, now });

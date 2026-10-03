@@ -173,28 +173,41 @@ test('with the clock at 530 s plan completes normally', async (t) => {
 // KD-R33, KD-R64: an `internal` throw past step 7 (an FND-10-style `EIO` on a rename) ends
 // `plan` with a `failed` reply whose tree-state read runs against `cleanupDeadline`, not the
 // spent 540 s `deadline`. In process, so `fs.renameSync` can fail; the injected clock jumps
-// to `elapsedMs` at the throw itself.
-async function internalAt(t, elapsedMs) {
+// to `elapsedMs` at the throw itself. The throw is narrowed to the `plan.json` rename (M12
+// `write`'s `writeAtomic`, `run.mjs`), which runs after `storeAndLock`'s `acquire`: the
+// earlier `state.json` rename, and `acquireLock`'s own `linkSync` for the lock itself, both
+// pass through to the real `fs.renameSync`, so the lock is actually held when the throw
+// lands (review-RUN-12 finding 1; the untargeted mock never took the lock, making the
+// lock-released assertion vacuous). `lockExistedAtThrow` pins that it was.
+async function internalAt(t, elapsedMs, extraInjected = {}) {
   const c = dirtyCase(t);
   const start = Date.UTC(2026, 0, 1);
+  const lockPath = path.join(runDirOf(c), 'lock');
+  const originalRename = fs.renameSync.bind(fs);
   let thrown = false;
-  t.mock.method(fs, 'renameSync', () => {
+  let lockExistedAtThrow = null;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (path.basename(to) !== 'plan.json') return originalRename(from, to);
     thrown = true;
+    lockExistedAtThrow = fs.existsSync(lockPath);
     throw Object.assign(new Error('EIO: i/o error, rename'), { code: 'EIO' });
   });
   const injected = {
     env: c.env, now: () => (thrown ? start + elapsedMs : start), claudeHome: c.claudeHome, cwd: c.repoDir,
+    ...extraInjected,
   };
   try {
-    return { c, result: await workflows.plan({}, injected, { cwd: c.repoDir }) };
+    const result = await workflows.plan({}, injected, { cwd: c.repoDir });
+    return { c, result, lockExistedAtThrow };
   } finally {
     t.mock.restoreAll();
   }
 }
 
 test('an internal throw past 540 s but below 580 s still reads the tree state for its reply', async (t) => {
-  const { result } = await internalAt(t, 545_000);
+  const { result, lockExistedAtThrow } = await internalAt(t, 545_000);
 
+  assert.equal(lockExistedAtThrow, true, 'the lock was held when the plan.json rename threw');
   assert.equal(result.failure.kind, 'internal');
   assert.equal(result.failure.message, 'unexpected error: EIO: i/o error, rename');
   const { reply } = result.failure;
@@ -204,12 +217,23 @@ test('an internal throw past 540 s but below 580 s still reads the tree state fo
 });
 
 test('an internal throw past 580 s skips the tree-state read but the reply still comes', async (t) => {
-  const { c, result } = await internalAt(t, 590_000);
+  const { c, result, lockExistedAtThrow } = await internalAt(t, 590_000);
 
+  assert.equal(lockExistedAtThrow, true, 'the lock was held when the plan.json rename threw');
   assert.equal(result.failure.kind, 'internal');
   assert.equal(result.failure.reply.status, 'failed');
   assert.equal(result.failure.reply.text, result.failure.message);
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false, 'the lock is released');
+});
+
+test('an internal throw writes the stack to stderr, like the commit.cjs backstop', async (t) => {
+  const chunks = [];
+  const { result } = await internalAt(t, 545_000, { stderr: { write: (chunk) => chunks.push(chunk) } });
+
+  assert.equal(result.failure.kind, 'internal');
+  assert.equal(chunks.length, 1, `expected exactly one stderr write, got: ${chunks.join('|')}`);
+  assert.match(chunks[0], /^commit: unexpected error\n/);
+  assert.match(chunks[0], /EIO: i\/o error, rename/);
 });
 
 // AC6 (`plan --hunks` takes its own deadline from its own start): the separate
