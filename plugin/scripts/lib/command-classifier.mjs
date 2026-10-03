@@ -415,31 +415,56 @@ function allowlistDecision(items) {
 // The name the generic row gives an item: its flag, or the argument (an empty one as `""`).
 const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument || '""');
 
-// An option name as git spells one: dashes, then letters, digits and dashes. A flag-shaped
-// token outside it (`"--secret words"`, read as an unknown long option) is never logged.
-const OPTION_NAME = /^--?[A-Za-z0-9][A-Za-z0-9-]*$/;
+// C:guard Output's option-token grammar for GRD-16's debug log: a long option's name (the
+// part before any `=`) and a short bundle's part up to and including its first value-taking
+// letter, each judged on the whole token, never letter by letter.
+const LONG_OPTION_NAME = /^--[A-Za-z0-9][A-Za-z0-9-]*$/;
+const SHORT_BUNDLE = /^-[A-Za-z0-9]+$/;
 
-// The matched segment's options for GRD-16's debug log (G1): each expanded item's flag only,
-// never a value (so `-m`'s or `--file`'s message text never persists), never a plain
-// argument (a pathspec) and never a flag-shaped token that is not an option name.
-function commitOptions(items) {
-  return items.filter((item) => item.flag !== undefined && OPTION_NAME.test(item.flag)).map((item) => item.flag);
+// Whether a long option written without `=` takes the next argument as its value, for the
+// log only: an exact `LONG_WITH_VALUE` name or any abbreviation of one (`--mess` is git's
+// `--message`), so that value is never read as options of its own.
+const takesNextValue = (arg) => [...LONG_WITH_VALUE].some((name) => name.startsWith(arg));
+
+// The matched segment's options for GRD-16's debug log (G1), read from the raw literal
+// arguments: only option names, never a value (attached, after `=` or the next argument),
+// never a plain argument (a pathspec, anything after `--`), and nothing from a token that
+// is not wholly option-shaped (`"- added secret foo"`, `"--secret words"`).
+function commitOptions(args) {
+  const options = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--') break;
+    if (arg.startsWith('--')) {
+      const eq = arg.indexOf('=');
+      const name = eq === -1 ? arg : arg.slice(0, eq);
+      if (LONG_OPTION_NAME.test(name)) options.push(name);
+      if (eq === -1 && takesNextValue(arg)) i += 1;
+    } else if (arg.startsWith('-') && arg.length > 1) {
+      let end = 1;
+      while (end < arg.length && !SHORT_WITH_VALUE.has(arg[end]) && !SHORT_WITH_ATTACHED_VALUE.has(arg[end])) end += 1;
+      const bundle = arg.slice(0, end + 1);
+      if (SHORT_BUNDLE.test(bundle)) for (const letter of bundle.slice(1)) options.push(`-${letter}`);
+      if (end === arg.length - 1 && SHORT_WITH_VALUE.has(arg[end])) i += 1;
+    }
+  }
+  return options;
 }
 
-// `commit`'s arguments from `start` up to where they end (C:guard step 4), expanded, and
-// whether all of them are literal; reading stops at the first one that is not, so `items`
-// then holds the literal ones before it.
+// `commit`'s arguments from `start` up to where they end (C:guard step 4): the raw literal
+// ones, expanded as `items`, and whether all of them are literal; reading stops at the first
+// one that is not, so `args` and `items` then hold the literal ones before it.
 function readCommitArgs(tokens, start, shell) {
   const args = [];
   for (let i = start; i < tokens.length && !endsArguments(tokens[i], shell); i += 1) {
-    if (!isLiteral(tokens[i], shell)) return { items: expandCommitArgs(args), literal: false };
+    if (!isLiteral(tokens[i], shell)) return { args, items: expandCommitArgs(args), literal: false };
     args.push(tokens[i]);
   }
-  return { items: expandCommitArgs(args), literal: true };
+  return { args, items: expandCommitArgs(args), literal: true };
 }
 
 // The options GRD-16's debug log gives a `git commit` whose arguments start at `start`.
-const optionsAt = (tokens, start, shell) => commitOptions(readCommitArgs(tokens, start, shell).items);
+const optionsAt = (tokens, start, shell) => commitOptions(readCommitArgs(tokens, start, shell).args);
 
 // One `git commit` invocation, its `git` token at `at` in a command starting at `from`
 // and its arguments starting at `start` (after `commit`): `{ denial, options }`, `denial`
@@ -449,8 +474,8 @@ const optionsAt = (tokens, start, shell) => commitOptions(readCommitArgs(tokens,
 // (C:guard Precedence). `options` is GRD-16's debug-log data (G1), unaffected by which row
 // wins: the flags of the literal arguments before any non-literal one.
 function commitDecision(tokens, from, at, start, shell) {
-  const { items, literal } = readCommitArgs(tokens, start, shell);
-  const options = commitOptions(items);
+  const { args, items, literal } = readCommitArgs(tokens, start, shell);
+  const options = commitOptions(args);
   if (!literal) return { denial: LITERAL_ARGUMENTS, options };
   const denial = argumentsDecision(items);
   if (denial !== null && denial !== BARE) return { denial, options };

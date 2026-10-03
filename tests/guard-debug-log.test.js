@@ -41,6 +41,11 @@ const ROW_IDS = new Set([
   'bare', 'amend', 'squash', 'noVerify', 'fixupKind', 'generic', 'wrapper', 'literalArguments',
   'literalSubcommand', 'config', 'unknownGlobalOption', 'handback',
 ]);
+// The blanket deny trigger kinds (G2, C:guard parsing step 2).
+const BLANKET_KINDS = new Set([
+  'size', 'substitution', 'heredoc', 'here-string', 'comment', 'typographic-quote', 'nesting',
+  'escape',
+]);
 
 function hook(command, extra = {}) {
   return JSON.stringify({
@@ -123,6 +128,78 @@ test('an option-shaped token holding spaces is never logged as an option', () =>
   const fields = debugFields('git commit --amen "--secret words here"');
   assert.deepEqual(fields, { decision: 'deny', reason: 'generic', command: '--amen' });
 });
+
+// H1 (GRD-16 re-review): whether a token is an option is judged on the whole token (C:guard
+// Output's option-token grammar), never on each letter of a short bundle, so message text
+// passed as a `-`-led argument never reaches the log one letter at a time.
+const optionTokenTable = [
+  ['git commit -m "feat: x" "- added secret foo"', '-m'],
+  ['git commit "-hello world"', undefined],
+  ['git commit -q "-fix the secret bug"', '-q'],
+  ['git commit --mess "-secret words"', '--mess'],
+  ['git commit --m "-secret"', '--m'],
+  ['git -c a=b commit "-hello world"', undefined],
+  ['git commit -m "x" "-q.secret"', '-m'],
+  ['git commit -m"feat: secret thing"', '-m'],
+  ['git commit -am"secret notes"', '-a -m'],
+  ['git commit -qm "secret" --amend', '-q -m --amend'],
+  ['git commit -S"key secret" --amend', '-S --amend'],
+  ['git commit --message="secret words" -n', '--message -n'],
+  ['git commit --mess=secret -n', '--mess -n'],
+  ['git commit -F secret.txt -n', '-F -n'],
+  ['git commit -m x -- -secret', '-m'],
+];
+for (const toolName of ['Bash', 'PowerShell']) {
+  for (const [command, want] of optionTokenTable) {
+    test(`${toolName}: ${JSON.stringify(command)} logs command ${JSON.stringify(want)}`, () => {
+      const fields = debugFields(command, { tool_name: toolName });
+      assert.equal(fields.decision, 'deny');
+      if (toolName === 'Bash') assert.equal(fields.command, want);
+      assert.doesNotMatch(fields.command ?? '', /secret|hello|world|added|fix|key|notes|txt/);
+    });
+  }
+}
+
+// H1 sweep: no word of the message text ever appears in the logged command, whichever way the
+// text reaches the command line. A text that is itself one whole option token (`--secret`) is
+// left out: git reads it as an option, so the log names it like any other.
+const messageTexts = [
+  '- added secret foo', '-hello world', '-fix the secret bug', '-secret words', '--secret words',
+  '-m secret', 'feat: secret thing', '-q.secret', '-am secret', '--x=secret words', '-x,secret',
+  '-secret', '-S secret', '-uvwxyz secret', '-0 secret', '-ñsecret words',
+];
+const messageTemplates = [
+  (m) => `git commit "${m}"`,
+  (m) => `git commit -q "${m}"`,
+  (m) => `git commit -m "feat: x" "${m}"`,
+  (m) => `git commit -m "${m}"`,
+  (m) => `git commit -m"${m}"`,
+  (m) => `git commit -am"${m}"`,
+  (m) => `git commit -F "${m}"`,
+  (m) => `git commit --message="${m}"`,
+  (m) => `git commit --message "${m}"`,
+  (m) => `git commit --mess "${m}"`,
+  (m) => `git commit --m "${m}"`,
+  (m) => `git commit --amen "${m}"`,
+  (m) => `git -c a=b commit "${m}"`,
+  (m) => `xargs git commit -q "${m}"`,
+  (m) => `git commit -q "${m}" $X`,
+  (m) => `git commit -- "${m}"`,
+];
+for (const toolName of ['Bash', 'PowerShell']) {
+  test(`${toolName}: no message word ever appears in the logged command`, () => {
+    for (const text of messageTexts) {
+      const words = text.match(/[\p{L}\p{N}]{3,}/gu);
+      for (const template of messageTemplates) {
+        const command = template(text);
+        const fields = debugFields(command, { tool_name: toolName });
+        for (const word of words) {
+          assert.ok(!(fields.command ?? '').includes(word), `${command} -> ${fields.command}`);
+        }
+      }
+    }
+  });
+}
 
 test('a plan script call with no deny logs decision "none" and the script-call form, no reason', () => {
   const debugged = run('node "/opt/plugin/commit.cjs" plan --staged', { env: DEBUG });
@@ -225,7 +302,8 @@ for (const toolName of ['Bash', 'PowerShell']) {
         const fields = fieldsOf(debugged.stderr);
         if (plain.stdout === '') continue;
         assert.equal(fields.decision, 'deny', command);
-        assert.ok(ROW_IDS.has(fields.reason) || /^[a-z]+$/.test(fields.reason), `${command}: ${fields.reason}`);
+        assert.equal(typeof fields.reason, 'string', command);
+        assert.ok(ROW_IDS.has(fields.reason) || BLANKET_KINDS.has(fields.reason), `${command}: ${fields.reason}`);
       }
     }
   });

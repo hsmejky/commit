@@ -68,6 +68,15 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   commit` segment's options: option names only, the literal ones before any non-literal
   argument; never values, message text, plain arguments or other segments), cut to 200
   characters; left out when the matched segment has no options, and for a blanket deny.
+  Option-token grammar, judged on each whole argument token up to `--`: a token starting
+  `--` logs its name (the part before any `=`) when that name matches
+  `--[A-Za-z0-9][A-Za-z0-9-]*`; one starting with a single `-` logs `-<c>` for each letter of
+  its bundle (the token up to and including its first value-taking letter: `m F C c t U S
+  u`) when that bundle matches `-[A-Za-z0-9]+`; a token outside this grammar (`"- added
+  notes"`, `"--a b"`) logs nothing. A value is never logged: the rest after a value-taking
+  letter or `=`, and the next argument after a bundle ending in `m F C c t U` or after a
+  long option without `=` that is, or abbreviates, a value-taking one (`--mess` is
+  `--message`).
   A non-blanket decision with no matched segment (an allowed command, the worker-only rule,
   a non-literal subcommand, an argv[0] runner, a Start-Process word with no `git commit`)
   logs a `plan` call's script-call form when the command holds one, else no `command`.

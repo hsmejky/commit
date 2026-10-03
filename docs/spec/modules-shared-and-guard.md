@@ -177,5 +177,6 @@ expansion and the trailing personal-skill line are data here; no text names `/co
 `classify(segmentsOrBlanket, { agentType, shell }) → { decision: "deny" | "none", row?,
 message?, scriptCalls, matched?: { options } }`, where `row` is a non-blanket deny's
 catalogue row id and `matched` holds the matched `git commit` segment's options (option
-names only, of the literal arguments before any non-literal one), both for G1's debug log.
+names only by C:guard Output's option-token grammar, of the literal arguments before any
+non-literal one), both for G1's debug log.
 Sources: Q3, Q4, Q8, Q24, Q25, C:guard.
