@@ -126,7 +126,7 @@ pins, and keeps every other variable for the user's hooks.
 
 **Blocked by:** GIT-05, EXE-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q18, M2, stories 147, 163, testing-modules row M2/M3.
 
@@ -137,8 +137,8 @@ identity given only through the environment and `GIT_LITERAL_PATHSPECS`/the
 today (the plugin is unreleased, and M2 keeps `HOME`/`GIT_CONFIG_GLOBAL` so config-file
 identities still work), but it would break dogfooding and any user's hooks once shipped.
 
-- [ ] Seam 1: a pre-commit hook records its environment → `GIT_AUTHOR_NAME` and a custom `GIT_FOO` exported to the entry point are present; `GIT_LITERAL_PATHSPECS` is absent; a decoy `GIT_INDEX_FILE` is absent.
-- [ ] Seam 1: the commit lands in the real repo despite a decoy `GIT_DIR`.
+- [x] Seam 1: a pre-commit hook records its environment → `GIT_AUTHOR_NAME` and a custom `GIT_FOO` exported to the entry point are present; `GIT_LITERAL_PATHSPECS` is absent; the decoy `GIT_INDEX_FILE` value does not reach the hook (git itself exports the index it commits, so "absent" would be impossible).
+- [x] Seam 1: the commit lands in the real repo despite a decoy `GIT_DIR`.
 
 
 ## GIT-07: M2 timeout and process-tree kill from the call deadline
