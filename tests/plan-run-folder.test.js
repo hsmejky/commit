@@ -83,6 +83,47 @@ test('in a linked worktree the exclude line goes to the common dir, once (story 
   assert.equal(fs.existsSync(path.join(linked, '.gitignore')), false);
 });
 
+// RUN-11 (docs/roadmap/09-runs.md): each linked worktree's run folder and lock live under
+// that worktree's own toplevel (M12 `runDirOf(toplevel)`), so two worktrees of one repo can
+// each hold a run of real work at once, neither seeing the other's lock; the exclude line
+// itself (RUN-05) still lives once in the common dir every worktree shares.
+test('two linked worktrees of one repo each plan with work, kept independently, no lock refusal', async (t) => {
+  const c = createCase(t);
+  seedCommit(c);
+  const linked = path.join(c.root, 'linked');
+  c.git(['worktree', 'add', '-q', linked]);
+  const commonExclude = path.join(c.repoDir, '.git', 'info', 'exclude');
+
+  c.writeFile('README.md', 'hello\nmain change\n');
+  const main = await runCommit(c, ['plan']);
+  assert.equal(main.exitCode, 0, `stdout ${main.stdout}\nstderr ${main.stderr}`);
+  assert.equal(main.json.ok, true, `stdout ${main.stdout}\nstderr ${main.stderr}`);
+  assert.equal(main.json.reply, null, 'the main worktree run should be kept, not ended');
+  assert.ok(main.json.planId, 'main worktree did not get a planId');
+
+  fs.writeFileSync(path.join(linked, 'README.md'), 'hello\nlinked change\n');
+  const side = await runCommit(c, ['plan'], { cwd: linked });
+  assert.equal(side.exitCode, 0, `stdout ${side.stdout}\nstderr ${side.stderr}`);
+  assert.equal(side.json.ok, true, `stdout ${side.stdout}\nstderr ${side.stderr}`);
+  assert.equal(side.json.reply, null, 'the linked worktree must not be refused with lock');
+  assert.ok(side.json.planId, 'linked worktree did not get a planId');
+  assert.notEqual(side.json.planId, main.json.planId);
+
+  // Each worktree's lock and folder live under its own toplevel, independently.
+  assert.deepEqual(
+    fs.readdirSync(path.join(c.repoDir, '.commit-plan')).sort(),
+    ['lock', main.json.planId].sort(),
+  );
+  assert.deepEqual(
+    fs.readdirSync(path.join(linked, '.commit-plan')).sort(),
+    ['lock', side.json.planId].sort(),
+  );
+
+  // The exclude line lives once in the dir every worktree shares (RUN-05), even though
+  // both worktrees just created their own run-folder directory through it.
+  assert.deepEqual(excludeLines(commonExclude), [EXCLUDE_LINE]);
+});
+
 test('plan on a clean tree leaves no <planId> folder and no lock', async (t) => {
   const c = createCase(t);
   seedCommit(c);
