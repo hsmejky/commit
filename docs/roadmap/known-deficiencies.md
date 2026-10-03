@@ -172,6 +172,25 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `plugin/scripts/lib/plan-validator.mjs` `resolvePath` (review-PLN-06-r2, "Out of PLN-06
   scope"). Fix: scan or redact the path before quoting it, if this is wanted. Slice: PLN-02
   (done; this is accepted interim behavior until revisited).
+- **KD-R74.** `stage`'s verify step runs its `check-attr` call against the **real** index
+  after `git reset`/`git add -A`, while `plan`'s `snapshot` ran its `check-attr` call against
+  the **temporary** index. The two disagree when a group deletes `.gitattributes` together
+  with the tracked file it gave a `filter` attribute: `plan` still sees `.gitattributes`
+  through the temporary index's working-tree-then-index fallback and classifies the file
+  `filtered`; by the time `stage` queries the real index, `git add -A` has already removed
+  `.gitattributes` from it, so the file reads as plain `text` and the verify diff splits into
+  hunks, refusing `mismatch` (review-CHG-10-r2 finding 11; fails safe, the index is reset,
+  and the case is rare — editing or adding `.gitattributes` stays consistent because the
+  working tree wins on both sides). Where: `plugin/scripts/lib/change-set.mjs` `stage`
+  (the `checkAttrs` call ahead of its verify `diffUnits`). Fix (reviewer-suggested): build
+  `stage`'s attrs map straight from the stored units it is given (`kind === 'filtered'`)
+  instead of a fresh `check-attr` call, which would also drop a git call per group. Not
+  applied: `docs/spec/modules-m10-m13.md`'s `stage` entry mandates exactly "one `check-attr`
+  call over the group's paths so a filtered file hashes as its stored unit", so the
+  reviewer's fix contradicts the spec as written. Amend that spec line first (derive from
+  the stored `kind` instead of a fresh call) if this is wanted, then land the code change
+  and a seam test for the probe above. Slice: CHG-10 (done; this is accepted interim
+  behavior, fails safe, until revisited).
 
 ## Bookkeeping
 
