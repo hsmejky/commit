@@ -89,6 +89,7 @@ const bashOnly = [
   // A variable holding an option, a literal `commit` after it.
   ['opt=--no-pager; git "$opt" commit -m x', 'literalSubcommand'],
   ['git {--no-pager,commit} -m x', 'literalSubcommand'],
+  ['git c{o,}mmit -m x; echo commit', 'literalSubcommand'],
   // Process substitution with no redirection target: its `(` is the subcommand.
   ['git < <(:) commit -m x', 'literalSubcommand'],
   ['git -C {.,commit} status', 'literalArguments'],
@@ -102,6 +103,8 @@ const bashOnly = [
   ['git $(echo com)mit', null],
   ['{git,commit,-m,x}', null],
   ['/usr/bin/gi? commit -m x', null],
+  // Brace expansion into `git commit -mit`: the raw text never spells `commit`.
+  ['git {com,-}mit', null],
   // The blanket rule (step 2) denies a substitution first.
   ['git `echo commit` -m x', 'blanket'],
   ['$(echo git) commit -m x', 'blanket'],
@@ -123,6 +126,9 @@ const powershellOnly = [
   ['git --no-advice (,\'commit\') -m x', 'literalSubcommand'],
   // A comma after an option's value joins that value into an array (5.1 passes
   // `-C . commit`): the value is what is not literal.
+  // A value-less option between a value-taking option and the comma resets afterValue:
+  // the comma is read in the subcommand position, not joined into `-C`'s value.
+  ['git -C . --no-advice ,commit -m x', 'literalSubcommand'],
   ['git -C . ,commit -m x', 'literalArguments'],
   ['git -C . , commit -m x', 'literalArguments'],
   ['git -C .,commit status', 'literalArguments'],
