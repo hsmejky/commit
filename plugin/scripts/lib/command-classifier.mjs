@@ -97,6 +97,8 @@ function wrapperMessage(wrapper) {
 
 // A `git` token: basename `git` or `git.exe` after the last `/` or `\`, case-insensitive.
 const GIT = /(?:^|[/\\])git(?:\.exe)?$/i;
+// git's own dashed form: basename `git-commit` or `git-commit.exe`, case-insensitive.
+const DASHED_COMMIT = /(?:^|[/\\])git-commit(?:\.exe)?$/i;
 const COMMIT = /^commit$/i;
 // C:guard step 4: a token holding `$`, a backtick, `{`, `(` or a glob character may turn
 // into another word or into several arguments.
@@ -385,17 +387,19 @@ export function classify(parsed, context = {}) {
     let starts = null;
     for (let i = 0; i < tokens.length; i += 1) {
       const token = tokens[i];
-      if (typeof token !== 'string' || !GIT.test(token)) continue;
+      if (typeof token !== 'string') continue;
+      // The dashed `git-commit` is `commit` straight away, its arguments right after it.
+      const dashed = DASHED_COMMIT.test(token);
+      if (!dashed && !GIT.test(token)) continue;
       starts ??= commandStarts(tokens, shell);
       // Windows PowerShell 5.1 drops an empty argument, so `git '' commit` runs a commit.
       let next = i + 1;
-      while (shell === 'powershell' && tokens[next] === '') next += 1;
-      if (typeof tokens[next] === 'string' && COMMIT.test(tokens[next])) {
-        if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
-        const message = commitDecision(tokens, starts[i], i, next + 1, shell);
-        if (message !== null) {
-          return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls: [] };
-        }
+      while (!dashed && shell === 'powershell' && tokens[next] === '') next += 1;
+      if (!dashed && !(typeof tokens[next] === 'string' && COMMIT.test(tokens[next]))) continue;
+      if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
+      const message = commitDecision(tokens, starts[i], i, dashed ? next : next + 1, shell);
+      if (message !== null) {
+        return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls: [] };
       }
     }
   }
