@@ -185,29 +185,70 @@ test('a backstop hit after staging resets the real index before throwing, and co
 // `commit.cleanup` setting cannot strip a `#` line or trailing whitespace, and a body line
 // that looks like a git flag is never argv, so it changes no git behaviour.
 
-test('commit.cleanup=strip in repo config does not strip a stored body line starting with # or trailing whitespace', async (t) => {
-  const body = '# not a comment to verbatim\n\nSecond paragraph with trailing spaces.   \n   ';
+// A fixture `pre-commit` hook that writes `marker` and nothing else. `-n`/`--no-verify`
+// reaching argv would skip it silently with no trace of its own (review-EXE-03 Medium 1), so
+// its presence afterwards is the only direct witness that `-n` never got there.
+function installMarkerHook(c) {
+  const marker = path.join(c.root, 'pre-commit-ran');
+  const hook = path.join(c.repoDir, '.git', 'hooks', 'pre-commit');
+  fs.writeFileSync(hook, `#!/bin/sh\ntouch "${marker.replace(/\\/g, '/')}"\n`);
+  fs.chmodSync(hook, 0o755);
+  return marker;
+}
+
+// `GIT_TRACE`'s own lines (git's argv echo, not this harness's). M2's `commitEnv` removes
+// only the redirecting variables, so `git commit` alone keeps it; every other git call this
+// process makes goes through `gitEnv`, which strips any `GIT_*` outside `GIT_ENV_KEEP_SET`
+// (`GIT_TRACE` is not in it), so the file holds exactly one `git commit` call's trace (plus
+// whatever git itself spawns from inside that call, e.g. `git maintenance run --auto`).
+function readTraceLines(tracePath) {
+  return fs.readFileSync(tracePath, 'utf8').split(/\r?\n/);
+}
+
+test('commit.cleanup=strip and core.commentChar=; in repo config do not strip a stored # or ; line, trailing whitespace or a blank-line run, and the call is exactly commit --cleanup=verbatim -F - with no message text in argv', async (t) => {
+  const body = '# not a comment to verbatim\n\n; not a comment either\n'
+    + 'Second paragraph with trailing spaces.   \n\n\n\n   ';
   const { c, planId } = await groupedRunWithMessage(t, {
     body,
-    configure: (repo) => repo.git(['config', 'commit.cleanup', 'strip']),
+    configure: (repo) => {
+      repo.git(['config', 'commit.cleanup', 'strip']);
+      repo.git(['config', 'core.commentChar', ';']);
+    },
   });
+  const marker = installMarkerHook(c);
+  const trace = path.join(c.root, 'git-trace.log');
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], { env: { GIT_TRACE: trace } });
 
   assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(fs.existsSync(marker), true, 'the pre-commit hook ran');
   const [{ sha }] = result.json.commits;
   const raw = c.git(['cat-file', 'commit', sha]);
   assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n`);
+  const lines = readTraceLines(trace);
+  assert.ok(
+    lines.some((line) => line.includes('built-in: git commit --cleanup=verbatim -F -')),
+    `no exact built-in commit line in trace:\n${lines.join('\n')}`,
+  );
+  for (const needle of ['# not a comment', '; not a comment']) {
+    assert.ok(
+      !lines.some((line) => line.includes(needle)),
+      `"${needle}" must never reach argv:\n${lines.join('\n')}`,
+    );
+  }
 });
 
-test('a stored body line reading --amend or -n is committed as text and changes no git behaviour', async (t) => {
+test('a stored body line reading --amend or -n is committed as text, changes no git behaviour, and never reaches argv', async (t) => {
   const body = 'Notes:\n--amend\n-n\nEnd.';
   const { c, planId } = await groupedRunWithMessage(t, { body });
+  const marker = installMarkerHook(c);
   const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  const trace = path.join(c.root, 'git-trace.log');
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], { env: { GIT_TRACE: trace } });
 
   assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(fs.existsSync(marker), true, 'the pre-commit hook ran: -n did not reach argv');
   const [{ sha }] = result.json.commits;
   assert.equal(
     c.git(['rev-parse', `${sha}^`]).trim(),
@@ -217,6 +258,29 @@ test('a stored body line reading --amend or -n is committed as text and changes 
   assert.equal(c.git(['rev-list', '--count', sha]).trim(), '2', 'history has two commits, not one');
   const raw = c.git(['cat-file', 'commit', sha]);
   assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n`);
+  const lines = readTraceLines(trace);
+  assert.ok(
+    lines.some((line) => line.includes('built-in: git commit --cleanup=verbatim -F -')),
+    `no exact built-in commit line in trace:\n${lines.join('\n')}`,
+  );
+  for (const needle of ['--amend', 'End.']) {
+    assert.ok(
+      !lines.some((line) => line.includes(needle)),
+      `"${needle}" must never reach argv:\n${lines.join('\n')}`,
+    );
+  }
+});
+
+test('a stored body ending in blank lines is committed with exactly one trailing LF, per messageOf', async (t) => {
+  const body = 'Line one.\n\n\n';
+  const { c, planId } = await groupedRunWithMessage(t, { body });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\nLine one.\n`);
 });
 
 test('matchIds: every id whose hash a current unit carries → ok; a missing hash → unmatched', () => {
