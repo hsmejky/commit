@@ -1049,24 +1049,53 @@ for (const code of ['EPERM', 'EBUSY']) {
 
     assert.equal(acquired.ok, true, JSON.stringify(acquired));
     assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', 'lock')), true);
-    assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', 'hardlink-probe.tmp')), false, 'no probe when the link eventually succeeds');
+    assert.deepEqual(fs.readdirSync(provisional.runDir).filter((name) => name.startsWith('hardlink-probe')), [], 'no probe when the link eventually succeeds');
   });
 
-  test(`acquire: ${code} on the lock link persisting past the retries, probe succeeds → busy, nothing left`, (t) => {
+  // review-RUN-09 finding 7: the failure here comes from the lock's temporary file (the link
+  // *source*) being held, so any link from it fails; the probe links a fresh source of its own
+  // inside the `<planId>/` folder and still succeeds → `busy`.
+  test(`acquire: ${code} on the lock link persisting past the retries, probe from a fresh source succeeds → busy, nothing left`, (t) => {
     const toplevel = tempDir(t);
-    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+    const sleeps = [];
+    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: (ms) => sleeps.push(ms) });
     const realLinkSync = fs.linkSync;
+    const links = [];
     t.mock.method(fs, 'linkSync', (existing, target) => {
-      if (path.basename(target) === 'lock') throw Object.assign(new Error(code), { code });
+      links.push(`${path.relative(toplevel, existing)} -> ${path.relative(toplevel, target)}`.split(path.sep).join('/'));
+      if (path.basename(existing).startsWith('lock-')) throw Object.assign(new Error(code), { code });
       return realLinkSync(existing, target);
     });
 
     const acquired = provisional.acquire({ now: () => T0 });
 
     assert.deepEqual(acquired, { ok: false, code: 'busy', message: run.BUSY_FILE_IN_USE_MESSAGE });
+    const lockLink = `.commit-plan/${run.lockTempName(provisional.planId)} -> .commit-plan/lock`;
+    const folder = `.commit-plan/${provisional.planId}`;
+    assert.deepEqual(links, [...Array(6).fill(lockLink), `${folder}/hardlink-probe.tmp -> ${folder}/hardlink-probe.link`]);
+    assert.deepEqual(sleeps, [100, 150, 200, 250, 300]);
     assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [provisional.planId], 'no lock and no temp left');
+    assert.deepEqual(fs.readdirSync(provisional.runDir), [], 'both probe files removed');
   });
 }
+
+// review-RUN-09 finding 6: only a successful link can leave the probe's link name behind, so
+// an `EEXIST` on it (a leftover from an earlier probe in this folder) proves hard links work.
+test('acquire: EPERM persisting on the lock link with a leftover probe link → still busy, not run-folder', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+  fs.writeFileSync(path.join(provisional.runDir, 'hardlink-probe.link'), '');
+  const realLinkSync = fs.linkSync;
+  t.mock.method(fs, 'linkSync', (existing, target) => {
+    if (path.basename(target) === 'lock') throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+    return realLinkSync(existing, target);
+  });
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.deepEqual(acquired, { ok: false, code: 'busy', message: run.BUSY_FILE_IN_USE_MESSAGE });
+  assert.deepEqual(fs.readdirSync(provisional.runDir), [], 'the leftover and the fresh source removed');
+});
 
 test('acquire: EPERM on the lock link persisting past the retries, probe also fails → run-folder', (t) => {
   const toplevel = tempDir(t);
@@ -1077,7 +1106,7 @@ test('acquire: EPERM on the lock link persisting past the retries, probe also fa
 
   const acquired = provisional.acquire({ now: () => T0 });
 
-  assert.deepEqual(acquired, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+  assert.deepEqual(acquired, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_NO_HARD_LINKS_TEXT });
   assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [provisional.planId], 'no lock and no temp left');
 });
 
@@ -1095,7 +1124,7 @@ for (const code of ['ENOTSUP', 'ENOSYS']) {
 
     const acquired = provisional.acquire({ now: () => T0 });
 
-    assert.deepEqual(acquired, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+    assert.deepEqual(acquired, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_NO_HARD_LINKS_TEXT });
     assert.deepEqual(linkTargets, ['lock'], 'a single attempt, no retry and no probe link');
   });
 }
@@ -1140,6 +1169,22 @@ for (const code of ['EPERM', 'EBUSY']) {
     assert.throws(() => provisional.write('state.json', '{}'), new RegExp(code));
   });
 }
+
+// review-RUN-09 finding 11: the run `acquire` returns writes `plan.json`/`hunks.txt` with the
+// same injected `sleep` as the provisional `write`, never a real delay.
+test('write after acquire: a persisting EPERM on the rename retries with the injected sleep', (t) => {
+  const toplevel = tempDir(t);
+  const sleeps = [];
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: (ms) => sleeps.push(ms) });
+  const acquired = provisional.acquire({ now: () => T0 });
+  assert.equal(acquired.ok, true, JSON.stringify(acquired));
+  t.mock.method(fs, 'renameSync', () => {
+    throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+  });
+
+  assert.throws(() => acquired.run.write('plan.json', '{}'), /EPERM/);
+  assert.deepEqual(sleeps, [100, 150, 200, 250, 300]);
+});
 
 // review-CHG-03b finding 2: `release()` on a lock rename that hits a file-in-use error
 // (`busy`, like `releaseById`'s own case) must not silently lose the lock: it reports a

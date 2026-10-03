@@ -510,6 +510,17 @@ function ensureExcludeLine(excludePath) {
 /** The `run-folder` refusal text (C:run-folder; C:cli-and-exit-codes recorded texts). */
 export const RUN_FOLDER_TEXT = '`.commit-plan` is tracked or not a plain directory; remove it by hand';
 
+/**
+ * The `run-folder` refusal text for a filesystem that cannot hard-link (C:run-folder `lock` row,
+ * RUN-09): the lock link failed `ENOTSUP`/`ENOSYS`, or a persisting `EPERM`/`EBUSY` and the
+ * hard-link probe failed too. Nothing to remove by hand: the folder is fine, its filesystem is not.
+ */
+export const RUN_FOLDER_NO_HARD_LINKS_TEXT = "the run folder's filesystem does not support hard links";
+
+function noHardLinksRefusal() {
+  return { ok: false, code: 'run-folder', message: RUN_FOLDER_NO_HARD_LINKS_TEXT };
+}
+
 // Whether nothing stands at `dir`: the only state besides a plain directory `create`
 // accepts there before its first write.
 function isAbsent(dir) {
@@ -675,28 +686,41 @@ export function lockTempName(planId) {
 }
 
 // RUN-09 (Q22, C:run-folder "lock" row): once the lock link's `EPERM`/`EBUSY` persists past
-// `retryInUse`'s retries, this decides between `busy` (another process genuinely holds
-// `lock` open) and `run-folder` (the filesystem cannot hard-link at all): it hard-links the
-// already-written lock content once more, at a second, fixed name (not `<planId>`-scoped:
-// it lives only for the length of this one call, and reusing one fixed name keeps a test's
-// fault-injection basename independent of the random `planId`). A successful probe proves
-// hard links work here, so the original failure must be contention on `lock` itself; a
-// failing probe, whatever its own error, means the filesystem itself cannot be trusted.
-const PROBE_NAME = 'hardlink-probe.tmp';
+// `retryInUse`'s retries, this decides between `busy` (another process genuinely has a file
+// of the link in use) and `run-folder` (the filesystem cannot hard-link at all). It writes a
+// fresh source file and hard-links it once more, both inside this call's own `<planId>/`
+// folder, which sits on the same filesystem as `lock` (review-RUN-09 findings 6, 7):
+// - a fresh source, not the lock's temporary file, so a scanner or indexer still holding that
+//   temporary file (the very `EBUSY` being decided) cannot fail the probe too;
+// - inside the `<planId>/` folder, so the names are fixed (a test's fault-injection basename
+//   needs no `planId`) yet never shared: no concurrent run probes the same name, and a leftover
+//   that a held handle kept from being removed lives only in a folder that is discarded with
+//   the refusal (or swept after 24 hours), never poisoning a later run's probe.
+// A successful probe proves hard links work here, so the original failure must be contention;
+// an `EEXIST` on the probe link proves the same (only a successful link can leave that name);
+// any other failure, of the source write or the link, means the filesystem cannot be trusted.
+const PROBE_SOURCE = 'hardlink-probe.tmp';
+const PROBE_LINK = 'hardlink-probe.link';
 
-function hardLinkWorks(runDir, source) {
-  const target = insideRunDir(runDir, PROBE_NAME);
+function hardLinkWorks(folder) {
+  const source = path.join(folder, PROBE_SOURCE);
+  const target = path.join(folder, PROBE_LINK);
+  let works;
   try {
+    fs.writeFileSync(source, '');
     fs.linkSync(source, target);
-  } catch {
-    return false;
+    works = true;
+  } catch (err) {
+    works = err.code === 'EEXIST';
   }
-  try {
-    fs.rmSync(target, { force: true });
-  } catch {
-    // Best-effort: a leftover probe file is harmless and not even lock-shaped.
+  for (const file of [target, source]) {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      // Best-effort: a leftover goes with the `<planId>/` folder (discarded, or swept).
+    }
   }
-  return true;
+  return works;
 }
 
 function cleanupLockTemp(temp) {
@@ -734,10 +758,10 @@ function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
     }
     if (err.code === 'ENOTSUP' || err.code === 'ENOSYS') {
       cleanupLockTemp(temp);
-      return runFolderRefusal();
+      return noHardLinksRefusal();
     }
     if (err.code === 'EPERM' || err.code === 'EBUSY') {
-      const result = hardLinkWorks(runDir, temp) ? busy(true) : runFolderRefusal();
+      const result = hardLinkWorks(folder) ? busy(true) : noHardLinksRefusal();
       cleanupLockTemp(temp);
       return result;
     }
@@ -749,7 +773,7 @@ function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
   } catch {
     // Leftover lock temporary file: the sweep's (RUN-07), not this call's to fail over.
   }
-  return { ok: true, run: ownRun(runDir, planId, folder), takeover: null };
+  return { ok: true, run: ownRun(runDir, planId, folder, sleep), takeover: null };
 }
 
 /**
@@ -815,10 +839,10 @@ function lockCreated(bytes) {
 // tells the caller to leave the folder alone too, so the lock and its folder stay consistent
 // for the next `/commit` to find an ordinary held run (review-CHG-03b finding 2); any other
 // removal error is the folder's (finding 10), reported with `discardNotice` as before.
-function ownRun(runDir, planId, folder) {
+function ownRun(runDir, planId, folder, sleep) {
   return {
     planId,
-    write: (name, data) => writeAtomic(folder, name, data),
+    write: (name, data) => writeAtomic(folder, name, data, sleep),
     release: () => {
       if (!isPlainDirectory(runDir)) return { notice: null, kept: false };
       let outcome;
