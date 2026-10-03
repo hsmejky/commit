@@ -303,3 +303,29 @@ test('run: input is written to stdin, which is then closed', async (t) => {
   assert.equal(text.stdout.toString('utf8'), 'ce013625030ba8dba906f756967f9e9ca394464a\n');
   assert.equal(bytes.stdout.toString('utf8'), 'ce013625030ba8dba906f756967f9e9ca394464a\n');
 });
+
+test('run: onStdout gets every stdout chunk as it arrives, and stdout comes back empty', async (t) => {
+  const c = createCase(t);
+  const chunks = [];
+
+  const result = await processAdapter.run('git', ['hash-object', '--stdin'], {
+    cwd: c.repoDir, env: c.env, readOnly: true, input: 'hello\n', onStdout: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout.length, 0);
+  assert.ok(chunks.every((chunk) => Buffer.isBuffer(chunk)));
+  assert.equal(Buffer.concat(chunks).toString('utf8'), 'ce013625030ba8dba906f756967f9e9ca394464a\n');
+});
+
+test('run: an onStdout that throws rejects the call with its error once the child has ended', async (t) => {
+  const c = createCase(t);
+
+  await assert.rejects(
+    processAdapter.run('git', ['hash-object', '--stdin'], {
+      cwd: c.repoDir, env: c.env, readOnly: true, input: 'hello\n',
+      onStdout: () => { throw new Error('consumer failed'); },
+    }),
+    /consumer failed/,
+  );
+});

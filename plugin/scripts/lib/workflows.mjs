@@ -247,9 +247,9 @@ async function collapseCandidates(ctx) {
 /**
  * Step 5 (snapshot part, CHG-03): M10 `snapshot` in `split` and `assignIds`. Puts on `ctx`
  * the units (bodies included, for M13), the unit table rows CHG-03b stores in `state.json`
- * (`{ id, hash, path, oldPath, status, kind }`), the `id → hash` map and `plan.json`'s
- * `tracked` list (`bucket` from M9 `bucketOf`; an untracked candidate's `A` unit is left to
- * `untracked.candidates`). CHG-05: the snapshot diffs against the temporary index in the run
+ * (`{ id, hash, path, oldPath, status, kind, identityKey }`, the identity key CHG-06's), the
+ * `id → hash` map and `plan.json`'s `tracked` list, one entry per file (`bucket` from M9
+ * `bucketOf`; an untracked candidate's `A` unit is left to `untracked.candidates`). CHG-05: the snapshot diffs against the temporary index in the run
  * folder's `git-index`, built from the stored lists; a failed `git add -N` is the
  * `git-failed` refusal. A clean tree takes no snapshot. The scan part is CHG-16's.
  */
@@ -284,15 +284,25 @@ async function snapshotUnits(ctx) {
     throw err;
   }
   ctx.units = units;
-  ctx.unitTable = units.map(({ id, hash, path, oldPath, status, kind }) => ({ id, hash, path, oldPath, status, kind }));
+  ctx.unitTable = units.map(({ id, hash, path, oldPath, status, kind, identityKey }) => ({
+    id, hash, path, oldPath, status, kind, identityKey,
+  }));
   ctx.idMap = Object.fromEntries(units.map((unit) => [unit.id, unit.hash]));
   // An untracked candidate's `A` unit is listed under `untracked.candidates`, not `tracked`.
+  // CHG-06: one `tracked` entry per file, summing its hunk-level units' counts.
   const candidatePaths = new Set(ctx.inventory.candidates.map((candidate) => candidate.path));
-  ctx.tracked = units
-    .filter((unit) => !(unit.status === 'A' && candidatePaths.has(unit.path)))
-    .map(({ path, oldPath, status, added, deleted }) => ({
-      path, oldPath, status, bucket: bucketOf(path), added, deleted,
-    }));
+  const byPath = new Map();
+  for (const { path, oldPath, status, added, deleted } of units) {
+    if (status === 'A' && candidatePaths.has(path)) continue;
+    const entry = byPath.get(path);
+    if (entry === undefined) {
+      byPath.set(path, { path, oldPath, status, bucket: bucketOf(path), added, deleted });
+    } else {
+      entry.added += added;
+      entry.deleted += deleted;
+    }
+  }
+  ctx.tracked = [...byPath.values()];
   // A plain `mv` target is a candidate whose unit is an `R`: C:plan lists it once, in
   // `tracked`, and drops it from `untracked.candidates` (`state.json` keeps it).
   ctx.renameTargets = new Set(units

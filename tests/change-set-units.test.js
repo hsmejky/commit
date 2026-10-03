@@ -215,23 +215,32 @@ test('snapshot: two modified files become two sorted whole-file text units', asy
   assert.equal(units[1].range, '-1,3 +1,4');
 });
 
-test('snapshot: a file with several hunks is one unit whose range encloses them all', async (t) => {
+test('snapshot: a modified file is one unit per hunk; a renamed file is one unit whose range encloses its hunks', async (t) => {
   const c = createCase(t);
   const lines = Array.from({ length: 12 }, (_, i) => `${i + 1}\n`);
-  seed(c, { 'f.txt': lines.join(''), 'eof.txt': 'x' });
-  c.writeFile('f.txt', ['0\n', ...lines.slice(1, 11), 'X\n'].join(''));
+  const edited = ['0\n', ...lines.slice(1, 11), 'X\n'].join('');
+  seed(c, { 'f.txt': lines.join(''), 'eof.txt': 'x', 'old.txt': lines.join('') });
+  c.writeFile('f.txt', edited);
   c.writeFile('eof.txt', 'x\n');
+  c.git(['mv', 'old.txt', 'new.txt']);
+  c.writeFile('new.txt', edited);
 
-  const units = await snapshot(c);
+  const units = await snapshot(c, { candidates: [], stagedNew: [{ path: 'new.txt', ignored: false }] });
 
-  const f = units.find((u) => u.path === 'f.txt');
-  assert.equal((f.body.toString('utf8').match(/^@@ /gm) || []).length, 2);
-  assert.equal(f.range, '-1,12 +1,12');
+  const hunkCount = (unit) => (unit.body.toString('utf8').match(/^@@ /gm) || []).length;
+  const f = units.filter((u) => u.path === 'f.txt');
+  assert.deepEqual(f.map((u) => [u.range, hunkCount(u)]), [['-1,4 +1,4', 1], ['-9,4 +9,4', 1]]);
+  const renamed = units.find((u) => u.path === 'new.txt');
+  assert.deepEqual([renamed.status, renamed.range, hunkCount(renamed)], ['R', '-1,12 +1,12', 2]);
   // The `\ No newline at end of file` line counts as neither added nor deleted.
   const oracle = numstat(c);
-  for (const unit of units) {
-    assert.deepEqual({ added: unit.added, deleted: unit.deleted }, oracle[unit.path], unit.path);
+  const sums = {};
+  for (const unit of units.filter((u) => u.status === 'M')) {
+    sums[unit.path] = sums[unit.path] ?? { added: 0, deleted: 0 };
+    sums[unit.path].added += unit.added;
+    sums[unit.path].deleted += unit.deleted;
   }
+  for (const [file, counts] of Object.entries(sums)) assert.deepEqual(counts, oracle[file], file);
 });
 
 test('snapshot: unit paths come from the raw pass, also when patch headers render them differently', async (t) => {
@@ -272,9 +281,10 @@ test('snapshot: context changes keep the hash; the hash is the path plus the -/+
   const [u2] = await snapshot(c2);
 
   assert.equal(u1.hash, u2.hash);
-  const expected = crypto.createHash('sha256')
-    .update(Buffer.from('f.txt\0-mid\n+MID\n')).digest('hex');
-  assert.equal(u1.hash, expected);
+  // CHG-06: the identity key leaves out the occurrence index (here 0) the hash ends with.
+  const sha = (text) => crypto.createHash('sha256').update(Buffer.from(text)).digest('hex');
+  assert.equal(u1.identityKey, sha('f.txt\0-mid\n+MID\n'));
+  assert.equal(u1.hash, sha('f.txt\0-mid\n+MID\n\0' + '0'));
 });
 
 test('snapshot: a newline-at-EOF edit hashes differently from the same lines with a newline', async (t) => {
@@ -554,4 +564,36 @@ test('assignIds mints h1..hN in unit order and leaves the input alone', async (t
 
   assert.deepEqual(withIds.map((u) => [u.id, u.path]), [['h1', 'a.txt'], ['h2', 'b.txt']]);
   assert.equal(units[0].id, undefined);
+});
+
+// CHG-06: the streamed patch pass, fed crafted `git diff -z --raw -p` bytes (KD-R1 style).
+function craftedDiff(headerPath) {
+  const sha = '0'.repeat(40);
+  return Buffer.concat([
+    Buffer.from(`:100644 100644 ${sha} ${sha} M\0a b.txt\0`, 'latin1'),
+    Buffer.from([0]),
+    Buffer.from(
+      `diff --git a/${headerPath} b/${headerPath}\nindex 0000000..1111111 100644\n--- a/x\n+++ b/x\n`
+      + '@@ -1,2 +1,2 @@\n-old\n+new\n ctx\n@@ -9 +9,2 @@\n ctx\n+two\n',
+      'latin1',
+    ),
+  ]);
+}
+
+test('snapshot: the streamed reader gives the same units however the output is chunked', () => {
+  const output = craftedDiff('a b.txt');
+  const whole = changeSet.unitsFromDiff(output);
+  const reader = changeSet.createDiffReader();
+  for (let i = 0; i < output.length; i += 1) reader.push(output.subarray(i, i + 1));
+  const byByte = reader.end();
+
+  assert.deepEqual(byByte, whole);
+  assert.deepEqual(whole.map((u) => [u.path, u.range, u.added, u.deleted]), [
+    ['a b.txt', '-1,2 +1,2', 1, 1], ['a b.txt', '-9 +9,2', 1, 0],
+  ]);
+  assert.deepEqual(whole[1].addedLines, [{ line: 10, text: 'two' }]);
+});
+
+test('snapshot: a section header that does not match its raw record path is internal', () => {
+  assert.throws(() => changeSet.unitsFromDiff(craftedDiff('other.txt')), /patch section 1 does not match raw record 1/);
 });

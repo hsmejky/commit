@@ -155,12 +155,15 @@ export async function gitPath(names, { cwd, env, now }) {
  *   (`GIT_INDEX_FILE`); `history`: a history read, which also pins
  *   `log.showSignature=false` and `i18n.logOutputEncoding=UTF-8`; `input`: written to the
  *   child's stdin, which is then closed (message input, path lists); without it stdin is
- *   ignored.
+ *   ignored; `onStdout`: a consumer (M10's patch pass only, CHG-06) that gets each raw
+ *   stdout chunk as it arrives, nothing being buffered here; if it throws, it gets no
+ *   further chunk and the call rejects with that error once the child has closed.
  * @returns {Promise<{ code: number|null, stdout: Buffer, stderr: string, timedOut: boolean,
- *   spawnedAt: number|null }>} `stdout` is the raw bytes, never decoded here; `spawnedAt`
- *   is `null` without `now`. `timedOut` stays `false` until GIT-07 adds the call's timer.
+ *   spawnedAt: number|null }>} `stdout` is the raw bytes, never decoded here, and empty with
+ *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` stays `false` until GIT-07
+ *   adds the call's timer.
  */
-export function run(cmd, args, { cwd, env, now, readOnly, index, history, input }) {
+export function run(cmd, args, { cwd, env, now, readOnly, index, history, input, onStdout }) {
   return new Promise((resolve, reject) => {
     const isGit = path.basename(cmd, '.exe').toLowerCase() === 'git';
     const childEnv = isGit ? gitEnv(env, { readOnly, index, history }) : env;
@@ -182,10 +185,26 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, input 
     child.on('spawn', () => {
       spawnedAt = typeof now === 'function' ? now() : null;
     });
-    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    let consumerError = null;
+    child.stdout.on('data', (chunk) => {
+      if (onStdout === undefined) {
+        stdout.push(chunk);
+        return;
+      }
+      if (consumerError !== null) return;
+      try {
+        onStdout(chunk);
+      } catch (err) {
+        consumerError = err;
+      }
+    });
     child.stderr.on('data', (chunk) => stderr.push(chunk));
     child.on('error', reject);
     child.on('close', (code) => {
+      if (consumerError !== null) {
+        reject(consumerError);
+        return;
+      }
       resolve({
         code,
         stdout: Buffer.concat(stdout),

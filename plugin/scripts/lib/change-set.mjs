@@ -29,7 +29,7 @@ const PINNED_DIFF_OPTIONS = [
 const NUL = 0x00;
 const LF = 0x0a;
 const COLON = 0x3a;
-const AT = 0x40;
+const SPACE = 0x20;
 const PLUS = 0x2b;
 const MINUS = 0x2d;
 const BACKSLASH = 0x5c;
@@ -37,6 +37,7 @@ const SECTION_START = Buffer.from('diff --git ');
 const HUNK_START = Buffer.from('@@ ');
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
+const LOSSY_UTF8 = new TextDecoder('utf-8');
 const BINARY_SNIFF_BYTES = 8000;
 const BINARY_PATCH = Buffer.from('Binary files ');
 
@@ -264,15 +265,16 @@ function byteOrder(a, b) {
 export async function snapshot({ mode, storedLists, indexPath, unborn, toplevel, env, now }) {
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14, CHG-15)`);
   await buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, env, now });
+  const reader = createDiffReader();
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p'],
-    { cwd: toplevel, env, now, readOnly: true, index: indexPath },
+    { cwd: toplevel, env, now, readOnly: true, index: indexPath, onStdout: (chunk) => reader.push(chunk) },
   );
   if (result.code !== 0) {
     throw new Error(`git diff failed (${result.code}): ${result.stderr}`);
   }
-  return unitsFromDiff(result.stdout);
+  return reader.end();
 }
 
 // Q11 steps 1-3: copy, reset to HEAD (born) or start empty (unborn), `git add -N`.
@@ -332,20 +334,113 @@ function existsInWorktree(toplevel, path) {
   }
 }
 
-// Pure: builds the sorted whole-file units from one `git diff -z --raw -p` call's raw
-// stdout bytes (the raw records and the patch sections, paired by position). Split out of
-// `snapshot` so the pairing and `unitOf` logic can be exercised directly with a crafted
-// buffer, without spawning git (KD-R1-style in-process test).
+/**
+ * The streamed patch pass (CHG-06, Q11 pass 4): a reader that takes one
+ * `git diff -z --raw -p` call's stdout chunk by chunk (M2 `onStdout`) and builds the units.
+ * Raw records are buffered (one per path); the patch text is split into lines as it
+ * arrives, and only hunk lines are kept (the bodies, from which the added lines come), never
+ * the section headers or the whole output. Section *i* belongs to raw record *i*: its
+ * `diff --git` line must be exactly the one git prints for that record's paths, and an
+ * extra or missing section or another header is an error (C:plan-hunks: `internal`), so no
+ * path is ever taken from patch text. Exported so the pairing can be fed crafted bytes in
+ * any chunking without spawning git.
+ *
+ * @returns {{ push: (chunk: Buffer) => void, end: () => object[] }} `push` throws on the
+ *   first pairing error and is not called again; `end` flushes the last line, checks the
+ *   section count and returns the units in `snapshot`'s shape and order.
+ */
+export function createDiffReader() {
+  const records = [];
+  const units = [];
+  let raw = Buffer.alloc(0);
+  let inPatch = false;
+  let partial = [];
+  let section = null;
+  let sections = 0;
+
+  const finishSection = () => {
+    if (section !== null) units.push(...unitsOf(section));
+    section = null;
+  };
+  const onLine = (line) => {
+    if (startsWith(line, SECTION_START)) {
+      finishSection();
+      const record = records[sections];
+      sections += 1;
+      if (record === undefined) {
+        throw new Error(`the diff has more patch sections than its ${records.length} raw records`);
+      }
+      if (!line.equals(sectionHeader(record))) {
+        throw new Error(`patch section ${sections} does not match raw record ${sections} (${decodePath(record.pathBytes)})`);
+      }
+      section = openSection(record);
+      return;
+    }
+    if (section === null) throw new Error('the diff patch text does not start with a section');
+    sectionLine(section, line);
+  };
+  const patch = (buf) => {
+    let pos = 0;
+    while (pos < buf.length) {
+      const nl = buf.indexOf(LF, pos);
+      if (nl === -1) {
+        partial.push(Buffer.from(buf.subarray(pos)));
+        return;
+      }
+      const tail = buf.subarray(pos, nl + 1);
+      const line = partial.length === 0 ? tail : Buffer.concat([...partial, tail]);
+      partial = [];
+      onLine(line);
+      pos = nl + 1;
+    }
+  };
+  return {
+    push(chunk) {
+      if (inPatch) {
+        patch(chunk);
+        return;
+      }
+      const { done, rest } = readRaw(raw.length === 0 ? chunk : Buffer.concat([raw, chunk]), records);
+      if (!done) {
+        raw = Buffer.from(rest);
+        return;
+      }
+      inPatch = true;
+      raw = Buffer.alloc(0);
+      patch(rest);
+    },
+    end() {
+      if (raw.length > 0) throw new Error('a raw diff record is not NUL-terminated');
+      if (partial.length > 0) {
+        const line = Buffer.concat(partial);
+        partial = [];
+        onLine(line);
+      }
+      finishSection();
+      if (sections !== records.length) {
+        throw new Error(`the diff has ${sections} patch sections for ${records.length} raw records`);
+      }
+      // Sorted by path in UTF-8 byte order (the user's `diff.orderFile` never decides it,
+      // Q11); the sort is stable, so one file's hunks stay in file order.
+      return units
+        .sort((a, b) => Buffer.compare(a.pathBytes, b.pathBytes))
+        .map(({ pathBytes, ...unit }) => unit);
+    },
+  };
+}
+
+/**
+ * Builds the sorted units from a whole `git diff -z --raw -p` stdout through
+ * `createDiffReader`, in one chunk.
+ *
+ * @param {Buffer} output
+ * @returns {object[]} the units, as `snapshot` returns them.
+ * @throws {Error} when the sections do not pair with the records.
+ */
 export function unitsFromDiff(output) {
-  const { records, patchStart } = parseRaw(output);
-  const sections = splitSections(output, patchStart);
-  if (sections.length !== records.length) {
-    throw new Error(`the diff has ${sections.length} patch sections for ${records.length} raw records`);
-  }
-  return records
-    .map((record, i) => ({ pathBytes: record.pathBytes, unit: unitOf(record, sections[i]) }))
-    .sort((a, b) => Buffer.compare(a.pathBytes, b.pathBytes))
-    .map(({ unit }) => unit);
+  const reader = createDiffReader();
+  reader.push(output);
+  return reader.end();
 }
 
 /**
@@ -387,57 +482,58 @@ async function statusEntries({ toplevel, env, now, untracked, renames = true }) 
   return entries;
 }
 
-// Reads the `--raw -z` records at the start of the output: `:<m1> <m2> <sha1> <sha2> <S>`,
-// NUL, then the path and NUL (a rename or copy, `R`/`C`, has the old and then the new path).
-// One more NUL ends the raw part when a patch follows.
-function parseRaw(out) {
-  const records = [];
+// Reads the complete `--raw -z` records at the start of `buf` into `records`:
+// `:<m1> <m2> <sha1> <sha2> <S>`, NUL, then the path and NUL (a rename or copy, `R`/`C`, has
+// the old and then the new path). One more NUL, or any byte other than `:`, ends the raw
+// part. `done`: the raw part has ended and `rest` starts the patch text; else `rest` is an
+// incomplete record, completed by the next chunk.
+function readRaw(buf, records) {
   let pos = 0;
-  const field = () => {
-    const end = out.indexOf(NUL, pos);
-    if (end === -1) throw new Error('a raw diff record is not NUL-terminated');
-    const bytes = out.subarray(pos, end);
-    pos = end + 1;
-    return bytes;
-  };
-  while (pos < out.length && out[pos] === COLON) {
-    const [oldMode, newMode, , , status] = field().toString('latin1').slice(1).split(' ');
-    const paths = [field()];
-    if (/^[RC]/.test(status)) paths.push(field());
+  while (pos < buf.length && buf[pos] === COLON) {
+    const fields = [];
+    let at = pos;
+    const want = () => (fields.length > 0 && /^[RC]/.test(fields[0].toString('latin1').split(' ')[4]) ? 3 : 2);
+    while (fields.length < want()) {
+      const end = buf.indexOf(NUL, at);
+      if (end === -1) return { done: false, rest: buf.subarray(pos) };
+      fields.push(buf.subarray(at, end));
+      at = end + 1;
+    }
+    const [oldMode, newMode, , , status] = fields[0].toString('latin1').slice(1).split(' ');
     records.push({
-      oldMode, newMode, status, pathBytes: paths[paths.length - 1],
-      oldPathBytes: paths.length === 2 ? paths[0] : null,
+      oldMode, newMode, status, pathBytes: Buffer.from(fields[fields.length - 1]),
+      oldPathBytes: fields.length === 3 ? Buffer.from(fields[1]) : null,
     });
+    pos = at;
   }
-  if (pos < out.length && out[pos] === NUL) pos += 1;
-  return { records, patchStart: pos };
+  if (pos >= buf.length) return { done: false, rest: buf.subarray(pos) };
+  if (buf[pos] === NUL) pos += 1;
+  return { done: true, rest: buf.subarray(pos) };
 }
 
-// Splits the patch text into sections at lines starting `diff --git `. Only the boundary is
-// read: nothing is taken out of a section header.
-function splitSections(out, start) {
-  const starts = linesOf(out.subarray(start))
-    .reduce((acc, line) => {
-      if (startsWith(line, SECTION_START)) acc.starts.push(acc.offset);
-      acc.offset += line.length;
-      return acc;
-    }, { starts: [], offset: start }).starts;
-  if (start < out.length && starts[0] !== start) {
-    throw new Error('the diff patch text does not start with a section');
-  }
-  return starts.map((s, i) => out.subarray(s, i + 1 < starts.length ? starts[i + 1] : out.length));
+// The `diff --git` line git prints for a record: `a/<old path or path> b/<path>`, each side
+// C-quoted as a whole, prefix included, when it holds a byte git quotes (git's `quote_two`;
+// with `core.quotePath=false` only control bytes, DEL, `"` and `\`).
+function sectionHeader({ pathBytes, oldPathBytes }) {
+  return Buffer.concat([
+    SECTION_START, quoteTwo('a/', oldPathBytes ?? pathBytes), Buffer.from(' '),
+    quoteTwo('b/', pathBytes), Buffer.from('\n'),
+  ]);
 }
 
-// Splits a buffer into lines, each keeping its `\n` (the last one may lack it).
-function linesOf(buf) {
-  const lines = [];
-  for (let pos = 0; pos < buf.length;) {
-    const nl = buf.indexOf(LF, pos);
-    const end = nl === -1 ? buf.length : nl + 1;
-    lines.push(buf.subarray(pos, end));
-    pos = end;
+const C_ESCAPES = { 7: 'a', 8: 'b', 9: 't', 10: 'n', 11: 'v', 12: 'f', 13: 'r', 0x22: '"', 0x5c: '\\' };
+
+function quoteTwo(prefix, bytes) {
+  const quoted = (byte) => byte < 0x20 || byte === 0x7f || byte === 0x22 || byte === 0x5c;
+  if (!bytes.some(quoted)) return Buffer.concat([Buffer.from(prefix), bytes]);
+  const parts = [Buffer.from(`"${prefix}`)];
+  for (const byte of bytes) {
+    if (!quoted(byte)) parts.push(Buffer.from([byte]));
+    else if (C_ESCAPES[byte] !== undefined) parts.push(Buffer.from(`\\${C_ESCAPES[byte]}`));
+    else parts.push(Buffer.from(`\\${byte.toString(8).padStart(3, '0')}`));
   }
-  return lines;
+  parts.push(Buffer.from('"'));
+  return Buffer.concat(parts);
 }
 
 function startsWith(buf, prefix) {
@@ -452,10 +548,11 @@ function decodePath(bytes) {
   }
 }
 
-// `M` (content edit), `A` (a new file from the temporary index's intent-to-add entries,
-// old mode 000000) and `R<score>` (a rename, the score dropped) are built; every other
-// status, a mode change and a non-regular entry throw for CHG-08/CHG-09.
-function unitOf({ oldMode, newMode, status, pathBytes, oldPathBytes }, section) {
+// Opens a section for its raw record. `M` (content edit), `A` (a new file from the
+// temporary index's intent-to-add entries, old mode 000000) and `R<score>` (a rename, the
+// score dropped) are built; every other status, a mode change and a non-regular entry throw
+// for CHG-08/CHG-09.
+function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }) {
   const path = decodePath(pathBytes);
   const kind = status === 'M' || status === 'A' ? status : (/^R\d*$/.test(status) ? 'R' : null);
   if (kind === null) throw new Error(`a ${status} change (${path}) is not built yet (CHG-08)`);
@@ -463,61 +560,104 @@ function unitOf({ oldMode, newMode, status, pathBytes, oldPathBytes }, section) 
   if (newMode !== '100644' && newMode !== '100755') {
     throw new Error(`a ${newMode} entry (${path}) is not built yet (CHG-09)`);
   }
-  const oldPath = kind === 'R' ? decodePath(oldPathBytes) : null;
+  return {
+    path,
+    pathBytes,
+    oldPath: kind === 'R' ? decodePath(oldPathBytes) : null,
+    oldPathBytes,
+    status: kind,
+    binary: false,
+    hunks: [],
+  };
+}
 
-  const lines = linesOf(section);
-  const first = lines.findIndex((line) => startsWith(line, HUNK_START));
-  const binary = () => new Error(`a section without a text hunk (${path}: binary) is not built yet (CHG-08)`);
-  if (first === -1 && (kind === 'M' || lines.some((line) => startsWith(line, BINARY_PATCH)))) throw binary();
-
-  const hash = createHash('sha256');
-  if (kind === 'R') hash.update(oldPathBytes).update(Buffer.from([NUL]));
-  hash.update(pathBytes).update(Buffer.from([NUL]));
-  // An `A`/`R` section without a hunk: an empty new file or a pure rename (Q11).
-  if (first === -1) {
-    return {
-      path, oldPath, status: kind, kind: 'text', hash: hash.digest('hex'),
-      added: 0, deleted: 0, range: '-0,0 +0,0', body: Buffer.alloc(0),
-    };
+// One patch line of an open section. The header lines before the first `@@` are dropped
+// (only a `Binary files` line is noted); each hunk keeps its own lines, copied out of the
+// chunk so no chunk stays referenced.
+function sectionLine(section, line) {
+  if (startsWith(line, HUNK_START)) {
+    const m = HUNK_HEADER.exec(line.toString('latin1'));
+    if (m === null) throw new Error(`an unreadable hunk header in ${section.path}`);
+    section.hunks.push({ old: side(m[1], m[2]), new: side(m[3], m[4]), lines: [Buffer.from(line)] });
+    return;
   }
-  const hunks = [];
+  const hunk = section.hunks[section.hunks.length - 1];
+  if (hunk === undefined) {
+    if (startsWith(line, BINARY_PATCH)) section.binary = true;
+    return;
+  }
+  hunk.lines.push(Buffer.from(line));
+}
+
+// The units of a closed section: one per hunk for an `M` (Q11 hunk-level units), each with
+// an occurrence index among the identical hunks before it in the file; one whole-file unit
+// for an `A` or `R`, whose identity key is its hash (a path has one whole-file unit).
+function unitsOf(section) {
+  const { path, pathBytes, oldPath, oldPathBytes, status, hunks } = section;
+  if (section.binary || (hunks.length === 0 && status === 'M')) {
+    throw new Error(`a section without a text hunk (${path}: binary) is not built yet (CHG-08)`);
+  }
+  const base = { path, pathBytes, oldPath, status, kind: 'text' };
+  if (status === 'M') {
+    const occurrences = new Map();
+    return hunks.map((hunk) => {
+      const identity = createHash('sha256').update(pathBytes).update(Buffer.from([NUL]));
+      const counts = hashHunk(hunk, identity);
+      const identityKey = identity.copy().digest('hex');
+      const occurrence = occurrences.get(identityKey) ?? 0;
+      occurrences.set(identityKey, occurrence + 1);
+      const hash = identity.update(Buffer.from(`\0${occurrence}`)).digest('hex');
+      return {
+        ...base, hash, identityKey, ...counts, range: rangeOf([hunk]), body: Buffer.concat(hunk.lines),
+      };
+    });
+  }
+  const whole = createHash('sha256');
+  if (status === 'R') whole.update(oldPathBytes).update(Buffer.from([NUL]));
+  whole.update(pathBytes).update(Buffer.from([NUL]));
+  const counts = { added: 0, deleted: 0, addedLines: [] };
+  for (const hunk of hunks) {
+    const one = hashHunk(hunk, whole);
+    counts.added += one.added;
+    counts.deleted += one.deleted;
+    counts.addedLines.push(...one.addedLines);
+  }
+  const hash = whole.digest('hex');
+  // An `A`/`R` section without a hunk: an empty new file or a pure rename (Q11).
+  const range = hunks.length === 0 ? '-0,0 +0,0' : rangeOf(hunks);
+  return [{
+    ...base, hash, identityKey: hash, ...counts, range, body: Buffer.concat(hunks.flatMap((hunk) => hunk.lines)),
+  }];
+}
+
+// Feeds one hunk's `-`/`+` lines into `hash` and counts them. `\ No newline at end of file`
+// (BACKSLASH) also follows an unchanged context line whose last line lacks a trailing
+// newline on both sides; it is hashed only when it follows a `-`/`+` line, since context is
+// otherwise excluded from the hash (Q11). `addedLines`: each `+` line's 1-based line number
+// in the new file and its lossy decode without the `+` and `\n` (M10, for M8).
+function hashHunk(hunk, hash) {
   let added = 0;
   let deleted = 0;
-  let bodyStart = 0;
-  // `\ No newline at end of file` (BACKSLASH) also follows an unchanged context line whose
-  // last line lacks a trailing newline on both sides; it is hashed only when it follows a
-  // `-`/`+` line, since context is otherwise excluded from the hash (Q11).
+  const addedLines = [];
+  let newLine = hunk.new.start;
   let prevLead = null;
-  lines.forEach((line, i) => {
-    if (i < first) {
-      bodyStart += line.length;
-      return;
-    }
+  for (const line of hunk.lines.slice(1)) {
     const lead = line[0];
-    if (lead === AT) {
-      const m = HUNK_HEADER.exec(line.toString('latin1'));
-      if (m === null) throw new Error(`an unreadable hunk header in ${path}`);
-      hunks.push({ old: side(m[1], m[2]), new: side(m[3], m[4]) });
-    } else if (lead === PLUS || lead === MINUS) {
+    if (lead === PLUS || lead === MINUS) {
       hash.update(line);
-      if (lead === PLUS) added += 1;
       if (lead === MINUS) deleted += 1;
+      if (lead === PLUS) {
+        added += 1;
+        const end = line[line.length - 1] === LF ? line.length - 1 : line.length;
+        addedLines.push({ line: newLine, text: LOSSY_UTF8.decode(line.subarray(1, end)) });
+      }
     } else if (lead === BACKSLASH && (prevLead === PLUS || prevLead === MINUS)) {
       hash.update(line);
     }
+    if (lead === PLUS || lead === SPACE) newLine += 1;
     prevLead = lead;
-  });
-  return {
-    path,
-    oldPath,
-    status: kind,
-    kind: 'text',
-    hash: hash.digest('hex'),
-    added,
-    deleted,
-    range: rangeOf(hunks),
-    body: Buffer.from(section.subarray(bodyStart)),
-  };
+  }
+  return { added, deleted, addedLines };
 }
 
 // One side of a hunk header: `start[,len]`, the length 1 when git leaves it out.
