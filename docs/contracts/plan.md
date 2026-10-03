@@ -250,11 +250,12 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   with `oldPath`; it is listed once, in `tracked`, and left out here. `state.json` keeps it
   in its candidate list, which the temporary index is rebuilt from.
 - `preStaged`: paths with staged changes. An intent-to-add entry (`git add -N`) stages no
-  content (a commit leaves it out of the tree), so it is not listed here; it is in `stagedNew`
-  (or `stagedExcluded`), and an index holding only such entries is not pre-staged. In `staged` mode `tracked` lists only the unstaged
-  changes, and `unstagedLeft` counts them. A partially staged file appears in both lists. In
-  `split` mode (`--split`, or an index that holds every change), `tracked` lists every
-  change against HEAD, `preStaged` is informational and `unstagedLeft` is `null`; `null` in
+  content (a commit leaves it out of the tree), so it is not listed here; it is in
+  `stagedNew` (or `stagedExcluded`), and an index holding only such entries is not
+  pre-staged. In `staged` mode `tracked` lists only the unstaged changes, and
+  `unstagedLeft` counts them. A partially staged file appears in both lists. In `split`
+  mode (`--split`, or an index that holds every change), `tracked` lists every change
+  against HEAD, `preStaged` is informational and `unstagedLeft` is `null`; `null` in
   `reword` too.
 - `attribution`: `null` when no trailer is added. `source`: `managed`, `project-local`,
   `project`, `user`, `default`.

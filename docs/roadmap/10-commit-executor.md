@@ -253,6 +253,10 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 
 **Sources:** Q18, C:commit-release (`unstaged`), C:run-folder, story 161.
 
+KD-R69: `unstaged` is built only from `preStaged` and `indexOnly`; a reset path's
+intent-to-add mark, dropped by `git reset -q -- .`, is not named here if its group never
+commits (it is only in the stored `stagedNew`).
+
 - [ ] Seam 1: a pre-staged file outside the planned groups → after a successful run it is
       listed with `blob: null` and the report text "your earlier staging was reset".
 - [ ] Seam 1: an index-only version (staged, then the working file changed back) → listed

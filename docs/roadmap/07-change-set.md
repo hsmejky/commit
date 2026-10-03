@@ -209,6 +209,8 @@ deficiencies](../spec/known-deficiencies.md)).
 - [ ] Seam 1: `chmod +x` alone and `chmod +x` plus a content edit → one `mode` unit each.
 - [ ] Seam 1: a deleted file, a renamed-and-edited file, a new binary → one unit each, `body: "none"` for the binary.
 - [ ] Seam 1: the hash of a rename changes when either path changes (two fixture runs compared).
+- [ ] Seam 1: `git mv a.txt .env` and (separately) `mv a.txt .env && git add -N .env` → one
+      `D a.txt` unit, `.env` in `stagedExcluded`, tree not clean (CHG-05 r3 review finding 4).
 
 
 ## CHG-09: Symlinks, submodule pointers, type changes and dirty submodules
@@ -441,6 +443,10 @@ raw hunk bytes, `git apply --cached --whitespace=nowarn`, then verify the staged
 **Status:** ready-for-agent
 
 **Sources:** Q11, Q18, C:commit-release, stories 64, 67, 162, M10.
+
+KD-R69: `unstagedAfterReset(preStaged, indexOnly)` cannot report a path's intent-to-add
+mark, which CHG-05 already leaves out of `preStaged`; if that path's group never commits,
+the loss of the mark is silent.
 
 - [ ] Seam 1: three hunks of one file in two groups → group 2's hunks staged at their shifted ranges after group 1 committed; each commit holds exactly its hunks.
 - [ ] Seam 1: a trailing-whitespace hunk under `apply.whitespace=error` → committed as planned.

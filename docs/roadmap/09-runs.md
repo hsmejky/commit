@@ -667,6 +667,11 @@ that fails, and an adopted orphan chain, are RUN-25's (RUN-20b items 1 and 3).
 
 **Sources:** Q18, Q22, C:run-folder (takeover paragraph), M12 `acquire`, M18 (killed-process paragraph), stories 210, 227.
 
+KD-R69: the repair's reset drops a pre-run intent-to-add mark the same way a split run's
+does; also open is whether the repair's "staged" check uses `--ita-visible-in-index`, which
+would put a pre-run i-t-a path outside the killed group's paths and turn the repair into
+`killedLeftover`.
+
 - [ ] Seam 1: a `commit` call SIGKILLed while its pre-commit hook sleeps (the group is
       staged, `indexReset` is set), then the lock is aged and `plan` runs → the index is
       reset, inventory sees a clean index, and the reply carries the takeover, reset and

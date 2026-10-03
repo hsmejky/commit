@@ -78,13 +78,13 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   its `lstat` size and `binary` (a NUL in the first 8000 bytes; `.gitattributes` is not
  *   read here, CHG-08/CHG-11).
  * - preStaged: every path of `git diff --cached --ita-visible-in-index --no-renames
- *   --name-status -z` but the intent-to-add ones (`git status` ` A`: no staged content);
- *   its `A` paths are the staged-new ones, a user's intent-to-add (`git add -N`) entries
- *   included (plain `diff --cached` hides them). A hidden
- *   staged-new path goes to `stagedExcluded`, the rest to `stagedNew` with `ignored`:
- *   listed by `git ls-files --cached --ignored
- *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore` refuses
- *   M2's `GIT_LITERAL_PATHSPECS=1`).
+ *   --name-status -z` but the intent-to-add ones (an empty index column, ` A` or ` D`
+ *   when the worktree file is gone: no staged content); its `A` paths are the staged-new
+ *   ones, a user's intent-to-add (`git add -N`) entries included (plain `diff --cached`
+ *   hides them). A hidden staged-new path goes to `stagedExcluded`, the rest to
+ *   `stagedNew` with `ignored`: listed by `git ls-files --cached --ignored
+ *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore`
+ *   refuses M2's `GIT_LITERAL_PATHSPECS=1`).
  * - tracked: the `git status --untracked-files=no --no-renames` entries that are not
  *   staged-new (a rename's old path is its own deletion).
  * Unborn HEAD needs no special case: `diff --cached` then lists every index entry as `A`,
