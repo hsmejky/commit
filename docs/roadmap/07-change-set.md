@@ -208,16 +208,16 @@ files (path + blob IDs), each with exactly one hunk covering the file.
 
 **Blocked by:** CHG-06, CHG-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11 hash table, C:plan-hunks (`kind`), stories 68, 71, M10; KD-S82 (a staged
 mode change under `core.fileMode=false` gives no unit, [known
 deficiencies](../spec/known-deficiencies.md)).
 
-- [ ] Seam 1: `chmod +x` alone and `chmod +x` plus a content edit → one `mode` unit each.
-- [ ] Seam 1: a deleted file, a renamed-and-edited file, a new binary → one unit each, `body: "none"` for the binary.
-- [ ] Seam 1: the hash of a rename changes when either path changes (two fixture runs compared).
-- [ ] Seam 1: `git mv a.txt .env` and (separately) `mv a.txt .env && git add -N .env` → one
+- [x] Seam 1: `chmod +x` alone and `chmod +x` plus a content edit → one `mode` unit each.
+- [x] Seam 1: a deleted file, a renamed-and-edited file, a new binary → one unit each, `body: "none"` for the binary.
+- [x] Seam 1: the hash of a rename changes when either path changes (two fixture runs compared).
+- [x] Seam 1: `git mv a.txt .env` and (separately) `mv a.txt .env && git add -N .env` → one
       `D a.txt` unit, `.env` in `stagedExcluded`, tree not clean (CHG-05 r3 review finding 4).
 
 
