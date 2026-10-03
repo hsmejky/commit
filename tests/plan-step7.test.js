@@ -97,3 +97,22 @@ test('plan --reword on a clean tree exits 0 and takes the lock; release then rem
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
   assert.equal(fs.existsSync(path.join(runDirOf(c), planId)), false);
 });
+
+test('plan whose step-7 HEAD re-read finds a commit made after the lock was taken releases it and exits 6 head-moved', { skip: SHIM_SKIP }, async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const shim = gitShim(c, {
+    condition: '[ -e .commit-plan/lock ] && [ "$*" = "rev-parse --verify -q HEAD" ]',
+    action: (git) => [`'${git}' commit -q --allow-empty -m moved`],
+  });
+
+  const result = await runCommit(c, ['plan'], { env: shim.env });
+
+  assertLockRefusal(result, 'head-moved');
+  assert.equal(result.json.error.message, 'HEAD moved since plan (commit made elsewhere?), run /commit again');
+  assert.ok(fs.existsSync(shim.marker), 'the shim never saw the step-7 HEAD read');
+  assert.equal(c.git(['log', '-1', '--format=%s']).trim(), 'moved');
+  assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false);
+  assert.deepEqual(folderNames(c), []);
+});

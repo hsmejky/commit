@@ -33,7 +33,7 @@
 // shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
-import { commitEncoding, headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
+import { commitEncoding, head, headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
 import { assignIds, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
 import { bucketOf } from './path-classifier.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME, STATE_VERSION } from './run.mjs';
@@ -47,6 +47,9 @@ import { loadConfig } from './config.mjs';
 // GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
 // C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
 const DETACHED_HEAD_NOTICE = 'HEAD is detached: new commits will not be on any branch';
+
+// RUN-06: the `head-moved` refusal text (Q18), recorded verbatim in C:cli-and-exit-codes.
+const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
 
 /**
  * Step 1: probe the repo state, git and Node versions (M3). Shared with `release`/`commit`;
@@ -201,6 +204,13 @@ async function storeAndLock(ctx) {
     idMap: ctx.idMap,
   })}\n`);
   ctx.run = ctx.provisional.acquire({ now: ctx.injected.now }).run;
+  // RUN-06: re-read HEAD once the lock is held, against the HEAD step 1 recorded (C:plan
+  // step 7): another run that committed since the inventory ends this one with `head-moved`,
+  // and `plan`'s `finally` releases the lock and deletes the folder.
+  const { env, now } = ctx.injected;
+  if (await head({ cwd: ctx.toplevel, env, now }) !== ctx.expectedHead) {
+    return { refusal: { code: 'head-moved', message: HEAD_MOVED_TEXT } };
+  }
   ctx.run.write('plan.json', entryPerLine({
     version: 1,
     ok: true,
