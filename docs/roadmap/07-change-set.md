@@ -301,14 +301,14 @@ RUN-17 and INT-16 reuse it.
 
 **Blocked by:** CHG-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Q16, Q19, C:untracked-files, testing-seams (table-driven generator), M9,
 stories 154, 155.
 
-- [ ] Seam 1 generator: directory shapes at, below and above each cap (50 per new directory, 50 root files, 200 total), asserting `collapsed` and `stagedExcluded`.
-- [ ] Seam 1: the five named tests of C:untracked-files (`packages/new-lib` with 60 files, 51 in tracked `db/migrations/`, 51 root files → `"."`, 300 staged into `dist/` → `stagedExcluded`, a 60-file directory under `--staged` → no collapse).
-- [ ] Seam 1: a force-added hidden staged-new file under `--split` → `stagedExcluded` with `reason: "hidden"`.
+- [x] Seam 1 generator: directory shapes at, below and above each cap (50 per new directory, 50 root files, 200 total), asserting `collapsed` and `stagedExcluded`.
+- [x] Seam 1: the five named tests of C:untracked-files (`packages/new-lib` with 60 files, 51 in tracked `db/migrations/`, 51 root files → `"."`, 300 staged into `dist/` → `stagedExcluded`, a 60-file directory under `--staged` → no collapse).
+- [x] Seam 1: a force-added hidden staged-new file under `--split` → `stagedExcluded` with `reason: "hidden"`.
 
 
 ## CHG-14: Mode-aware inventory: `staged`, `indexOnly`, `unstagedLeft`
