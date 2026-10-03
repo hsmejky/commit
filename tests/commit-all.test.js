@@ -621,7 +621,7 @@ test('a git add of another file between plan and commit → exit 6 diff-changed 
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });
 
-test('group 1 already committed, then a git add from outside before group 2 → group 2 refused index-changed by its own pre-group check, groups 2 and 3 remaining', async (t) => {
+test('group 1 already committed before the call, then a git add from outside → the call\'s first group (2) refused index-changed by its pre-group check, groups 2 and 3 remaining', async (t) => {
   let group1;
   const { c, planId, seed, runDir } = await threeGroupRun(t, {
     edit: async (state, repo) => {

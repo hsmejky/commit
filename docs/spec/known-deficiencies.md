@@ -61,6 +61,34 @@ delete it here; IDs are never reused.
   [C:plan](../contracts/plan.md) (temporary index), M10 `snapshot`. Fix: list index entries
   whose mode differs from HEAD while `core.fileMode=false` as a `mode` unit taken from the
   index, or as `indexOnly` with a notice. Slices: CHG-08, CHG-14 (review-CHG-05 finding 5).
+- **KD-S83. A post-commit hook's own staging silently slips past the index-fingerprint
+  re-read.** In `split` mode a `post-commit` (or `commit-msg`/`post-rewrite`-style) hook of
+  group n that `git add`s another file changes the index before `commit-executor.mjs:228`
+  re-reads it for `state.indexFingerprint`, so the stored fingerprint absorbs that outside
+  staging; group n+1's phase (c) `git reset -q -- .` then silently unstages it (the
+  working-tree change survives; only the staging and the report are lost). EXE-06 treats
+  the analogous HEAD case (a hook commit) by leaving `state.head` stale so the next group
+  refuses `head-moved`; the index analogue is missing.
+  [C:commit-release](../contracts/commit-release.md):43's own update rule ("the stored
+  fingerprint is updated to the fresh read after each of the run's own `git commit` calls")
+  absorbs hook staging inside that call, which contradicts the same bullet's promise that
+  staging between two groups is never silently lost from the report — a design defect, not
+  a slice deviation. `tests/commit-all.test.js`'s "group 1 already committed before the
+  call, then a git add from outside" test does not cover the genuine within-call case
+  either: it commits group 1 in the fixture before the call starts, so the call's first
+  group is the first loop iteration, the same path the plan's first EXE-07 AC already
+  covers; a real between-groups case needs a hook, which is exactly this gap, so no test
+  exercises it today. Where: C:commit-release:43,
+  `plugin/scripts/lib/commit-executor.mjs:228`, `tests/commit-all.test.js`. Fix: after
+  `git commit`, in `split` mode (no `preStaged`, so the index the run leaves must equal the
+  new HEAD's tree), check `git diff-index --cached --quiet HEAD` (read-only); on a
+  difference keep the stored fingerprint stale (mirroring EXE-06) so the next group refuses
+  `index-changed`, and push a notice naming the group. Do not compare the pre-commit and
+  post-commit fingerprints instead: a lint-staged `pre-commit` hook legitimately re-adds
+  files (that is `treeChangedDuringCommit`'s case, EXE-15). Once fixed, add a Seam-1 case
+  with a `post-commit` hook of group 1 that stages `other.txt` → group 1 kept, group 2
+  refused `index-changed`, `other.txt` still staged. Disposition: accepted for 0.1.0
+  (review-EXE-07 findings 1, 5, 6).
 
 ## Error tables and API contract
 

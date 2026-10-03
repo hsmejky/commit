@@ -48,8 +48,8 @@
 //
 // `commit` (RUN-04) also runs its own step table (`COMMIT_STEPS`) the same way: probe, the
 // shared `subcommandRefusals`, M12 `open`, then (EXE-02) the M16 per-group loop
-// (`commit-executor.mjs`), releasing the run once no group remains, or on a `head-moved`
-// refusal (EXE-06), which also ends the run.
+// (`commit-executor.mjs`), releasing the run once no group remains, or on a `head-moved` or
+// `index-changed` refusal (EXE-06, EXE-07), which also ends the run.
 
 import {
   HEAD_MOVED_TEXT, commitEncoding, head, headState, historyMessages, inProgressState, isTracked,
@@ -654,10 +654,11 @@ async function openRun(ctx) {
 // `commit` step 4 (EXE-02, extended by EXE-04's mid-loop `touch`, EXE-06's `head-moved` and
 // EXE-07's `index-changed`): M16 `commitAll` over the stored groups, then the run's release
 // once it ends with no refusal, or with `head-moved`/`index-changed` (C:commit-release: the
-// lock and the run folder go after the last group, and "on every failure that ends the run";
-// the folder takes this call's `call.lock` with it, so the `finally`'s `close` finds nothing left). EXE-05's phase (a)
-// `no-groups` refusal (no stored groups, or every stored group already committed) is
-// `commitAll`'s own, after the lock check (M12 `open`, step 3) and before any group work. A
+// lock and the run folder go after the last group, and "on every failure that ends the
+// run"; the folder takes this call's `call.lock` with it, so the `finally`'s `close`
+// finds nothing left). EXE-05's phase (a) `no-groups` refusal (no stored groups, or
+// every stored group already committed) is `commitAll`'s own, after the lock check
+// (M12 `open`, step 3) and before any group work. A
 // `no-groups`/`taken-over`/`busy` refusal keeps the run instead (no `releaseOpen`; only this
 // call's `call.lock` goes, via the `finally` in `commit()` below — `ctx.opened` is already
 // true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`
@@ -845,10 +846,11 @@ export async function release(values, injected, { cwd }) {
  * `planId`, or its own lock/`call.lock`/folder vanishes mid-call with a late `ENOENT`) and
  * `ended` (no lock, or a state `version` mismatch) are refused before any group-commit work;
  * `busy` covers only a live `call.lock`. A matched lock's call then runs M16 `commitAll`
- * over the stored groups (EXE-02) and releases the run (lock and folder) once no group
- * remains, or on a `head-moved` refusal (EXE-06, C:cli-and-exit-codes), which also ends the
- * run. `run.close()` always runs for a call that reached a successful `open` (success or
- * a later failure alike), never when `open` itself failed (there is then no call.lock to
+ * over the stored groups (EXE-02) and releases the run (lock and folder) once no
+ * group remains, or on a `head-moved` or `index-changed` refusal (EXE-06, EXE-07,
+ * C:cli-and-exit-codes), which also ends the run. `run.close()` always runs for a call
+ * that reached a successful `open` (success or a later failure alike), never when `open`
+ * itself failed (there is then no call.lock to
  * close). A run with no stored groups (or all committed) is refused `no-groups` (exit 1
  * `usage`, EXE-05) before any group work, right after the lock check: the run is kept (no
  * `releaseOpen`), and `close()` still removes this call's own `call.lock`. The same
@@ -870,11 +872,11 @@ export async function commit(values, injected, { cwd }) {
   const ctx = { injected, cwd, values, opened: false };
   try {
     const facts = await runSteps(COMMIT_STEPS, ctx);
-    // EXE-06 AC3: a mid-run refusal (`head-moved` here; `taken-over`/`busy` from EXE-04's
-    // `touch` between groups) is still M16 `commitAll`'s own outcome, with real groups
-    // already committed — unlike the other subcommands' pre-folder refusals, it carries
-    // `commits`/`failed`/`remaining`/`unstaged`/`notices` per C:commit-release, not only the
-    // refusal's own `kind`/`message` (review-EXE-04 Medium-1).
+    // EXE-06 AC3: a mid-run refusal (`head-moved` or `index-changed` here (EXE-06, EXE-07);
+    // `taken-over`/`busy` from EXE-04's `touch` between groups) is still M16 `commitAll`'s
+    // own outcome, with real groups already committed — unlike the other subcommands'
+    // pre-folder refusals, it carries `commits`/`failed`/`remaining`/`unstaged`/`notices` per
+    // C:commit-release, not only the refusal's own `kind`/`message` (review-EXE-04 Medium-1).
     if (facts.refusal !== undefined) {
       const { commits, failed, remaining, unstaged, notices } = facts;
       return {
