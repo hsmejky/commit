@@ -248,7 +248,15 @@ export async function main(argv, env) {
   const workflow = WORKFLOWS[subcommand];
   const result = await workflow(parsed.values, env, { cwd: env.cwd });
   if (result.failure !== undefined) {
-    return failure(result.failure.kind, result.failure.message, result.failure.errors, result.failure.reply);
+    // EXE-06: `commit`'s mid-run refusals (`head-moved`; `taken-over`/`busy` from EXE-04's
+    // `touch`) carry extra fields beyond `kind`/`message`/`errors`/`reply`
+    // (`commits`/`failed`/`remaining`/`unstaged`/`notices`, C:commit-release) that no other
+    // subcommand's failure shape has. Forward whatever is there generically instead of
+    // naming each field, so a future failure shape with its own extra keys needs no change
+    // here.
+    const { kind, message, errors, reply, ...extra } = result.failure;
+    const built = failure(kind, message, errors, reply);
+    return { ...built, stdoutJson: { ...built.stdoutJson, ...extra } };
   }
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }

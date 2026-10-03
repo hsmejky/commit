@@ -326,11 +326,12 @@ async function threeGroupRun(t, { edit } = {}) {
   return { c, planId, runDir, seed, lockPath: path.join(path.dirname(runDir), 'lock') };
 }
 
-// A fixture `pre-commit` hook that runs `script` (CommonJS source) under this Node.
-function installNodeHook(c, script) {
-  const scriptPath = path.join(c.root, 'pre-commit-hook.js');
+// A fixture hook (`pre-commit` unless `hookName` says otherwise) that runs `script`
+// (CommonJS source) under this Node.
+function installNodeHook(c, script, hookName = 'pre-commit') {
+  const scriptPath = path.join(c.root, `${hookName}-hook.js`);
   fs.writeFileSync(scriptPath, script);
-  const hook = path.join(c.repoDir, '.git', 'hooks', 'pre-commit');
+  const hook = path.join(c.repoDir, '.git', 'hooks', hookName);
   const slash = (p) => p.replace(/\\/g, '/');
   fs.writeFileSync(hook, `#!/bin/sh\nexec "${slash(process.execPath)}" "${slash(scriptPath)}"\n`);
   fs.chmodSync(hook, 0o755);
@@ -445,4 +446,75 @@ test("group 1's pre-commit hook rewrites the lock to another planId → group 1 
   const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
   assert.deepEqual(state.groups.map((group) => group.committed), [true, false, false]);
   assert.equal(state.head, shas[0]);
+  // EXE-06 AC3 (review-EXE-04 Medium-1): a mid-run `lock` refusal carries the same
+  // commits/failed/remaining/unstaged fields as `head-moved`'s own, not just the refusal's
+  // own kind/message, now that cli.mjs forwards them generically.
+  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  assert.deepEqual(result.json.unstaged, []);
+  assert.deepEqual(result.json.notices, []);
+});
+
+// EXE-06 (docs/roadmap/10-commit-executor.md): M3 `head()` against the run's expected HEAD
+// before each group, and M3 `firstParent` of each group's own commit after it, catch a commit
+// made elsewhere (manually, or by a hook) between `plan` and `commit`, or between two groups.
+
+test('a manual commit between plan and commit → exit 6 head-moved, no commit beyond it, index untouched', async (t) => {
+  const { c, planId } = await groupedRun(t);
+  c.git(['commit', '-q', '--allow-empty', '-m', 'manual']);
+  const headAfterManual = c.git(['rev-parse', 'HEAD']).trim();
+  const statusBefore = c.git(['status', '--porcelain']);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'head-moved', detail(result));
+  assert.equal(
+    result.json.error.message,
+    'HEAD moved since plan (commit made elsewhere?), run /commit again',
+  );
+  assert.equal(result.json.unstaged, null);
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [1]);
+  assert.deepEqual(result.json.notices, []);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headAfterManual, 'no commit beyond the manual one');
+  assert.equal(c.git(['status', '--porcelain']), statusBefore, 'the index is byte-identical to before the call');
+});
+
+test('a post-commit hook that commits again during group 1 of three → group 1 reported with HEAD\'s SHA and a notice, group 2 refused head-moved', async (t) => {
+  const { c, planId, seed, runDir } = await threeGroupRun(t);
+  const marker = path.join(c.root, 'extra-commit-done');
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    "const { execFileSync } = require('node:child_process');",
+    `const marker = ${JSON.stringify(marker)};`,
+    `const repoDir = ${JSON.stringify(c.repoDir)};`,
+    // Guards against recursing into itself: the extra commit below triggers this same
+    // post-commit hook again, and that second run must do nothing.
+    'if (!fs.existsSync(marker)) {',
+    '  fs.writeFileSync(marker, "1");',
+    "  execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'extra'], { cwd: repoDir });",
+    '}',
+    '',
+  ].join('\n'), 'post-commit');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'head-moved', detail(result));
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 2, "group 1's own commit plus the hook's extra one");
+  assert.equal(subjectOf(c, shas[0]), THREE_HEADERS[0]);
+  assert.equal(filesOf(c, shas[0]), 'a.txt\n');
+  // Group 1 is reported with the SHA HEAD now holds (the hook's extra commit), not its own.
+  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[1], header: THREE_HEADERS[0] }]);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  assert.deepEqual(result.json.notices, ['another commit was made during group 1; later groups refused']);
+  assert.equal(fs.existsSync(runDir), true, 'the run folder is not released');
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  assert.equal(state.head, seed, "the expected HEAD is left stale so group 2's check catches it");
+  assert.deepEqual(state.groups.map((group) => group.committed), [true, false, false]);
 });

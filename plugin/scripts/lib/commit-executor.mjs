@@ -11,12 +11,19 @@
 // top of `commitAll`, before the mode dispatch: the lock (M12 `open`) already ran once in
 // the caller before `commitAll` is ever invoked, and EXE-22's `unconfirmed` belongs between
 // the two, per C:commit-release phase (a) order (phase (a) is mode-independent).
-// The other phase (a) refusals (EXE-06 to EXE-08), the failure paths (EXE-09 to
+// EXE-06 adds `head-moved`: M3 `head()` against the expected HEAD before each group (right
+// after `touch()`, same phase (a) order), and, after each `git commit`, M3 `firstParent` of
+// the new HEAD against the SHA expected before that commit. A match advances the expected
+// HEAD to the new SHA, as before; a mismatch (a hook or another process committed as well)
+// still reports the group committed, with the SHA HEAD holds, and pushes a notice naming the
+// group, but leaves the expected HEAD stale, so the next group's own `head()` check catches
+// it and refuses `head-moved`.
+// The other phase (a) refusals (EXE-07, EXE-08), the failure paths (EXE-09 to
 // EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
 
-import { head } from './repo-probe.mjs';
+import { firstParent, head } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, matchIds, snapshot, stage, treeDiffUnits, writeTree,
 } from './change-set.mjs';
@@ -35,6 +42,15 @@ function notBuilt(what, slice) {
 // `already-committed`).
 const NO_GROUPS_TEXT = 'no groups to commit: none are stored, or every stored group is already '
   + 'committed';
+
+// EXE-06: the recorded text of C:cli-and-exit-codes, verbatim (Q18).
+const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
+
+// EXE-06: the notice when a hook or another process committed during group `n`, so that
+// group's own commit landed but is not HEAD's first parent any more.
+function anotherCommitNotice(n) {
+  return `another commit was made during group ${n}; later groups refused`;
+}
 
 // Low 2 (review-EXE-02): C:commit-release "`split` runs `git reset -q -- .` only when the
 // failing group itself reached (c)". EXE-10 builds the real M10 `unstage` and its `unstaged`
@@ -64,10 +80,11 @@ function wholeFileUnits(state, group) {
 }
 
 // A phase (a) refusal before `group`: the run's index untouched, the earlier groups kept.
-// `refusal` carries the domain code and text M18 maps to the failure envelope; the other
-// fields are C:commit-release's (EXE-06 surfaces `commits`/`failed`/`remaining` in the
-// failed output, not built yet: M18 reports the refusal alone for now).
-function refused(state, group, commits, refusal) {
+// `refusal` carries the domain code and text M18 maps to the failure envelope; `notices`
+// carries any EXE-06 "another commit was made" notices from groups already committed by
+// this call. The other fields are C:commit-release's (EXE-06 AC3: every mid-run refusal
+// carries `commits`/`failed`/`remaining`/`unstaged`, not only `head-moved`'s).
+function refused(state, group, commits, refusal, notices) {
   return {
     commits,
     failed: group.n,
@@ -75,6 +92,7 @@ function refused(state, group, commits, refusal) {
     error: null,
     gitOutput: null,
     unstaged: state.indexReset === true ? [] : null,
+    notices,
     refusal,
   };
 }
@@ -87,12 +105,16 @@ function refused(state, group, commits, refusal) {
  *   clock, the OS user for the backstop's M8 `scanUnits` (never stored), and the environment.
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: null,
- *   unstaged: Array<object> | null, refusal?: { code: 'no-groups' | 'taken-over' | 'busy',
+ *   unstaged: Array<object> | null, notices: string[],
+ *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved',
  *   message: string } }>} C:commit-release's output fields; `no-groups` (no stored groups,
  *   or every one committed) refuses before any group, with `failed: null` and
  *   `remaining: []`. On a phase (a) refusal before a later group instead, `refusal` with
- *   `failed` that group and `remaining` the groups not committed (never empty). Neither kind
- *   releases the run (`usage`/`lock`, M18's call per C:cli-and-exit-codes).
+ *   `failed` that group and `remaining` the groups not committed (never empty); `head-moved`
+ *   when HEAD is not the SHA this run expects (EXE-06). `notices` holds any "another commit
+ *   was made during group `<n>`" notices from groups this call already committed before a
+ *   `head-moved` refusal (EXE-06), `[]` otherwise. Neither refusal kind releases the run
+ *   (`usage`/`lock`, M18's call per C:cli-and-exit-codes).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
 export async function commitAll(run, { now, osUser, env }) {
@@ -109,6 +131,7 @@ export async function commitAll(run, { now, osUser, env }) {
   if (!Array.isArray(state.groups) || state.groups.every((group) => group.committed)) {
     return {
       commits: [], failed: null, remaining: [], error: null, gitOutput: null, unstaged: null,
+      notices: [],
       refusal: { code: 'no-groups', message: NO_GROUPS_TEXT },
     };
   }
@@ -121,13 +144,22 @@ export async function commitAll(run, { now, osUser, env }) {
     throw notBuilt('the unstaged report for pre-staged paths', 'EXE-11');
   }
   const commits = [];
+  const notices = [];
   for (const group of state.groups.filter((stored) => !stored.committed)) {
     // (a) Again before each group (EXE-04): the lock must still hold this run's `planId`
     // and its mtime is refreshed, so a takeover between groups stops the call here with the
     // earlier groups kept (C:commit-release (a), Q22).
     const touched = touch(run, { now });
     if (!touched.ok) {
-      return refused(state, group, commits, { code: touched.code, message: touched.message });
+      return refused(state, group, commits, { code: touched.code, message: touched.message }, notices);
+    }
+
+    // (a) EXE-06: HEAD must still be the SHA this run expects (the one `plan` recorded,
+    // then the SHA of each group this run committed) — a manual commit, or a mismatch left
+    // by an earlier group's own check below, both show up here.
+    const headNow = await head({ cwd: toplevel, env, now });
+    if (headNow !== state.head) {
+      return refused(state, group, commits, { code: 'head-moved', message: HEAD_MOVED_TEXT }, notices);
     }
 
     // (b) Match on the temporary index, the real index untouched.
@@ -165,9 +197,19 @@ export async function commitAll(run, { now, osUser, env }) {
     }
     const sha = await head({ cwd: toplevel, env, now });
 
+    // EXE-06: HEAD's first parent must be the SHA expected before this commit (`null` on an
+    // unborn branch, matching `state.head` there too). A match means HEAD is this group's
+    // own commit; a mismatch means a hook or another process committed as well — the group
+    // is still reported committed, with the SHA HEAD now holds, but the expected HEAD is
+    // left stale so the next group's check above catches it and refuses `head-moved`.
+    const parentBefore = await firstParent({ cwd: toplevel, env, now, sha });
     group.committed = true;
-    state.head = sha;
     state.indexFingerprint = await indexFingerprint(git);
+    if (parentBefore === state.head) {
+      state.head = sha;
+    } else {
+      notices.push(anotherCommitNotice(group.n));
+    }
     writeState(run, state);
     commits.push({ n: group.n, sha, header: group.header });
   }
@@ -178,5 +220,6 @@ export async function commitAll(run, { now, osUser, env }) {
     error: null,
     gitOutput: null,
     unstaged: state.indexReset === true ? [] : null,
+    notices,
   };
 }

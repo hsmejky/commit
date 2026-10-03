@@ -197,6 +197,26 @@ export async function head({ cwd, env, now }) {
 }
 
 /**
+ * The first parent of `sha` (EXE-06): after a commit, M16 compares this against the SHA
+ * expected before that commit, to tell its own commit apart from one a hook or another
+ * process made meanwhile. Uses `--verify -q` for the same reason as `head()` (review-GIT-02
+ * finding 6): a root commit has no parent and exits 1 with `--verify -q`, confirmed, never
+ * another code; a real failure (a bad `sha`, corruption) throws instead of being read as
+ * "no parent".
+ *
+ * @param {{ cwd: string, env: object, now?: () => number, sha: string }} options `cwd`: the
+ *   toplevel; `sha`: the commit whose first parent is read.
+ * @returns {Promise<string | null>} the parent SHA, or `null` when `sha` is a root commit.
+ * @throws {Error} on any exit code other than 0 or 1.
+ */
+export async function firstParent({ cwd, env, now, sha }) {
+  const result = await run('git', ['rev-parse', '--verify', '-q', `${sha}^`], { cwd, env, now, readOnly: true });
+  if (result.code === 0) return result.stdout.toString('utf8').trim();
+  if (result.code === 1) return null;
+  throw new Error(`git rev-parse ${sha}^ failed (${result.code}): ${result.stderr}`);
+}
+
+/**
  * The tree ID of `HEAD^{tree}` (GIT-02; consumed by EXE's backstop tree comparison). Uses
  * `--verify -q` for the same reason as `head()` (review-GIT-02 finding 6).
  *

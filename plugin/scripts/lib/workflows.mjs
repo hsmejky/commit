@@ -642,7 +642,8 @@ async function openRun(ctx) {
   return undefined;
 }
 
-// `commit` step 4 (EXE-02): M16 `commitAll` over the stored groups, then the run's release
+// `commit` step 4 (EXE-02, extended by EXE-04's mid-loop `touch` and EXE-06's `head-moved`):
+// M16 `commitAll` over the stored groups, then the run's release
 // once it ends with no refusal (C:commit-release: the lock and the run folder go after the
 // last group; the folder takes this call's `call.lock` with it, so the `finally`'s `close`
 // finds nothing left). EXE-05's phase (a) `no-groups` refusal (no stored groups, or every
@@ -829,7 +830,11 @@ export async function release(values, injected, { cwd }) {
  * a later failure alike), never when `open` itself failed (there is then no call.lock to
  * close). A run with no stored groups (or all committed) is refused `no-groups` (exit 1
  * `usage`, EXE-05) before any group work, right after the lock check: the run is kept (no
- * `releaseOpen`), and `close()` still removes this call's own `call.lock`.
+ * `releaseOpen`), and `close()` still removes this call's own `call.lock`. The same
+ * `taken-over`/`busy` codes can also surface mid-loop, from EXE-04's `touch` before a later
+ * group: unlike `open`'s own refusal above, that case has already committed earlier groups,
+ * which `commitAll` reports in `commits`, and the run is kept rather than released, matching
+ * `no-groups`.
  *
  * The output holds C:commit-release's fields (`commits`, `failed`, `remaining`, `error`,
  * `gitOutput`, `unstaged`) but no `reply` yet: the `reply` with `status: "committed"` is
@@ -844,7 +849,25 @@ export async function commit(values, injected, { cwd }) {
   const ctx = { injected, cwd, values, opened: false };
   try {
     const facts = await runSteps(COMMIT_STEPS, ctx);
-    if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+    // EXE-06 AC3: a mid-run refusal (`head-moved` here; `taken-over`/`busy` from EXE-04's
+    // `touch` between groups) is still M16 `commitAll`'s own outcome, with real groups
+    // already committed — unlike the other subcommands' pre-folder refusals, it carries
+    // `commits`/`failed`/`remaining`/`unstaged`/`notices` per C:commit-release, not only the
+    // refusal's own `kind`/`message` (review-EXE-04 Medium-1).
+    if (facts.refusal !== undefined) {
+      const { commits, failed, remaining, unstaged, notices } = facts;
+      return {
+        failure: {
+          kind: kindForDomainCode(facts.refusal.code),
+          message: facts.refusal.message,
+          commits,
+          failed,
+          remaining,
+          unstaged,
+          notices,
+        },
+      };
+    }
     return { output: facts };
   } finally {
     // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
