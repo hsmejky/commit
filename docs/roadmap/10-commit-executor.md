@@ -87,13 +87,14 @@ as `check` would.
 
 **Blocked by:** EXE-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, stories 126, 162.
 
-- [ ] Seam 1: repo config `commit.cleanup=strip` and a stored body line starting with `#`
-      → the committed message holds that line, trailing blank lines and whitespace as stored.
-- [ ] Seam 1: a stored message whose body has a line such as `--amend` or `-n` is
+- [x] Seam 1: repo config `commit.cleanup=strip` and a stored body line starting with `#`
+      → the committed message holds that line and trailing whitespace as stored, ending in
+      exactly one LF (C:message-grammar, `messageOf`).
+- [x] Seam 1: a stored message whose body has a line such as `--amend` or `-n` is
       committed as text and changes no git behaviour (the message never reaches argv).
 
 
