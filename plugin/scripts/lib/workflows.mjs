@@ -150,6 +150,16 @@ async function inventory(ctx) {
  * part is CHG-16's.
  */
 async function snapshotUnits(ctx) {
+  ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
+  if (ctx.mode === 'reword') {
+    // RUN-06: `reword` takes no snapshot of the working tree (C:plan-hunks: HEAD's own diff,
+    // CHG-15's). Until CHG-15 lands its units are empty, so the hunk index is too.
+    ctx.units = [];
+    ctx.unitTable = [];
+    ctx.idMap = {};
+    ctx.tracked = [];
+    return undefined;
+  }
   if (ctx.inventory.clean) return undefined;
   const units = assignIds(await snapshot({
     mode: 'split', toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now,
@@ -163,9 +173,12 @@ async function snapshotUnits(ctx) {
   return undefined;
 }
 
-/** Step 6: post-scan refusals. A clean tree ends the call with `nothing`. */
+/**
+ * Step 6: post-scan refusals. A clean tree ends the call with `nothing`, except in `reword`,
+ * which takes the lock on a clean tree too (C:plan step 6, RUN-06).
+ */
 async function postScanRefusals(ctx) {
-  if (ctx.inventory.clean === true) return { status: 'nothing', reason: 'clean' };
+  if (ctx.inventory.clean === true && ctx.mode !== 'reword') return { status: 'nothing', reason: 'clean' };
   return undefined;
 }
 
@@ -179,7 +192,6 @@ async function postScanRefusals(ctx) {
  */
 async function storeAndLock(ctx) {
   const { planId, runDir } = ctx.provisional;
-  ctx.mode = 'split';
   ctx.provisional.write('state.json', `${JSON.stringify({
     version: STATE_VERSION,
     mode: ctx.mode,
@@ -196,7 +208,7 @@ async function storeAndLock(ctx) {
     runDir,
     mode: ctx.mode,
     state: ctx.state,
-    clean: false,
+    clean: ctx.inventory.clean,
     tracked: ctx.tracked,
   }));
   return undefined;
@@ -311,9 +323,10 @@ async function runSteps(steps, ctx) {
  *   shape and exit code.
  */
 export async function plan(values, injected, { cwd }) {
-  // Only bare `plan` and `plan --split` are built: every other flag changes the mode or the
-  // clean-tree outcome (C:plan `mode`, `--reword` on a clean tree takes the lock).
-  const unbuilt = ['reword', 'dictated', 'staged', 'take-over', 'hunks'].filter((f) => values[f] !== undefined);
+  // Only bare `plan`, `plan --split` and `plan --reword` (RUN-06: the lock on a clean tree;
+  // its reword facts are GIT-09's, its snapshot CHG-15's) are built: every other flag
+  // changes the mode or the clean-tree outcome (C:plan `mode`).
+  const unbuilt = ['dictated', 'staged', 'take-over', 'hunks'].filter((f) => values[f] !== undefined);
   if (unbuilt.length > 0) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
