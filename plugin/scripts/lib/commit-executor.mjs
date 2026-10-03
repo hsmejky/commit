@@ -18,7 +18,14 @@
 // still reports the group committed, with the SHA HEAD holds, and pushes a notice naming the
 // group, but leaves the expected HEAD stale, so the next group's own `head()` check catches
 // it and refuses `head-moved`.
-// The other phase (a) refusals (EXE-07, EXE-08), the failure paths (EXE-09 to
+// EXE-07 adds `index-changed`: M10 `indexFingerprint` against the run state's fingerprint
+// before each group (right after `head-moved`), so staging made outside the run between `plan`
+// and `commit`, or between two groups, is refused before (b) rather than folded into a group
+// or lost to (c)'s reset. The stored fingerprint is re-read after each of the run's own `git
+// commit` calls (C:commit-release), so the run's own staging never trips it. The unstage
+// half of that update arrives with M10 `unstage` (EXE-10); today's best-effort reset only
+// runs on a path that throws.
+// The other phase (a) refusal (EXE-08), the failure paths (EXE-09 to
 // EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
@@ -42,6 +49,13 @@ function notBuilt(what, slice) {
 // `already-committed`).
 const NO_GROUPS_TEXT = 'no groups to commit: none are stored, or every stored group is already '
   + 'committed';
+
+/**
+ * The `index-changed` refusal text, shared by M18 `plan` step 7 (CHG-04) and this module's
+ * pre-group check (EXE-07). C:cli-and-exit-codes records no text for it, so tests assert the
+ * domain code's kind and that the text names the index.
+ */
+export const INDEX_CHANGED_TEXT = 'the index changed since plan (staged elsewhere?), run /commit again';
 
 // EXE-06: the notice when a hook or another process committed during group `n`, so that
 // group's own commit landed but is not HEAD's first parent any more.
@@ -103,16 +117,18 @@ function refused(state, group, commits, refusal, notices) {
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: null,
  *   unstaged: Array<object> | null, notices: string[],
- *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved',
+ *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved' | 'index-changed',
  *   message: string } }>} C:commit-release's output fields; `no-groups` (no stored groups,
  *   or every one committed) refuses before any group, with `failed: null` and
  *   `remaining: []`. On a phase (a) refusal before a later group instead, `refusal` with
  *   `failed` that group and `remaining` the groups not committed (never empty); `head-moved`
- *   when HEAD is not the SHA this run expects (EXE-06). `notices` holds any "another commit
- *   was made during group `<n>`" notices from groups this call already committed before a
- *   `head-moved` refusal (EXE-06), `[]` otherwise. `no-groups`/`taken-over`/`busy`
- *   (`usage`/`lock`, M18's call) keep the run; the caller releases it on `head-moved`
- *   instead, like `diff-changed`/`index-lock` (C:cli-and-exit-codes, C:commit-release).
+ *   when HEAD is not the SHA this run expects (EXE-06); `index-changed` when the index
+ *   fingerprint differs from the stored one, i.e. staging from outside the run (EXE-07).
+ *   `notices` holds any "another commit was made during group `<n>`" notices from groups
+ *   this call already committed before a `head-moved` refusal (EXE-06), `[]` otherwise.
+ *   `no-groups`/`taken-over`/`busy` (`usage`/`lock`, M18's call) keep the run; the caller
+ *   releases it on `head-moved` and `index-changed` (`diff-changed`) instead, like
+ *   `index-lock` (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
 export async function commitAll(run, { now, osUser, env }) {
@@ -158,6 +174,13 @@ export async function commitAll(run, { now, osUser, env }) {
     const headNow = await head({ cwd: toplevel, env, now });
     if (headNow !== state.head) {
       return refused(state, group, commits, { code: 'head-moved', message: HEAD_MOVED_TEXT }, notices);
+    }
+
+    // (a) EXE-07: the index must still be the one this run left (`plan`'s, then the one read
+    // after each of this run's own commits) — any outside `git add`/`reset` shows up here,
+    // with the real index untouched and that staging left in place.
+    if (await indexFingerprint(git) !== state.indexFingerprint) {
+      return refused(state, group, commits, { code: 'index-changed', message: INDEX_CHANGED_TEXT }, notices);
     }
 
     // (b) Match on the temporary index, the real index untouched.

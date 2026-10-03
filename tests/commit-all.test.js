@@ -397,7 +397,7 @@ test('group 1 already committed with the expected HEAD at its SHA → the call c
       group1 = repo.git(['rev-parse', 'HEAD']).trim();
       state.groups[0].committed = true;
       state.head = group1;
-      // Mirrors commit-executor.mjs's post-commit update (EXE-07's future `index-changed`
+      // Mirrors commit-executor.mjs's post-commit update (EXE-07's `index-changed`
       // check reads this field): without it, the fixture's own `git commit` above leaves the
       // stored fingerprint stale relative to the index it just committed.
       state.indexFingerprint = await changeSet.indexFingerprint({ toplevel: repo.repoDir, env: repo.env });
@@ -587,4 +587,75 @@ test('a post-commit hook that commits again during the only group → exit 0, th
   assert.deepEqual(result.json.notices, ['another commit was made during group 1; later groups refused']);
   assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+// EXE-07 (docs/roadmap/10-commit-executor.md): M10 `indexFingerprint` against the run's
+// stored fingerprint before each group, the stored one updated after each of the run's own
+// commits, so only staging made outside the run trips `index-changed` (C:commit-release (a)).
+
+const INDEX_CHANGED_TEXT = 'the index changed since plan (staged elsewhere?), run /commit again';
+
+test('a git add of another file between plan and commit → exit 6 diff-changed (index-changed), nothing committed, that staging still in the index, the run released', async (t) => {
+  const { c, planId, runDir } = await groupedRun(t);
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('other.txt', 'other\n');
+  c.git(['add', '--', 'other.txt']);
+  const indexPath = path.join(c.repoDir, '.git', 'index');
+  const indexBefore = fs.readFileSync(indexPath);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, INDEX_CHANGED_TEXT);
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [1]);
+  assert.equal(result.json.unstaged, null, 'no group reached (c), so nothing was reset');
+  assert.deepEqual(result.json.notices, []);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'nothing committed');
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'other.txt\n', 'the outside staging is still in the index');
+  assert.deepEqual(fs.readFileSync(indexPath), indexBefore, 'the index is byte-identical to before the call');
+  // C:cli-and-exit-codes: `diff-changed` ends the run, like `head-moved`/`index-lock`.
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('group 1 already committed, then a git add from outside before group 2 → group 2 refused index-changed by its own pre-group check, groups 2 and 3 remaining', async (t) => {
+  let group1;
+  const { c, planId, seed, runDir } = await threeGroupRun(t, {
+    edit: async (state, repo) => {
+      repo.git(['commit', '-q', '-m', THREE_HEADERS[0], '--', 'a.txt']);
+      group1 = repo.git(['rev-parse', 'HEAD']).trim();
+      state.groups[0].committed = true;
+      state.head = group1;
+      state.indexFingerprint = await changeSet.indexFingerprint({ toplevel: repo.repoDir, env: repo.env });
+      repo.writeFile('other.txt', 'other\n');
+      repo.git(['add', '--', 'other.txt']);
+    },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, INDEX_CHANGED_TEXT);
+  assert.deepEqual(c.git(['rev-list', `${seed}..HEAD`]).trim().split('\n'), [group1], 'nothing of group 2 or 3 was committed');
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'other.txt\n', 'the outside staging is still in the index');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('three groups with no outside change → all three commit: the run\'s own staging and commits never trip index-changed', async (t) => {
+  const { c, planId, seed } = await threeGroupRun(t);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.ok, true);
+  assert.deepEqual(result.json.commits.map((commit) => commit.n), [1, 2, 3]);
+  assert.equal(c.git(['rev-list', '--count', `${seed}..HEAD`]).trim(), '3');
+  assert.equal(c.git(['status', '--porcelain']), '');
 });

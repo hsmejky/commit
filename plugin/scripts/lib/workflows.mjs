@@ -63,7 +63,7 @@ import {
   releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState, sweep,
   RUN_DIR_NAME, STATE_VERSION,
 } from './run.mjs';
-import { commitAll } from './commit-executor.mjs';
+import { INDEX_CHANGED_TEXT, commitAll } from './commit-executor.mjs';
 import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
@@ -88,10 +88,6 @@ const SIGNING_PROMPT_NOTICE = 'signing enabled; a passphrase prompt may appear';
 // C:cli-and-exit-codes; the run goes on.
 const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
   + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
-
-// CHG-04: the `index-changed` refusal text. C:cli-and-exit-codes records no text for it, so
-// tests assert the domain code's kind and that the text names the index.
-const INDEX_CHANGED_TEXT = 'the index changed since plan (staged elsewhere?), run /commit again';
 
 /**
  * Step 1: probe the repo state, git and Node versions (M3). Shared with `release`/`commit`;
@@ -649,17 +645,17 @@ async function openRun(ctx) {
   return undefined;
 }
 
-// `commit` step 4 (EXE-02, extended by EXE-04's mid-loop `touch` and EXE-06's `head-moved`):
-// M16 `commitAll` over the stored groups, then the run's release once it ends with no
-// refusal, or with `head-moved` (C:commit-release: the lock and the run folder go after the
-// last group, and "on every failure that ends the run"; the folder takes this call's
-// `call.lock` with it, so the `finally`'s `close` finds nothing left). EXE-05's phase (a)
+// `commit` step 4 (EXE-02, extended by EXE-04's mid-loop `touch`, EXE-06's `head-moved` and
+// EXE-07's `index-changed`): M16 `commitAll` over the stored groups, then the run's release
+// once it ends with no refusal, or with `head-moved`/`index-changed` (C:commit-release: the
+// lock and the run folder go after the last group, and "on every failure that ends the run";
+// the folder takes this call's `call.lock` with it, so the `finally`'s `close` finds nothing left). EXE-05's phase (a)
 // `no-groups` refusal (no stored groups, or every stored group already committed) is
 // `commitAll`'s own, after the lock check (M12 `open`, step 3) and before any group work. A
 // `no-groups`/`taken-over`/`busy` refusal keeps the run instead (no `releaseOpen`; only this
 // call's `call.lock` goes, via the `finally` in `commit()` below — `ctx.opened` is already
 // true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`
-// ends it like `diff-changed`/`index-lock` do (C:cli-and-exit-codes).
+// and `index-changed` (`diff-changed`) end it like `index-lock` does (C:cli-and-exit-codes).
 // The release's notice and the `reply` with `status: "committed"` are INT-02's
 // (C:reply-and-handback).
 async function commitGroups(ctx) {
@@ -675,7 +671,9 @@ async function commitGroups(ctx) {
   // release the lock and delete the run folder, so the next `/commit` starts fresh" — a
   // moved HEAD is not something a retry within this run can fix. Once RUN-27's `runEnd`
   // lands, it replaces this condition outright.
-  if ((!outcome.refusal && outcome.remaining.length === 0) || outcome.refusal?.code === 'head-moved') {
+  // EXE-07's `index-changed` (CLI kind `diff-changed`) ends the run the same way.
+  if ((!outcome.refusal && outcome.remaining.length === 0)
+    || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed') {
     releaseOpen(run);
   }
   return outcome;
