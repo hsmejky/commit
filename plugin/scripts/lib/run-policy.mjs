@@ -58,10 +58,12 @@ const UNMERGED_MESSAGE = 'resolve the conflicts first';
 
 // GIT-04 (Q21): `i18n.commitEncoding` compared case-insensitively against these two spellings;
 // anything else refuses. `null`/`undefined` (the key unset, git's own default) always passes.
+// Not trimmed: git does not trim a quoted value either (probe, review-GIT-04 finding 5), so a
+// value with surrounding whitespace, which git would still label with, is refused here too.
 const UTF8_ENCODINGS = new Set(['utf-8', 'utf8']);
 
 function isUtf8Encoding(value) {
-  return UTF8_ENCODINGS.has(value.trim().toLowerCase());
+  return UTF8_ENCODINGS.has(value.toLowerCase());
 }
 
 /**

@@ -84,6 +84,7 @@ test('plan with i18n.commitEncoding set to ISO-8859-1 exits 6 state, naming the 
 
   const message = assertStateRefusal(result);
   assert.match(message, /ISO-8859-1/);
+  assert.match(message, /i18n\.commitEncoding/);
   assertNoRunFolder(c.repoDir);
 });
 
@@ -95,4 +96,50 @@ test('plan with no i18n.commitEncoding set goes on (unset is UTF-8 by default)',
 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   assert.equal(result.json.reply.status, 'nothing');
+});
+
+test('plan with i18n.commitEncoding set to Utf8 goes on (mixed case accepted)', async (t) => {
+  const c = createCase(t);
+  commitFile(c, 'a\n', 'base');
+  c.git(['config', 'i18n.commitEncoding', 'Utf8']);
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.status, 'nothing');
+});
+
+test('plan with i18n.commitEncoding set to " utf-8" (leading space) exits 6 state', async (t) => {
+  const c = createCase(t);
+  commitFile(c, 'a\n', 'base');
+  // No shell is involved (argv is passed directly), so this sets the value to a literal
+  // leading space plus `utf-8`; git itself quotes that in `.git/config` and does not trim it
+  // back out on read (probe, review-GIT-04 finding 5), and labels the commit `encoding  utf-8`
+  // (two spaces), so this must be refused, not accepted as plain `utf-8`.
+  c.git(['config', 'i18n.commitEncoding', ' utf-8']);
+
+  const result = await runCommit(c, ['plan']);
+
+  const message = assertStateRefusal(result);
+  assert.match(message, /` utf-8`/);
+  assert.match(message, /i18n\.commitEncoding/);
+  assertNoRunFolder(c.repoDir);
+});
+
+// review-GIT-04 finding 10 (optional case): `config` is checked ahead of `state` (C:plan
+// step 2), so a bad repo config layer refuses before `encoding` ever gets read, even with a
+// non-UTF-8 value also present.
+test('plan with unparseable repo config JSON and a non-UTF-8 i18n.commitEncoding exits 1 config', async (t) => {
+  const c = createCase(t);
+  commitFile(c, 'a\n', 'base');
+  c.git(['config', 'i18n.commitEncoding', 'ISO-8859-1']);
+  c.writeFile('.claude/commit.json', '{ "types": [');
+
+  const result = await runCommit(c, ['plan']);
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 1, detail);
+  assert.equal(result.json.ok, false, detail);
+  assert.equal(result.json.error.kind, 'config', detail);
+  assertNoRunFolder(c.repoDir);
 });

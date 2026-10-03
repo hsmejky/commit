@@ -277,6 +277,67 @@ test('M15 planRefusal orders env before config before state', async () => {
   );
 });
 
+// review-GIT-04 finding 10: AC3 ("the encoding check is refused in the `state` slot, after
+// `env` and `config`") had no pure unit coverage, nor did `unmerged` before `encoding`, nor
+// `in-progress` before `unmerged` (a real merge conflict, GIT-03's existing fixtures).
+test('M15 planRefusal orders config before in-progress before unmerged before encoding', async () => {
+  const { loadLib } = require('./helpers/load-lib.js');
+  const { planRefusal } = await loadLib('run-policy');
+
+  const okGit = { status: 'ok', version: { major: 2, minor: 40, text: '2.40.0' } };
+  const configError = { error: 'the repo config (.claude/commit.json) is not valid JSON' };
+
+  // config beats in-progress, unmerged and encoding, even when all three would also refuse.
+  assert.equal(
+    planRefusal({
+      git: okGit,
+      repo: null,
+      config: configError,
+      inProgress: { kind: 'merge' },
+      unmerged: true,
+      commitEncoding: 'ISO-8859-1',
+    }).code,
+    'config',
+  );
+  // in-progress beats unmerged and encoding, once config is clean: a real merge conflict
+  // keeps the GIT-03 merge text, not the GIT-04 unmerged or encoding one.
+  assert.equal(
+    planRefusal({
+      git: okGit,
+      repo: null,
+      config: null,
+      inProgress: { kind: 'merge' },
+      unmerged: true,
+      commitEncoding: 'ISO-8859-1',
+    }).code,
+    'in-progress',
+  );
+  // unmerged beats encoding, once config and in-progress are both clean.
+  assert.equal(
+    planRefusal({
+      git: okGit,
+      repo: null,
+      config: null,
+      inProgress: null,
+      unmerged: true,
+      commitEncoding: 'latin1',
+    }).code,
+    'unmerged',
+  );
+  // encoding is reached only once config, in-progress and unmerged are all clean.
+  assert.equal(
+    planRefusal({
+      git: okGit,
+      repo: null,
+      config: null,
+      inProgress: null,
+      unmerged: false,
+      commitEncoding: 'latin1',
+    }).code,
+    'encoding',
+  );
+});
+
 // review-RUN-03 finding 2: `releaseDeadline` moved here from `workflows.mjs` (M18) once
 // CFG-03 freed `run-policy.mjs`; it is small and pure (M15), so it gets its own unit test
 // rather than only the Seam 1 coverage in tests/release.test.js.

@@ -15,12 +15,14 @@
 // `commit`, which share `probeRepo` but not this step, never spawn the extra status call; it
 // also adds `state`/`expectedHead` to `plan`'s output. GIT-03 widens the same step to also
 // read the in-progress state (M3 `inProgressState`) and store it as `ctx.inProgress`, read by
-// step 2's `planRefusal`. CHG-03 builds step 4's M10 `inventory` (tracked modifications
-// only), step 5's snapshot (M10 `snapshot` and `assignIds`: the units, the unit table, the
-// `id → hash` map and the `tracked` list with M9 `bucketOf`, all on `ctx`) and a step-7
-// stand-in that ends a tree with changes as `internal` until CHG-03b stores them. Later
-// slices insert the other rows (3 lock peek, 5 scan, 7 store and lock, 8 guard state and
-// `plan --hunks`) in their place in PLAN_STEPS, and widen these.
+// step 2's `planRefusal`. GIT-04 widens it again, with the same `ctx.probe` HEAD state call's
+// `unmerged` lines and a new M3 `commitEncoding` config read, run concurrently with the
+// in-progress read since neither depends on the other's result. CHG-03 builds step 4's M10
+// `inventory` (tracked modifications only), step 5's snapshot (M10 `snapshot` and
+// `assignIds`: the units, the unit table, the `id → hash` map and the `tracked` list with M9
+// `bucketOf`, all on `ctx`) and a step-7 stand-in that ends a tree with changes as `internal`
+// until CHG-03b stores them. Later slices insert the other rows (3 lock peek, 5 scan, 7 store
+// and lock, 8 guard state and `plan --hunks`) in their place in PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
@@ -59,10 +61,12 @@ async function probeRepo(ctx) {
  * in-progress state (M3 `inProgressState`, GIT-03) and stores it as `ctx.inProgress`, for step
  * 2's `planRefusal` (`preFolderRefusals`) to refuse on. GIT-04 widens it to also store
  * `ctx.unmerged` (from the same `headState` call's `u` lines) and `ctx.commitEncoding` (M3
- * `commitEncoding`), both read for the same `planRefusal` call. `release` and `commit` run
- * `probeRepo` but never this step, so they never spawn either status call or the config call
- * (review-GIT-02 finding 5); since only `plan` calls it, no duck-typing of `ctx.notices` is
- * needed to tell the subcommands apart (review-GIT-02 finding 11).
+ * `commitEncoding`), both read for the same `planRefusal` call; the in-progress and encoding
+ * calls are independent reads, so they run concurrently through `Promise.all` (review-GIT-04
+ * finding 14). `release` and `commit` run `probeRepo` but never this step, so they never
+ * spawn either status call or the config call (review-GIT-02 finding 5); since only `plan`
+ * calls it, no duck-typing of `ctx.notices` is needed to tell the subcommands apart
+ * (review-GIT-02 finding 11).
  */
 async function readHeadState(ctx) {
   const { repo } = ctx.probe;
@@ -73,8 +77,12 @@ async function readHeadState(ctx) {
     ctx.expectedHead = result.head;
     if (result.kind === 'detached') ctx.notices.push(DETACHED_HEAD_NOTICE);
     ctx.unmerged = result.unmerged;
-    ctx.inProgress = await inProgressState({ cwd: repo.toplevel, env, now });
-    ctx.commitEncoding = await commitEncoding({ cwd: repo.toplevel, env, now });
+    const [inProgress, encoding] = await Promise.all([
+      inProgressState({ cwd: repo.toplevel, env, now }),
+      commitEncoding({ cwd: repo.toplevel, env, now }),
+    ]);
+    ctx.inProgress = inProgress;
+    ctx.commitEncoding = encoding;
   }
   return undefined;
 }

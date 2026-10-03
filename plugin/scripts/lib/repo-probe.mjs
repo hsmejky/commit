@@ -122,9 +122,12 @@ export async function headState({ cwd, env, now }) {
  * same layering `commit`/`plan` would otherwise see.
  *
  * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel.
- * @returns {Promise<string | null>} the trimmed configured value, or `null` when the key is
- *   unset (git's own default is UTF-8).
- * @throws {Error} on any exit code other than 0 (set) or 1 (unset or ambiguous).
+ * @returns {Promise<string | null>} the configured value with only its trailing newline
+ *   stripped (git does not trim a quoted value, so neither does this: a leading or trailing
+ *   space in the value is kept and refused by `isUtf8Encoding`, review-GIT-04 finding 5), or
+ *   `null` when the key is unset (git's own default is UTF-8).
+ * @throws {Error} on any exit code other than 0 (set, including a multi-valued key, which
+ *   `git config --get` resolves to its last value) or 1 (unset).
  */
 export async function commitEncoding({ cwd, env, now }) {
   const result = await run('git', ['config', '--get', 'i18n.commitEncoding'], { cwd, env, now });
@@ -132,7 +135,7 @@ export async function commitEncoding({ cwd, env, now }) {
   if (result.code !== 0) {
     throw new Error(`git config --get i18n.commitEncoding failed (${result.code}): ${result.stderr}`);
   }
-  return result.stdout.toString('utf8').trim();
+  return result.stdout.toString('utf8').replace(/\n$/, '');
 }
 
 // Git-path names `inProgressState` checks, each paired with the kind it reports. `rebase-merge`
