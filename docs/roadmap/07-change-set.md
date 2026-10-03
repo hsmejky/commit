@@ -122,13 +122,13 @@ paths }` read after the subcommand's last git call.
 
 **Blocked by:** CHG-03b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11 (pass 3, 5 amendments), C:plan (step 7), M10, stories 56, 76.
 
-- [ ] Seam 1: an index change triggered by the fixture itself between the inventory and the lock (for example a `clean` filter that, while the inventory diff runs it, stages another path outside the temporary index) with HEAD unchanged → exit 6 `diff-changed`, lock released, folder deleted.
-- [ ] Seam 1: `treeState` reports `{ clean: true }` on a clean tree and the count and paths otherwise (cap applied by RPL).
-- [ ] The fingerprint call works while an `index.lock` exists and never rewrites the index.
+- [x] Seam 1: an index change triggered by the fixture itself between the inventory and the lock (for example a `clean` filter that, while the inventory diff runs it, stages another path outside the temporary index) with HEAD unchanged → exit 6 `diff-changed`, lock released, folder deleted.
+- [x] Seam 1: `treeState` reports `{ clean: true }` on a clean tree and the count and paths otherwise (cap applied by RPL).
+- [x] The fingerprint call works while an `index.lock` exists and never rewrites the index.
 
 
 ## CHG-05: Temporary index with untracked and staged-new paths
