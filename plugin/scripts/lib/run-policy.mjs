@@ -159,3 +159,34 @@ export const RELEASE_DEADLINE_MS = 45_000;
 export function releaseDeadline(callStarted) {
   return callStarted + RELEASE_DEADLINE_MS;
 }
+
+/** The budget of `deadline` (RUN-12, C:plan, C:commit-release): `plan`'s 540 s from its
+ * start, bounding every step of the call (Q9, Q18). */
+export const DEADLINE_MS = 540_000;
+
+/** The budget of `cleanupDeadline` (RUN-12, C:commit-release): the cleanup and reporting git
+ * calls after a timeout or an `internal` throw get 40 s more than the spent `deadline`. */
+export const CLEANUP_DEADLINE_MS = 580_000;
+
+/**
+ * M15 `deadline(callStarted)` (docs/spec/modules-m14-m19.md): the instant past which the call
+ * ends as `timeout`. Pure in the call's own start, so every call (a separate
+ * `plan --hunks` included) takes its own.
+ *
+ * @param {number} callStarted the call's start (its first read of the injected clock).
+ * @returns {number}
+ */
+export function deadline(callStarted) {
+  return callStarted + DEADLINE_MS;
+}
+
+/**
+ * M15 `cleanupDeadline(callStarted)` (docs/spec/modules-m14-m19.md): the instant past which a
+ * cleanup or reporting git call after a timeout or an `internal` throw is not spawned.
+ *
+ * @param {number} callStarted the call's start (its first read of the injected clock).
+ * @returns {number}
+ */
+export function cleanupDeadline(callStarted) {
+  return callStarted + CLEANUP_DEADLINE_MS;
+}

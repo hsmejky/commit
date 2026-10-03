@@ -369,8 +369,17 @@ test('a discard that cannot remove the folder never replaces the original error 
     throw Object.assign(new Error('EIO: i/o error, rename'), { code: 'EIO' });
   });
 
-  const thrown = await planInProcess(c).then(() => null, (err) => err);
+  const result = await planInProcess(c);
   t.mock.restoreAll();
 
-  assert.equal(thrown && thrown.code, 'EIO');
+  // KD-R64 (RUN-12): the throw ends `plan` as `internal` with a `failed` reply that keeps the
+  // collected notices, the cleanup's own included, instead of propagating with none.
+  assert.equal(result.failure.kind, 'internal');
+  assert.equal(result.failure.message, 'unexpected error: EIO: i/o error, rename');
+  assert.equal(result.failure.reply.status, 'failed');
+  const [planId] = fs.readdirSync(path.join(c.repoDir, '.commit-plan'));
+  assert.ok(
+    result.failure.reply.notices.some((notice) => notice.includes(`.commit-plan/${planId}`) && notice.includes('EBUSY')),
+    `no removal notice: ${JSON.stringify(result.failure.reply.notices)}`,
+  );
 });

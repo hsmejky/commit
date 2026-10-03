@@ -89,13 +89,6 @@ fixed, delete it here; IDs are never reused.
   commit --amend` and `git --unknown commit --amend`, are in `tests/guard-global-options.test.js`).
 - **KD-R32.** EXE-20 has only the negative reword case; add a `post-commit` hook commit that
   fires the mismatch notice.
-- **KD-R33.** RUN-12's `internal`-throw path to `cleanupDeadline` is untested; combine an
-  FND-10 `EIO` on the `plan.json` rename with a clock step past 540 s.
-- **KD-R64.** RUN-05's `plan` turns a provisional folder it cannot discard into a notice.
-  RPL-04's `planRefusalFailure` now passes `plan`'s collected notices into every refusal's
-  `reply.notices` (the `nothing` reply already carried them), so this is fixed for refusals,
-  RUN-07's `lock` refusal included. An `internal` throw still drops them (the outcome stays
-  right). Fix: RUN-12 passes `plan`'s collected notices into its `internal` output.
 
 ## Design sync
 
@@ -198,7 +191,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 ## Suggested order
 
 1. KD-R1 (on both critical paths).
-2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35, KD-R33 and KD-R64.
+2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35.
 3. KD-R28, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
 4. The CHG-03b area: KD-R60.
 5. KD-R5, KD-R6.

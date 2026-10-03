@@ -69,7 +69,7 @@ import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
-import { planRefusal, releaseDeadline } from './run-policy.mjs';
+import { cleanupDeadline, deadline, planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
@@ -495,6 +495,10 @@ async function storeAndLock(ctx) {
   const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
   if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
   ctx.run = acquired.run;
+  // RUN-12: the re-reads below are git calls under `plan`'s deadline; past it `plan`'s
+  // `finally` releases the run just taken.
+  const late = pastDeadline(ctx);
+  if (late !== undefined) return late;
   // RUN-06: re-read HEAD once the lock is held, against the HEAD step 1 recorded (C:plan
   // step 7): another run that committed since the inventory ends this one with `head-moved`,
   // and `plan`'s `finally` releases the lock and deletes the folder.
@@ -762,8 +766,28 @@ async function inferFromHistory(ctx) {
 
 const INFER_STEPS = Object.freeze([probeRepo, inferRefusals, inferFromHistory]);
 
+// RUN-12: the text of `plan`'s `timeout` past its M15 `deadline` (C:cli-and-exit-codes
+// `timeout` row; no recorded text).
+const DEADLINE_TEXT = '/commit passed its 540-second deadline';
+
+// RUN-12: `plan`'s deadline bounds its git calls (C:plan). A call that set `ctx.deadline`
+// (only `plan` so far) is checked before every step that makes git calls, and before step 7's
+// re-reads once the lock is held (`storeAndLock`): past it the call ends as `timed-out` (exit 5
+// `timeout`) and `plan`'s own cleanup discards or releases the run. The steps after the
+// sweep make no git call, so a clock past the deadline there no longer ends the run. The
+// per-call `timeoutMs = deadline - now()` of each M2 call inside a step is GIT-07's
+// (docs/roadmap/06-git-adapters.md).
+function pastDeadline(ctx) {
+  if (ctx.deadline === undefined || ctx.injected.now() < ctx.deadline) return undefined;
+  return { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
+}
+
+const GIT_FREE_STEPS = new Set([storeNotices, renderHunkIndex]);
+
 async function runSteps(steps, ctx) {
   for (const step of steps) {
+    const late = GIT_FREE_STEPS.has(step) ? undefined : pastDeadline(ctx);
+    if (late !== undefined) return late;
     const ending = await step(ctx);
     if (ending !== undefined) return ending;
   }
@@ -782,6 +806,9 @@ async function runSteps(steps, ctx) {
  *   shape and exit code.
  */
 export async function plan(values, injected, { cwd }) {
+  // RUN-12: the call's start, read once and first (as `release`'s, RUN-03), so M15
+  // `deadline` and `cleanupDeadline` bound the whole call.
+  const callStarted = injected.now();
   // Only bare `plan`, `plan --split` and `plan --reword` (RUN-06: the lock on a clean tree;
   // its reword facts GIT-09's, its snapshot CHG-15's) are built: every other flag
   // changes the mode or the clean-tree outcome (C:plan `mode`).
@@ -791,10 +818,19 @@ export async function plan(values, injected, { cwd }) {
   }
   // GIT-02: `notices` lives on `ctx` from the start, so `probeRepo` (step 1) can queue the
   // detached-HEAD notice before any later step runs.
-  const ctx = { injected, cwd, values, provisional: null, run: null, notices: [], warnings: [] };
+  const ctx = {
+    injected, cwd, values, provisional: null, run: null, notices: [], warnings: [],
+    deadline: deadline(callStarted), cleanupDeadline: cleanupDeadline(callStarted),
+  };
   let facts;
+  let thrown;
   try {
     facts = await runSteps(PLAN_STEPS, ctx);
+  } catch (err) {
+    // KD-R64 (RUN-12): an unexpected throw ends `plan` as `internal` here, with the reply and
+    // the notices collected so far (the cleanup's own below included), instead of reaching
+    // `commit.cjs`'s backstop, which has neither.
+    thrown = { error: err };
   } finally {
     // Every outcome but the hunk index ends without the lock (C:run-folder), a thrown
     // `internal` included: a throw after `acquire` (`ctx.run`) releases the lock first, one
@@ -802,8 +838,8 @@ export async function plan(values, injected, { cwd }) {
     // error becomes a notice and never changes the outcome. A `release()` that could not
     // remove the lock (`busy`) reports `kept: true` and the folder is left alone too, so the
     // lock and its folder stay consistent for the next `/commit` (review-CHG-03b finding 2);
-    // a `nothing`/`failed` reply carries notices since RPL-04 (`planRefusalFailure` below);
-    // an `internal` throw still drops them (KD-R64, RUN-12).
+    // a `nothing`/`failed` reply carries notices since RPL-04 (`planRefusalFailure` below),
+    // an `internal` throw's since RUN-12 (`planInternalFailure`).
     if (facts === undefined || facts.hunks === undefined) {
       const released = ctx.run?.release() ?? { notice: null, kept: false };
       if (released.notice !== null) ctx.notices.push(released.notice);
@@ -813,6 +849,7 @@ export async function plan(values, injected, { cwd }) {
       }
     }
   }
+  if (thrown !== undefined) return await planInternalFailure(thrown.error, ctx);
   if (facts.refusal !== undefined) return await planRefusalFailure(facts.refusal, ctx);
   if (facts.hunks !== undefined) {
     // The lock is held and the worker goes on with the hunk index (C:plan): `reply` is null.
@@ -979,17 +1016,47 @@ function refusalFailure(refusal) {
 // KD-R73 tracks the gap for `release`/`commit`). `ctx.toplevel` is not set yet this early in
 // `plan()` (it is set from step 2), so the usable-worktree check below is done on
 // `ctx.probe.repo` directly and passed to the shared `finalReply` as its `toplevel`.
+//
+// RUN-12: past `plan`'s 540 s `deadline` (`timed-out`), the reply's tree-state read runs
+// against `cleanupDeadline` (C:plan), so a read past 580 s is not spawned; every other refusal
+// keeps an unbounded read until GIT-07.
 async function planRefusalFailure(refusal, ctx) {
-  const { repo } = ctx.probe;
-  const toplevel = repo !== null && repo.kind === 'worktree' ? repo.toplevel : undefined;
+  const toplevel = usableToplevel(ctx);
+  const replyDeadline = refusal.code === 'timed-out' ? ctx.cleanupDeadline : undefined;
   return {
     failure: {
       kind: kindForDomainCode(refusal.code),
       message: refusal.message,
-      reply: await finalReply({ status: 'failed', message: refusal.message, notices: ctx.notices }, ctx, { toplevel }),
+      reply: await finalReply(
+        { status: 'failed', message: refusal.message, notices: ctx.notices },
+        ctx,
+        { toplevel, deadline: replyDeadline },
+      ),
       ...(refusal.code === 'held' ? { errorFields: holderFields(refusal.holder) } : {}),
     },
   };
+}
+
+// KD-R64 (RUN-12): an unexpected throw inside `plan`'s steps ends the call as `internal`
+// (exit 1) with a `failed` reply carrying the notices collected so far (the cleanup's
+// discard or release notice included); its tree-state read runs against `cleanupDeadline`.
+// The message keeps `commit.cjs`'s backstop wording, which still catches throws outside the
+// step table (an unbuilt flag, a module that fails to load).
+async function planInternalFailure(err, ctx) {
+  const message = `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
+  const facts = { status: 'failed', message, notices: ctx.notices };
+  // A tree-state read that throws too (the repository that broke the step may break it)
+  // never replaces the original error: the reply then omits the tree state.
+  const failedReply = await finalReply(facts, ctx, { toplevel: usableToplevel(ctx), deadline: ctx.cleanupDeadline })
+    .catch(() => reply({ ...facts, treeState: undefined }));
+  return { failure: { kind: 'internal', message, reply: failedReply } };
+}
+
+// The usable worktree's top level from the probe (`undefined` when there is none, or the
+// call ended before the probe ran): `ctx.toplevel` is set only from step 2.
+function usableToplevel(ctx) {
+  const repo = ctx.probe?.repo ?? null;
+  return repo !== null && repo.kind === 'worktree' ? repo.toplevel : undefined;
 }
 
 // RUN-07 (C:cli-and-exit-codes): a `lock` error carries the holder's `planId`, `created` and
