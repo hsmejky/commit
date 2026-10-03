@@ -20,13 +20,31 @@ export const BASE_CALLER_RULE = 'Show text to the user verbatim; a subagent puts
   + 'UUID); otherwise run nothing and show the command to the user. Run a command with '
   + '--confirmed only as the answer the user picked, or as ifNoUser.answer without a user.';
 
+const MAX_TREE_PATHS = 10;
+
+// Every C0 control character, DEL and C1 control character (C:reply-and-handback, RPL-06),
+// written as `\xNN`, one escape per UTF-8 byte, so a path can neither forge a reply line
+// nor carry a terminal escape.
+const CONTROL_CHAR = /[\x00-\x1f\x7f\x80-\x9f]/g;
+
+function escapePath(p) {
+  return p.replace(CONTROL_CHAR, (ch) => {
+    let escaped = '';
+    for (const byte of Buffer.from(ch, 'utf8')) escaped += `\\x${byte.toString(16).padStart(2, '0')}`;
+    return escaped;
+  });
+}
+
 // The tree state line (C:reply-and-handback): "working tree clean", or the count and the
-// paths left (CHG-04). The cap of 10 paths plus "+N more" is RPL-05's, the escaping of
-// control characters in a path RPL-06's.
+// paths left (CHG-04), each escaped (RPL-06) and capped at 10 plus "+N more" (RPL-05); the
+// full cap and escape layout, shared with the other lists in `text`, is RPL-05/RPL-06's.
 function renderTreeState(treeState) {
   if (treeState.clean === true) return 'working tree clean';
   const noun = treeState.count === 1 ? 'file' : 'files';
-  return `${treeState.count} ${noun} left: ${treeState.paths.join(', ')}`;
+  const shown = treeState.paths.slice(0, MAX_TREE_PATHS).map(escapePath);
+  const remainder = treeState.paths.length - shown.length;
+  if (remainder > 0) shown.push(`+${remainder} more`);
+  return `${treeState.count} ${noun} left: ${shown.join(', ')}`;
 }
 
 // The first line of a `nothing` reply, per `reason`: `plan` on a clean tree; a `release`

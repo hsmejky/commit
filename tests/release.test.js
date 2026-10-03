@@ -323,6 +323,40 @@ test('release on a tree with one file left names it in the singular', async (t) 
   assert.equal(result.json.reply.text, 'nothing committed\n1 file left: dirty.txt');
 });
 
+// RPL-05 (docs/roadmap/11-reply-and-cli.md, C:reply-and-handback): the tree-state path list
+// caps at 10 paths, then "+N more", same as every other list in `text`.
+test('release on a dirty tree with more than 10 files caps the list at 10 plus "+N more"', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  for (let i = 1; i <= 11; i += 1) c.writeFile(`file${String(i).padStart(2, '0')}.txt`, 'x\n');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  const shown = Array.from({ length: 10 }, (_, i) => `file${String(i + 1).padStart(2, '0')}.txt`).join(', ');
+  assert.equal(result.json.reply.text, `nothing committed\n11 files left: ${shown}, +1 more`);
+});
+
+// RPL-06 (docs/roadmap/11-reply-and-cli.md, C:reply-and-handback): a control character in a
+// path is written as `\xNN`, so a crafted name cannot forge a reply line. POSIX only: a raw
+// newline in a file name needs a POSIX filesystem.
+test('release on a dirty tree escapes a control character in a file name', {
+  skip: process.platform === 'win32' && 'a newline in a file name needs a POSIX filesystem',
+}, async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  c.writeFile('line1\nline2.txt', 'x\n');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.text, 'nothing committed\n1 file left: line1\\x0aline2.txt');
+});
+
 test('release run from a subdirectory releases the run of the toplevel', async (t) => {
   const c = createRepo(t);
   const runDir = runDirOf(c);
