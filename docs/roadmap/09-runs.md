@@ -209,18 +209,18 @@ RPL-05 owns the `text` layout.
 
 **Blocked by:** RUN-06, RPL-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:plan step 3, M12 `peek`, M17 `lock` rule, stories 188, 191.
 
-- [ ] Seam 1: a fresh lock held by another `planId` → exit 6 `lock` with the "another
+- [x] Seam 1: a fresh lock held by another `planId` → exit 6 `lock` with the "another
       /commit run is in progress (started HH:MM, last active N s ago)" text. No new
       folder and no temporary index are left.
-- [ ] Seam 1: the refusal carries the same `planId`, `created` and `touched` fields whether
+- [x] Seam 1: the refusal carries the same `planId`, `created` and `touched` fields whether
       from a `peek` refusal or a lost `acquire` (RUN-06), and whether the call is interactive
       or `--no-user`; the `lock` handback's own shape is INT-05's, and the `--no-user`
       reply's shape (no takeover question, no handback) is RPL-05's (C:reply-and-handback).
-- [ ] Seam 1: a fresh lock with garbage content, and a fresh lock with a non-UUID
+- [x] Seam 1: a fresh lock with garbage content, and a fresh lock with a non-UUID
       `planId` → `lock` with `planId: null`, `created: null` and no handback.
 
 
