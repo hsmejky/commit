@@ -352,17 +352,17 @@ for a fresh, matching heartbeat and `not-seen` with the guard notice otherwise.
 
 **Blocked by:** GRD-15, RUN-06, PRE-15.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q23, C:guard (Heartbeat), S1, stories 34, 36.
 
 Note (GRD-15 review): this slice also stores `ctx.notices` into `state.json`'s `notices`
 field next to `env.guard`, as C:plan step 8 specifies (KD-R67, retired by this slice).
 
-- [ ] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the guard notice, verbatim from the C:cli-and-exit-codes recorded-texts table ("Guard hook did not run: `node` missing from the hook's PATH, …"), and the run goes on.
-- [ ] Path matching is realpathed with `\` → `/`, case-folded on Windows and macOS (a case-differing `cwd` matches there).
-- [ ] Seam 1: a fresh heartbeat whose `cwd` is `null` (C:guard Heartbeat), or a heartbeat file that is not valid JSON or not a regular file → `not-seen` with the guard notice; `guardState` does not throw.
-- [ ] Seam 1: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, `guardState` reads the heartbeat from the same `<OS home>/.claude` fallback the guard used (GRD-15), confirming guard and `plan` resolve the Claude home the same way (C:guard).
+- [x] Seam 1: a heartbeat under 15 minutes old whose `cwd` is inside the toplevel, or contains it → `active`; older, absent, or another repo → `not-seen` with the guard notice, verbatim from the C:cli-and-exit-codes recorded-texts table ("Guard hook did not run: `node` missing from the hook's PATH, …"), and the run goes on.
+- [x] Path matching is realpathed with `\` → `/`, case-folded on Windows and macOS (a case-differing `cwd` matches there).
+- [x] Seam 1: a fresh heartbeat whose `cwd` is `null` (C:guard Heartbeat), or a heartbeat file that is not valid JSON or not a regular file → `not-seen` with the guard notice; `guardState` does not throw.
+- [x] Seam 1: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, `guardState` reads the heartbeat from the same `<OS home>/.claude` fallback the guard used (GRD-15), confirming guard and `plan` resolve the Claude home the same way (C:guard).
 
 
 ## GRD-18: Hook registration
