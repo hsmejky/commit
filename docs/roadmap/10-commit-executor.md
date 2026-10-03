@@ -193,13 +193,13 @@ commits and unstages, so only an outside change trips it.
 
 **Blocked by:** EXE-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, Q20, C:commit-release phase (a), M16, story 162.
 
-- [ ] Seam 1: `git add` of another file between `plan` and `commit` → exit 6
+- [x] Seam 1: `git add` of another file between `plan` and `commit` → exit 6
       `diff-changed` (`index-changed`), nothing committed, that staging still in the index.
-- [ ] Seam 1: three groups with no outside change → all commit (the run's own staging never
+- [x] Seam 1: three groups with no outside change → all commit (the run's own staging never
       trips the check).
 
 
