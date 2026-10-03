@@ -244,7 +244,7 @@ a token holding `$`, a backtick, `{`, `(` or a glob character; in PowerShell a t
 
 **Blocked by:** GRD-11.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, C:guard (Parsing step 4, Deny messages), story 15.
 
@@ -254,18 +254,18 @@ would let `git commit --fixup $s` through; its Seam 3 cases are in
 `tests/guard-allowlist.test.js`. This slice adds the subcommand position and git's global
 options (with GRD-11), and the PowerShell forms (with GRD-06).
 
-- [ ] Denied with `Write the git subcommand literally. <route>`: Bash `git @(commit) -m x` and `git !(x) commit -m x` (an extglob pattern in an argument is one word, GRD-04), `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `c=commit; git "$c" -m x`, each in a command mentioning `commit`.
-- [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
-- [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
-- [ ] Denied (review GRD-06 round 2; each runs `git commit --no-verify -m x` under PowerShell 5.1 and 7): PowerShell `git $null commit --no-verify -m x` (PowerShell drops `$null`), `git --% commit --no-verify -m x` and `git '--%' commit --no-verify -m x`.
-- [ ] After known global options (review GRD-11; each runs a commit): Bash `c=commit; git --no-advice "$c" -m x`, `c=commit; git --attr-source HEAD "$c" -m x` and `git --no-advice {commit,-m,x}`, PowerShell `git --no-advice $c -m x`, `git --no-advice @a` and `git --no-advice ,commit -m x` (5.1) → denied, as without the option. Also where the variable holds an option and a literal `commit` follows: PowerShell `$o='--no-pager'; git $o commit -m x`, `git -C . --no-advice $null commit -m x` and `git --no-advice (,'commit') -m x`, Bash `opt=--no-pager; git "$opt" commit -m x` and `git {--no-pager,commit} -m x` → denied.
-- [ ] PowerShell `git co$'m'mit -m x` → denied: PowerShell reads `co$mmit` (a token holding `$`) and may run `commit` at runtime; currently allowed, GRD-12's literal-subcommand rule must deny it.
-- [ ] PowerShell `git @(commit) -m x` → denied: the `@(…)` array form reads its body as the subcommand (moved from GRD-08; seed entry already expects deny).
-- [ ] `git COMMIT -m x` → denied as a commit.
-- [ ] The documented gap: `git $(echo com)mit` → no output.
-- [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
-- [ ] Bash `` git `echo commit` -m x ``, `$(echo git) commit -m x` and PowerShell `git commit --fixup $('HEAD','--no-verify')` / `@("HEAD","--no-verify")` → denied by the blanket rule.
-- [ ] The documented command-position gap: `{git,commit,-m,x}` and `/usr/bin/gi? commit -m x` (Bash) and `& ('git') commit -m x` (PowerShell) → no output.
+- [x] Denied with `Write the git subcommand literally. <route>`: Bash `git @(commit) -m x` and `git !(x) commit -m x` (an extglob pattern in an argument is one word, GRD-04), `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `c=commit; git "$c" -m x`, each in a command mentioning `commit`.
+- [x] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
+- [x] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
+- [x] Denied (review GRD-06 round 2; each runs `git commit --no-verify -m x` under PowerShell 5.1 and 7): PowerShell `git $null commit --no-verify -m x` (PowerShell drops `$null`), `git --% commit --no-verify -m x` and `git '--%' commit --no-verify -m x`.
+- [x] After known global options (review GRD-11; each runs a commit): Bash `c=commit; git --no-advice "$c" -m x`, `c=commit; git --attr-source HEAD "$c" -m x` and `git --no-advice {commit,-m,x}`, PowerShell `git --no-advice $c -m x`, `git --no-advice @a` and `git --no-advice ,commit -m x` (5.1) → denied, as without the option. Also where the variable holds an option and a literal `commit` follows: PowerShell `$o='--no-pager'; git $o commit -m x`, `git -C . --no-advice $null commit -m x` and `git --no-advice (,'commit') -m x`, Bash `opt=--no-pager; git "$opt" commit -m x` and `git {--no-pager,commit} -m x` → denied.
+- [x] PowerShell `git co$'m'mit -m x` → denied: PowerShell reads `co$mmit` (a token holding `$`) and may run `commit` at runtime; currently allowed, GRD-12's literal-subcommand rule must deny it.
+- [x] PowerShell `git @(commit) -m x` → denied: the `@(…)` array form reads its body as the subcommand (moved from GRD-08; seed entry already expects deny).
+- [x] `git COMMIT -m x` → denied as a commit.
+- [x] The documented gap: `git $(echo com)mit` → no output.
+- [x] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
+- [x] Bash `` git `echo commit` -m x ``, `$(echo git) commit -m x` and PowerShell `git commit --fixup $('HEAD','--no-verify')` / `@("HEAD","--no-verify")` → denied by the blanket rule.
+- [x] The documented command-position gap: `{git,commit,-m,x}` and `/usr/bin/gi? commit -m x` (Bash) and `& ('git') commit -m x` (PowerShell) → no output.
 
 
 ## GRD-13: S2 script calls: recognise and build
