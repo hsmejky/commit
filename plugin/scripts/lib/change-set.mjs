@@ -50,7 +50,7 @@ const BINARY_PATCH = Buffer.from('Binary files ');
  * @throws {Error} when `git status` exits non-zero.
  */
 export async function treeState({ toplevel, env, now }) {
-  const paths = (await statusEntries({ toplevel, env, now })).map((entry) => entry.path);
+  const paths = (await statusEntries({ toplevel, env, now, untracked: 'all' })).map((entry) => entry.path);
   return paths.length === 0 ? { clean: true } : { count: paths.length, paths };
 }
 
@@ -84,7 +84,7 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   listed by `git ls-files --cached --ignored
  *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore` refuses
  *   M2's `GIT_LITERAL_PATHSPECS=1`).
- * - tracked: the `git status` entries that are neither untracked nor staged-new.
+ * - tracked: the `git status --untracked-files=no` entries that are not staged-new.
  * Unborn HEAD needs no special case: `diff --cached` then lists every index entry as `A`,
  * as C:untracked-files asks.
  *
@@ -102,7 +102,7 @@ export async function inventory({ toplevel, env, now }) {
   const opts = { cwd: toplevel, env, now, readOnly: true };
   const untracked = nulList(await gitOk(['ls-files', '--others', '--exclude-standard', '-z'], opts));
   const filtered = hideFilter(untracked);
-  const candidates = filtered.candidates.map((path) => fileFacts(toplevel, path));
+  const candidates = candidateFacts(toplevel, filtered.candidates);
   const hidden = {
     count: filtered.hidden.length,
     sample: [...filtered.hidden].sort(byteOrder).slice(0, 5),
@@ -125,8 +125,8 @@ export async function inventory({ toplevel, env, now }) {
   const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
 
   const addedSet = new Set(added);
-  const tracked = (await statusEntries({ toplevel, env, now }))
-    .filter((entry) => entry.xy !== '??' && !addedSet.has(entry.path))
+  const tracked = (await statusEntries({ toplevel, env, now, untracked: 'no' }))
+    .filter((entry) => !addedSet.has(entry.path))
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
@@ -134,8 +134,28 @@ export async function inventory({ toplevel, env, now }) {
   };
 }
 
-// A candidate's size and `binary` sniff: a NUL in its first 8000 bytes (only a regular
-// file is read; anything else is not binary).
+/**
+ * Each candidate's size and `binary` sniff: a NUL in its first 8000 bytes (only a regular
+ * file is read; anything else is not binary). A path gone since `ls-files --others` listed
+ * it (an editor temp file, build output) is skipped, as `snapshot` skips a missing path.
+ *
+ * @param {string} toplevel
+ * @param {string[]} paths repo-relative candidate paths.
+ * @returns {Array<{ path: string, size: number, binary: boolean }>} in `paths` order.
+ * @throws {Error} on a filesystem error other than a missing path.
+ */
+export function candidateFacts(toplevel, paths) {
+  const facts = [];
+  for (const path of paths) {
+    try {
+      facts.push(fileFacts(toplevel, path));
+    } catch (err) {
+      if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') throw err;
+    }
+  }
+  return facts;
+}
+
 function fileFacts(toplevel, path) {
   const full = join(toplevel, path);
   const stat = lstatSync(full);
@@ -305,9 +325,11 @@ export function assignIds(units) {
   return units.map((unit, i) => ({ id: `h${i + 1}`, ...unit }));
 }
 
-// One `git status --porcelain -z --untracked-files=all` call, as `{ xy, path }` entries.
-async function statusEntries({ toplevel, env, now }) {
-  const result = await run('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
+// One `git status --porcelain -z --untracked-files=<untracked>` call, as `{ xy, path }`
+// entries. The inventory passes `no`: its candidates come from `ls-files --others`, so the
+// untracked walk would only be discarded.
+async function statusEntries({ toplevel, env, now, untracked }) {
+  const result = await run('git', ['status', '--porcelain', '-z', `--untracked-files=${untracked}`], {
     cwd: toplevel,
     env,
     now,

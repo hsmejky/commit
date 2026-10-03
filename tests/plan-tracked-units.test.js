@@ -61,4 +61,12 @@ test('plan on modified tracked files runs one pinned diff with no pathspec and k
     [['git', INVENTORY_DIFF_CALL], ['git', PINNED_DIFF_CALL]],
     JSON.stringify(diffCalls),
   );
+  // The inventory's tracked list reads `git status` without walking untracked files: its
+  // candidates come from `ls-files --others`, so `--untracked-files=all` there is waste.
+  const statusCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('status'));
+  assert.ok(
+    statusCalls.some((e) => e.args.includes('--porcelain') && e.args.includes('--untracked-files=no')
+      && e.args.includes('-z')),
+    JSON.stringify(statusCalls),
+  );
 });

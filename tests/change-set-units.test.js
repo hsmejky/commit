@@ -77,8 +77,9 @@ test('inventory: a clean tree is clean, a modified tracked file is listed', asyn
 });
 
 // CHG-05: candidates after `hideFilter` with size and NUL-sniffed `binary`, the hidden count
-// with a byte-sorted sample of 5, staged-new paths with `ignored` from `check-ignore
-// --no-index`, a hidden staged-new path in `stagedExcluded`, every staged path in `preStaged`.
+// with a byte-sorted sample of 5, staged-new paths with `ignored` from `ls-files --cached
+// --ignored --exclude-standard`, a hidden staged-new path in `stagedExcluded`, every staged
+// path in `preStaged`.
 test('inventory: untracked candidates, hidden files, staged-new and pre-staged paths', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n', 'b.txt': 'b\n' });
@@ -103,6 +104,18 @@ test('inventory: untracked candidates, hidden files, staged-new and pre-staged p
     stagedNew: [{ path: 'ign.txt', ignored: true }, { path: 'staged.txt', ignored: false }],
     stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],
   });
+});
+
+// An untracked file removed between `ls-files --others` and its `lstat` (an editor temp
+// file, build output) is skipped, not an internal failure.
+test('candidateFacts: a path gone since the listing is skipped', (t) => {
+  const c = createCase(t);
+  c.writeFile('kept.txt', 'k\n');
+
+  assert.deepEqual(
+    changeSet.candidateFacts(c.repoDir, ['gone.txt', 'kept.txt', 'gone-dir/x.txt']),
+    [{ path: 'kept.txt', size: 2, binary: false }],
+  );
 });
 
 test('inventory: a tree with hidden files only, untracked or staged, is clean', async (t) => {
