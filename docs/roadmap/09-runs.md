@@ -312,13 +312,13 @@ shares.
 
 **Blocked by:** RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q22, C:run-folder, M12, story 221.
 
-- [ ] Seam 1: two linked worktrees of one repo each run `plan` with work → both are kept,
+- [x] Seam 1: two linked worktrees of one repo each run `plan` with work → both are kept,
       each with its own lock and folder, and neither gets `lock`.
-- [ ] Seam 1: the common `info/exclude` holds one `/.commit-plan` line.
+- [x] Seam 1: the common `info/exclude` holds one `/.commit-plan` line.
 
 
 ## RUN-12: `plan` has a 540-second deadline
