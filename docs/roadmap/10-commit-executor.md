@@ -211,14 +211,14 @@ building it again.
 
 **Blocked by:** EXE-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, story 166.
 
-- [ ] Seam 1: an `index.lock` created before the call → exit 6 `index-lock`, the lock file
+- [x] Seam 1: an `index.lock` created before the call → exit 6 `index-lock`, the lock file
       untouched, the index unchanged, the text "another git process is running in this
       repo" (Q18).
-- [ ] Seam 1: a `post-commit` hook of group 1 creates `index.lock` → group 1 kept, group 2
+- [x] Seam 1: a `post-commit` hook of group 1 creates `index.lock` → group 1 kept, group 2
       refused `index-lock`, no reset ran (`unstaged` reflects only group 1's reset).
 
 
