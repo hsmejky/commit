@@ -69,17 +69,17 @@ paragraph is not a body; shares over the Conventional Commits ones only, in `evi
 
 **Blocked by:** INF-02, MSG-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q7, C:infer (`scope`, `body`, evidence), story 129.
 
-- [ ] Seam 1: boundary histories at 90% and 10% scope give `required` and `optional`;
+- [x] Seam 1: boundary histories at 90% and 10% scope give `required` and `optional`;
       9% gives `forbidden`.
-- [ ] Seam 1: commits whose only extra paragraph is `Closes #n` do not count as bodies.
-- [ ] Seam 1: a history mixing conventional and non-conventional commits computes `scope`
+- [x] Seam 1: commits whose only extra paragraph is `Closes #n` do not count as bodies.
+- [x] Seam 1: a history mixing conventional and non-conventional commits computes `scope`
       and `body` shares over the Conventional Commits ones only, excluding the rest from the
       denominator.
-- [ ] Seam 1: a history at exactly 10% with-body share gives `body: optional`; 9% gives
+- [x] Seam 1: a history at exactly 10% with-body share gives `body: optional`; 9% gives
       `forbidden`.
 
 
