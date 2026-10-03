@@ -177,7 +177,7 @@ replaces every scan-hit span of a quoted message with `[<pattern-id>]`.
 absolute path (forward slashes, double quotes) with `--plan` of the same reply and its
 `timeoutMs` (600 000 for `commit`, 60 000 otherwise); only a `confirm`'s `yes` carries
 `--confirmed`. It also adds the first S2-dependent refusal: an install path holding `$`, a
-backtick, `"`, `\` or U+201C-U+201E is refused `env` before any work.
+backtick, `"`, `\`, a typographic double quote (U+201C-U+201E), `!` or a control character is refused `env` before any work.
 
 **Blocked by:** EXE-16, GRD-13, INT-09, RUN-01, RUN-16.
 
@@ -201,8 +201,9 @@ fixtures", Q16, Q25, Testing seams "ScriptCall round trip", stories 51, 53, 54, 
       the base rule text tells the caller to run nothing (story 62)
 - [ ] Every answer has a `run`, a `respawn` or neither (story 54)
 - [ ] Seam 1: the scripts copied under a path with each forbidden character → exit 1 `env`
-      (`"` and `\` POSIX only; the typographic quote on both); a native Windows path → no
-      refusal (story 204)
+      (`"` and `\` POSIX only; control characters other than those Windows also forbids in a
+      name are POSIX only too; the typographic-quote and `!` cases run on both platforms);
+      a native Windows path → no refusal (story 204)
 - [ ] The handback rule text tells the caller to show a `run`'s output that holds no reply
       and to run nothing more (story 229)
 
