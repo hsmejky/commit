@@ -277,8 +277,8 @@ async function snapshotUnits(ctx) {
  */
 async function postScanRefusals(ctx) {
   if (ctx.inventory.clean === true && ctx.mode !== 'reword') return { status: 'nothing', reason: 'clean' };
-  const { env, now } = ctx.injected;
-  ctx.signing = await probeSigning({ toplevel: ctx.toplevel, env, now });
+  const { env, now, osHome } = ctx.injected;
+  ctx.signing = await probeSigning({ toplevel: ctx.toplevel, env, now, osHome });
   const refusal = planRefusal({ ...ctx.probe, signing: ctx.signing });
   if (refusal !== null) return { refusal };
   if (ctx.signing.ready === 'prompt') ctx.notices.push(SIGNING_PROMPT_NOTICE);

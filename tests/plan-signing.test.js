@@ -3,12 +3,15 @@
 // GIT-10 (docs/roadmap/06-git-adapters.md): M11 `probeSigning` reads `commit.gpgsign` with
 // `--type=bool` and `gpg.format`, and `plan` stores the result in `plan.json` `signing` at
 // step 6, after the clean-tree check (Q18, C:plan `signing`, stories 169 and 171). Seam 1:
-// the shipped entry point as a subprocess through the FND-04 harness. SSH readiness from the
-// key file is GIT-11's, the `ssh-add -L` check GIT-12's; until then an SSH setup with the
-// default `gpg.ssh.program` gives `"unknown"`, never `false`.
+// the shipped entry point as a subprocess through the FND-04 harness. GIT-11 adds SSH
+// readiness from the key file (key-source table, header parse); the `ssh-add -L` check is
+// GIT-12's, so every case the header alone cannot clear (an encrypted key, a missing or
+// unrecognised private key file, an unresolved key source) still gives `"unknown"`, never
+// `false`.
 //
 // The signing config is set after the seed commit, so the harness's own `git commit` never
-// tries to sign. Nothing here runs gpg, gpgsm or ssh-keygen: the probe reads config only.
+// tries to sign. Nothing here runs gpg, gpgsm, ssh-keygen or ssh-add: the probe reads config
+// and, for GIT-11, key files, only.
 //
 // The prompt note's place in the stored notices and the `plan` reply is not observable yet
 // (roadmap KD-R67): the path that reaches the probe ends with the hunk index, whose reply is
@@ -153,6 +156,94 @@ test('plan with a non-boolean commit.gpgsign stores { enabled: true, ready: "unk
 // this stays `"unknown"` after GIT-11 too (C:plan SSH readiness table, first rows).
 test('plan with gpg.format=ssh, the default program and no signing key stores ready "unknown"', async (t) => {
   const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+// GIT-11: SSH readiness from the key file. These build file content directly (never run
+// ssh-keygen): an `openssh-key-v1` file needs only the magic and a length-prefixed cipher
+// name to exercise the probe's own parser; the PEM fixtures mirror
+// tests/fixtures/scan-patterns/private-key/*.
+
+function opensshKeyFile(cipher) {
+  const magic = Buffer.from('openssh-key-v1\0', 'latin1');
+  const cipherBuf = Buffer.from(cipher, 'utf8');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(cipherBuf.length, 0);
+  const base64 = Buffer.concat([magic, lenBuf, cipherBuf]).toString('base64');
+  const wrapped = base64.replace(/(.{70})/g, '$1\n').replace(/\n?$/, '\n');
+  return `-----BEGIN OPENSSH PRIVATE KEY-----\n${wrapped}-----END OPENSSH PRIVATE KEY-----\n`;
+}
+
+const UNENCRYPTED_PEM = '-----BEGIN PRIVATE KEY-----\nFAKE0KEY0BODY0FOR0TESTS0ONLY0==\n-----END PRIVATE KEY-----\n';
+const ENCRYPTED_PEM = '-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\n'
+  + 'DEK-Info: AES-128-CBC,FAKE0000FAKE0000FAKE0000FAKE0000\n\n'
+  + 'FAKE0KEY0BODY0FOR0TESTS0ONLY0==\n-----END RSA PRIVATE KEY-----\n';
+
+test('plan with gpg.format=ssh and an unencrypted OpenSSH or PEM key file stores ready true (no agent involved)', async (t) => {
+  for (const [name, content] of [['id_ed25519', opensshKeyFile('none')], ['id_rsa', UNENCRYPTED_PEM]]) {
+    const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+    c.writeFile(name, content);
+    c.git(['config', 'user.signingKey', name]);
+    assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: true }, name);
+  }
+});
+
+test('plan with a passphrase-protected SSH key file stores ready "unknown" (no ssh-add check yet)', async (t) => {
+  for (const [name, content] of [['id_ed25519', opensshKeyFile('aes256-ctr')], ['id_rsa', ENCRYPTED_PEM]]) {
+    const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+    c.writeFile(name, content);
+    c.git(['config', 'user.signingKey', name]);
+    assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' }, name);
+  }
+});
+
+test('plan with user.signingKey set to a .pub path reads the private file beside it', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('id_ed25519.pub', 'ssh-ed25519 AAAAFAKE comment\n');
+  c.writeFile('id_ed25519', opensshKeyFile('none'));
+  c.git(['config', 'user.signingKey', 'id_ed25519.pub']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: true });
+});
+
+test('plan with user.signingKey set to a .pub path without its private file stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('id_ed25519.pub', 'ssh-ed25519 AAAAFAKE comment\n');
+  c.git(['config', 'user.signingKey', 'id_ed25519.pub']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with user.signingKey starting with ~/ expands against the injected OS home', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  const dir = path.join(c.osHome, '.ssh');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'id_ed25519'), opensshKeyFile('none'));
+  c.git(['config', 'user.signingKey', '~/.ssh/id_ed25519']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: true });
+});
+
+test('plan with user.signingKey starting with ~user/ stores ready "unknown" (cannot resolve another user\'s home)', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.git(['config', 'user.signingKey', '~someoneelse/.ssh/id_ed25519']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with user.signingKey set to a literal key stores ready "unknown" (no private key file)', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.git(['config', 'user.signingKey', 'ssh-ed25519 AAAAFAKE comment']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with user.signingKey pointing to a file with no recognised header stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('not_a_key', 'just some text\n');
+  c.git(['config', 'user.signingKey', 'not_a_key']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with gpg.format=ssh, user.signingKey unset and gpg.ssh.defaultKeyCommand set stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [
+    ['commit.gpgsign', 'true'], ['gpg.format', 'ssh'], ['gpg.ssh.defaultKeyCommand', 'echo key'],
+  ]);
   assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
 });
 
