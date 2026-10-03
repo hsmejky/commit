@@ -18,22 +18,12 @@ const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib.js');
-
-const PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
-
 // Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
 // `DEFAULT_VALUES`: these direct `validatePlan` calls build their own runState rather than
 // reading a real `plan`-produced `state.json` (CFG-05).
-const DEFAULT_VALUES = Object.freeze({
-  types: Object.freeze([
-    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
-  ]),
-  scope: 'forbidden',
-  body: 'forbidden',
-  maxSubjectLength: 72,
-  subjectCase: 'lower',
-  scanIgnore: Object.freeze([]),
-});
+const { Q6_DEFAULT_VALUES: DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
+
+const PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;

@@ -89,8 +89,10 @@ lists are compared in order, element by element, so an edit to another key never
 a snapshot blob that is not valid JSON, or whose `scanIgnore` is not an array of strings,
 counts as changed. HEAD's `[]` after an invalid value is compared like any other: a fixed
 copy that carries patterns counts as changed, so its units are flagged (`humanOnly`).
-`loadConfig({ claudeHome, toplevel, unborn })`, `readLayers(…)`, pure
-`validateLayer(obj, layer)`, all typed. Sources: Q6, Q10, C:plan, C:plan-hunks.
+`loadConfig({ claudeHome, toplevel, unborn })` (returns `{ values, sources } | { error }`,
+CFG-05), `readLayers(…)`, pure `validateLayer(obj, layer)`, pure `effectiveConfig({ user,
+repo })` and its `DEFAULT_VALUES` (CFG-05), all typed. Sources: Q6, Q10, C:plan,
+C:plan-hunks.
 
 **M5 Attribution resolver.** Resolve the trailer from the Claude settings layers, highest
 first: managed (`managed-settings.json` only; the drop-in directory is not read, Out of

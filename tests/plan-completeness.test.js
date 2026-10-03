@@ -13,6 +13,9 @@ const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib.js');
+// Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
+// `DEFAULT_VALUES`: this direct `validatePlan` call builds its own runState (CFG-05).
+const { Q6_DEFAULT_VALUES: DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
 
 let validatePlan;
 beforeEach(async () => {
@@ -183,19 +186,6 @@ const UNITS = Object.freeze([
   { id: 'h3', path: 'src/b.js', oldPath: 'src/old.js', status: 'R' },
   { id: 'h4', path: 'docs/new.md', oldPath: null, status: 'A' },
 ]);
-
-// Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
-// `DEFAULT_VALUES`: this direct `validatePlan` call builds its own runState (CFG-05).
-const DEFAULT_VALUES = Object.freeze({
-  types: Object.freeze([
-    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
-  ]),
-  scope: 'forbidden',
-  body: 'forbidden',
-  maxSubjectLength: 72,
-  subjectCase: 'lower',
-  scanIgnore: Object.freeze([]),
-});
 
 function validate(plan) {
   return validatePlan(

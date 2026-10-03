@@ -108,6 +108,9 @@ story 112.
 
 **What to build:** per-key override (repo over user over default, arrays replaced, never
 merged) and `plan`'s `config.values` and `config.sources` (`default`, `user`, `repo`).
+`scanIgnore` is just another key here, from whichever layer sets it (Q6 says repo only, but
+CFG-06 is what actually warns and ignores a user-layer `scanIgnore`; until then this slice's
+`effectiveConfig` honours it like any other key, harmlessly — no consumer reads it yet).
 
 **Blocked by:** CFG-04, RUN-06, PLN-06.
 

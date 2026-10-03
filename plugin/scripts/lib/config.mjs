@@ -13,9 +13,10 @@
 // the same way, naming the user layer instead of the repo layer. Reading the user layer
 // never depends on being inside a worktree, unlike the repo layer: `toplevel` is nullable so
 // a caller outside a usable repo still gets the user-layer check (C:plan step 2 puts
-// `config` ahead of `state`). Later CFG slices add per-key override and effective values,
-// warnings for unknown keys and values, defaults, `sources`, and the `scanIgnore` machinery
-// read at HEAD (M7, Q6, Q10).
+// `config` ahead of `state`). CFG-05 adds the per-key override, `effectiveConfig` and its
+// `DEFAULT_VALUES` (repo beats user beats default, arrays replaced whole). Later CFG slices
+// add warnings for unknown keys and values (CFG-06) and the `scanIgnore` machinery read at
+// HEAD (M7, Q6, Q10, CFG-07).
 
 import fs from 'node:fs';
 import path from 'node:path';

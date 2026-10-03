@@ -11,6 +11,7 @@ const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { loadLib } = require('./helpers/load-lib.js');
+const { Q6_DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
 
 let config;
 beforeEach(async () => {
@@ -36,7 +37,7 @@ test('loadConfig returns the effective defaults when neither layer has a config 
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   const result = config.loadConfig({ toplevel, claudeHome });
-  assert.deepEqual(result.values, config.DEFAULT_VALUES);
+  assert.deepEqual(result.values, Q6_DEFAULT_VALUES);
   assert.deepEqual(result.sources, {
     types: 'default',
     scope: 'default',
@@ -185,7 +186,7 @@ test('USER_CONFIG_FILENAME is commit.json (Q5, Q6, public surface)', () => {
 test('loadConfig returns the effective defaults when the user config is absent, even with no toplevel at all', (t) => {
   const claudeHome = tempClaudeHome(t);
   const result = config.loadConfig({ toplevel: null, claudeHome });
-  assert.deepEqual(result.values, config.DEFAULT_VALUES);
+  assert.deepEqual(result.values, Q6_DEFAULT_VALUES);
   assert.equal(result.sources.types, 'default');
 });
 

@@ -12,7 +12,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
-const { loadLib } = require('./helpers/load-lib.js');
+const { Q6_DEFAULT_VALUES, ALL_DEFAULT_SOURCES } = require('./helpers/q6-defaults.js');
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -34,15 +34,6 @@ function writeRepoConfig(c, value) {
   c.writeFile('.claude/commit.json', JSON.stringify(value));
 }
 
-const ALL_DEFAULT_SOURCES = {
-  types: 'default',
-  scope: 'default',
-  body: 'default',
-  maxSubjectLength: 'default',
-  subjectCase: 'default',
-  scanIgnore: 'default',
-};
-
 test('plan with no config layers at all stores the Q6 defaults as config.values, every source default', async (t) => {
   const c = createCase(t);
   c.writeFile('a.txt', 'one\n');
@@ -53,13 +44,12 @@ test('plan with no config layers at all stores the Q6 defaults as config.values,
   const result = await runCommit(c, ['plan']);
 
   assert.equal(result.exitCode, 0, detail(result));
-  const config = await loadLib('config');
   const folder = path.join(runDirOf(c), result.json.planId);
   const planJson = readJson(path.join(folder, 'plan.json'));
   const stateJson = readJson(path.join(folder, 'state.json'));
-  assert.deepEqual(planJson.config.values, config.DEFAULT_VALUES);
+  assert.deepEqual(planJson.config.values, Q6_DEFAULT_VALUES);
   assert.deepEqual(planJson.config.sources, ALL_DEFAULT_SOURCES);
-  assert.deepEqual(stateJson.config.values, config.DEFAULT_VALUES);
+  assert.deepEqual(stateJson.config.values, Q6_DEFAULT_VALUES);
   assert.deepEqual(stateJson.config.sources, ALL_DEFAULT_SOURCES);
 });
 
@@ -85,6 +75,15 @@ test('a repo types layer beats a user types layer at Seam 1, source repo; a user
   const stateJson = readJson(path.join(folder, 'state.json'));
   assert.deepEqual(stateJson.config.values.types, ['feat']);
   assert.equal(stateJson.config.sources.types, 'repo');
+  // review-CFG-05 finding 6: the same effective values reach `plan`'s stdout `hunks` block
+  // (workflows.mjs's `renderHunkIndex`, `ctx.config.values`), minus `scanIgnore`.
+  assert.deepEqual(result.json.hunks.config, {
+    types: ['feat'],
+    scope: 'optional',
+    body: 'forbidden',
+    maxSubjectLength: 72,
+    subjectCase: 'lower',
+  });
 });
 
 // AC3: the effective values reach M14's lint (`validatePlan` reads `runState.config.values`,
@@ -114,8 +113,10 @@ function writeWorkerPlan(runDir, header, body) {
 }
 
 test('a group header using a repo-only-allowed type passes lint at Seam 1', async (t) => {
-  const { c, planId, runDir } = await plannedRunWithRepoTypes(t, ['feat']);
-  writeWorkerPlan(runDir, 'feat: x', null);
+  // review-CFG-05 finding 5: 'deps' is not a Q6 default, so this only passes when the repo
+  // layer's addition actually reaches the lint, unlike 'feat' which would pass regardless.
+  const { c, planId, runDir } = await plannedRunWithRepoTypes(t, ['feat', 'deps']);
+  writeWorkerPlan(runDir, 'deps: x', null);
 
   const checked = await runCommit(c, ['check', '--plan', planId]);
 
