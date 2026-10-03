@@ -114,15 +114,15 @@ CFG-06 is what actually warns and ignores a user-layer `scanIgnore`; until then 
 
 **Blocked by:** CFG-04, RUN-06, PLN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q6, C:plan (`config`), M4, stories 105, 108, 111.
 
-- [ ] Seam 1: no layers → the 11 standard types, `scope: forbidden`, `body: forbidden`, 72,
+- [x] Seam 1: no layers → the 11 standard types, `scope: forbidden`, `body: forbidden`, 72,
       `lower`, every source `default`.
-- [ ] Seam 1: user `types: ["feat","fix","deps"]`, repo `types: ["feat"]` → `["feat"]`,
+- [x] Seam 1: user `types: ["feat","fix","deps"]`, repo `types: ["feat"]` → `["feat"]`,
       source `repo`; a key only in the user layer shows source `user`.
-- [ ] Seam 1: the effective values reach `check`'s lint (a type allowed only by the repo
+- [x] Seam 1: the effective values reach `check`'s lint (a type allowed only by the repo
       layer passes, a type the repo layer removed fails).
 
 **Forward note (review-PLN-06 finding 6):** PLN-06 gave M14 a stand-in for the Q6
