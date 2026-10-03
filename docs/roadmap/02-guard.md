@@ -318,6 +318,11 @@ redacted.
 - [ ] Seam 2: with the case's OS home set (`HOME`/`USERPROFILE`) and `CLAUDE_CONFIG_DIR` unset, the heartbeat lands under `<OS home>/.claude/commit-guard/heartbeat.json` (the shared fallback C:guard gives the guard and `plan`).
 - [ ] Seam 2 with `COMMIT_GUARD_DEBUG=1`: a `plan` script call whose Claude home path is an existing file, not a directory, throws on the write, caught by GRD-02's fail-open (no stdout, exit 0, one debug stderr line); without the variable, no stderr.
 
+Note (GRD-13 review): S2 `recognise`'s `args` are everything node receives up to the first
+operator token, message text (`-m "…"`), unexpanded `$HOME` and a PowerShell `--%` tail
+(`plan --% ; git commit -m secret`) included. The heartbeat and debug-log `command` keep only
+`--flag` words and `planId` values (lowercase UUIDs), and cut at a PowerShell `--%`.
+
 
 ## GRD-16: Debug log for decisions
 
