@@ -197,6 +197,88 @@ test('plan with a passphrase-protected SSH key file stores ready "unknown" (no s
   }
 });
 
+// review-GIT-11 finding 1: a file labelled as an OpenSSH key (the `BEGIN` marker present)
+// must never fall through to the PEM rule, even when its armor is malformed — a passphrase
+// cipher inside unparseable armor is still "unknown", never a false "safe" `true`.
+test('plan with a malformed OpenSSH key armor never reports ready true', async (t) => {
+  const wellFormed = opensshKeyFile('aes256-ctr');
+  const noEnd = wellFormed.slice(0, wellFormed.indexOf('-----END'));
+  const trailingSpaceOnBegin = wellFormed.replace(
+    '-----BEGIN OPENSSH PRIVATE KEY-----\n',
+    '-----BEGIN OPENSSH PRIVATE KEY----- \n',
+  );
+  const crOnly = wellFormed.replace(/\n/g, '\r');
+  for (const [name, content] of [
+    ['no_end', noEnd],
+    ['trailing_space_begin', trailingSpaceOnBegin],
+    ['cr_only', crOnly],
+  ]) {
+    const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+    c.writeFile(name, content);
+    c.git(['config', 'user.signingKey', name]);
+    assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' }, name);
+  }
+});
+
+// review-GIT-11 finding 2: negative parser cases the shipped probe already handles
+// (verified by hand against the case table) but the suite never pinned.
+function opensshRawBodyFile(bodyBuffer) {
+  const base64 = bodyBuffer.toString('base64');
+  const wrapped = base64.replace(/(.{70})/g, '$1\n').replace(/\n?$/, '\n');
+  return `-----BEGIN OPENSSH PRIVATE KEY-----\n${wrapped}-----END OPENSSH PRIVATE KEY-----\n`;
+}
+
+const PKCS8_ENCRYPTED_PEM = '-----BEGIN ENCRYPTED PRIVATE KEY-----\n'
+  + 'FAKE0KEY0BODY0FOR0TESTS0ONLY0==\n-----END ENCRYPTED PRIVATE KEY-----\n';
+
+test('plan with an openssh-key-v1 length prefix past the end of the body stores ready "unknown"', async (t) => {
+  const magic = Buffer.from('openssh-key-v1\0', 'latin1');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(0xffffffff, 0);
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('id_ed25519', opensshRawBodyFile(Buffer.concat([magic, lenBuf])));
+  c.git(['config', 'user.signingKey', 'id_ed25519']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with an openssh-key-v1 body with bad magic stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('id_ed25519', opensshRawBodyFile(Buffer.from('not-the-right-magic\0', 'latin1')));
+  c.git(['config', 'user.signingKey', 'id_ed25519']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with a PKCS#8 BEGIN ENCRYPTED PRIVATE KEY file stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('id_rsa', PKCS8_ENCRYPTED_PEM);
+  c.git(['config', 'user.signingKey', 'id_rsa']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+// review-GIT-11 finding 4: the key file is capped and bounded-read, never trusted blindly.
+// The body below parses as a well-formed, unencrypted (`cipher: none`) openssh-key-v1 key —
+// so without the size cap this would read as `ready: true` — but padded past the 64 KiB cap,
+// which must reject it by `stat` before any content is read.
+test('plan with user.signingKey pointing at an oversized (but otherwise valid, unencrypted) key file stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  const magic = Buffer.from('openssh-key-v1\0', 'latin1');
+  const cipherBuf = Buffer.from('none', 'utf8');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(cipherBuf.length, 0);
+  const padding = Buffer.alloc(80 * 1024, 0x41);
+  const oversized = opensshRawBodyFile(Buffer.concat([magic, lenBuf, cipherBuf, padding]));
+  c.writeFile('id_ed25519', oversized);
+  c.git(['config', 'user.signingKey', 'id_ed25519']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+test('plan with user.signingKey pointing at a directory stores ready "unknown"', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  fs.mkdirSync(path.join(c.repoDir, 'a_directory'));
+  c.git(['config', 'user.signingKey', 'a_directory']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
 test('plan with user.signingKey set to a .pub path reads the private file beside it', async (t) => {
   const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
   c.writeFile('id_ed25519.pub', 'ssh-ed25519 AAAAFAKE comment\n');
@@ -225,6 +307,18 @@ test('plan with user.signingKey starting with ~user/ stores ready "unknown" (can
   const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
   c.git(['config', 'user.signingKey', '~someoneelse/.ssh/id_ed25519']);
   assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+// review-GIT-11 finding 3: pins "relative against the toplevel" against the alternative
+// (relative against the subprocess cwd), which the other path-resolution tests above never
+// ruled out since they all run with the subprocess cwd already at the toplevel.
+test('plan with a relative user.signingKey resolves against the toplevel, not the subprocess cwd', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.format', 'ssh']]);
+  c.writeFile('id_ed25519', opensshKeyFile('none'));
+  c.git(['config', 'user.signingKey', 'id_ed25519']);
+  c.writeFile('sub/.keep', '');
+  const signing = await storedSigning(c, { cwd: path.join(c.repoDir, 'sub') });
+  assert.deepEqual(signing, { enabled: true, format: 'ssh', ready: true });
 });
 
 test('plan with user.signingKey set to a literal key stores ready "unknown" (no private key file)', async (t) => {

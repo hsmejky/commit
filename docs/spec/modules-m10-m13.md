@@ -118,14 +118,18 @@ Sources: Q9, Q10, Q11, Q18, C:plan-hunks, C:commit-release.
 `true` when the key is listed by `ssh-add -L`, or when the private key file has no
 passphrase, decided by parsing its header with no extra process; a key with a passphrase not
 loaded in the agent → `false` (`signing-locked`); anything the probe cannot decide →
-`"unknown"`. Every case, in order, is per the SSH readiness table of C:plan, which is
-exhaustive; `~/` expands against the injected OS home, and `ssh-add` is taken only from the
-directory of the `ssh-keygen` git runs. openpgp → `"prompt"`, with the note "signing enabled; a passphrase prompt may appear" (a
-locked openpgp key is not detected; Out of Scope). x509 or custom `gpg.program` →
-`"unknown"`; custom `gpg.ssh.program` → `"prompt"`. Never pops up a prompt. The probe runs
-only git and `ssh-add`, each under a fixed timeout; a timeout ends as `"unknown"` instead of
-stalling `plan`. It runs after clean-tree and `staged-hit` detection (M18 `plan` step 6), so
-a clean tree on a locked key reports "nothing to commit". `probeSigning({ home, toplevel, execPath, deadline, env })
+`"unknown"`. The file is `stat`ed first: anything but a regular file, or one over a 64 KiB
+cap (well above any real header), is `"unknown"` without being opened, so a FIFO is never
+`open`ed (which would block `plan`) and a device file or an oversized file is never read in
+full; only the bounded prefix within the cap is read. Every case, in order, is per the SSH
+readiness table of C:plan, which is exhaustive; `~/` expands against the injected OS home,
+and `ssh-add` is taken only from the directory of the `ssh-keygen` git runs. openpgp →
+`"prompt"`, with the note "signing enabled; a passphrase prompt may appear" (a locked
+openpgp key is not detected; Out of Scope). x509 or custom `gpg.program` → `"unknown"`;
+custom `gpg.ssh.program` → `"prompt"`. Never pops up a prompt. The probe runs only git and
+`ssh-add`, each under a fixed timeout; a timeout ends as `"unknown"` instead of stalling
+`plan`. It runs after clean-tree and `staged-hit` detection (M18 `plan` step 6), so a clean
+tree on a locked key reports "nothing to commit". `probeSigning({ osHome, toplevel, execPath, deadline, env })
  → { enabled, format?, ready }`. The `signing-locked` refusal text and the openpgp note are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, C:plan, C:cli-and-exit-codes.
 
 **M12 Run.** Everything under the run folder. Check `.commit-plan` (Run-folder directory

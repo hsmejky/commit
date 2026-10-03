@@ -18,7 +18,7 @@
 // `false`.
 
 import { run } from './process-adapter.mjs';
-import { readFile } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 // Each format's default program (git's `gpg-interface.c`): a configured program equal to
@@ -97,6 +97,12 @@ function resolveKeyPath(raw, { osHome, toplevel }) {
 // base64 body between the PEM-style armor decodes to this literal prefix, followed by a
 // length-prefixed cipher name string (SSH wire format: 4-byte big-endian length then bytes).
 const OPENSSH_MAGIC = 'openssh-key-v1\0';
+// Cheap gate for "this is an OpenSSH-labelled key" (review-GIT-11 finding 1): a plain
+// substring check, so a malformed armor (no `END` line, trailing whitespace on `BEGIN`,
+// CR-only line endings) still gates on the PEM rule below, instead of falling through to
+// it just because the stricter `OPENSSH_ARMOR` match below failed. It is also cheaper than
+// running that regex twice (finding 8).
+const OPENSSH_BEGIN_MARKER = '-----BEGIN OPENSSH PRIVATE KEY-----';
 const OPENSSH_ARMOR = /-----BEGIN OPENSSH PRIVATE KEY-----\r?\n([\s\S]*?)-----END OPENSSH PRIVATE KEY-----/;
 const PEM_ARMOR = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
 
@@ -105,12 +111,8 @@ const PEM_ARMOR = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
 function opensshCipherName(content) {
   const match = content.match(OPENSSH_ARMOR);
   if (match === null) return null;
-  let body;
-  try {
-    body = Buffer.from(match[1].replace(/\s+/g, ''), 'base64');
-  } catch {
-    return null;
-  }
+  // `Buffer.from(_, 'base64')` never throws: invalid characters are skipped, not rejected.
+  const body = Buffer.from(match[1].replace(/\s+/g, ''), 'base64');
   if (body.length < OPENSSH_MAGIC.length || body.toString('latin1', 0, OPENSSH_MAGIC.length) !== OPENSSH_MAGIC) {
     return null;
   }
@@ -122,18 +124,49 @@ function opensshCipherName(content) {
   return body.toString('utf8', offset, offset + len);
 }
 
+// The probe only ever needs the armor header, so a read past this many bytes would be
+// wasted (review-GIT-11 finding 4); OpenSSH's own key-file cap is 1 MiB, and this is well
+// above any real header.
+const MAX_KEY_HEADER_BYTES = 64 * 1024;
+
+// Reads at most `MAX_KEY_HEADER_BYTES` of a private key file as UTF-8, or `null` when it is
+// missing, not a regular file, larger than the cap, or any other read failure — never
+// throws (review-GIT-11 finding 4). `user.signingKey` can point at anything: a `stat` first
+// means a FIFO is never `open`ed (which would block `plan` forever) and a device file or a
+// huge file is never read in full (C:plan "the probe never stalls `plan`").
+async function readKeyHeader(filePath) {
+  let stats;
+  try {
+    stats = await stat(filePath);
+  } catch {
+    return null;
+  }
+  if (!stats.isFile() || stats.size > MAX_KEY_HEADER_BYTES) return null;
+  let handle;
+  try {
+    handle = await open(filePath, 'r');
+    const buffer = Buffer.alloc(stats.size);
+    const { bytesRead } = await handle.read(buffer, 0, stats.size, 0);
+    return buffer.toString('utf8', 0, bytesRead);
+  } catch {
+    return null;
+  } finally {
+    await handle?.close();
+  }
+}
+
 // The private key file's header, read with no extra process (C:plan "SSH readiness"):
 // `true` for an OpenSSH key with cipher `none` or a PEM key without an `ENCRYPTED` marker,
 // `false` for an OpenSSH key with another cipher or a PEM key with one, `'unknown'` when the
-// file is missing or its header is neither recognised form.
+// file is missing, too large, not a regular file, or its header is neither recognised form
+// or does not parse. A file labelled as an OpenSSH key (the `BEGIN` marker present anywhere)
+// is always decided by `opensshCipherName`, never by the PEM rule (review-GIT-11 finding 1):
+// a malformed armor is `opensshCipherName`'s `null`, which is `'unknown'` here, not a fall
+// through to a PEM match that the same `BEGIN` line can also satisfy.
 async function keyHeaderReady(filePath) {
-  let content;
-  try {
-    content = await readFile(filePath, 'utf8');
-  } catch {
-    return 'unknown';
-  }
-  if (OPENSSH_ARMOR.test(content)) {
+  const content = await readKeyHeader(filePath);
+  if (content === null) return 'unknown';
+  if (content.includes(OPENSSH_BEGIN_MARKER)) {
     const cipher = opensshCipherName(content);
     if (cipher === null) return 'unknown';
     return cipher === 'none';

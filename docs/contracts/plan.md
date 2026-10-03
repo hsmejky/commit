@@ -345,8 +345,12 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   run.
 
   The probe never pops up a prompt and runs only git and `ssh-add`, each under a fixed
-  timeout; a timeout gives `"unknown"`. `ready: false` never appears in a success output:
-  `plan` refuses with exit 6 `signing` instead, at step 6.
+  timeout; a timeout gives `"unknown"`. The private key file is `stat`ed before it is
+  opened: anything but a regular file, or one over a 64 KiB cap, gives `"unknown"` without
+  being read, and only a bounded prefix within the cap is read for the ones that qualify,
+  so a FIFO, a device file or an oversized file can never block or cost unbounded work.
+  `ready: false` never appears in a success output: `plan` refuses with exit 6 `signing`
+  instead, at step 6.
 - `env.guard`: `active` (a matching heartbeat under 15 minutes old), `not-seen` (Q23).
 - Notices stored for the reply: `env.guard: "not-seen"` (Q23; text in the recorded-texts
   table of [CLI and exit codes](cli-and-exit-codes.md#recorded-texts)), `signing.ready: "prompt"`
