@@ -95,10 +95,12 @@ function wrapperMessage(wrapper) {
   return withPersonalLine(`git commit run by ${wrapper} is not allowed: it can append arguments. ${ROUTE}`);
 }
 
-// A `git` token: basename `git` or `git.exe` after the last `/` or `\`, case-insensitive.
-const GIT = /(?:^|[/\\])git(?:\.exe)?$/i;
-// git's own dashed form: basename `git-commit` or `git-commit.exe`, case-insensitive.
-const DASHED_COMMIT = /(?:^|[/\\])git-commit(?:\.exe)?$/i;
+// A `git` token: basename `git` or `git.exe` after the last `/` or `\`, case-insensitive,
+// once trailing spaces and dots are dropped (Windows trims them: PowerShell runs git for
+// `& 'git '` and `& 'C:\…\git.exe.'`; in Bash an accepted false deny).
+const GIT = /(?:^|[/\\])git(?:\.exe)?[ .]*$/i;
+// git's own dashed form: basename `git-commit` or `git-commit.exe`, read the same way.
+const DASHED_COMMIT = /(?:^|[/\\])git-commit(?:\.exe)?[ .]*$/i;
 const COMMIT = /^commit$/i;
 // C:guard step 4: a token holding `$`, a backtick, `{`, `(` or a glob character may turn
 // into another word or into several arguments.

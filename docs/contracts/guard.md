@@ -323,11 +323,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
 3. In each segment, find a token whose basename (the part after the last `/` or `\`, in both
    shells, e.g. `git.exe` out of a Bash-quoted `"C:\Program Files\Git\cmd\git.exe"`) is `git`
    or `git.exe`, compared
-   case-insensitively (`Git.exe`), optionally after the `&` call operator. Every such token
+   case-insensitively (`Git.exe`), optionally after the `&` call operator, once trailing
+   spaces and dots are dropped: Windows trims them from a program's name, so PowerShell
+   `& 'git ' commit -m x` and `& "C:\…\git.exe." commit -m x` run git (verified 2026-10-03
+   with PowerShell 5.1 and 7); in Bash, where they do not, the same reading is an accepted
+   false deny (`'git ' commit -m x`). Every such token
    in the segment is classified by steps 4 and 5, and the segment is denied when any of them
    is: a git command can run inside another command's argument (PowerShell
    `git status (git commit -m x)`, `` git commit --no-edit`0 (git commit -m x) ``). A token whose
-   basename (any directory, an optional `.exe`, compared case-insensitively) is
+   basename (any directory, an optional `.exe`, compared case-insensitively, trailing spaces
+   and dots dropped) is
    `git-commit` — git's own dashed form, runnable straight off `PATH` — classifies the
    segment as a `commit` straight away, skipping steps 4 and 5's global-option and
    subcommand scan: the tokens after it are `commit`'s own args, expanded and checked

@@ -63,7 +63,19 @@ const table = [
   ['bash', r`"C:\Program Files\Git\cmd\git.exe" commit --no-edit`, null],
   ['bash', r`'C:\Git\cmd\GIT' commit -m x`, 'bare'],
   ['bash', r`C:\\Git\\cmd\\git.exe commit -m x`, 'bare'],
-  // The dashed `git-commit`: `commit` straight away, its arguments through the allowlist.
+  // Trailing spaces and dots are dropped first: Windows trims them from a program's name
+  // (PowerShell 5.1 and 7 run git for `'git '` and for a path ending `git.exe.`); in Bash
+  // the same rows are accepted false denies.
+  ['powershell', `& 'git ' commit -m x`, 'bare'],
+  ['powershell', `& 'git.exe  ' commit -m x`, 'bare'],
+  ['powershell', `& 'git ' commit --no-edit`, null],
+  ['powershell', r`& "C:\Git\cmd\git.exe." commit -m x`, 'bare'],
+  ['powershell', r`& "C:\Git\cmd\GIT.EXE. ." commit -m x`, 'bare'],
+  ['powershell', `& 'git-commit ' -m x`, 'bare'],
+  ['powershell', r`& 'C:\Git\git-core\git-commit.exe .' -m x`, 'bare'],
+  ['bash', `'git ' commit -m x`, 'bare'],
+  ['bash', `'git. ' commit --no-edit`, null],
+  // The dashed `git-commit`:`commit` straight away, its arguments through the allowlist.
   ['bash', 'git-commit -m x', 'bare'],
   ['powershell', 'git-commit -m x', 'bare'],
   ['bash', '/usr/lib/git-core/git-COMMIT.exe -m x', 'bare'],
