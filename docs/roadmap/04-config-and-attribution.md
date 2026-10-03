@@ -194,16 +194,18 @@ and `REPO_CONFIG_PATH`. An invalid `scanIgnore` at HEAD is `[]` plus a warning, 
 
 **Blocked by:** CFG-04, RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5, M5, C:plan (`attribution`), story 118.
 
-- [ ] Seam 1: no Claude settings → `attribution: { trailer: "Co-Authored-By: Claude
+- [x] Seam 1: no Claude settings → `attribution: { trailer: "Co-Authored-By: Claude
       <noreply@anthropic.com>", source: "default" }`.
-- [ ] The trailer holds no model name and comes from no agent input (no flag or file the
+- [x] The trailer holds no model name and comes from no agent input (no flag or file the
       worker writes can change it).
-- [ ] The resolved trailer and source are in the state file, read by later calls instead
-      of re-reading settings.
+- [x] The resolved trailer and source are in the state file, read by later calls instead
+      of re-reading settings. Write half only: `state.json`/`plan.json` store it (step 7,
+      workflows.mjs). No call reads it back yet (`commit` is still the EXE-02 stub); the
+      read side is MSG-07's (docs/roadmap/03-message-grammar.md).
 
 
 ## CFG-09: `attribution.commit` and `includeCoAuthoredBy`

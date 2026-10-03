@@ -171,6 +171,9 @@ the lint-approved message plus these trailers.
       trailer (it fails lint per MSG-05); the only trailer is the resolved one (story 119).
 - [ ] Seam 1, once `check` commits: the committed message has LF line ends and exactly one
       trailing LF.
+- [ ] Seam 1: a user's `attribution.commit` changes between `plan` and `check` (edited mid-run)
+      → the committed trailer is the one `plan` stored in `state.json`, not a re-resolved one
+      (C:run-folder "never re-read ... the Claude settings"; CFG-08 AC3 read side).
 - [ ] Seam 1: the INT-02 First-slice run (`plan` → `check`) now commits the planned header
       plus the default trailer.
 
