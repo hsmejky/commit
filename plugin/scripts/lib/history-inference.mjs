@@ -5,10 +5,12 @@
 // Commits share split: `not-conventional` under 50%, else `proposal`. INF-03 fills in the
 // proposal's `scope` and `body` fields. INF-04 adds `subjectCase` and `maxSubjectLength`.
 // INF-05 adds `types` (always the 11 standard, plus non-standard ones at 5% or more) and the
-// sibling `droppedTypes` (non-standard ones under 5%, with counts). `wouldFail` stays `null`
-// until INF-06 computes it.
+// sibling `droppedTypes` (non-standard ones under 5%, with counts). INF-06 adds `wouldFail`:
+// the Conventional Commits messages read, relinted with M6 `lint` under the proposed config
+// values, counting how many fail; `wouldFail` stays `null` for `too-few-commits` and
+// `not-conventional` (no proposal to lint against).
 
-import { headerLineOf, parse, passesLowerCase } from './message-grammar.mjs';
+import { headerLineOf, lint, parse, passesLowerCase } from './message-grammar.mjs';
 import { DEFAULT_VALUES } from './config.mjs';
 
 /** Under this many non-merge commits read, `infer` proposes nothing (C:infer). */
@@ -193,21 +195,44 @@ function proposeTypes(conventional) {
 }
 
 /**
+ * Counts how many of `conventionalMessages` fail M6 `lint` under the proposed config values
+ * (C:infer `wouldFail`): the threshold loss of adopting the proposal, measured only over the
+ * Conventional Commits ones already read (never the non-conventional ones, which would all
+ * fail and are counted separately in `nonConventional`).
+ *
+ * @param {readonly string[]} conventionalMessages the raw Conventional Commits messages.
+ * @param {{ types: { value: string[] }, scope: { value: string }, body: { value: string },
+ *   subjectCase: { value: string }, maxSubjectLength: { value: number } }} proposal
+ * @returns {number}
+ */
+function countWouldFail(conventionalMessages, proposal) {
+  const values = {
+    types: proposal.types.value,
+    scope: proposal.scope.value,
+    body: proposal.body.value,
+    subjectCase: proposal.subjectCase.value,
+    maxSubjectLength: proposal.maxSubjectLength.value,
+  };
+  return conventionalMessages.filter((message) => lint(message, values).length > 0).length;
+}
+
+/**
  * M19 `infer(messages)`: the history facts and outcome of C:infer for the non-merge
  * messages read (at most 200, newest first).
  *
  * @param {readonly string[]} messages
  * @returns {{ outcome: 'too-few-commits' | 'not-conventional' | 'proposal', commitCount:
- *   number, ccShare: number | null, nonConventional: number, wouldFail: null,
+ *   number, ccShare: number | null, nonConventional: number, wouldFail: number | null,
  *   proposal: null | object, droppedTypes: null | { type: string, count: number }[] }}
  *   `ccShare` is over every message read, `null` only when `commitCount` is 0.
  *   `too-few-commits`: under `MIN_COMMITS` non-merge commits read; `proposal: null`,
- *   `droppedTypes: null`. `not-conventional`: `MIN_COMMITS` or more read, `ccShare` under
- *   `PROPOSAL_THRESHOLD`; `proposal: null`, `droppedTypes: null`. `proposal`: `ccShare` at or
- *   above `PROPOSAL_THRESHOLD`; `proposal` has `scope`, `body` (INF-03), `subjectCase`,
- *   `maxSubjectLength` (INF-04) and `types` (INF-05); `droppedTypes` (INF-05) sits alongside
- *   `proposal`, not inside it (C:infer). `wouldFail` is `null` for every outcome until INF-06
- *   computes it.
+ *   `droppedTypes: null`, `wouldFail: null`. `not-conventional`: `MIN_COMMITS` or more read,
+ *   `ccShare` under `PROPOSAL_THRESHOLD`; `proposal: null`, `droppedTypes: null`,
+ *   `wouldFail: null`. `proposal`: `ccShare` at or above `PROPOSAL_THRESHOLD`; `proposal` has
+ *   `scope`, `body` (INF-03), `subjectCase`, `maxSubjectLength` (INF-04) and `types` (INF-05);
+ *   `droppedTypes` (INF-05) sits alongside `proposal`, not inside it (C:infer); `wouldFail`
+ *   (INF-06) is how many of the Conventional Commits messages read fail M6 `lint` under the
+ *   proposed config values.
  */
 export function infer(messages) {
   const entries = messages.map((message) => ({ message, parsed: parse(message) }));
@@ -220,14 +245,17 @@ export function infer(messages) {
   let outcome;
   let proposal;
   let droppedTypes;
+  let wouldFail;
   if (commitCount < MIN_COMMITS) {
     outcome = 'too-few-commits';
     proposal = null;
     droppedTypes = null;
+    wouldFail = null;
   } else if (ccShare < PROPOSAL_THRESHOLD) {
     outcome = 'not-conventional';
     proposal = null;
     droppedTypes = null;
+    wouldFail = null;
   } else {
     outcome = 'proposal';
     const conventionalParses = conventionalEntries.map((e) => e.parsed);
@@ -241,7 +269,8 @@ export function infer(messages) {
       maxSubjectLength: proposeMaxSubjectLength(conventionalMessages),
       types,
     };
+    wouldFail = countWouldFail(conventionalMessages, proposal);
   }
 
-  return { outcome, commitCount, ccShare, nonConventional, wouldFail: null, proposal, droppedTypes };
+  return { outcome, commitCount, ccShare, nonConventional, wouldFail, proposal, droppedTypes };
 }

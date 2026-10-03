@@ -117,7 +117,9 @@ test('M19 infer: 49% is not-conventional, 50% is a proposal (pure)', () => {
   assert.equal(atThreshold.outcome, 'proposal');
   assert.equal(atThreshold.ccShare, 0.5);
   assert.notEqual(atThreshold.proposal, null);
-  assert.equal(atThreshold.wouldFail, null);
+  // INF-06: wouldFail is no longer null once there is a proposal; all 50 Conventional
+  // Commits messages here are lint-clean under the proposed (default-shaped) config.
+  assert.equal(atThreshold.wouldFail, 0);
 });
 
 test('M19 infer: a 20-commit history at 50% is a proposal, not too-few-commits', () => {
