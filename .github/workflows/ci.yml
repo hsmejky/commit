@@ -96,7 +96,10 @@ jobs:
       - name: Install git and git-lfs, and assert minimum git version (2.34.x)
         run: |
           apt-get update -qq
-          apt-get install -y --no-install-recommends git git-lfs ca-certificates
+          # openssh-client (ssh-keygen): without it, EXE-23's SSH-signing cases both skip
+          # on this leg, the git version that introduced `gpg.format=ssh` and so the most
+          # likely to diverge for that behaviour.
+          apt-get install -y --no-install-recommends git git-lfs ca-certificates openssh-client
           ver=$(git --version | sed -E 's/^git version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           echo "git version: $ver"
           case "$ver" in

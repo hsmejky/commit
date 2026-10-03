@@ -23,15 +23,21 @@ function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
 }
 
+// `-Y sign` first exists in OpenSSH 8.1; an older ssh-keygen rejects `-Y` itself as an
+// unknown option before ever reaching the (missing) key file, so probing the error text,
+// not just ENOENT, also skips on a binary too old for what this slice needs.
 function sshKeygenMissing() {
   // No host env beyond PATH: nothing here may reach the developer's own agent or home.
-  const probe = spawnSync('ssh-keygen', ['-?'], { stdio: 'ignore', env: { PATH: process.env.PATH } });
-  return probe.error && probe.error.code === 'ENOENT' ? 'ssh-keygen not on PATH' : false;
-}
-
-function caseHostPath(c) {
-  const key = Object.keys(c.env).find((name) => name.toUpperCase() === 'PATH');
-  return key === undefined ? '' : c.env[key];
+  const probe = spawnSync(
+    'ssh-keygen', ['-Y', 'sign', '-f', 'commit-exe23-missing-key-probe', '-n', 'test'],
+    { stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH }, encoding: 'utf8' },
+  );
+  if (probe.error && probe.error.code === 'ENOENT') return 'ssh-keygen not on PATH';
+  const output = `${probe.stdout || ''}${probe.stderr || ''}`;
+  if (/unknown option|illegal option|invalid option/i.test(output)) {
+    return 'ssh-keygen lacks -Y sign support';
+  }
+  return false;
 }
 
 // Forward slashes: the path goes into git config and on to whichever `ssh-keygen` git runs
@@ -41,14 +47,21 @@ function slashed(file) {
 }
 
 // A fixture key without passphrase in the case root, and an `allowedSignersFile` naming
-// the case's committer for it.
+// the case's committer for it. The case's own allowlisted env (not a hand-picked PATH/HOME
+// pair): on Windows, a native ssh-keygen ahead of Git's MSYS one on PATH also needs
+// SYSTEMROOT for its crypto/socket init, which `c.env` already carries.
 function fixtureKey(c) {
   const key = path.join(c.root, 'signing-key');
   const generated = spawnSync(
     'ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'fixture', '-f', key],
-    { env: { PATH: caseHostPath(c), HOME: c.osHome }, encoding: 'utf8' },
+    { env: c.env, encoding: 'utf8' },
   );
   assert.equal(generated.status, 0, `ssh-keygen: ${generated.stderr}`);
+  // On Windows, OpenSSH's ssh-keygen/ssh-add default to the named pipe
+  // `\\.\pipe\openssh-ssh-agent` even with no SSH_AUTH_SOCK set (never in the harness
+  // allowlist), so a developer's own running agent could in principle be reachable here.
+  // Read-only and outcome-neutral: this fixture key's file header, not any agent lookup,
+  // decides signing, so it is not a flake risk. Pre-existing gap, not introduced here.
   const allowedSigners = path.join(c.root, 'allowed-signers');
   const publicLine = fs.readFileSync(`${key}.pub`, 'utf8').trim();
   fs.writeFileSync(allowedSigners, `${c.env.GIT_COMMITTER_EMAIL} ${publicLine}\n`);
