@@ -47,10 +47,11 @@ function writeLock(runDir, content) {
   fs.writeFileSync(path.join(runDir, 'lock'), text);
 }
 
-function writeRunFolder(runDir, planId, { version = 1 } = {}) {
+function writeRunFolder(runDir, planId, { version = 1, mode } = {}) {
   const folder = path.join(runDir, planId);
   fs.mkdirSync(folder, { recursive: true });
-  fs.writeFileSync(path.join(folder, 'state.json'), JSON.stringify({ version }));
+  const state = mode === undefined ? { version } : { version, mode, preStaged: [] };
+  fs.writeFileSync(path.join(folder, 'state.json'), JSON.stringify(state));
   return folder;
 }
 
@@ -164,11 +165,33 @@ test('commit --plan X --all with a stored group already committed → no-groups,
   assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
 });
 
+// review-EXE-05 Low-3: phase (a) is mode-independent (C:commit-release, M16), so `no-groups`
+// must fire even for a mode `commitAll` does not build yet (EXE-19, EXE-20) — a `plan
+// --reword` run has no stored groups either, and `commit --all` on it must refuse
+// `no-groups` (`usage`), not throw the not-built-yet error (`internal`).
+test('commit --plan X --all on a plan --reword run with no stored groups → no-groups, not internal', async (t) => {
+  const c = createRepo(t);
+  const planned = await runCommit(c, ['plan', '--reword']);
+  assert.equal(planned.exitCode, 0, `stdout ${planned.stdout}\nstderr ${planned.stderr}`);
+  const { planId } = planned.json;
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 1, detail);
+  assert.equal(result.json.ok, false, detail);
+  assert.equal(result.json.error.kind, 'usage', detail);
+  assert.match(result.json.error.message, /no groups/, detail);
+});
+
 // EXE-05 AC: the lock holds another planId, and no groups are stored either → the lock
 // check (M12 `open`) refuses taken-over first; `no-groups` is never reached. The calling
 // planId also gets its own run folder (with no groups), not just the holder's: without it,
 // a reversed check order would hit a missing state.json (likely `internal`) rather than
-// `no-groups`, so the test would not actually catch that ordering bug.
+// `no-groups`, so the test would not actually catch that ordering bug. Its state.json
+// carries a valid `mode: 'split'` (and `preStaged: []`) so that a reversed order actually
+// surfaces as `no-groups`, as this comment claims, rather than the not-built-yet throw for
+// a missing/invalid mode.
 test('commit --plan X --all with the lock held by a different planId and no groups stored anywhere → taken-over, not no-groups', async (t) => {
   const c = createRepo(t);
   const runDir = runDirOf(c);
@@ -176,7 +199,7 @@ test('commit --plan X --all with the lock held by a different planId and no grou
   const planId = crypto.randomUUID();
   writeLock(runDir, { planId: holder, created: CREATED });
   writeRunFolder(runDir, holder);
-  writeRunFolder(runDir, planId);
+  writeRunFolder(runDir, planId, { mode: 'split' });
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 

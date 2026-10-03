@@ -8,12 +8,13 @@
 // EXE-04 loops over every uncommitted group in order, `touch()` again before each, and
 // returns a `taken-over`/`busy` refusal from it with the earlier groups kept.
 // EXE-05's `no-groups` refusal (no stored groups, or every one committed) is checked at the
-// top of `commitAll`, right after the mode check: the lock (M12 `open`) already ran once in
+// top of `commitAll`, before the mode dispatch: the lock (M12 `open`) already ran once in
 // the caller before `commitAll` is ever invoked, and EXE-22's `unconfirmed` belongs between
-// the two, per C:commit-release phase (a) order.
+// the two, per C:commit-release phase (a) order (phase (a) is mode-independent).
 // The other phase (a) refusals (EXE-06 to EXE-08), the failure paths (EXE-09 to
 // EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
-// (MSG-07) and the other modes (EXE-19, EXE-20) are not built yet: reaching one throws.
+// (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
+// yet: reaching one throws.
 
 import { head } from './repo-probe.mjs';
 import {
@@ -98,17 +99,21 @@ export async function commitAll(run, { now, osUser, env }) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
   const state = readState(run);
-  if (state.mode !== 'split') throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19, EXE-20');
   // (a) Phase (a) refusals, in C:commit-release order. The lock (M12 `open`, with its
   // `call.lock`) already ran once in the caller before this function is ever invoked, and
   // `touch()` refreshes it again before each group below. EXE-22's `unconfirmed` belongs
-  // here, ahead of `no-groups` — leave it this way round when it lands.
+  // here, ahead of `no-groups` — leave it this way round when it lands. Phase (a) is
+  // mode-independent (C:commit-release, M16), so this check runs before the mode dispatch
+  // below: `plan --staged`/`--reword` then `commit --all` without `check` has no stored
+  // groups either, and must refuse `no-groups`, not fall into the not-built-yet throw.
   if (!Array.isArray(state.groups) || state.groups.every((group) => group.committed)) {
     return {
       commits: [], failed: null, remaining: [], error: null, gitOutput: null, unstaged: null,
       refusal: { code: 'no-groups', message: NO_GROUPS_TEXT },
     };
   }
+  // (b)/(c) mode dispatch: only `split` is built.
+  if (state.mode !== 'split') throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19, EXE-20');
   // Medium (review-EXE-02): checked before any group's (c) reset, not after the loop, so a
   // run with pre-staged paths is refused with the real index untouched and nothing committed
   // — EXE-11 (the `unstaged` report those paths would need) is not built yet.
