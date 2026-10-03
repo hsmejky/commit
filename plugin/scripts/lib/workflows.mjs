@@ -51,6 +51,7 @@ import { reply } from './reply.mjs';
 import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
+import { resolveAttribution } from './attribution.mjs';
 
 // GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
 // C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
@@ -125,13 +126,24 @@ async function readHeadState(ctx) {
  * `state`, so a bad user layer must refuse even outside a usable repo); the repo layer is
  * read only when the probe found a worktree to read it from. `release` never runs this: it
  * shares only the `env` refusal with `plan` (C:cli-and-exit-codes), so it never needs a
- * config load.
+ * config load. CFG-08 adds M5 `resolveAttribution` here too, the same step C:plan step 1
+ * names ("resolve the attribution"): the tracer reads no settings and never refuses, so it
+ * cannot change `preFolderRefusals`' outcome; it is stored on `ctx.attribution` for
+ * `storeAndLock` (step 7) to write into `state.json` and `plan.json`, read from there by
+ * later calls instead of re-resolved. Any warning it returns (none yet: CFG-09 is the first
+ * slice that can produce one) is queued the way every other step 1 warning is, via
+ * `ctx.notices` (C:plan "Notices stored for the reply").
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
     ? ctx.probe.repo.toplevel
     : null;
   ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
+  const { trailer, source, warnings } = resolveAttribution({
+    env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, toplevel,
+  });
+  ctx.attribution = { trailer, source };
+  for (const warning of warnings) ctx.notices.push(warning);
   return undefined;
 }
 
@@ -245,6 +257,9 @@ async function readHistory(ctx) {
  * lock (`acquire`, no takeover; RUN-06: a lost race → `held`, then the HEAD re-read; the
  * takeover path is RUN-21's), then writes `plan.json`. A lock is never taken without `state.json` in place. From
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
+ * CFG-08 adds `attribution` (`{ trailer, source }`, step 1's `ctx.attribution`) to both
+ * files, in the contract's order (C:run-folder): ahead of `recentSubjects`, so M16/M17 read
+ * the resolved trailer from here instead of re-resolving it.
  */
 async function storeAndLock(ctx) {
   const { planId, runDir } = ctx.provisional;
@@ -256,6 +271,7 @@ async function storeAndLock(ctx) {
     indexFingerprint: ctx.indexFingerprint,
     units: ctx.unitTable,
     idMap: ctx.idMap,
+    attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
     // commit, which CHG-15's snapshot diffs against the empty tree.
@@ -291,6 +307,7 @@ async function storeAndLock(ctx) {
     state: ctx.state,
     clean: ctx.inventory.clean,
     tracked: ctx.tracked,
+    attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
   }));
   return undefined;
