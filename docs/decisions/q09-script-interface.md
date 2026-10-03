@@ -17,7 +17,7 @@
   - `plan [--reword [--dictated] | --staged | --split] [--take-over <planId>] [--no-user]`:
     run by the
     worker. Computes file lists, buckets, untracked candidates, merged config and sources,
-    attribution, scan results, repo state, signing, environment and the last 10 subjects;
+    attribution, scan results, repo state, signing, environment and the last 10 non-merge subjects;
     no hunks and no diff content. Stdout is compact: `plan`'s own fields (`planId`,
     `runDir`, `mode`) within 1 kB, plus a `reply` (≤ 2 kB, and ≤ 4 kB of `text`, Q24)
     when the worker's part ends

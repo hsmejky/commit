@@ -8,7 +8,7 @@ always asks (Q16); the in-process run inside `plan` does not. The in-process run
 units `plan` just built and scanned instead of taking the diff again; only a separate call
 snapshots again and matches the stored `id → hash` map. A hunk index on stdout, plus only
 what the worker needs from `plan`: `runDir`, `mode`, `config.values` without `scanIgnore`,
-`recentSubjects` and counts. No file lists (`tracked`, `untracked`, `stagedExcluded`): the
+`recentSubjects` (non-merge) and counts. No file lists (`tracked`, `untracked`, `stagedExcluded`): the
 index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-folder.md):
 
 ```json

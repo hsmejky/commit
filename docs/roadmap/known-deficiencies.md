@@ -143,6 +143,13 @@ Plan text that depends on a design fix; fix the design and the slice together.
   notice in the stored notices") and GIT-10's signing note are unobservable on this path
   until then. Fix: GRD-15 stores `ctx.notices` into `state.json`'s `notices` field, as
   C:plan step 8 already specifies; GIT-02 and GIT-10 both point here.
+- **KD-R68.** GIT-09's `rewordFacts` reports `root: true` for a shallow clone's boundary
+  (graft) commit, because `rev-list --parents` prints no parents for it, even though that
+  commit is not actually a root commit. CHG-15 would then diff it against the empty tree
+  instead of its real (unfetched) parent. Where: `plugin/scripts/lib/repo-probe.mjs`
+  `rewordFacts` (review-GIT-09 finding 7). In practice almost always masked by `pushed`,
+  since such a HEAD is usually on a remote-tracking ref too. Fix: CHG-15 checks `git
+  rev-parse --is-shallow-repository`, or this is accepted and documented. Slice: CHG-15.
 
 ## Bookkeeping
 

@@ -95,7 +95,7 @@
 | collapsed directories, `stagedExcluded`, `dirtySubmodules` | M9, M10 | M13, M14 (`notIncluded` extras), M17 |
 | effective config values and `scanIgnore` at HEAD | M4 | M13 (`config.values` without `scanIgnore`), M14 lint, M16 backstop (recompiled through M7 on each call) |
 | attribution trailer text and source | M5 | M14 (attribution flag), M16 trailers, M17 trailer line |
-| `recentSubjects` (the last 10), `oldMessage` (reword) | M3 history query | M13 (`plan --hunks` output), M6 carry-over |
+| `recentSubjects` (the last 10, non-merge), `oldMessage` (reword) | M3 history query | M13 (`plan --hunks` output), M6 carry-over |
 | expected HEAD, notices, `interactive`, mode | M3, M18 | M15, M16, M17 |
 | index fingerprint (updated after each of the run's own commits) | M10 `indexFingerprint` | M16 `index-changed` check |
 | `lintFailures`, `resumed`, `awaitingConfirm`, validated groups, `indexReset`, `treeChangedDuringCommit` | later calls | M12 `acquire` (takeover: validated groups, `indexReset`, current group status), M15, M16, M17 |

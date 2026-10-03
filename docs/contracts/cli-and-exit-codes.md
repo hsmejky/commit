@@ -108,9 +108,9 @@ the lock is held, and each of them, `killed-leftover` included, also releases it
 
 The exact texts tests assert, recorded here by the PRE-15 decision pass (2026-09-29) from
 the decisions that set them. A refusal's text is its `message`; a notice's text is one entry
-of the reply's `notices`. States with no recorded text (`bisect` in progress, `encoding`,
-`unborn` HEAD in reword, `not-a-repo`, `bare`) get a message that names the state; tests
-assert the domain code and that the state is named, not an exact text.
+of the reply's `notices`. States and codes with no recorded text (`bisect` in progress,
+`encoding`, `unborn` HEAD in reword, `pushed`, `not-a-repo`, `bare`) get a message that names
+the state; tests assert the domain code and that the state is named, not an exact text.
 
 | Domain code (kind) | Emitted by | Text | Source |
 | --- | --- | --- | --- |
