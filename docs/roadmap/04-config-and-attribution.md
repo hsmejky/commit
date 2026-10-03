@@ -216,17 +216,17 @@ warning; else `includeCoAuthoredBy: false` → `null`.
 
 **Blocked by:** CFG-08, MSG-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5, M5, stories 115, 117.
 
-- [ ] Seam 1: `attribution.commit: ""` → `attribution: null`.
-- [ ] Seam 1: `attribution.commit` = a 🤖 line, a blank line and `Co-Authored-By: X <x@y>`
+- [x] Seam 1: `attribution.commit: ""` → `attribution: null`.
+- [x] Seam 1: `attribution.commit` = a 🤖 line, a blank line and `Co-Authored-By: X <x@y>`
       → trailer is the last line only, the dropped lines reported with a warning in
       `plan.warnings` (Q5, M4: "dropped with a warning"; no source fixes the warning count).
-- [ ] Seam 1: `includeCoAuthoredBy: false` → `attribution: null` in the output; the source `user` is stored in the run state for M16 and M17.
-- [ ] A static test asserts M5's module imports M6's `parse` (footer grammar) and not
-      `lint`, which M5 never uses.
+- [x] Seam 1: `includeCoAuthoredBy: false` → `attribution: null` in the output; the source `user` is stored in the run state for M16 and M17.
+- [x] A static test asserts M5's module imports M6's `isFooterLine` (footer-line grammar) and
+      not `lint`, which M5 never uses.
 
 
 ## CFG-10: Settings layer precedence and the project directory
