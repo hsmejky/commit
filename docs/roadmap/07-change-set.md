@@ -142,16 +142,16 @@ against it. The real index is never written.
 
 **Blocked by:** CHG-01, CHG-04, PRE-09.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11 steps 1-3, C:plan, C:untracked-files, glossary "temporary index", stories 69, 70, 77, 182, M10.
 
-- [ ] Seam 1: an untracked file → an `A` unit whose body is its whole content as `+` lines; `plan.json` `untracked.candidates` lists it with `binary`; `hidden` holds count and 5 names.
-- [ ] Seam 1: a plain `mv` and a `git mv` each give one `R` unit with `oldPath`.
-- [ ] Seam 1: `git add newfile` under `--split`, also on an unborn HEAD → an `A` unit; a force-added gitignored (not hidden) file → a unit, stored with `ignored: true`.
-- [ ] Seam 1: on an unborn HEAD, `git add newfile && git mv newfile renamed` → one `A` unit for `renamed` (no old path survives the reset baseline to pair into an `R`, Q11).
-- [ ] Seam 1: the real index (`git ls-files --stage`) is byte-identical before and after `plan`.
-- [ ] Seam 1: a failing `git add -N` (a stored path made unreadable by a fixture shim) → exit 4 `git`, code `git-failed`, folder deleted.
+- [x] Seam 1: an untracked file → an `A` unit whose body is its whole content as `+` lines; `plan.json` `untracked.candidates` lists it with `binary`; `hidden` holds count and 5 names.
+- [x] Seam 1: a plain `mv` and a `git mv` each give one `R` unit with `oldPath`.
+- [x] Seam 1: `git add newfile` under `--split`, also on an unborn HEAD → an `A` unit; a force-added gitignored (not hidden) file → a unit, stored with `ignored: true`.
+- [x] Seam 1: on an unborn HEAD, `git add newfile && git mv newfile renamed` → one `A` unit for `renamed` (no old path survives the reset baseline to pair into an `R`, Q11).
+- [x] Seam 1: the real index (`git ls-files --stage`) is byte-identical before and after `plan`.
+- [x] Seam 1: a failing `git add -N` (a stored path made unreadable by a fixture shim) → exit 4 `git`, code `git-failed`, folder deleted.
 
 
 ## CHG-06: Hunk-level units from a streamed patch pass
