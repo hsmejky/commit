@@ -1,7 +1,6 @@
 # Modules S1-S2 and G1-G3
 
 **S1 Heartbeat.** The guard writes `{ ts, cwd, command }` to `commit-guard/heartbeat.json`
-(location pending the heartbeat-under-sandbox spike, Open items)
 under the Claude home (glossary) when a classified segment is a script call to `plan`,
 before deciding. The write goes to a temporary file named with the pid and a random suffix
 and is renamed into place, so a reader never sees a partial file and parallel sessions

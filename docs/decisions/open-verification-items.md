@@ -17,7 +17,10 @@
   - Linux (bubblewrap) result: confirmed — a sandboxed Bash command reads the heartbeat
     under the default Claude home and under `CLAUDE_CONFIG_DIR`, but the Claude home is
     mounted read-only inside the sandbox, so it can neither write nor forge the file.
-    macOS pending.
+  - macOS (Seatbelt) result: confirmed on macos-latest (macOS 26.6.2, Claude Code
+    2.1.288) — a sandboxed Bash command reads the heartbeat under the default Claude home
+    and under `CLAUDE_CONFIG_DIR`; writes there fail with `Operation not permitted`, as do
+    writes under `$HOME`, while writes inside the project succeed. No relocation needed.
 - The shell tokenizer (Q3): a spike runs the hand-written tokenizer design against
   heredocs, `$(...)`, backticks, `bash -c '…'`, reordered flags, PowerShell here-strings
   and unterminated quotes, plus escaped newlines (Bash `\` plus newline, PowerShell

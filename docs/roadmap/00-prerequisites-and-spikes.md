@@ -89,21 +89,27 @@ the unsandboxed hook writes under the Claude home, or a new location both sides 
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q23, Q5, C:guard (Heartbeat), S1, Open verification items (heartbeat under the sandbox).
 
 Gates: GRD-15 (heartbeat write) and GRD-17 (`env.guard` read side).
 
-- [ ] On macOS (Seatbelt) and Linux (bubblewrap) with the sandbox on, a hook writes `commit-guard/heartbeat.json` under the Claude home and a sandboxed Bash command reads it; also with `CLAUDE_CONFIG_DIR` set.
-- [ ] If either side cannot reach it, the spike picks a location both reach and amends Q23, C:guard and the S1 block; otherwise the pending-location remark in S1 is removed.
-- [ ] If the heartbeat moves, the relocation constraints (both sides can reach it, per-user,
-      no repo path) are recorded in Q23
+- [x] On macOS (Seatbelt) and Linux (bubblewrap) with the sandbox on, a hook writes `commit-guard/heartbeat.json` under the Claude home and a sandboxed Bash command reads it; also with `CLAUDE_CONFIG_DIR` set.
+- [x] If either side cannot reach it, the spike picks a location both reach and amends Q23, C:guard and the S1 block; otherwise the pending-location remark in S1 is removed.
+- [x] If the heartbeat moves, the relocation constraints (both sides can reach it, per-user,
+      no repo path) are recorded in Q23 (n/a: no move)
 
 **Linux result:** confirmed on WSL2 Ubuntu 24.04 (bubblewrap 0.9.0) — a sandboxed Bash
 command reads the heartbeat under the default Claude home and under `CLAUDE_CONFIG_DIR`,
 but the Claude home is mounted read-only inside the sandbox, so it can neither write nor
-forge the file; no relocation needed on Linux. macOS (Seatbelt) pending.
+forge the file; no relocation needed on Linux.
+
+**macOS result:** confirmed on GitHub Actions macos-latest (macOS 26.6.2, Seatbelt, Claude
+Code 2.1.288) — same probe: the sandboxed Bash command reads the heartbeat under the
+default Claude home and under `CLAUDE_CONFIG_DIR`; writing next to it and touching `$HOME`
+fail with `Operation not permitted`, touching a file in the project succeeds. No relocation
+needed; the pending-location remark in S1 is removed.
 
 
 ## PRE-06: Spike: exec-form hooks in a plugin
