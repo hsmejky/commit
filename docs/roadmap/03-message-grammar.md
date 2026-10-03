@@ -130,19 +130,19 @@ one trailing LF. Tested where the spec puts it: lint through `check` at Seam 1.
 
 **Blocked by:** MSG-04, PLN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (normalisation steps 1-4), M6, Q9, story 124,
 spec testing-modules (M6 lint through `check`).
 
-- [ ] Seam 1: a worker plan whose message has a UTF-8 BOM, CRLF line ends and trailing
+- [x] Seam 1: a worker plan whose message has a UTF-8 BOM, CRLF line ends and trailing
       blank lines passes `check` (a header with a trailing CR would fail the header regex
       without normalisation).
-- [ ] Seam 1: a message encoded as UTF-16 LE with BOM and one as UTF-16 BE with BOM pass
+- [x] Seam 1: a message encoded as UTF-16 LE with BOM and one as UTF-16 BE with BOM pass
       `check` like their UTF-8 form.
-- [ ] Seam 1: a message with an invalid UTF-8 byte fails `check` with exit 2 and the error
+- [x] Seam 1: a message with an invalid UTF-8 byte fails `check` with exit 2 and the error
       `message not UTF-8`, and nothing is committed.
-- [ ] Seam 1: a message whose lines end in a lone CR (no LF) passes `check` normalised to
+- [x] Seam 1: a message whose lines end in a lone CR (no LF) passes `check` normalised to
       LF, like its CRLF form.
 
 **Forward note (review-PLN-06 finding 7):** C:scan-patterns gives span offsets into the
