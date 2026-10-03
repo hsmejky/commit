@@ -47,7 +47,11 @@ and of the real index.
   form writes each non-UTF-8 byte as `\xNN`. Whole-file unit categories: new,
   deleted, binary, summary-only via M9, rename, mode, symlink, submodule, filtered: one
   `check-attr --stdin -z` call queries `filter` and `linguist-generated` together, and the
-  latter goes in `stats` to M9 `summaryOnly`; hashes with `crypto.createHash`. **Hidden by an attribute**: for a path git
+  latter goes in `stats` to M9 `summaryOnly`; hashes with `crypto.createHash`. **Unit hash** (CHG-06; CHG-08/09 extend
+  it for mode, symlink, submodule and binary units): a hunk unit hashes its path, NUL, its
+  `-`/`+` (and qualifying `\`) lines, NUL, its occurrence index in decimal ASCII; its identity
+  key is the same hash without the last two parts; a whole-file unit hashes `[old path, NUL,]
+  path, NUL, lines`, and is its own identity key. **Hidden by an attribute**: for a path git
   reports as binary (`-\t-` in `--numstat`), the same `check-attr` call also queries `diff`
   and `binary`; only a path whose attributes hide its diff (`-diff`, `binary`, or a `diff`
   driver) gets the content check: its size is checked against the 1 MB scan limit first

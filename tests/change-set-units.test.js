@@ -53,17 +53,42 @@ const EMPTY_INVENTORY = Object.freeze({
   stagedNew: [], stagedExcluded: [],
 });
 
-// `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file.
+// `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file, or
+// `added\tdeleted\t\0old\0new\0` for a rename (git never quotes a `-z` path), keyed by the
+// new path.
 function numstat(c) {
   const result = spawnSync('git', ['diff', '--numstat', '-z', 'HEAD'], { cwd: c.repoDir, env: c.env });
   assert.equal(result.status, 0, String(result.stderr));
+  const tokens = result.stdout.toString('utf8').split('\0');
   const counts = {};
-  for (const record of result.stdout.toString('utf8').split('\0')) {
+  let i = 0;
+  while (i < tokens.length) {
+    const record = tokens[i];
+    i += 1;
     if (record === '') continue;
-    const [added, deleted, file] = record.split('\t');
-    counts[file] = { added: Number(added), deleted: Number(deleted) };
+    const firstTab = record.indexOf('\t');
+    const secondTab = record.indexOf('\t', firstTab + 1);
+    const added = Number(record.slice(0, firstTab));
+    const deleted = Number(record.slice(firstTab + 1, secondTab));
+    const file = record.slice(secondTab + 1);
+    if (file === '') {
+      const newPath = tokens[i + 1];
+      counts[newPath] = { added, deleted };
+      i += 2;
+    } else {
+      counts[file] = { added, deleted };
+    }
   }
   return counts;
+}
+
+// `unitsFromDiff` is a test-only convenience over `createDiffReader` (CHG-06): production
+// code (`snapshot`) pushes chunks as M2's `onStdout` delivers them and never needs the
+// whole-buffer form.
+function unitsFromDiff(output) {
+  const reader = changeSet.createDiffReader();
+  reader.push(output);
+  return reader.end();
 }
 
 test('inventory: a clean tree is clean, a modified tracked file is listed', async (t) => {
@@ -232,10 +257,12 @@ test('snapshot: a modified file is one unit per hunk; a renamed file is one unit
   assert.deepEqual(f.map((u) => [u.range, hunkCount(u)]), [['-1,4 +1,4', 1], ['-9,4 +9,4', 1]]);
   const renamed = units.find((u) => u.path === 'new.txt');
   assert.deepEqual([renamed.status, renamed.range, hunkCount(renamed)], ['R', '-1,12 +1,12', 2]);
-  // The `\ No newline at end of file` line counts as neither added nor deleted.
+  // The `\ No newline at end of file` line counts as neither added nor deleted. The oracle
+  // is keyed by the new path, same as a rename unit's `path`, so the rename counts toward
+  // it too.
   const oracle = numstat(c);
   const sums = {};
-  for (const unit of units.filter((u) => u.status === 'M')) {
+  for (const unit of units) {
     sums[unit.path] = sums[unit.path] ?? { added: 0, deleted: 0 };
     sums[unit.path].added += unit.added;
     sums[unit.path].deleted += unit.deleted;
@@ -334,7 +361,7 @@ test('snapshot: a count mismatch between raw records and patch sections is inter
     ),
   ]);
 
-  assert.throws(() => changeSet.unitsFromDiff(raw), /the diff has 1 patch sections for 2 raw records/);
+  assert.throws(() => unitsFromDiff(raw), /the diff has 1 patch sections for 2 raw records/);
 });
 
 test('snapshot: the hash uses raw bytes, so Latin-1 bytes that decode alike still differ', async (t) => {
@@ -582,7 +609,7 @@ function craftedDiff(headerPath) {
 
 test('snapshot: the streamed reader gives the same units however the output is chunked', () => {
   const output = craftedDiff('a b.txt');
-  const whole = changeSet.unitsFromDiff(output);
+  const whole = unitsFromDiff(output);
   const reader = changeSet.createDiffReader();
   for (let i = 0; i < output.length; i += 1) reader.push(output.subarray(i, i + 1));
   const byByte = reader.end();
@@ -595,5 +622,43 @@ test('snapshot: the streamed reader gives the same units however the output is c
 });
 
 test('snapshot: a section header that does not match its raw record path is internal', () => {
-  assert.throws(() => changeSet.unitsFromDiff(craftedDiff('other.txt')), /patch section 1 does not match raw record 1/);
+  assert.throws(() => unitsFromDiff(craftedDiff('other.txt')), /patch section 1 does not match raw record 1/);
+});
+
+// CHG-06: crafted raw+patch bytes whose paths hold TAB, LF, `"`, `\`, DEL and `\x01`, plus a
+// rename whose new path needs quoting and whose old path does not, fed one byte at a time so
+// chunk boundaries inside the rename's 3-field raw record are exercised too. Runs on every
+// OS (unlike the real-git check against `quoteTwo`'s escape table, which only covers a
+// quoted path on non-Windows). The expected header text below is not derived from
+// `quoteTwo`: it is the literal bytes git's own `quote_two` prints for these paths with
+// `core.quotePath=false` (hand-verified against real git for the review of this slice), so a
+// wrong escape in `quoteTwo` would make the reader reject its own header as a mismatch.
+test('snapshot: the reader pairs headers whose paths need C-style quoting, including a rename with only one side quoted', () => {
+  const sha = '0'.repeat(40);
+  const weirdPath = 'a\x01b\x7fc\\d"e\tf\ng.txt';
+  const weirdHeader = '"a/a\\001b\\177c\\\\d\\"e\\tf\\ng.txt" "b/a\\001b\\177c\\\\d\\"e\\tf\\ng.txt"';
+  const renameHeader = 'a/plain.txt "b/ta\\tb\\"q.txt"';
+  const raw = Buffer.concat([
+    Buffer.from(`:100644 100644 ${sha} ${sha} M\0`, 'latin1'),
+    Buffer.from(weirdPath, 'latin1'),
+    Buffer.from([0]),
+    Buffer.from(`:100644 100644 ${sha} ${sha} R100\0plain.txt\0`, 'latin1'),
+    Buffer.from('ta\tb"q.txt', 'latin1'),
+    Buffer.from([0]),
+    Buffer.from([0]),
+  ]);
+  const patch = Buffer.from(
+    `diff --git ${weirdHeader}\n@@ -1,1 +1,1 @@\n-old\n+new\ndiff --git ${renameHeader}\n`,
+    'latin1',
+  );
+  const output = Buffer.concat([raw, patch]);
+  const reader = changeSet.createDiffReader();
+  for (let i = 0; i < output.length; i += 1) reader.push(output.subarray(i, i + 1));
+
+  const units = reader.end();
+
+  assert.deepEqual(units.map((u) => [u.path, u.oldPath, u.status, u.added, u.deleted]), [
+    [weirdPath, null, 'M', 1, 1],
+    ['ta\tb"q.txt', 'plain.txt', 'R', 0, 0],
+  ]);
 });

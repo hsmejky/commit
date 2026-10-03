@@ -430,20 +430,6 @@ export function createDiffReader() {
 }
 
 /**
- * Builds the sorted units from a whole `git diff -z --raw -p` stdout through
- * `createDiffReader`, in one chunk.
- *
- * @param {Buffer} output
- * @returns {object[]} the units, as `snapshot` returns them.
- * @throws {Error} when the sections do not pair with the records.
- */
-export function unitsFromDiff(output) {
-  const reader = createDiffReader();
-  reader.push(output);
-  return reader.end();
-}
-
-/**
  * Mints the unit IDs `h1…hN` in unit order (C:plan-hunks `id`).
  *
  * @template T

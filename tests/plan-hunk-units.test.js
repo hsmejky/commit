@@ -29,32 +29,46 @@ function numbered(count) {
   return Array.from({ length: count }, (_, i) => `${i + 1}\n`);
 }
 
-// `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file (the
-// fixtures here hold no rename, whose record has two paths).
+// `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file, or
+// `added\tdeleted\t\0old\0new\0` for a rename (git never quotes a `-z` path), keyed by the
+// new path.
 function numstat(c) {
   const result = spawnSync('git', ['diff', '--numstat', '-z', 'HEAD'], { cwd: c.repoDir, env: c.env });
   assert.equal(result.status, 0, String(result.stderr));
+  const tokens = result.stdout.toString('utf8').split('\0');
   const counts = {};
-  for (const record of result.stdout.toString('utf8').split('\0')) {
+  let i = 0;
+  while (i < tokens.length) {
+    const record = tokens[i];
+    i += 1;
     if (record === '') continue;
-    const [added, deleted, file] = record.split('\t');
-    counts[file] = { added: Number(added), deleted: Number(deleted) };
+    const firstTab = record.indexOf('\t');
+    const secondTab = record.indexOf('\t', firstTab + 1);
+    const added = Number(record.slice(0, firstTab));
+    const deleted = Number(record.slice(firstTab + 1, secondTab));
+    const file = record.slice(secondTab + 1);
+    if (file === '') {
+      const newPath = tokens[i + 1];
+      counts[newPath] = { added, deleted };
+      i += 2;
+    } else {
+      counts[file] = { added, deleted };
+    }
   }
   return counts;
 }
 
 // Runs `plan` and returns its hunk index, `state.json` and `hunks.txt`, after checking the
-// parser oracle: per-file `plan.json` `tracked` counts equal `git diff --numstat -z`.
-async function plan(c, { oracle = true } = {}) {
+// parser oracle on every fixture repo: per-file `plan.json` `tracked` counts equal
+// `git diff --numstat -z`.
+async function plan(c) {
   const result = await runCommit(c, ['plan']);
   assert.equal(result.exitCode, 0, detail(result));
   const runDir = path.join(c.repoDir, '.commit-plan', result.json.planId);
   const read = (name) => fs.readFileSync(path.join(runDir, name), 'utf8');
   const planJson = JSON.parse(read('plan.json'));
-  if (oracle) {
-    const counts = Object.fromEntries(planJson.tracked.map(({ path: file, added, deleted }) => [file, { added, deleted }]));
-    assert.deepEqual(counts, numstat(c));
-  }
+  const counts = Object.fromEntries(planJson.tracked.map(({ path: file, added, deleted }) => [file, { added, deleted }]));
+  assert.deepEqual(counts, numstat(c));
   return {
     hunks: result.json.hunks.hunks,
     state: JSON.parse(read('state.json')),
@@ -95,6 +109,32 @@ test('edits within -U3 of each other are one unit', async (t) => {
   const { hunks } = await plan(c);
 
   assert.deepEqual(hunks.map(({ id, range }) => ({ id, range })), [{ id: 'h1', range: '-2,13 +2,13' }]);
+});
+
+// `-U3` merges two hunks whose unchanged gap is at most 2*3 lines and splits them past it:
+// the boundary is exactly 6 (merged) vs. 7 (split), pinning the default context with no
+// `--inter-hunk-context` pin needed.
+test('a 6-line gap between edits merges into one unit; a 7-line gap splits them', async (t) => {
+  const c1 = createCase(t);
+  const lines = numbered(30);
+  seed(c1, { 'f.txt': lines.join('') });
+  const sixGap = [...lines];
+  sixGap[4] = 'five\n';
+  sixGap[11] = 'twelve\n';
+  c1.writeFile('f.txt', sixGap.join(''));
+
+  const { hunks: merged } = await plan(c1);
+  assert.equal(merged.length, 1, 'a 6-line gap merges');
+
+  const c2 = createCase(t);
+  seed(c2, { 'f.txt': lines.join('') });
+  const sevenGap = [...lines];
+  sevenGap[4] = 'five\n';
+  sevenGap[12] = 'thirteen\n';
+  c2.writeFile('f.txt', sevenGap.join(''));
+
+  const { hunks: split } = await plan(c2);
+  assert.equal(split.length, 2, 'a 7-line gap splits');
 });
 
 test('two identical hunks in one file have distinct IDs and hashes and the same identity key', async (t) => {
@@ -149,7 +189,7 @@ test('the ### line shows <old> -> <new> for a rename', async (t) => {
   c.git(['mv', 'old.txt', 'new.txt']);
   c.writeFile('new.txt', ['1\n', '2\n', 'three\n', ...numbered(10).slice(3)].join(''));
 
-  const { hunks, hunksTxt } = await plan(c, { oracle: false });
+  const { hunks, hunksTxt } = await plan(c);
 
   assert.equal(hunks.length, 1);
   const [entry] = hunks;
