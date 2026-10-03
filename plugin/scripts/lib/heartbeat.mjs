@@ -126,10 +126,18 @@ export function samePathTree(a, b, { caseFold }) {
   return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
 }
 
-// Reads the heartbeat file without ever blocking: opened non-blocking where the platform has
-// the flag (a FIFO in its place then opens at once), checked to be a regular file on the open
-// descriptor, and no larger than READ_LIMIT. Returns the parsed object, or `null` for anything else.
+// Reads the heartbeat file without ever blocking. The path itself is checked with `lstat`
+// first, not followed: only a regular file counts, so a symlink planted there is `null` even
+// when it targets a regular file, same as a directory or a FIFO in its place (dispatcher
+// ruling, GRD-17 review) -- the guard only ever produces a regular file, by rename. A
+// symlinked ancestor directory (for example a dotfiles-managed `~/.claude`) is unaffected:
+// only this exact path's own `lstat` goes unfollowed, and every other path component
+// resolves normally. The descriptor is then opened non-blocking where the platform has the
+// flag (so a FIFO slipped in between the `lstat` and the `open` still cannot hang this call),
+// checked again to be a regular file on the open descriptor, and no larger than READ_LIMIT.
+// Returns the parsed object, or `null` for anything else.
 function readHeartbeat(file) {
+  if (!fs.lstatSync(file).isFile()) return null;
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
   try {
     const stat = fs.fstatSync(fd);
@@ -147,8 +155,9 @@ function readHeartbeat(file) {
  * stepped back a little still counts but a far-future stamp never stays fresh) and an
  * absolute string `cwd` that, realpathed, is inside the realpathed `toplevel` or contains it
  * (`samePathTree`, case-folded on Windows and macOS); `not-seen` otherwise: no file, not a
- * regular file, not JSON, a `null` or missing `cwd`, a `cwd` that no longer exists, another
- * repo, an old stamp. Never throws.
+ * regular file by `lstat` (a symlink there is `not-seen` even when its target is a regular
+ * file, a directory or a FIFO always is), not JSON, a `null` or missing `cwd`, a `cwd` that
+ * no longer exists, another repo, an old stamp. Never throws.
  *
  * @param {{ claudeHome: string|undefined, toplevel: string, now: () => number }} input
  * @returns {'active' | 'not-seen'}

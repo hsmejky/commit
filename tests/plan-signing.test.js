@@ -13,9 +13,9 @@
 // tries to sign. Nothing here runs gpg, gpgsm, ssh-keygen or ssh-add: the probe reads config
 // and key files only.
 //
-// The prompt note's place in the stored notices and the `plan` reply is not observable yet
-// (roadmap KD-R67): the path that reaches the probe ends with the hunk index, whose reply is
-// `null`, and stored notices arrive with GRD-15.
+// The signing-prompt notice also lands in `state.json`'s stored `notices`, after the guard
+// notice (GRD-17; GIT-10 AC "in the stored notices"), tested below. The path that reaches
+// the probe ends with the hunk index, whose own `plan` reply is `null`.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -34,6 +34,13 @@ let planRefusal;
 beforeEach(async () => {
   ({ planRefusal } = await loadLib('run-policy'));
 });
+
+// GIT-10's notice (Q18, story 171), recorded verbatim in C:cli-and-exit-codes.
+const SIGNING_PROMPT_NOTICE = 'signing enabled; a passphrase prompt may appear';
+// GRD-17's notice for a `not-seen` guard (Q23); fires here too since no case writes a
+// heartbeat.
+const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
+  + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -72,6 +79,17 @@ test('plan with commit.gpgsign=false stores signing { enabled: false }', async (
 test('plan with openpgp signing enabled stores ready "prompt" and goes ahead', async (t) => {
   const c = changedRepo(t, [['commit.gpgsign', 'yes']]);
   assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+// review-GRD-17 M2: GIT-10's AC says the prompt note is "in the stored notices"; nothing
+// asserted that until now (KD-R67, retired by GRD-17, is what made it observable).
+test('plan with openpgp signing enabled stores the signing-prompt notice in state.json, after the guard notice (GIT-10)', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'yes']]);
+  const result = await runCommit(c, ['plan']);
+  assert.equal(result.exitCode, 0, detail(result));
+  const stateJson = path.join(c.repoDir, '.commit-plan', result.json.planId, 'state.json');
+  const { notices } = JSON.parse(fs.readFileSync(stateJson, 'utf8'));
+  assert.deepEqual(notices, [GUARD_NOTICE, SIGNING_PROMPT_NOTICE]);
 });
 
 test('plan with gpg.format=x509 stores ready "unknown" and goes ahead', async (t) => {

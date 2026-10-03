@@ -2,8 +2,9 @@
 
 - **Code split** (Q1, Q15 as amended). Two thin entry points over one shared library. The
   guard entry point loads only G1-G3, S1 and S2; S1 and S2 load nothing else. The commit
-  entry point loads M1; layering is CLI (M1) → workflows (M18) → run policy and domain
-  modules → adapters (M2 and the filesystem). Nothing below M18 calls upward.
+  entry point loads M1 (and S1 directly, for `resolveClaudeHome`, GRD-17); layering is CLI
+  (M1) → workflows (M18) → run policy and domain modules → adapters (M2 and the filesystem).
+  Nothing below M18 calls upward.
 - **Typed results and one error table.** Modules return typed results; only M18 maps domain
   codes to CLI kinds (table below); M1 alone owns kind → exit code and the envelope; an
   unexpected throw becomes `internal`.

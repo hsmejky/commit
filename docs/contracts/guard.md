@@ -105,9 +105,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   to a temporary name in the same directory, carrying the pid and a random part so two
   hooks never share it, and renamed into place, so a reader never
   sees a partial file. `plan`
-  counts it when `ts` is under 15 minutes old; it normalises both paths (realpath, `\` →
+  counts it when `ts` is under 15 minutes old either way: a `ts` more than 15 minutes in the
+  future is also `not-seen` (clock-skew guard), not treated as fresh. It normalises both
+  paths (realpath, `\` →
   `/`, case-folded on Windows and macOS) and counts a match when the hook's `cwd` is inside
-  its git toplevel or the toplevel is inside the hook's `cwd`. A blanket-denied command
+  its git toplevel or the toplevel is inside the hook's `cwd`. The heartbeat file itself must
+  be a regular file by `lstat`, unfollowed: a symlink, directory or FIFO in its exact place
+  is `not-seen` even when a symlink's target is a regular file, since the guard only ever
+  produces one by rename. A symlinked ancestor directory (for example a dotfiles-managed
+  `~/.claude`) is unaffected, since only the heartbeat path's own, final component goes
+  unfollowed; every earlier component still resolves normally. A blanket-denied command
   (parsing step 2) has no segments, so it writes no heartbeat.
 
 **Parsing:**

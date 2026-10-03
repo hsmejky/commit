@@ -6,8 +6,13 @@ before deciding. The write goes to a temporary file named with the pid and a ran
 and is renamed into place, so a reader never sees a partial file and parallel sessions
 never share a temporary name. `command` is stored redacted: the script-call form only
 (subcommand and flags), cut to 200 characters, so arguments a caller passed on the command
-line do not persist. `plan` judges `active` (under 15 minutes old,
-and the realpathed hook `cwd` inside the toplevel or vice versa) versus `not-seen`.
+line do not persist. `plan` judges `active` (under 15 minutes old either way, so a `ts` more
+than 15 minutes in the future is also `not-seen`,
+and the realpathed hook `cwd` inside the toplevel or vice versa) versus `not-seen`. The
+heartbeat file is checked by `lstat`, unfollowed: only a regular file counts, so a symlink,
+directory or FIFO there is `not-seen` even when a symlink's target is a regular file; a
+symlinked ancestor directory (e.g. a dotfiles-managed `~/.claude`) is still followed, since
+only the heartbeat path's own, final component is checked unfollowed.
 `writeHeartbeat({ claudeHome, cwd, command, now })`; `guardState({ claudeHome, toplevel, now
 })`; pure `samePathTree(a, b, { caseFold })` over already-realpathed paths, `caseFold` true
 on Windows and macOS; `guardState` never throws (an absent, malformed, non-regular or `null`-`cwd` heartbeat is `not-seen`). `resolveClaudeHome(env, homedir)` is the one Claude-home resolution both entry points call (the guard's through G1's re-export). Sources: Q23, C:guard.

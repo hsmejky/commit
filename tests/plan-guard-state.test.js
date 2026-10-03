@@ -97,6 +97,72 @@ test('Seam 3: guardState is active for a fresh heartbeat in, below or above the 
   }
 });
 
+// review-GRD-17 M1: nothing above ever realpathed `cwd`/`toplevel` through a symlink, so
+// replacing `fs.realpathSync.native` with the identity function would stay green. A symlinked
+// `cwd` pointing at the real `toplevel` must still match.
+test('Seam 3: guardState matches a cwd reached only through a symlinked (or junctioned) toplevel', (t) => {
+  const { claudeHome, toplevel } = tempDirs(t);
+  const now = () => 1_000_000_000;
+  const linked = `${toplevel}-link`;
+  fs.symlinkSync(toplevel, linked, process.platform === 'win32' ? 'junction' : 'dir');
+  writeBeat(claudeHome, { ts: now() - MINUTE_MS, cwd: linked, command: 'commit.cjs plan' });
+  assert.equal(heartbeat.guardState({ claudeHome, toplevel, now }), 'active');
+});
+
+// review-GRD-17 L4: only the far side of the freshness window (clock-skew ahead) had a test.
+test('Seam 3: guardState is active for a stamp a little ahead of now (clock stepped back)', (t) => {
+  const { claudeHome, toplevel } = tempDirs(t);
+  const now = () => 1_000_000_000;
+  writeBeat(claudeHome, { ts: now() + MINUTE_MS, cwd: toplevel, command: 'commit.cjs plan' });
+  assert.equal(heartbeat.guardState({ claudeHome, toplevel, now }), 'active');
+});
+
+// Dispatcher ruling (GRD-17 review): a symlinked ancestor of the Claude home (e.g. a
+// dotfiles-managed `~/.claude`) is followed like any other path component; only the
+// heartbeat file's own, final path is checked unfollowed (next test).
+test('Seam 3: guardState still finds the heartbeat through a symlinked ancestor of the Claude home', (t) => {
+  const { root, claudeHome, toplevel } = tempDirs(t);
+  const now = () => 1_000_000_000;
+  const fresh = now() - MINUTE_MS;
+  writeBeat(claudeHome, { ts: fresh, cwd: toplevel, command: 'commit.cjs plan' });
+  const parentAlias = path.join(root, 'home-alias');
+  fs.symlinkSync(path.dirname(claudeHome), parentAlias, process.platform === 'win32' ? 'junction' : 'dir');
+  const aliasedHome = path.join(parentAlias, path.basename(claudeHome));
+  assert.equal(heartbeat.guardState({ claudeHome: aliasedHome, toplevel, now }), 'active');
+});
+
+// Dispatcher ruling (GRD-17 review): the heartbeat FILE itself must be a regular file per
+// `lstat`; a symlink there is `not-seen` even when it targets a regular file, since the guard
+// only ever produces a regular file by rename.
+test('Seam 3: guardState is not-seen when the heartbeat path itself is a symlink to a regular file', (t) => {
+  const { claudeHome, toplevel } = tempDirs(t);
+  const now = () => 1_000_000_000;
+  const real = path.join(claudeHome, 'elsewhere.json');
+  fs.writeFileSync(real, JSON.stringify({ ts: now() - MINUTE_MS, cwd: toplevel, command: 'commit.cjs plan' }));
+  const link = path.join(claudeHome, 'commit-guard', 'heartbeat.json');
+  try {
+    fs.symlinkSync(real, link);
+  } catch (err) {
+    // A Windows file symlink needs Developer Mode or an elevated shell.
+    if (err.code === 'EPERM') return t.skip('creating a file symlink needs privileges here');
+    throw err;
+  }
+  assert.equal(heartbeat.guardState({ claudeHome, toplevel, now }), 'not-seen');
+});
+
+// Dispatcher ruling (GRD-17 review): a FIFO at the heartbeat path is not-seen (POSIX only;
+// Windows has no FIFOs).
+test('Seam 3: guardState is not-seen when the heartbeat path is a FIFO',
+  { skip: process.platform === 'win32' && 'FIFOs are POSIX-only' },
+  (t) => {
+    const { claudeHome, toplevel } = tempDirs(t);
+    const now = () => 1_000_000_000;
+    const file = path.join(claudeHome, 'commit-guard', 'heartbeat.json');
+    const result = require('node:child_process').spawnSync('mkfifo', [file]);
+    assert.equal(result.status, 0, `mkfifo failed: ${result.stderr}`);
+    assert.equal(heartbeat.guardState({ claudeHome, toplevel, now }), 'not-seen');
+  });
+
 test('Seam 3: guardState is not-seen for an old, absent, foreign, null-cwd, malformed or non-file heartbeat', (t) => {
   const { claudeHome, toplevel, other } = tempDirs(t);
   const now = () => 1_000_000_000;

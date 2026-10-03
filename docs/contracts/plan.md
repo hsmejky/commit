@@ -84,11 +84,12 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    releases the lock, deletes the folder and refuses with exit 6 `head-moved`; a changed
    fingerprint with an unchanged HEAD does the same with exit 6 `diff-changed` (domain code
    `index-changed`, not checked in `reword` mode, which `--amend --only` never touches;
-   Q18, Q20). Then sweep old folders.
-8. Guard state; then the notices, stored only now so they include `env.guard:
-   "not-seen"`, the takeover's notices kept since step 3 (already in the reply of any
-   earlier ending) and the sweep's cleanup errors, are added to `state.json` in one more
-   atomic write; then
+   Q18, Q20). Then S1 `guardState` (read here, ahead of the sweep, so `plan.json` carries
+   `env.guard`; the order against the sweep is not observable), write `plan.json` (the full
+   `plan` output), then sweep old folders.
+8. The notices (`env.guard: "not-seen"` from step 7, the takeover's notices kept since
+   step 3, already in the reply of any earlier ending, and the sweep's cleanup errors) are
+   added to `state.json` in one more atomic write; then
    [`plan --hunks`](plan-hunks.md) in the same process, unless `--dictated`. Like every
    later writer, that in-process `plan --hunks` rewrites `state.json` from the state it
    read, changing only its own fields (`lintFailures`), so the notices survive.
