@@ -4,8 +4,10 @@
 // INT-01 builds the thinnest reply the walking skeleton needs: the `nothing` status on a
 // clean working tree, with the base `callerRule`; RUN-01 adds `release`'s two `nothing`
 // texts. RUN-03 adds the omitted tree state (past `release`'s 45 s `releaseDeadline`,
-// C:reply-and-handback). RPL-04 onward add `failed`, `committed` and `handback` replies, the
-// handback rule, notices and the trailer line. CHG-04 adds the "N files left" tree state.
+// C:reply-and-handback). RPL-04 adds the `failed` status for a pre-folder refusal (`text`:
+// the refusal's own message, then the tree state); `committed` and `handback` replies, the
+// handback rule, notices and the trailer line are later slices'. CHG-04 adds the "N files
+// left" tree state.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -60,19 +62,28 @@ const NOTHING_LINES = Object.freeze({
  *
  * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended',
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
+ *   notices?: string[] } | { status: 'failed', message: string,
+ *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] }} facts `notices`: the call's notices (RUN-05: a provisional run
  *   folder `plan` could not remove); RPL-05 repeats them in `text`.
  *   `treeState`: `undefined` when it was never read (`release` past its 45 s
  *   `releaseDeadline`, or a case with no working tree to read) — the tree-state line is then
  *   left off `text` entirely, not rendered as if clean (C:reply-and-handback).
+ *   `failed`'s `message` is the refusal's own text (C:cli-and-exit-codes), the first line of
+ *   `text` (RPL-04); its `commits` stays `[]` and its `handback` stays `null`, since no
+ *   pre-folder refusal commits anything or offers one yet.
  * @returns {object} the reply (C:reply-and-handback).
  * @throws {Error} for a status, reason or tree state not built yet.
  */
 export function reply(facts) {
-  if (facts.status !== 'nothing' || !Object.hasOwn(NOTHING_LINES, facts.reason)) {
+  let firstLine;
+  if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
+    firstLine = NOTHING_LINES[facts.reason];
+  } else if (facts.status === 'failed') {
+    firstLine = facts.message;
+  } else {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
-  const firstLine = NOTHING_LINES[facts.reason];
   const text = facts.treeState === undefined ? firstLine : `${firstLine}\n${renderTreeState(facts.treeState)}`;
   return {
     version: 1,

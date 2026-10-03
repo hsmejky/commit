@@ -17,6 +17,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
+const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
   path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
@@ -48,6 +49,16 @@ test('plan in a directory that is not a repository exits 6 state and creates no 
   assert.match(result.json.error.message, /not a git repository/);
   assertNoRunFolder(dir);
   assertNoRunFolder(c.root);
+
+  // RPL-04: every pre-folder refusal carries a `failed` reply, not only the merge case
+  // (GIT-03); a `not-a-repo` refusal has no working tree to read, so `text` omits the tree
+  // state line entirely (C:reply-and-handback) — it ends right after the refusal message.
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.planId, null);
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
+  assert.equal(reply.text, result.json.error.message);
 });
 
 test('plan in a bare repository exits 6 state and creates no .commit-plan', async (t) => {
@@ -72,6 +83,14 @@ test('plan with no git binary on PATH exits 1 env and creates no .commit-plan', 
   assertRefusal(result, 'env', 1);
   assert.match(result.json.error.message, /git was not found/);
   assertNoRunFolder(c.repoDir);
+
+  // RPL-04: an `env` refusal (no git at all) has no working tree to read either, so its
+  // `failed` reply also omits the tree-state line.
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
+  assert.equal(reply.text, result.json.error.message);
 });
 
 // The real git, for a shim that answers `--version` itself and hands every other call on.

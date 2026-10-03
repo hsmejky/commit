@@ -776,7 +776,7 @@ export async function plan(values, injected, { cwd }) {
       }
     }
   }
-  if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+  if (facts.refusal !== undefined) return await planRefusalFailure(facts.refusal, ctx);
   if (facts.hunks !== undefined) {
     // The lock is held and the worker goes on with the hunk index (C:plan): `reply` is null.
     const { planId, runDir } = ctx.provisional;
@@ -903,6 +903,33 @@ export async function infer(values, injected, { cwd }) {
 // A refusal before any reply: RPL-04 adds the `failed` reply.
 function refusalFailure(refusal) {
   return { failure: { kind: kindForDomainCode(refusal.code), message: refusal.message } };
+}
+
+// RPL-04: `plan`'s own refusal failure, built with the M17 `failed` reply (C:reply-and-
+// handback, "Every pre-folder refusal... carries a `failed` reply with the base `callerRule`
+// and no handback"). `facts.refusal` reaches here from every step of `PLAN_STEPS` that can
+// end the run with one (`preFolderRefusals` today; a later step's own refusal, once built,
+// shares this same branch in `plan()`), so this is `plan`'s single refusal→reply seam, not
+// only the merge case. The tree state is read when `ctx.probe.repo` is a usable worktree
+// (every refusal that reaches this point with one: an `env` row found on an old git still
+// inside a repo, or any `state` row); a `not-a-repo`/`bare`/`timed-out` repo, or no git at
+// all, has no tree to read (C:reply-and-handback), so `treeState` is left `undefined` and
+// `text` ends after the refusal's own message. `release`, `commit`, `check` and `infer` keep
+// `refusalFailure` above unchanged: their own `reply` wiring (`infer` has no `reply` field at
+// all, C:infer) is later slices' (INT-02 and after).
+async function planRefusalFailure(refusal, ctx) {
+  const { repo } = ctx.probe;
+  const { env, now } = ctx.injected;
+  const treeStateFacts = repo !== null && repo.kind === 'worktree'
+    ? await treeState({ toplevel: repo.toplevel, env, now })
+    : undefined;
+  return {
+    failure: {
+      kind: kindForDomainCode(refusal.code),
+      message: refusal.message,
+      reply: reply({ status: 'failed', message: refusal.message, treeState: treeStateFacts, notices: ctx.notices }),
+    },
+  };
 }
 
 // Every reply ends with the tree state, read after the call's last git call (M10) — except

@@ -158,19 +158,28 @@ export const EXIT_CODES = Object.freeze({
  * @param {string} kind a CLI error kind (C:cli-and-exit-codes).
  * @param {string} message
  * @param {object[]} [errors] a lint failure's `errors` array (C:check), added to the shape.
+ * @param {object} [reply] the M17 reply for this failure (RPL-04: a pre-folder refusal
+ *   carries one; a bad argv or flag combination, reached before any workflow runs, has
+ *   none).
  * @returns {{ stdoutJson: object, exitCode: number }}
  * @throws {Error} when `kind` has no entry in `EXIT_CODES`: an unmapped kind would otherwise
  *   silently exit 0 with `ok: false` (`EXIT_CODES[kind]` reading `undefined`), or, for a kind
  *   spelled like an inherited property (e.g. `toString`), resolve to that inherited value
  *   instead of being rejected (`Object.hasOwn` checks ownership, not just presence).
  */
-export function failure(kind, message, errors) {
+export function failure(kind, message, errors, reply) {
   if (!Object.hasOwn(EXIT_CODES, kind)) {
     throw new Error(`no exit code mapped for kind ${JSON.stringify(kind)}`);
   }
   const exitCode = EXIT_CODES[kind];
   return {
-    stdoutJson: { version: 1, ok: false, error: { kind, message }, ...(errors === undefined ? {} : { errors }) },
+    stdoutJson: {
+      version: 1,
+      ok: false,
+      error: { kind, message },
+      ...(errors === undefined ? {} : { errors }),
+      ...(reply === undefined ? {} : { reply }),
+    },
     exitCode,
   };
 }
@@ -239,7 +248,7 @@ export async function main(argv, env) {
   const workflow = WORKFLOWS[subcommand];
   const result = await workflow(parsed.values, env, { cwd: env.cwd });
   if (result.failure !== undefined) {
-    return failure(result.failure.kind, result.failure.message, result.failure.errors);
+    return failure(result.failure.kind, result.failure.message, result.failure.errors, result.failure.reply);
   }
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }

@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
+const { loadLib } = require('./helpers/load-lib.js');
 
 function seedCommit(c) {
   c.writeFile('README.md', 'hello\n');
@@ -62,4 +63,26 @@ for (const [name, setUp] of CLEAN_REPOS) {
 test('M17 reply module stays pure', () => {
   const { assertPureSource } = require('./helpers/assert-pure-source');
   assertPureSource('reply');
+});
+
+// RPL-04: `reply()`'s `failed` status, unit-level (C:reply-and-handback), independent of
+// any particular pre-folder refusal. `text` is `message` alone when `treeState` is
+// `undefined` (no working tree to read), and `message` plus the tree-state line when it
+// is given; `notices` defaults to `[]` when omitted.
+test('reply() builds a failed status with and without a tree state', async () => {
+  const { reply } = await loadLib('reply');
+
+  const withTree = reply({ status: 'failed', message: 'boom', treeState: { clean: true } });
+  assert.equal(withTree.version, 1);
+  assert.equal(withTree.status, 'failed');
+  assert.equal(withTree.planId, null);
+  assert.deepEqual(withTree.commits, []);
+  assert.deepEqual(withTree.notices, []);
+  assert.equal(withTree.handback, null);
+  assert.equal(withTree.callerRule, parseBaseCallerRule());
+  assert.equal(withTree.text, 'boom\nworking tree clean');
+
+  const noTree = reply({ status: 'failed', message: 'boom', treeState: undefined, notices: ['n1'] });
+  assert.equal(noTree.text, 'boom');
+  assert.deepEqual(noTree.notices, ['n1']);
 });

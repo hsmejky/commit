@@ -299,7 +299,10 @@ test('the case-rename refusal cuts long paths so its error stays within 1 kB', a
   const cut = (p) => `…${p.slice(-(share - 3))}`;
   assert.equal(result.json.error.message,
     caseRenameText(`${shown.map((p) => `${cut(p)} → ${cut(p.toUpperCase())}`).join(', ')} and 1 more`));
-  assert.ok(Buffer.byteLength(result.stdout.trim()) <= 1024, result.stdout);
+  // The 1 kB cap is on `plan`'s own fields, excluding `hunks` and `reply` (RPL-04 added
+  // `reply` to a pre-folder `state` refusal; docs/spec/testing-modules.md, Q24).
+  const { reply, ...withoutReply } = result.json;
+  assert.ok(Buffer.byteLength(JSON.stringify(withoutReply)) <= 1024, JSON.stringify(withoutReply));
 });
 
 test('sparse-checkout and skip-worktree paths are never units', async (t) => {

@@ -14,6 +14,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
   path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
@@ -58,6 +59,20 @@ test('plan during a conflicted merge exits 6 state with the finish-or-abort text
   const message = assertStateRefusal(result);
   assert.equal(message, 'finish it with `git commit --no-edit`, or abort it');
   assertNoRunFolder(c.repoDir);
+
+  // RPL-04: the pre-folder `state` refusal carries a `failed` reply (C:reply-and-handback):
+  // base `callerRule`, no handback, no commits, and `text` ending with the tree state — the
+  // merge conflict leaves file.txt as an unmerged, modified tracked file.
+  const { reply } = result.json;
+  assert.equal(reply.version, 1);
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.planId, null);
+  assert.deepEqual(reply.commits, []);
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
+  assert.equal(reply.text, 'finish it with `git commit --no-edit`, or abort it\n1 file left: file.txt');
+  const withoutText = JSON.stringify({ ...reply, text: undefined });
+  assert.ok(withoutText.length <= 2048, `reply without text is ${withoutText.length} bytes`);
 });
 
 test('plan during a conflicted cherry-pick exits 6 state with the finish-or-abort text', async (t) => {
