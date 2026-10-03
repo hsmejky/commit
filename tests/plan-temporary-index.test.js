@@ -67,6 +67,13 @@ test('a plain mv of a tracked file gives one R unit with oldPath', async (t) => 
   assert.equal(renames.length, 1, detail(result));
   assert.equal(renames[0].path, 'new.txt');
   assert.equal(renames[0].oldPath, 'old.txt');
+  // C:plan: the rename target is listed once, as the `R` entry in `tracked`, not also under
+  // `untracked.candidates`; `state.json` keeps it, the temporary index needs it.
+  const plan = readJson(path.join(result.json.runDir, 'plan.json'));
+  assert.deepEqual(plan.tracked.map((entry) => [entry.path, entry.status]), [['new.txt', 'R']]);
+  assert.deepEqual(plan.untracked.candidates, []);
+  const state = readJson(path.join(result.json.runDir, 'state.json'));
+  assert.deepEqual(state.candidates, ['new.txt']);
 });
 
 test('a git mv of a tracked file also gives one R unit with oldPath', async (t) => {
@@ -182,6 +189,19 @@ test('plan writes no ref: ORIG_HEAD and the HEAD reflog are unchanged', async (t
   assert.equal(result.exitCode, 0, detail(result));
   assert.deepEqual(gitOut(c, ['rev-parse', '-q', '--verify', 'ORIG_HEAD']), origBefore);
   assert.deepEqual(gitOut(c, ['reflog', 'show', 'HEAD']), reflogBefore);
+});
+
+test('plan --reword stores stagedExcluded [] even with a hidden staged-new path', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('.env.local', 'SECRET=1\n');
+  c.git(['add', '.env.local']);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.deepEqual(readJson(path.join(result.json.runDir, 'plan.json')).stagedExcluded, []);
+  assert.deepEqual(readJson(path.join(result.json.runDir, 'state.json')).stagedExcluded, []);
 });
 
 for (const unborn of [false, true]) {

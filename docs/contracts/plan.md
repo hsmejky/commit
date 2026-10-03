@@ -240,6 +240,10 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   git would label them with the configured encoding.
 - `status`: `A`, `M`, `D`, `R` (rename, `oldPath` set), `T`.
 - `bucket`: `code`, `test`, `docs`, `ci`, `build`. Hints only.
+- `untracked.candidates`: the untracked candidates whose unit is not listed in `tracked`.
+  A plain `mv` (no `git mv`) makes the target an untracked candidate whose unit is an `R`
+  with `oldPath`; it is listed once, in `tracked`, and left out here. `state.json` keeps it
+  in its candidate list, which the temporary index is rebuilt from.
 - `preStaged`: paths with staged changes. In `staged` mode `tracked` lists only the unstaged
   changes, and `unstagedLeft` counts them. A partially staged file appears in both lists. In
   `split` mode (`--split`, or an index that holds every change), `tracked` lists every

@@ -248,6 +248,11 @@ async function snapshotUnits(ctx) {
     .map(({ path, oldPath, status, added, deleted }) => ({
       path, oldPath, status, bucket: bucketOf(path), added, deleted,
     }));
+  // A plain `mv` target is a candidate whose unit is an `R`: C:plan lists it once, in
+  // `tracked`, and drops it from `untracked.candidates` (`state.json` keeps it).
+  ctx.renameTargets = new Set(units
+    .filter((unit) => unit.status === 'R' && candidatePaths.has(unit.path))
+    .map((unit) => unit.path));
   return undefined;
 }
 
@@ -306,7 +311,7 @@ async function storeAndLock(ctx) {
     preStaged: ctx.inventory.preStaged,
     candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
     stagedNew: ctx.inventory.stagedNew,
-    stagedExcluded: ctx.inventory.stagedExcluded,
+    stagedExcluded: stagedExcludedOf(ctx),
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
@@ -346,15 +351,23 @@ async function storeAndLock(ctx) {
     tracked: ctx.tracked,
     // CHG-05: `collapsed` stays empty until CHG-13's caps.
     untracked: {
-      candidates: ctx.inventory.candidates.map(({ path, binary }) => ({ path, bucket: bucketOf(path), binary })),
+      candidates: ctx.inventory.candidates
+        .filter(({ path }) => ctx.renameTargets?.has(path) !== true)
+        .map(({ path, binary }) => ({ path, bucket: bucketOf(path), binary })),
       collapsed: [],
       hidden: ctx.inventory.hidden,
     },
-    stagedExcluded: ctx.inventory.stagedExcluded,
+    stagedExcluded: stagedExcludedOf(ctx),
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
   }));
   return undefined;
+}
+
+// C:plan `stagedExcluded`: `[]` in `reword` mode, whose `--amend --only` commits no staged
+// path, so `check` must not note that the run unstages one.
+function stagedExcludedOf(ctx) {
+  return ctx.mode === 'reword' ? [] : ctx.inventory.stagedExcluded;
 }
 
 // `plan.json` holds one top-level entry per line (C:run-folder), still one JSON object.
