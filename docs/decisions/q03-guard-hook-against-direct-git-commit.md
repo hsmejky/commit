@@ -267,7 +267,8 @@
     the quote characters go. So `git com\` plus newline plus `mit`, its PowerShell backtick
     form and `git co$'m'mit` reach parsing and are denied: the escaped-newline gap below is
     closed. Words built at runtime stay a gap (`git $(echo com)mit`, `git co${x}mmit`,
-    `git co$'\x6d'mit`, PowerShell 7 `` git co`u{6d}mit ``, PowerShell `git ('com'+'mit')`).
+    `git co$'\x6d'mit`, PowerShell 7 `` git co`u{6d}mit ``, PowerShell `git ('com'+'mit')`,
+    Bash brace expansion `git {com,-}mit`, which expands to `git commit -mit` and commits).
   - **Accepted false positives.** Any command that mentions `commit` (anywhere, even in
     quotes, `commit.cjs` included) and holds a trigger: `git log --format=$(…) | grep commit`,
     `echo "$(date)" && git commit --no-edit`, `echo "${x}" && git commit --no-edit`,

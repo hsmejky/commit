@@ -89,8 +89,11 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `` git com` `` plus newline plus `mit`) still reach parsing. Fixtures: each of these
    forms (deny) and a case variant (`git COMMIT`, deny).
    Known gap: text that never contains the literal substring `commit` passes here even when
-   it builds the word at runtime, such as `git $(echo com)mit`, `git co${x}mmit`, a glob
-   matching a file named `commit` (`git [c]ommit -m x`, `git c?mmit -m x`),
+   it builds the word at runtime, such as `git $(echo com)mit`, `git co${x}mmit`, Bash brace
+   expansion (`git {com,-}mit`, expands to `git commit -mit` and commits), a glob
+   matching a file named `commit` in the working directory (`git [c]ommit -m x`,
+   `git c?mmit -m x`; in PowerShell this glob expansion happens only in pwsh 7 on
+   Linux/macOS),
    `git co$'\x6d'mit`, PowerShell `git ('com'+'mit')` or a PowerShell 7 `` `u{…} `` escape
    (`` git co`u{6d}mit ``), or an argv[0] value built the same way
    (`exec -agit-c{,o}mmit git -m x`, step 3) (Q3, not fixed in 0.1.0; spec story 22). Also a known gap:
