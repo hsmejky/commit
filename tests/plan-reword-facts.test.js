@@ -11,12 +11,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, fastImportLinear, runCommit } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
@@ -330,17 +329,7 @@ test('M3 rewordFacts on an unborn HEAD (null) spawns nothing and reports unborn'
 test('M3 historyMessages returns the last 200 non-merge messages, newest first, byte-exact', async (t) => {
   const c = createCase(t);
   // 204 linear commits through fast-import (one spawn), then a merge on top.
-  const lines = [];
-  for (let i = 1; i <= 204; i += 1) {
-    const msg = `feat: change ${i}\n\nbody ${i}\n`;
-    lines.push('commit refs/heads/main', `committer T <t@example.com> ${1704067200 + i} +0000`,
-      `data ${Buffer.byteLength(msg)}`, msg);
-  }
-  const imported = spawnSync('git', ['fast-import', '--quiet'], {
-    cwd: c.repoDir, env: c.env, input: `${lines.join('\n')}\n`,
-  });
-  assert.equal(imported.status, 0, String(imported.stderr));
-  c.git(['checkout', '-q', '-f', 'main']);
+  fastImportLinear(c, 204, (i) => `feat: change ${i}\n\nbody ${i}\n`);
   c.git(['checkout', '-q', '-b', 'side', 'HEAD~1']);
   commitEmpty(c, 'feat: side');
   c.git(['checkout', '-q', 'main']);

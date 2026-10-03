@@ -174,6 +174,34 @@ function createCase(t, options = {}) {
 }
 
 /**
+ * Commits `count` linear commits on `main` in one `git fast-import` spawn, each message built
+ * by `messageFor(i)` (1-based, including its own trailing newline), with committer dates
+ * increasing so history order is deterministic. Faster than one `git commit` per message for
+ * the larger histories M3's 200-commit cap needs to exercise.
+ *
+ * @param {ReturnType<typeof createCase>} c
+ * @param {number} count
+ * @param {(i: number) => string} messageFor
+ */
+function fastImportLinear(c, count, messageFor) {
+  const lines = [];
+  for (let i = 1; i <= count; i += 1) {
+    const msg = messageFor(i);
+    lines.push(
+      'commit refs/heads/main',
+      `committer T <t@example.com> ${1704067200 + i} +0000`,
+      `data ${Buffer.byteLength(msg)}`,
+      msg,
+    );
+  }
+  const imported = spawnSync('git', ['fast-import', '--quiet'], {
+    cwd: c.repoDir, env: c.env, input: `${lines.join('\n')}\n`,
+  });
+  assert.equal(imported.status, 0, String(imported.stderr));
+  c.git(['checkout', '-q', '-f', 'main']);
+}
+
+/**
  * Spawns `node [nodeArgs] <script> [argv]` in the case and collects its output.
  *
  * @param {ReturnType<typeof createCase>} c
@@ -427,6 +455,7 @@ module.exports = {
   GUARD_ENTRY,
   FIXED_IDENTITY,
   createCase,
+  fastImportLinear,
   runEntry,
   runCommit,
   runGuard,

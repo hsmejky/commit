@@ -728,8 +728,8 @@ async function inferRefusals(ctx) {
 /**
  * `infer` step 3: M3 reads the last 200 non-merge messages (none when unborn) and M19
  * `infer` turns them into C:infer's fields. Read-only: no lock, no run folder. `configJson`
- * is `null` while there is no proposal (C:infer); M4 `readLayers` and M19 `configFor` arrive
- * with the proposal (INF-02 onwards).
+ * stays `null` until INF-07 builds M4 `readLayers` + M19 `configFor`, even under
+ * `outcome: proposal`.
  */
 async function inferFromHistory(ctx) {
   const { env, now } = ctx.injected;

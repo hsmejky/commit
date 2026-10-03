@@ -7,12 +7,11 @@
 // outcome is `not-conventional` (`proposal: null`), at 50% or more it is `proposal`. Seam 1
 // through the shipped entry point, plus M19's own pure checks and a static import check.
 
-const { spawnSync } = require('node:child_process');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, fastImportLinear, runCommit } = require('./helpers/process-seam.js');
 const { loadLib, libPath } = require('./helpers/load-lib.js');
 
 let infer;
@@ -38,26 +37,6 @@ function commitMessages(c, messages) {
     c.git(['add', 'file.txt']);
     c.git(['commit', '-q', '-m', message]);
   });
-}
-
-// `count` linear commits on `main` via one `fast-import` spawn, each message built by
-// `messageFor(i)` (1-based), committer dates increasing so history order is deterministic.
-function fastImportLinear(c, count, messageFor) {
-  const lines = [];
-  for (let i = 1; i <= count; i += 1) {
-    const msg = messageFor(i);
-    lines.push(
-      'commit refs/heads/main',
-      `committer T <t@example.com> ${1704067200 + i} +0000`,
-      `data ${Buffer.byteLength(msg)}`,
-      msg,
-    );
-  }
-  const imported = spawnSync('git', ['fast-import', '--quiet'], {
-    cwd: c.repoDir, env: c.env, input: `${lines.join('\n')}\n`,
-  });
-  assert.equal(imported.status, 0, String(imported.stderr));
-  c.git(['checkout', '-q', '-f', 'main']);
 }
 
 test('Seam 1: WIP: and Update: headers do not count; a 20-commit 50% share is a proposal, not too-few-commits', async (t) => {
@@ -130,7 +109,8 @@ test('M19 infer: 49% is not-conventional, 50% is a proposal (pure)', () => {
 
   const atThreshold = infer([
     ...Array.from({ length: 50 }, (_, i) => `feat: change ${i}`),
-    ...Array.from({ length: 50 }, (_, i) => `WIP: change ${i}`),
+    ...Array.from({ length: 25 }, (_, i) => `WIP: change ${i}`),
+    ...Array.from({ length: 25 }, (_, i) => `Update: change ${i}`),
   ]);
   assert.equal(atThreshold.outcome, 'proposal');
   assert.equal(atThreshold.ccShare, 0.5);
