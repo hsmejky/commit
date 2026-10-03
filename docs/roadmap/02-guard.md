@@ -153,15 +153,15 @@ PowerShell (backtick) form; the Bash ACs are test-only confirmation of existing 
 
 **Blocked by:** GRD-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3, C:guard (Parsing steps 1-2), stories 13, 16, 22.
 
-- [ ] `git \`⏎`commit -m x` (Bash) and its backtick form (PowerShell) → denied.
-- [ ] `git commit -m "unterminated` in both shells → denied.
-- [ ] `git com\`⏎`mit -m x` → denied (step 1's mention text drops the escaped newline).
-- [ ] Its PowerShell form: `` git com`⏎`mit -m x `` (backtick-newline split) → denied.
-- [ ] `git co$'m'mit -m x` (Bash) → denied (step 1 drops the `$` before a quote, so the mention text holds `commit`).
+- [x] `git \`⏎`commit -m x` (Bash) and its backtick form (PowerShell) → denied.
+- [x] `git commit -m "unterminated` in both shells → denied.
+- [x] `git com\`⏎`mit -m x` → denied (step 1's mention text drops the escaped newline).
+- [x] Its PowerShell form: `` git com`⏎`mit -m x `` (backtick-newline split) → denied.
+- [x] `git co$'m'mit -m x` (Bash) → denied (step 1 drops the `$` before a quote, so the mention text holds `commit`).
 
 
 ## GRD-08: Redirections, parentheses and typographic quotes
@@ -255,6 +255,7 @@ options (with GRD-11), and the PowerShell forms (with GRD-06).
 - [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
 - [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
 - [ ] Denied (review GRD-06 round 2; each runs `git commit --no-verify -m x` under PowerShell 5.1 and 7): PowerShell `git $null commit --no-verify -m x` (PowerShell drops `$null`), `git --% commit --no-verify -m x` and `git '--%' commit --no-verify -m x`.
+- [ ] PowerShell `git co$'m'mit -m x` → denied: PowerShell reads `co$mmit` (a token holding `$`) and may run `commit` at runtime; currently allowed, GRD-12's literal-subcommand rule must deny it.
 - [ ] `git COMMIT -m x` → denied as a commit.
 - [ ] The documented gap: `git $(echo com)mit` → no output.
 - [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
