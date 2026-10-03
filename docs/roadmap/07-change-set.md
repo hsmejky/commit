@@ -81,7 +81,7 @@ writes `hunks.txt` (and the stdout `hunks` block) through M12, after the `plan.j
 
 **Blocked by:** CHG-03, FND-10.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q22, C:run-folder (`lock`, `state.json` and `plan.json` rows),
 C:cli-and-exit-codes (`internal` row), C:plan (step 7), M12.
@@ -89,26 +89,26 @@ C:cli-and-exit-codes (`internal` row), C:plan (step 7), M12.
 KD-R63, retired: this slice's Seam-1 test now asserts `runDir`'s form (absolute,
 `path.resolve`d, forward slashes), as RUN-05 notes.
 
-- [ ] Seam 1: after a `plan` call that reaches step 7, `.commit-plan/lock` exists (not
+- [x] Seam 1: after a `plan` call that reaches step 7, `.commit-plan/lock` exists (not
       inside the `<planId>/` run folder) holding `{ planId, created }`.
-- [ ] Seam 1: two modified tracked files → `plan` stdout `hunks.hunks` lists `h1`, `h2` with path, status `M`, kind `text`, `offset`/`lines` pointing at their `### h<n> M text …` blocks in `hunks.txt`.
-- [ ] Seam 1: the stored unit table holds ID, hash, path, status and kind per unit; `plan.json` `tracked` carries `bucket`, `added`, `deleted`.
-- [ ] Seam 1 parser oracle: per-file added/deleted counts in `plan.json` `tracked` equal `git diff --numstat -z`.
-- [ ] Seam 1: with the fault preload failing `fs.renameSync` with `EIO` for a target
+- [x] Seam 1: two modified tracked files → `plan` stdout `hunks.hunks` lists `h1`, `h2` with path, status `M`, kind `text`, `offset`/`lines` pointing at their `### h<n> M text …` blocks in `hunks.txt`.
+- [x] Seam 1: the stored unit table holds ID, hash, path, status and kind per unit; `plan.json` `tracked` carries `bucket`, `added`, `deleted`.
+- [x] Seam 1 parser oracle: per-file added/deleted counts in `plan.json` `tracked` equal `git diff --numstat -z`.
+- [x] Seam 1: with the fault preload failing `fs.renameSync` with `EIO` for a target
       basename matching `state.json` → exit 1 `internal`, no lock file and no run folder
       left, and the call-order log records no lock link (a lock is never taken without
       `state.json` in place).
-- [ ] Seam 1: with the fault preload failing `fs.linkSync` with `EIO` for a target basename
+- [x] Seam 1: with the fault preload failing `fs.linkSync` with `EIO` for a target basename
       matching the lock file → exit 1 `internal` (not `held` or `busy`), no lock file and
       no run folder left.
-- [ ] Seam 1: with the fault preload failing `fs.renameSync` with `EIO` for a target
+- [x] Seam 1: with the fault preload failing `fs.renameSync` with `EIO` for a target
       basename matching `plan.json` → exit 1 `internal`, the lock released, no run folder
       left.
-- [ ] Seam 1: with the fault preload's call-order log and no fault, the first `state.json`
+- [x] Seam 1: with the fault preload's call-order log and no fault, the first `state.json`
       rename precedes the lock link, and the lock link precedes the `plan.json` rename;
       later `state.json` rewrites (step 8, the in-process `plan --hunks`) may follow in
       any order.
-- [ ] GIT-02's `state`/`expectedHead` stand-in (KD-R65) is retired: the Seam-1 assertions
+- [x] GIT-02's `state`/`expectedHead` stand-in (KD-R65) is retired: the Seam-1 assertions
       move to `plan.json` `state` and `state.json` `head`, and `plan`'s stdout drops the
       `state`/`expectedHead` fields (neither is in C:plan's stdout shape).
 
