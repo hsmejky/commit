@@ -13,7 +13,9 @@
    not faked. Because that directory is machine-wide and `node --test` runs files in parallel
    processes, the managed cases run in a separate, final `node --test` invocation that
    removes the file it wrote; every attribution case is skipped when the host already has a
-   `managed-settings.json` of its own.
+   `managed-settings.json` of its own. On ubuntu-latest and macos-latest, the CI workflow
+   `sudo mkdir`s and `chown`s the managed directory to the normal user before that final
+   invocation (PRE-16); Windows and the `ubuntu:22.04` container job need no such step.
    **Clock at Seam 1.** The entry point reads time only through `Date.now()` and passes it
    down as `now`; M2 timers derive from that value. The time-budget test starts the entry
    point with Node's `--import` of a preload module that lives in the test tree and is never

@@ -278,3 +278,6 @@ directory is not read.
       sees no effect).
 - [ ] The managed-settings directory's fixed path and CI write permissions are the ones
       PRE-16 recorded.
+- [ ] The workflow adds the `sudo mkdir -p <managed dir> && sudo chown "$USER" <managed dir>`
+      step before the final managed-layer `node --test` invocation on ubuntu-latest and
+      macos-latest only (PRE-16); Windows and the container job need no such step.

@@ -81,6 +81,9 @@
 - **Claude home**: `CLAUDE_CONFIG_DIR` when set, else the `.claude` directory in the OS home;
   resolved once by each entry point (story 112).
 - **managed directory**: the platform's fixed managed-settings directory (Q5); the script
-  reads only its `managed-settings.json` (the drop-in directory is not read in 0.1.0).
+  reads only its `managed-settings.json` (the drop-in directory is not read in 0.1.0). Fixed
+  paths: macOS `/Library/Application Support/ClaudeCode/`; Linux and WSL
+  `/etc/claude-code/`; Windows `C:\Program Files\ClaudeCode\` (not the legacy
+  `C:\ProgramData\ClaudeCode\`, which Claude Code no longer reads).
 - **typed result**: `{ ok: true, … } | { ok: false, code, … }`, where `code` is a domain code
   (never a CLI kind); used by every module that can fail.

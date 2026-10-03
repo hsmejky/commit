@@ -69,6 +69,18 @@
   walk-up to the git toplevel. The entry point resolves it and injects it into M5 (like the
   Claude home), not the library reading `env`/cwd itself. The worker must invoke
   `commit.cjs` from its starting directory, never after a `cd`.
+- **Amended.** By PRE-16 (2026-10-03): the managed directory's fixed path (official docs) is
+  macOS `/Library/Application Support/ClaudeCode/managed-settings.json`; Linux and WSL
+  `/etc/claude-code/managed-settings.json`; Windows
+  `C:\Program Files\ClaudeCode\managed-settings.json`. Claude Code no longer reads the legacy
+  Windows path `C:\ProgramData\ClaudeCode\managed-settings.json`, so the script does not
+  either. On GitHub-hosted runners, ubuntu-latest and macos-latest carry passwordless sudo,
+  windows-latest runs as administrator with UAC disabled, and the `ubuntu:22.04` container
+  job runs as root. The CI workflow gets a step before the final managed-layer `node --test`
+  invocation, `sudo mkdir -p <managed dir> && sudo chown "$USER" <managed dir>`, on
+  ubuntu-latest and macos-latest only; Windows and the container need no such step. That
+  final `node --test` run still runs as the normal user, writes `managed-settings.json`
+  itself and deletes it afterward, and still skips when the host already has its own file.
 - **Rejected.**
   - Hard-coded opinionated rules; reading `commitlint.config.*` (executes third-party JS).
   - Reproducing the harness default footer: it contains the model name, which the script
@@ -79,6 +91,11 @@
     monorepo subfolder, contradicting the spike's findings.
   - The worker passing `--project-dir` on the command line (PRE-11): an agent-chosen layer,
     and an extra CLI flag the script would have to trust.
+  - Running the final managed-layer `node --test` invocation under `sudo` (PRE-16):
+    root-owned temp repos, git `safe.directory` friction, and `HOME`/env drift from the
+    rest of the suite.
+  - Dropping the real-path managed-directory test for an injected `managedDir` only
+    (PRE-16): loses the real-path check.
 - **Consequences.** Without an attribution setting the trailer omits the model name. The
   trailer is produced deterministically; no agent-supplied text reaches it. Settings passed
   on the command line (`claude --settings <file>`) are invisible to the script, and so are
