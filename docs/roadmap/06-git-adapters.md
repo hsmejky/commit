@@ -45,7 +45,10 @@ unborn) and adds the detached-HEAD notice.
 
 KD-R65 (retired by CHG-03b): this slice first asserted the first two criteria below against
 `plan`'s stdout `state`/`expectedHead`, a Seam-1 stand-in; CHG-03b moved them to `plan.json`
-`state` and `state.json` `head` and dropped the stdout fields.
+`state` and `state.json` `head` and dropped the stdout fields. The third criterion (unborn
+HEAD) is narrowed to KD-R66: an unborn repo cannot reach step 7 until a later slice lets its
+inventory take an added file. KD-R67 tracks the detached-HEAD notice in the second criterion
+going unobserved on `plan`'s hunks path until a later slice stores notices in `state.json`.
 
 - [x] Seam 1: on a branch → `plan.json` `state: { kind: "branch", branch, unborn: false }` and the stored expected HEAD equals `git rev-parse HEAD`.
 - [x] Seam 1: detached HEAD → `state.kind: "detached"` and the detached-HEAD notice in the stored notices (reply `notices` once RPL renders them).

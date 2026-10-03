@@ -86,8 +86,8 @@ writes `hunks.txt` (and the stdout `hunks` block) through M12, after the `plan.j
 **Sources:** Q9, Q22, C:run-folder (`lock`, `state.json` and `plan.json` rows),
 C:cli-and-exit-codes (`internal` row), C:plan (step 7), M12.
 
-KD-R63: if `plan`'s output carries a non-null `runDir` from this slice on, assert its form
-(absolute, `path.resolve`d, forward slashes) at Seam 1 here rather than waiting for INT-02.
+KD-R63, retired: this slice's Seam-1 test now asserts `runDir`'s form (absolute,
+`path.resolve`d, forward slashes), as RUN-05 notes.
 
 - [ ] Seam 1: after a `plan` call that reaches step 7, `.commit-plan/lock` exists (not
       inside the `<planId>/` run folder) holding `{ planId, created }`.

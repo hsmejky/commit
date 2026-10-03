@@ -65,7 +65,7 @@ test('plan on an unborn repo stores unborn: true and a null expected HEAD, with 
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   // An unborn HEAD has no tracked modification to reach step 7 with until the inventory
   // takes added files, so `plan.json` and `state.json` are not observable here yet; the
-  // stdout stand-in is gone all the same (KD-R65).
+  // stdout stand-in is gone all the same (KD-R66, narrowed from KD-R65).
   assert.equal(Object.hasOwn(result.json, 'state'), false);
   assert.equal(Object.hasOwn(result.json, 'expectedHead'), false);
   assert.equal(result.json.reply.status, 'nothing');
