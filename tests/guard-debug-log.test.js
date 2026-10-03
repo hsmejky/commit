@@ -2,10 +2,11 @@
 
 // GRD-16: the debug log, under COMMIT_GUARD_DEBUG=1, for a decision itself (as opposed to the
 // fail-open and heartbeat-failure cases GRD-02 and GRD-15 already cover): `agent_id`,
-// `decision`, the deny reason (or, for a blanket deny, the trigger kind) and the redacted
-// command (the matched `git commit` segment's options, or a `plan` call's script-call form),
-// each left out when unknown, on one stderr line, with stdout unaffected by the variable
-// (C:guard Output; docs/spec/modules-shared-and-guard.md G1, G3; Q1, Q23; stories 20, 21).
+// `decision`, the deny's `reason` (its catalogue row id, or a blanket deny's trigger kind;
+// never message text) and the redacted command (the matched `git commit` segment's options,
+// or a `plan` call's script-call form), each left out when unknown, on one stderr line, with
+// stdout unaffected by the variable (C:guard Output; docs/spec/modules-shared-and-guard.md
+// G1, G3; Q1, Q23; stories 20, 21).
 
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,9 +14,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { loadLib } = require('./helpers/load-lib');
+const { cases, precedence, everyRow } = require('./helpers/deny-catalogue-cases.js');
 
 let runHook;
-let MESSAGES;
 let claudeHome;
 
 before(() => {
@@ -28,8 +29,18 @@ after(() => {
 
 beforeEach(async () => {
   ({ runHook } = await loadLib('hook-io'));
-  ({ MESSAGES } = await loadLib('command-classifier'));
 });
+
+const DEBUG = { COMMIT_GUARD_DEBUG: '1' };
+const WORKER = 'commit:commit-worker';
+const PLAN_ID = '0f8e3a52-6b1d-4c7e-9a2f-1d2c3b4a5e6f';
+
+// The catalogue row ids C:guard Output names for `reason` (a blanket deny logs its G2 trigger
+// kind instead, a lower-case word).
+const ROW_IDS = new Set([
+  'bare', 'amend', 'squash', 'noVerify', 'fixupKind', 'generic', 'wrapper', 'literalArguments',
+  'literalSubcommand', 'config', 'unknownGlobalOption', 'handback',
+]);
 
 function hook(command, extra = {}) {
   return JSON.stringify({
@@ -48,79 +59,174 @@ function run(command, { env = {}, extra = {} } = {}) {
   return runHook(hook(command, extra), { env, claudeHome, now: () => 1 });
 }
 
-test('a plain deny (git commit -m x) logs decision, reason and the matched options only, never the message text', () => {
+// The one debug line's fields: exactly one newline-terminated JSON object.
+function fieldsOf(stderr) {
+  assert.ok(stderr.endsWith('\n'), stderr);
+  assert.equal(stderr.indexOf('\n'), stderr.length - 1, stderr);
+  return JSON.parse(stderr);
+}
+
+function debugFields(command, extra) {
+  return fieldsOf(run(command, { env: DEBUG, extra }).stderr);
+}
+
+test('a plain deny (git commit -m x) logs decision, the row id and the matched options only, never the message text', () => {
   const plain = run('git commit -m secret');
   assert.equal(plain.stderr, '');
 
-  const debugged = run('git commit -m secret', { env: { COMMIT_GUARD_DEBUG: '1' }, extra: { agent_id: 'a1' } });
+  const debugged = run('git commit -m secret', { env: DEBUG, extra: { agent_id: 'a1' } });
   assert.equal(debugged.stdout, plain.stdout);
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { agent_id: 'a1', decision: 'deny', reason: MESSAGES.bare, command: '-m' });
+  assert.deepEqual(fieldsOf(debugged.stderr), { agent_id: 'a1', decision: 'deny', reason: 'bare', command: '-m' });
   assert.doesNotMatch(debugged.stderr, /secret/);
 });
 
-test('--amend without --no-edit logs the amend row as reason and --amend as the command', () => {
-  const debugged = run('git commit --amend', { env: { COMMIT_GUARD_DEBUG: '1' } });
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { decision: 'deny', reason: MESSAGES.amend, command: '--amend' });
+// H1 (GRD-16 review): the generic and wrapper rows' texts name an argument or a token, so the
+// log carries the row id instead, never the text.
+const rowTable = [
+  ['git commit --amend', { reason: 'amend', command: '--amend' }],
+  ['git commit --squash=HEAD', { reason: 'squash', command: '--squash' }],
+  ['git commit -n', { reason: 'noVerify', command: '-n' }],
+  ['git commit --fixup=amend:HEAD', { reason: 'fixupKind', command: '--fixup' }],
+  ['git commit -C HEAD', { reason: 'generic', command: '-C' }],
+  ['xargs git commit -m x', { reason: 'wrapper', command: '-m' }],
+  ['git commit -m $MSG', { reason: 'literalArguments', command: '-m' }],
+  ['git $c commit -m x', { reason: 'literalSubcommand' }],
+  ['git -c k=v commit --amend -m x', { reason: 'config', command: '--amend -m' }],
+  ['git --unknown commit -q', { reason: 'unknownGlobalOption', command: '-q' }],
+  ['env --argv0=git-commit git -m x', { reason: 'wrapper' }],
+];
+for (const [command, want] of rowTable) {
+  test(`${JSON.stringify(command)} logs reason ${want.reason}`, () => {
+    assert.deepEqual(debugFields(command), { decision: 'deny', ...want });
+  });
+}
+
+const secretTable = [
+  ['git commit "my secret release notes"', /secret/],
+  ['git commit -q "fix: secret thing"', /secret/],
+  ['git commit -m x secret/path.txt', /secret/],
+  ['xargs secret-words git commit -m x', /secret/],
+  ['git commit -m x $SECRET_NAME', /SECRET/],
+  ['git -c secret.key=v commit -m x', /secret/],
+  [`git commit ${'x'.repeat(5000)}`, /xxx/],
+];
+for (const [command, pattern] of secretTable) {
+  test(`${JSON.stringify(command.slice(0, 60))} logs no argument, value or message text`, () => {
+    const fields = debugFields(command);
+    assert.equal(fields.decision, 'deny');
+    assert.ok(ROW_IDS.has(fields.reason), fields.reason);
+    assert.doesNotMatch(JSON.stringify(fields), pattern);
+  });
+}
+
+test('an option-shaped token holding spaces is never logged as an option', () => {
+  const fields = debugFields('git commit --amen "--secret words here"');
+  assert.deepEqual(fields, { decision: 'deny', reason: 'generic', command: '--amen' });
 });
 
 test('a plan script call with no deny logs decision "none" and the script-call form, no reason', () => {
-  const debugged = run('node "/opt/plugin/commit.cjs" plan --staged', { env: { COMMIT_GUARD_DEBUG: '1' } });
+  const debugged = run('node "/opt/plugin/commit.cjs" plan --staged', { env: DEBUG });
   assert.equal(debugged.stdout, '');
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { decision: 'none', command: 'commit.cjs plan --staged' });
+  assert.deepEqual(fieldsOf(debugged.stderr), { decision: 'none', command: 'commit.cjs plan --staged' });
 });
 
 test('a deny also holding a plan call logs the matched options, not the script-call form', () => {
-  const debugged = run('node "/opt/plugin/commit.cjs" plan && git commit -m x', { env: { COMMIT_GUARD_DEBUG: '1' } });
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { decision: 'deny', reason: MESSAGES.bare, command: '-m' });
+  assert.deepEqual(
+    debugFields('node "/opt/plugin/commit.cjs" plan && git commit -m x'),
+    { decision: 'deny', reason: 'bare', command: '-m' },
+  );
+});
+
+test('a worker handback deny logs reason handback and no command', () => {
+  const command = `node "/opt/x/plugin/scripts/commit.cjs" commit --plan-id ${PLAN_ID} yes`;
+  assert.deepEqual(debugFields(command, { agent_type: WORKER }), { decision: 'deny', reason: 'handback' });
 });
 
 test('a blanket deny (an unparsed substitution) logs the trigger kind as reason, no command', () => {
-  const debugged = run('git commit -m "$(x)"', { env: { COMMIT_GUARD_DEBUG: '1' } });
+  const debugged = run('git commit -m "$(x)"', { env: DEBUG });
   assert.equal(JSON.parse(debugged.stdout).hookSpecificOutput.permissionDecision, 'deny');
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { decision: 'deny', reason: 'substitution' });
+  assert.deepEqual(fieldsOf(debugged.stderr), { decision: 'deny', reason: 'substitution' });
 });
 
 test('an allowed command with no git commit and no plan call logs only the decision', () => {
-  const debugged = run('echo this is not a commit', { env: { COMMIT_GUARD_DEBUG: '1' } });
+  const debugged = run('echo this is not a commit', { env: DEBUG });
   assert.equal(debugged.stdout, '');
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { decision: 'none' });
+  assert.deepEqual(fieldsOf(debugged.stderr), { decision: 'none' });
 });
 
-test('a literal-arguments deny (no safe options to redact) logs the catalogue reason with no command key', () => {
-  const plain = run('git commit -m $MSG');
-  assert.equal(JSON.parse(plain.stdout).hookSpecificOutput.permissionDecision, 'deny');
-
-  const debugged = run('git commit -m $MSG', { env: { COMMIT_GUARD_DEBUG: '1' } });
-  assert.equal(debugged.stdout, plain.stdout);
-  const fields = JSON.parse(debugged.stderr.trim());
-  assert.deepEqual(fields, { decision: 'deny', reason: MESSAGES.literalArguments });
+test('a matched segment with no options leaves `command` out', () => {
+  assert.deepEqual(debugFields('git commit'), { decision: 'deny', reason: 'bare' });
+  assert.deepEqual(debugFields('git commit "msg"'), { decision: 'deny', reason: 'generic' });
 });
 
 test('the command cuts the redacted options to 200 characters', () => {
-  const longFlags = Array.from({ length: 40 }, (_, i) => `--author=x${i}`).join(' ');
-  const debugged = run(`git commit ${longFlags}`, { env: { COMMIT_GUARD_DEBUG: '1' } });
-  const fields = JSON.parse(debugged.stderr.trim());
+  const debugged = run(`git commit ${'--author=x '.repeat(40)}`, { env: DEBUG });
+  const fields = fieldsOf(debugged.stderr);
   assert.equal(fields.decision, 'deny');
-  assert.ok(fields.command.length <= 200);
+  assert.equal(fields.command, Array(40).fill('--author').join(' ').slice(0, 200));
+  assert.equal(fields.command.length, 200);
 });
 
-test('without the variable, stdout is identical and stderr is always empty', () => {
-  for (const command of [
-    'git commit -m x',
-    'git commit --amend',
-    'node "/opt/plugin/commit.cjs" plan',
-    'echo this is not a commit mention',
-    'git commit -m "$(x)"',
-  ]) {
-    const plain = run(command);
-    const debugged = run(command, { env: { COMMIT_GUARD_DEBUG: '1' } });
-    assert.equal(plain.stderr, '');
-    assert.equal(plain.stdout, debugged.stdout);
-  }
+// M1 (GRD-16 review): building the decision's debug line is kept apart from the decision, so
+// a throw there falls back to a smaller line and never turns a deny into fail-open.
+test('a throw while building the debug line keeps the deny and logs the decision alone', (t) => {
+  const plain = run('git commit -m x', { extra: { agent_id: 'a1' } });
+  const stringify = JSON.stringify;
+  t.mock.method(JSON, 'stringify', function (value, ...rest) {
+    if (value && typeof value === 'object' && Object.hasOwn(value, 'reason')) throw new Error('boom');
+    return stringify.call(JSON, value, ...rest);
+  });
+  const debugged = run('git commit -m x', { env: DEBUG, extra: { agent_id: 'a1' } });
+  t.mock.restoreAll();
+  assert.equal(debugged.stdout, plain.stdout);
+  assert.notEqual(debugged.stdout, '');
+  assert.deepEqual(fieldsOf(debugged.stderr), { agent_id: 'a1', decision: 'deny' });
 });
+
+// M2 (GRD-16 review): AC2 over the whole deny catalogue fixture table, the worker-only cases
+// and a PowerShell set, in both shells: stdout is the same with and without the variable,
+// stderr is empty without it and exactly one JSON line with it, and a deny's reason is a row
+// id or a blanket trigger kind.
+const handbackCommands = ['commit', 'release'].flatMap((subcommand) => [
+  `node "C:/Users/app/plugin/scripts/commit.cjs" ${subcommand} --plan-id ${PLAN_ID}`,
+  `node "/opt/x/plugin/scripts/commit.cjs" ${subcommand} --plan-id ${PLAN_ID}`,
+]);
+const powershellCommands = [
+  'saps git commit -m x',
+  "Start-Process git 'commit --fixup HEAD'",
+  'Start-Process git -ArgumentList { git commit -m x }',
+  'saps git commit,--fixup,HEAD',
+  "git '' commit -m x",
+  'git commit -m @s',
+  'git commit --no-edit a,b',
+  'if ($ok) { git commit --amend }',
+  'git commit -m "x`u{41}"',
+];
+const sweep = [
+  ...cases.map(([command]) => command),
+  ...precedence.map(([command]) => command),
+  ...everyRow,
+  ...handbackCommands,
+  ...powershellCommands,
+  'git commit --amend --no-edit',
+  'node "/opt/plugin/commit.cjs" plan',
+  'echo this is not a commit mention',
+  'git commit -m "$(x)"',
+];
+for (const toolName of ['Bash', 'PowerShell']) {
+  test(`${toolName}: stdout is identical with and without the variable over the deny catalogue`, () => {
+    for (const command of sweep) {
+      for (const agentType of [undefined, WORKER]) {
+        const extra = { tool_name: toolName, agent_id: 'a1', ...(agentType ? { agent_type: agentType } : {}) };
+        const plain = run(command, { extra });
+        const debugged = run(command, { env: DEBUG, extra });
+        assert.equal(plain.stderr, '', command);
+        assert.equal(debugged.stdout, plain.stdout, command);
+        const fields = fieldsOf(debugged.stderr);
+        if (plain.stdout === '') continue;
+        assert.equal(fields.decision, 'deny', command);
+        assert.ok(ROW_IDS.has(fields.reason) || /^[a-z]+$/.test(fields.reason), `${command}: ${fields.reason}`);
+      }
+    }
+  });
+}

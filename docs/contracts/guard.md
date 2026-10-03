@@ -59,15 +59,24 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   `process.versions.node` before it loads the shared library (Q1).
 - Debug log: with `COMMIT_GUARD_DEBUG=1`, one JSON object on one stderr line, with keys
   `agent_id`, `decision`, `reason` and `command`, each key left out when unknown (so an
-  early fail-open logs `{}` or `{"agent_id":"…"}` only). `command` is redacted like the
-  heartbeat's (the script-call form, or the matched `git commit` segment's options; never
-  message text or other segments), cut to 200 characters. A blanket deny (parsing step 2)
-  logs the decision and the trigger kind instead of the command. A crash or unreadable input
-  logs the same way (one line, with the fields known so far), still with no stdout and exit
-  0. A failed heartbeat write (below) adds the key `heartbeat` with the value `"failed"` to
-  the line, with the fields known so far (`{"agent_id":"…","heartbeat":"failed"}`), and
-  leaves stdout as decided. GRD-16 extends this with the same keys once deny decisions are
-  logged, on the same one line; it defines no new ones.
+  early fail-open logs `{}` or `{"agent_id":"…"}` only). `decision` is `deny` or `none`.
+  `reason` is a deny's catalogue row id (`bare`, `amend`, `squash`, `noVerify`,
+  `fixupKind`, `generic`, `wrapper`, `literalArguments`, `literalSubcommand`, `config`,
+  `unknownGlobalOption`, `handback`), or a blanket deny's trigger kind (parsing step 2);
+  never the deny text, which can name a token of the command; left out for `none`.
+  `command` is redacted like the heartbeat's (the script-call form, or the matched `git
+  commit` segment's options: option names only, the literal ones before any non-literal
+  argument; never values, message text, plain arguments or other segments), cut to 200
+  characters; left out when the matched segment has no options, and for a blanket deny.
+  A non-blanket decision with no matched segment (an allowed command, the worker-only rule,
+  a non-literal subcommand, an argv[0] runner, a Start-Process word with no `git commit`)
+  logs a `plan` call's script-call form when the command holds one, else no `command`.
+  A crash or unreadable input logs the same way (one line,
+  with the fields known so far), still with no stdout and exit 0; so does a throw while
+  building the line itself, which logs `agent_id` and `decision` only and leaves stdout as
+  decided. A failed heartbeat write (below) adds the key `heartbeat` with the value
+  `"failed"` to the same line (`{"agent_id":"…","decision":"deny","reason":"bare",
+  "command":"-m","heartbeat":"failed"}`), and leaves stdout as decided.
 - Heartbeat: when any segment is a script call with subcommand `plan` (below), write
   `<Claude home>/commit-guard/heartbeat.json` (the Claude home is `CLAUDE_CONFIG_DIR` when
   set, else `<os.homedir()>/.claude`; guard and `plan` resolve it the same way) =

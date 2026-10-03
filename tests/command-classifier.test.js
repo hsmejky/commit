@@ -97,6 +97,7 @@ for (const [parsed, options] of denyTable) {
   test(`classify(${JSON.stringify(parsed)}) is the bare-commit deny`, () => {
     assert.deepEqual(classify(parsed, { shell: 'bash' }), {
       decision: 'deny',
+      row: 'bare',
       message: MESSAGES.bare,
       scriptCalls: [],
       matched: { options },
@@ -110,6 +111,7 @@ for (const [parsed, options] of denyTable) {
 test('classify([["echo","git","commit"]]) is the wrapper row naming echo', () => {
   assert.deepEqual(classify([['echo', 'git', 'commit']], { shell: 'bash' }), {
     decision: 'deny',
+    row: 'wrapper',
     message: `git commit run by echo is not allowed: it can append arguments. ${ROUTE_TEXT}\n${PERSONAL_TEXT}`,
     scriptCalls: [],
     matched: { options: [] },
@@ -135,17 +137,19 @@ for (const parsed of noneTable) {
 // the `&` call operator alone, and a `(` or `{` still open at `git` starts a new command, so
 // `if (…) { git … }`, `&{ git … }` and `. { git … }` fit). The PowerShell spellings are also reached through
 // `runHook` (GRD-06, tests/guard-powershell.test.js).
-// The 4th element is GRD-16's expected `matched.options` (G1): undefined for a 'none' or
-// 'literalArguments' outcome (neither has options to log), an array otherwise.
+// The 4th element is GRD-16's expected `matched.options` (G1): undefined for a 'none'
+// outcome, an array otherwise (for 'literalArguments', the flags of the literal arguments
+// before the first non-literal one). The expected row id (G3 `row`) is the 3rd element up to
+// its `:`.
 const commitArgTable = [
   ['bash', [['git', 'commit', '--no-edit', { op: ')' }, '-m', 'x']], 'none'],
   ['powershell', [['git', 'commit', '--no-edit', { op: '}' }, '-m', 'x']], 'none'],
   ['powershell', [['git', 'commit', '--no-edit', { op: 'cut' }, '-m', 'x']], 'none'],
   ['powershell', [['git', 'commit', { op: 'cut' }, '--no-edit']], 'bare', []],
-  ['powershell', [['git', 'commit', '--fixup', '@s']], 'literalArguments'],
-  ['powershell', [['git', 'commit', '--no-edit', 'a,b']], 'literalArguments'],
-  ['powershell', [['git', 'commit', '--no-edit', '--%']], 'literalArguments'],
-  ['powershell', [['git', 'commit', '--fixup', { op: '(' }, 'HEAD', { op: ')' }]], 'literalArguments'],
+  ['powershell', [['git', 'commit', '--fixup', '@s']], 'literalArguments', ['--fixup']],
+  ['powershell', [['git', 'commit', '--no-edit', 'a,b']], 'literalArguments', ['--no-edit']],
+  ['powershell', [['git', 'commit', '--no-edit', '--%']], 'literalArguments', ['--no-edit']],
+  ['powershell', [['git', 'commit', '--fixup', { op: '(' }, 'HEAD', { op: ')' }]], 'literalArguments', ['--fixup']],
   ['bash', [['git', 'commit', '--fixup', '@~1']], 'none'],
   ['bash', [['git', 'commit', '--no-edit', 'a,b']], 'generic:a,b', ['--no-edit']],
   ['powershell', [['if', { op: '(' }, '$ok', { op: ')' }, { op: '{' }, 'git', 'commit', '--no-edit', { op: '}' }]], 'none'],
@@ -176,8 +180,8 @@ for (const [shell, parsed, expected, options] of commitArgTable) {
     const want = message === undefined
       ? { decision: 'none', scriptCalls: [] }
       : options === undefined
-        ? { decision: 'deny', message, scriptCalls: [] }
-        : { decision: 'deny', message, scriptCalls: [], matched: { options } };
+        ? { decision: 'deny', row: expected.split(':')[0], message, scriptCalls: [] }
+        : { decision: 'deny', row: expected.split(':')[0], message, scriptCalls: [], matched: { options } };
     assert.deepEqual(classify(parsed, { shell }), want);
   });
 }

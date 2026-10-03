@@ -79,20 +79,34 @@ export function runHook(stdinText, context = {}) {
     // then reports the guard `not-seen`, a false warning, never a lost deny.
     const heartbeatFailed = writePlanHeartbeat(result.scriptCalls, payload.cwd, context);
     const stdout = result.decision === 'deny' ? denyOutput(result.message) : '';
-    const stderr = debug ? formatDebugLine(decisionFields(known, parsed, result, heartbeatFailed)) : '';
+    // GRD-16 review M1: the debug line is built apart from the decision and cannot throw
+    // (debugLine), so debug never turns a deny into the fail-open catch below.
+    const stderr = debug ? debugLine(known, parsed, result, heartbeatFailed) : '';
     return stdout === '' && stderr === '' ? NO_OUTPUT : { stdout, stderr };
   } catch {
     return failOpen(known, debug);
   }
 }
 
+// The decision's debug line; when building its fields throws, the line falls back to the
+// fields known without them (`agent_id`, `decision`, `heartbeat`), so it never throws itself.
+function debugLine(known, parsed, result, heartbeatFailed) {
+  try {
+    return formatDebugLine(decisionFields(known, parsed, result, heartbeatFailed));
+  } catch {
+    const fields = { ...known, decision: result.decision };
+    if (heartbeatFailed) fields.heartbeat = 'failed';
+    return formatDebugLine(fields);
+  }
+}
+
 // GRD-16: the decision's debug-log fields (C:guard Output; G1), in the fixed order agent_id,
 // decision, reason, command, heartbeat. `reason` is a blanket deny's trigger kind (G2, carried
-// on `parsed.blanket`) or, otherwise, the deny's own catalogue message (never the matched
-// command's message text, which is kept out of `command` instead, not `reason`); left out for
-// an allowed (non-blanket) command, which explains nothing. `command` is the matched `git
-// commit` segment's redacted options (G3 `matched`) when there is one, else a `plan` script
-// call's redacted script-call form when the command holds one, else left out.
+// on `parsed.blanket`) or, otherwise, the deny's catalogue row id (G3 `row`), never its text
+// (the generic and wrapper texts name a token of the command); left out for an allowed
+// command. `command` is the matched `git commit` segment's redacted options (G3 `matched`),
+// left out when it has none; with no matched segment, a `plan` call's redacted script-call
+// form when the command holds one; else left out.
 function decisionFields(known, parsed, result, heartbeatFailed) {
   const fields = { ...known, decision: result.decision };
   const reason = reasonField(parsed, result);
@@ -105,11 +119,14 @@ function decisionFields(known, parsed, result, heartbeatFailed) {
 
 function reasonField(parsed, result) {
   if (!Array.isArray(parsed)) return parsed.blanket;
-  return result.decision === 'deny' ? result.message : undefined;
+  return result.decision === 'deny' ? result.row : undefined;
 }
 
 function commandField(parsed, result) {
-  if (result.matched) return result.matched.options.join(' ').slice(0, COMMAND_LIMIT);
+  if (result.matched) {
+    const { options } = result.matched;
+    return options.length === 0 ? undefined : options.join(' ').slice(0, COMMAND_LIMIT);
+  }
   if (!Array.isArray(parsed)) return undefined;
   const planCall = result.scriptCalls.find((call) => call.subcommand === 'plan');
   return planCall ? redactCommand(planCall) : undefined;

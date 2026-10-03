@@ -55,13 +55,16 @@ repo is still in place; under `COMMIT_GUARD_DEBUG=1` it adds
 `"heartbeat":"failed"` to the debug line. A crash anywhere else, including in the classifier, fails open (exit 0, no output, no
 heartbeat); under `COMMIT_GUARD_DEBUG=1`, `formatDebugLine` writes one JSON object on one
 stderr line, with keys `agent_id`, `decision`, `reason` and `command`, each key left out
-when unknown; `command` is in the same redacted form as the heartbeat (script-call form or
-the matched `git commit` segment's options, never message text or other segments), cut to
-200 characters; for a blanket deny (G2) the trigger kind instead of the command. A crash or
-unreadable input writes the same one-key-subset object under debug, with the fields known
-so far (down to `{}`), and still no stdout; the guard entry point writes that same `{}`
-itself when the crash happens before the library loads at all (GRD-02). GRD-16 extends the
-object with the same keys, defining no new ones.
+when unknown; `reason` is a deny's catalogue row id (G3 `row`) or, for a blanket deny (G2),
+the trigger kind, never the deny text (C:guard Output lists the ids); `command` is in the
+same redacted form as the heartbeat (script-call form or the matched `git commit` segment's
+options, G3 `matched`; never values, message text, plain arguments or other segments), cut
+to 200 characters, left out when the matched segment has no options; a blanket deny logs no
+command. A crash or unreadable input writes the same one-key-subset object under debug, with
+the fields known so far (down to `{}`), and still no stdout; the guard entry point writes
+that same `{}` itself when the crash happens before the library loads at all (GRD-02). The
+decision's line is built after stdout is decided, in its own catch: a throw there logs
+`agent_id`, `decision` (and `heartbeat`) only, never reaching the fail-open catch.
 `runHook(stdinText, { env, claudeHome, now }) → { stdout, stderr }`; `formatDebugLine(fields)
 → string`. Sources: Q1, Q3, Q23, C:guard.
 
@@ -171,7 +174,8 @@ a blanket result from G2 gives the blanket deny and nothing else (the `nesting`,
 detect script calls with S2; the worker-only rule (`agent_type` `commit:commit-worker` and a
 script call to `commit` or `release` → deny). The fixed deny texts of C:guard, `<route>`
 expansion and the trailing personal-skill line are data here; no text names `/commit`.
-`classify(segmentsOrBlanket, { agentType, shell }) → { decision: "deny" | "none", message?,
-scriptCalls, matched?: { options } }`, where `matched` holds the matched `git commit`
-segment's options for G1's debug log.
+`classify(segmentsOrBlanket, { agentType, shell }) → { decision: "deny" | "none", row?,
+message?, scriptCalls, matched?: { options } }`, where `row` is a non-blanket deny's
+catalogue row id and `matched` holds the matched `git commit` segment's options (option
+names only, of the literal arguments before any non-literal one), both for G1's debug log.
 Sources: Q3, Q4, Q8, Q24, Q25, C:guard.

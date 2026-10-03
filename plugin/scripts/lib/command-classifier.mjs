@@ -347,18 +347,24 @@ const isPlainFixup = (item) => item.flag === '--fixup' && item.value !== undefin
 const NO_VERIFY = new Set(['-n', '--no-verify', '--no-gpg-sign']);
 const isNoEdit = (item) => item.flag === '--no-edit' && item.value === undefined;
 
+// A deny's catalogue row: `row` its fixed id (G3; G1's debug-log `reason`, which never holds
+// the text: the generic and wrapper texts name a token of the command), `message` its text.
+const rowDenial = (row, message) => Object.freeze({ row, message });
+const BARE = rowDenial('bare', MESSAGES.bare);
+const LITERAL_ARGUMENTS = rowDenial('literalArguments', MESSAGES.literalArguments);
+
 // The specific rows of C:guard Precedence, in order, each finding its first matching item in
 // argv order and giving that item's message. They outrank the generic, wrapper and bare rows.
 const SPECIFIC_ROWS = [
-  (items) => (!items.some(isNoEdit) && items.some((item) => item.flag === '--amend') ? MESSAGES.amend : null),
-  (items) => (items.some((item) => item.flag === '--squash') ? MESSAGES.squash : null),
+  (items) => (!items.some(isNoEdit) && items.some((item) => item.flag === '--amend') ? rowDenial('amend', MESSAGES.amend) : null),
+  (items) => (items.some((item) => item.flag === '--squash') ? rowDenial('squash', MESSAGES.squash) : null),
   (items) => {
     const item = items.find((i) => NO_VERIFY.has(i.flag));
-    return item === undefined ? null : noVerifyMessage(item.flag);
+    return item === undefined ? null : rowDenial('noVerify', noVerifyMessage(item.flag));
   },
   (items) => {
     const item = items.find((i) => i.flag === '--fixup' && i.value !== undefined && FIXUP_KIND.test(i.value));
-    return item === undefined ? null : fixupKindMessage(FIXUP_KIND.exec(item.value)[1]);
+    return item === undefined ? null : rowDenial('fixupKind', fixupKindMessage(FIXUP_KIND.exec(item.value)[1]));
   },
 ];
 // What each form allows besides itself. A flag that takes no value is outside the form when
@@ -372,12 +378,13 @@ const fitsFixup = (item) => isQuiet(item) || isPlainFixup(item);
  * then the Q4 allowlist (`allowlistDecision`).
  *
  * @param {ReturnType<typeof expandCommitArgs>} items
- * @returns {string | null} the deny message, or null when the form is allowed.
+ * @returns {{ row: string, message: string } | null} the deny's row, or null when the form
+ *   is allowed.
  */
 function argumentsDecision(items) {
   for (const row of SPECIFIC_ROWS) {
-    const message = row(items);
-    if (message !== null) return message;
+    const denial = row(items);
+    if (denial !== null) return denial;
   }
   return allowlistDecision(items);
 }
@@ -390,52 +397,68 @@ function argumentsDecision(items) {
  * which gives the bare row only when nothing else matches (C:guard Precedence).
  *
  * @param {ReturnType<typeof expandCommitArgs>} items
- * @returns {string | null} the deny message, or null when the form is allowed.
+ * @returns {{ row: string, message: string } | null} the deny's row, or null when the form
+ *   is allowed.
  */
 function allowlistDecision(items) {
   const form = items.find((item) => item.flag === '--no-edit' || isPlainFixup(item));
   if (form === undefined) {
     const other = items.find((item) => !BARE_ROW.has(item.flag) && !QUIET.has(item.flag));
-    return other === undefined ? MESSAGES.bare : genericMessage(nameOf(other));
+    return other === undefined ? BARE : rowDenial('generic', genericMessage(nameOf(other)));
   }
   const fits = form.flag === '--no-edit' ? fitsNoEdit : fitsFixup;
   const other = items.find((item) => !fits(item) && !BARE_ROW.has(item.flag));
-  if (other !== undefined) return genericMessage(nameOf(other));
-  return items.some((item) => BARE_ROW.has(item.flag)) ? MESSAGES.bare : null;
+  if (other !== undefined) return rowDenial('generic', genericMessage(nameOf(other)));
+  return items.some((item) => BARE_ROW.has(item.flag)) ? BARE : null;
 }
 
 // The name the generic row gives an item: its flag, or the argument (an empty one as `""`).
 const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument || '""');
 
+// An option name as git spells one: dashes, then letters, digits and dashes. A flag-shaped
+// token outside it (`"--secret words"`, read as an unknown long option) is never logged.
+const OPTION_NAME = /^--?[A-Za-z0-9][A-Za-z0-9-]*$/;
+
 // The matched segment's options for GRD-16's debug log (G1): each expanded item's flag only,
-// never a value (so `-m`'s or `--file`'s message text never persists) and never a plain
-// argument (a pathspec).
+// never a value (so `-m`'s or `--file`'s message text never persists), never a plain
+// argument (a pathspec) and never a flag-shaped token that is not an option name.
 function commitOptions(items) {
-  return items.filter((item) => item.flag !== undefined).map((item) => item.flag);
+  return items.filter((item) => item.flag !== undefined && OPTION_NAME.test(item.flag)).map((item) => item.flag);
 }
 
-// One `git commit` invocation, its `git` token at `at` in a command starting at `from`
-// and its arguments starting at `start` (after `commit`): `{ message, options }`, `message`
-// null when allowed. Every argument read must be
-// literal (C:guard step 4); a non-literal one gives the literal-arguments row with no options
-// (nothing here is safe to redact). A possible wrapper before `git` denies what would
-// otherwise be allowed or the bare row; its row ranks just above the bare row (C:guard
-// Precedence). `options` is GRD-16's debug-log data (G1), unaffected by which row wins.
-function commitDecision(tokens, from, at, start, shell) {
+// `commit`'s arguments from `start` up to where they end (C:guard step 4), expanded, and
+// whether all of them are literal; reading stops at the first one that is not, so `items`
+// then holds the literal ones before it.
+function readCommitArgs(tokens, start, shell) {
   const args = [];
   for (let i = start; i < tokens.length && !endsArguments(tokens[i], shell); i += 1) {
-    if (!isLiteral(tokens[i], shell)) return { message: MESSAGES.literalArguments };
+    if (!isLiteral(tokens[i], shell)) return { items: expandCommitArgs(args), literal: false };
     args.push(tokens[i]);
   }
-  const items = expandCommitArgs(args);
+  return { items: expandCommitArgs(args), literal: true };
+}
+
+// The options GRD-16's debug log gives a `git commit` whose arguments start at `start`.
+const optionsAt = (tokens, start, shell) => commitOptions(readCommitArgs(tokens, start, shell).items);
+
+// One `git commit` invocation, its `git` token at `at` in a command starting at `from`
+// and its arguments starting at `start` (after `commit`): `{ denial, options }`, `denial`
+// (the row) null when allowed. Every argument read must be literal (C:guard step 4); a
+// non-literal one gives the literal-arguments row. A possible wrapper before `git` denies
+// what would otherwise be allowed or the bare row; its row ranks just above the bare row
+// (C:guard Precedence). `options` is GRD-16's debug-log data (G1), unaffected by which row
+// wins: the flags of the literal arguments before any non-literal one.
+function commitDecision(tokens, from, at, start, shell) {
+  const { items, literal } = readCommitArgs(tokens, start, shell);
   const options = commitOptions(items);
-  const message = argumentsDecision(items);
-  if (message !== null && message !== MESSAGES.bare) return { message, options };
+  if (!literal) return { denial: LITERAL_ARGUMENTS, options };
+  const denial = argumentsDecision(items);
+  if (denial !== null && denial !== BARE) return { denial, options };
   const wrapper = wrapperBefore(tokens, from, at, shell);
-  if (wrapper === undefined) return { message, options };
+  if (wrapper === undefined) return { denial, options };
   // An `env` whose `-a` option is the first unfit token is named rather than that option.
   const runner = ARGV0_A.test(wrapper) ? argv0Runner(tokens, from, at) : undefined;
-  return { message: wrapperMessage(runner ?? wrapper), options };
+  return { denial: rowDenial('wrapper', wrapperMessage(runner ?? wrapper)), options };
 }
 
 // C:guard step 4: git's known options before the subcommand. A value-taking one takes the next
@@ -519,15 +542,15 @@ function readGitOptions(tokens, start, shell) {
   return found;
 }
 
-// The deny message of git's options before the subcommand (C:guard Precedence: the `-c`/`--config-env` row,
+// The deny row of git's options before the subcommand (C:guard Precedence: the `-c`/`--config-env` row,
 // then the literal-subcommand row, then the literal-arguments row, then the unknown-option row, all above the `commit`
 // argument rows), or null when they leave the decision to the `commit` arguments, or to
 // nothing when there is no `commit`.
 function gitOptionsDecision(found) {
-  if (found.config && found.commit !== -1) return MESSAGES.config;
-  if (found.nonLiteralSubcommand) return MESSAGES.literalSubcommand;
-  if (found.nonLiteral) return MESSAGES.literalArguments;
-  if (found.unknown && found.commit !== -1) return MESSAGES.unknownGlobalOption;
+  if (found.config && found.commit !== -1) return rowDenial('config', MESSAGES.config);
+  if (found.nonLiteralSubcommand) return rowDenial('literalSubcommand', MESSAGES.literalSubcommand);
+  if (found.nonLiteral) return LITERAL_ARGUMENTS;
+  if (found.unknown && found.commit !== -1) return rowDenial('unknownGlobalOption', MESSAGES.unknownGlobalOption);
   return null;
 }
 
@@ -536,9 +559,10 @@ function gitOptionsDecision(found) {
  *
  * @param {Array<Array<string|object>> | { blanket: string }} parsed G2 `segments` output.
  * @param {{ agentType?: string, shell?: 'bash'|'powershell' }} [context]
- * @returns {{ decision: 'deny'|'none', message?: string, scriptCalls: object[],
- *   matched?: { options: string[] } }} `matched` holds the matched `git commit` segment's
- *   options (flags only, never a value or a plain argument) for G1's debug log (GRD-16).
+ * @returns {{ decision: 'deny'|'none', row?: string, message?: string, scriptCalls: object[],
+ *   matched?: { options: string[] } }} `row` is a non-blanket deny's catalogue row id;
+ *   `matched` holds the matched `git commit` segment's options (flags only, never a value or a
+ *   plain argument). Both are for G1's debug log (GRD-16), never its text.
  */
 export function classify(parsed, context = {}) {
   const { shell = 'bash' } = context;
@@ -549,17 +573,22 @@ export function classify(parsed, context = {}) {
   // Every segment's script call (S2), a denied command's included: G1 writes the heartbeat
   // for a `plan` call before the decision is emitted (C:guard Heartbeat).
   const scriptCalls = parsed.map((segment) => recognise(segment)).filter((call) => call !== null);
+  const deny = ({ row, message }, options) => {
+    const result = { decision: 'deny', row, message, scriptCalls };
+    if (options !== undefined) result.matched = { options };
+    return result;
+  };
   // The worker-only rule (C:guard, Q25) is checked before the git rows: the worker answering
   // its own handback is told to stop even when the command also commits directly. Its scan
   // (S2 `named`) is wider than `recognise`: any word naming the entry point counts.
   const { agentType } = context;
   if (agentType === WORKER_AGENT && parsed.some((segment) => named(segment).some((s) => HANDBACK_SUBCOMMANDS.has(s)))) {
-    return { decision: 'deny', message: HANDBACK_MESSAGE, scriptCalls };
+    return deny(rowDenial('handback', HANDBACK_MESSAGE));
   }
   // A Start-Process word denies the command with the wrapper row, which ranks just above the
   // bare row (C:guard step 3, Precedence).
   const starter = shell === 'powershell' ? startProcessName(parsed) : undefined;
-  const wrapped = starter === undefined ? null : wrapperMessage(starter);
+  const wrapped = starter === undefined ? null : rowDenial('wrapper', wrapperMessage(starter));
   for (const segment of parsed) {
     // Redirections are dropped with their target (C:guard step 2).
     const tokens = segment.filter((t) => typeof t === 'string' || Object.hasOwn(t, 'op'));
@@ -576,27 +605,20 @@ export function classify(parsed, context = {}) {
       // Git's options before the subcommand come first (step 4); Windows PowerShell 5.1 drops an empty
       // argument, so `git '' commit` runs a commit.
       const found = dashed ? { commit: i } : readGitOptions(tokens, i + 1, shell);
-      const denial = dashed ? null : gitOptionsDecision(found);
-      if (denial !== null) return { decision: 'deny', message: denial, scriptCalls };
+      const gitDenial = dashed ? null : gitOptionsDecision(found);
+      if (gitDenial !== null) {
+        // The `commit` found after git's options, if any, is the matched segment.
+        return deny(gitDenial, found.commit === -1 ? undefined : optionsAt(tokens, found.commit + 1, shell));
+      }
       if (found.commit === -1) {
         // An argv[0] option may make this `git` run `commit` whatever follows it.
         const runner = argv0Runner(tokens, starts[i], i);
         if (runner === undefined) continue;
-        return { decision: 'deny', message: wrapperMessage(runner), scriptCalls };
+        return deny(rowDenial('wrapper', wrapperMessage(runner)));
       }
-      const { message, options } = commitDecision(tokens, starts[i], i, found.commit + 1, shell);
-      if (message !== null) {
-        const deny = {
-          decision: 'deny',
-          message: message === MESSAGES.bare ? wrapped ?? message : message,
-          scriptCalls,
-        };
-        // `options` is absent for the literal-arguments row (nothing there is safe to
-        // redact); every other row has one, possibly empty.
-        if (options !== undefined) deny.matched = { options };
-        return deny;
-      }
+      const { denial, options } = commitDecision(tokens, starts[i], i, found.commit + 1, shell);
+      if (denial !== null) return deny(denial === BARE ? wrapped ?? denial : denial, options);
     }
   }
-  return wrapped === null ? { decision: 'none', scriptCalls } : { decision: 'deny', message: wrapped, scriptCalls };
+  return wrapped === null ? { decision: 'none', scriptCalls } : deny(wrapped);
 }

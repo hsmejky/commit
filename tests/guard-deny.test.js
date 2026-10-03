@@ -143,6 +143,7 @@ test('G3: in `b-bypass-escaped-cr` the second reading\'s segments alone are the 
   assert.deepEqual(seed.segments[0], ['echo', 'git', 'commit', '-m', 'x']);
   assert.deepEqual(classify(seed.segments.slice(1), { shell: 'bash' }), {
     decision: 'deny',
+    row: 'bare',
     message: MESSAGES.bare,
     scriptCalls: [],
     matched: { options: ['-m'] },

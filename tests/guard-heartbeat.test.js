@@ -20,12 +20,10 @@ const PLAN_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
 let heartbeat;
 let runHook;
-let MESSAGES;
 
 beforeEach(async () => {
   heartbeat = await loadLib('heartbeat');
   ({ runHook } = await loadLib('hook-io'));
-  ({ MESSAGES } = await loadLib('command-classifier'));
 });
 
 function guardDirEntries(claudeHome) {
@@ -173,7 +171,7 @@ test('Seam 2: a denied compound command with a plan call is still denied when th
   assert.equal(JSON.parse(debugged.stdout).hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(
     debugged.stderr,
-    `${JSON.stringify({ agent_id: 'a2', decision: 'deny', reason: MESSAGES.bare, command: '-m', heartbeat: 'failed' })}\n`,
+    `${JSON.stringify({ agent_id: 'a2', decision: 'deny', reason: 'bare', command: '-m', heartbeat: 'failed' })}\n`,
   );
 
   const plain = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome } });
