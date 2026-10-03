@@ -121,6 +121,12 @@ and the release comes only after the last group.
       4: EXE-02's own `touch` throw cited `EXE-06`, which is `head-moved`; no slice asserted
       a `taken-over`/`busy` refusal from `touch` between groups until this one).
 
+review-EXE-04 Medium-1: the mid-run `lock` refusal above is C:commit-release-conformant
+(`commits`/`failed`/`remaining`/`unstaged` and the group-1 commit stay real) but EXE-04 itself
+only asserts the CLI shape documented by EXE-02 (`error.kind`, one commit, the other lock and
+run folder untouched); EXE-06 adds the AC that extends this same scenario to the full
+mid-run-refusal output fields.
+
 
 ## EXE-05: `no-groups` after the lock check
 
@@ -164,6 +170,19 @@ groups refused"), and the next group is refused `head-moved`.
       stored groups) → group 1 reported committed with the SHA HEAD holds and the "another
       commit was made during group 1; later groups refused" notice, group 2 refused
       `head-moved`, `failed: 2`, `remaining: [2, 3]`.
+- [ ] Seam 1: every mid-run refusal output of `commit --all` — including a `lock`
+      (`taken-over`/`busy`) refusal from `touch` between groups (EXE-04) — carries `commits`
+      (the groups already committed), `failed`, `remaining` and `unstaged` per
+      C:commit-release, not only `head-moved`'s; extend EXE-04's takeover test to assert
+      `commits: [{ n: 1, … }]`, `failed: 2`, `remaining: [2, 3]`, `unstaged: []` on that same
+      scenario (review-EXE-04 Medium-1).
+
+review-EXE-04 Low-2: `workflows.mjs`'s stale comments predate this slice and should be
+updated when this file is next touched (not here — it belongs to another in-flight slice):
+the `commitGroups` comment at ~641-646 ("EXE-02") and the `commit` JSDoc at ~781-789
+(`taken-over` "refused before any group-commit work") should both mention that `touch`
+before a later group can also refuse `taken-over`/`busy` with earlier groups kept and the
+run not released (EXE-04).
 
 
 ## EXE-07: `index-changed` refuses staging from outside the run

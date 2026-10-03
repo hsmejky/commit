@@ -321,7 +321,7 @@ async function threeGroupRun(t, { edit } = {}) {
     body: null,
     committed: false,
   }));
-  if (edit) edit(state, c);
+  if (edit) await edit(state, c);
   fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   return { c, planId, runDir, seed, lockPath: path.join(path.dirname(runDir), 'lock') };
 }
@@ -391,11 +391,15 @@ test('the lock mtime is refreshed before each group (a pre-commit hook records i
 test('group 1 already committed with the expected HEAD at its SHA → the call commits groups 2 and 3 only', async (t) => {
   let group1;
   const { c, planId, seed } = await threeGroupRun(t, {
-    edit: (state, repo) => {
+    edit: async (state, repo) => {
       repo.git(['commit', '-q', '-m', THREE_HEADERS[0], '--', 'a.txt']);
       group1 = repo.git(['rev-parse', 'HEAD']).trim();
       state.groups[0].committed = true;
       state.head = group1;
+      // Mirrors commit-executor.mjs's post-commit update (EXE-07's future `index-changed`
+      // check reads this field): without it, the fixture's own `git commit` above leaves the
+      // stored fingerprint stale relative to the index it just committed.
+      state.indexFingerprint = await changeSet.indexFingerprint({ toplevel: repo.repoDir, env: repo.env });
     },
   });
 

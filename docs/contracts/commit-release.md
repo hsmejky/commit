@@ -167,10 +167,12 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
 - Exit 4 fills `gitOutput` with git's stdout and stderr verbatim (unescaped, uncut); what a
   caller shows through `text` is the capped, escaped copy of it ([Reply and
   handback](reply-and-handback.md)). Exit 3 fills `error` and adds `hits`.
-- `unstaged`: only in the output that ends a `split` run (last group, or any failure) and
-  only when the state file has `indexReset: true`; `indexReset` decides only this report,
-  never whether to unstage. `null` otherwise, and then the report
-  says the index is untouched. It lists the paths of the state file's `preStaged` that
+- `unstaged`: present on every `commit --all` output, run-ending or mid-run (e.g. a `lock`
+  refusal between groups), gated only by the state file's `indexReset: true`; `indexReset`
+  decides only this report, never whether to unstage. `[]` once `indexReset` is true (an
+  earlier group's own index reset, even if nothing of `preStaged`/`indexOnly` still differs
+  from HEAD); `null` only while the index has never been touched (`indexReset` still false),
+  and then the report says the index is untouched. It lists the paths of the state file's `preStaged` that
   still differ from HEAD, so the run's reset has unstaged them, plus every `indexOnly`
   path whether or not it differs from HEAD, with its index `blob` (`null` for the others).
   `ignored` marks one that `git status` no longer shows. The report says "your earlier
