@@ -231,16 +231,16 @@ becomes a notice and never changes the outcome. It never deletes a renamed lock 
 
 **Blocked by:** RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:run-folder (sweep), M12 `sweep`, story 195.
 
-- [ ] Seam 1: a minted-form folder aged 25 hours → deleted. A 1-hour-old one → kept. The
+- [x] Seam 1: a minted-form folder aged 25 hours → deleted. A 1-hour-old one → kept. The
       folder the lock names → kept, whatever its age.
-- [ ] Seam 1: an aged entry that is not in the minted form, and an aged symlink to a
+- [x] Seam 1: an aged entry that is not in the minted form, and an aged symlink to a
       folder outside `.commit-plan/`, are both left untouched, and the link's target is
       intact.
-- [ ] Seam 1: an aged lock temporary file → removed.
+- [x] Seam 1: an aged lock temporary file → removed.
 
 
 ## RUN-09: Windows file-in-use errors map to `busy`
