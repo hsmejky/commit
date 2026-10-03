@@ -132,6 +132,11 @@ test('after a failed check, no stored group remains in state.json', async (t) =>
   assert.equal(first.exitCode, 0, detail(first));
   assert.equal(storedState(runDir).groups.length, 1);
 
+  // Simulate a prior confirm handback so the second, failing `check` has something to clear.
+  const beforeSecond = storedState(runDir);
+  beforeSecond.awaitingConfirm = true;
+  fs.writeFileSync(path.join(runDir, 'state.json'), `${JSON.stringify(beforeSecond)}\n`);
+
   writeWorkerPlan(runDir, 'not json');
   const second = await runCommit(c, ['check', '--plan', planId]);
 

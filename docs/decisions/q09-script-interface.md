@@ -109,8 +109,9 @@
     run folder; lints every group's message, validates hunk IDs and paths, requires every
     unit to be placed exactly once (`split` only; the single group of a `staged` or `reword`
     run holds every unit implicitly), and **computes** `confirm` (Q16). On success it stores
-    the validated groups in the state file: per group the resolved units (hunk IDs, or paths
-    in the file-level slice), the normalised message and whether the attribution applies
+    the validated groups in the state file: per group the resolved units (unit IDs, whether
+    the plan named them by hunk ID or by path in the file-level slice), the normalised
+    message and whether the attribution applies
     (Q20). It clears the stored groups before it validates, so a failed `check` after `edit`
     leaves nothing committable, and it refuses (`usage`) once any group is committed: a
     re-plan after a partial commit would renumber groups over units already in HEAD. Zero

@@ -6,6 +6,12 @@ and of the real index.
   `indexOnly` carries the blob ID; every candidate carries its size in bytes and `binary`,
   which M9 `applyCaps` and M13 read; in `staged` mode it also counts `unstagedLeft`, `null`
   in `split` and `reword`, C:plan).
+- `unplannableCaseRenames({ stagedNew, tracked })` → `[{ oldPath, path }]`: the staged
+  case-only renames (a staged-new path and a tracked path equal under `toLowerCase`) the
+  temporary index cannot plan, because `core.ignorecase` is true or `lstat` of the old path
+  finds the new path's file (same device and inode); empty on a case-sensitive filesystem
+  with `core.ignorecase=false`. Read-only; one `git config` call, only when a pair exists
+  (Q11, CHG-07 decision).
 - `snapshot({ mode, storedLists, indexPath })` → units. Builds the temporary index by
   copying the real index and running `git reset -q -- .` on the copy (no ref written;
   empty when unborn), then
@@ -194,8 +200,8 @@ forward slashes.
   (`excludePath` from M2 `gitPath`, `tracked` from M3 `isTracked`: M12 spawns nothing); `provisional.peek()` (typed, `held` with holder, or
   ok when no live lock, carrying the stale holder when there is one, and the orphan
   renamed locks when there is no lock, which M18 treats like a stale lock; read-only);
-  `provisional.write(name, data)` (the same atomic write as `run.write`, so step 7 writes
-  `state.json` before the lock exists), `provisional.acquire({ takeOver? })` (typed, `held` with holder, `busy`, `taken-over`,
+  `provisional.write(name, data)` (the same atomic write `writeState` uses for its
+  `state.json` form, so step 7 writes `state.json` before the lock exists), `provisional.acquire({ takeOver? })` (typed, `held` with holder, `busy`, `taken-over`,
   `ended` (a `--take-over` run already gone), `run-folder`) or `provisional.discard()` (never
   throws and never removes through a `.commit-plan` that became a link: `null`, or the notice
   for a folder it could not remove, left for the sweep).
@@ -219,7 +225,9 @@ forward slashes.
   and `ENOENT`-tolerant (a folder already deleted by `release` or a takeover is not an
   error). Called from M18's `finally` for every call with `--plan` and from the entry
   point's signal handler (once GIT-08 builds it).
-- `run.state`, `run.write(name, data)`, `run.readWorkerPlan()`, `run.touch()`,
+- `readState(run)`, `writeState(run, state)`, `readWorkerPlan(run)` (PLN-01): free functions
+  over `{ toplevel, planId }`, not methods on a run object, following the `open`/`close`
+  precedent above. `run.touch()`,
   `run.release()`, `Run.releaseById({ toplevel, planId }) → { ok: true, released }` (`released:
   false` for the no-op when the lock does not hold `planId`; `{ ok: false, code: 'busy' }`
   on a live `call.lock`, RUN-02), `Run.sweep(now)`. Every M12 static entry takes `toplevel`

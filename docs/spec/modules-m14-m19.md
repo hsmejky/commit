@@ -8,7 +8,8 @@ its new path only); IDs exist, are used once and are not mixed with `files`; com
 `dirtySubmodules` path in a group; exactly one group in `staged` and `reword`; lint (M6) and
 scan (M8) each message; add the `notIncluded` extras and notices; derive new files, file lists and the
 attribution flag per group. `validatePlan(planBytes, runState, { osUser })` (typed: `{ groups,
-notIncluded, notices }` or `lint` with errors; a message's scan error carries the M8
+notIncluded, notices, stored }` or `lint` with errors; `stored` is the per-group rows
+`check` writes into `state.json`, PLN-01; a message's scan error carries the M8
 `scanText` spans for M17's redaction). `osUser` is the entry point's injected value, passed
 by M18 on every call and never stored in the run state (Q10 as amended by EXE-01). Sources:
 Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
@@ -207,7 +208,8 @@ the reply with M17.
      M17 puts them in the reply's notices of every output `plan` ends with, whatever step
      it ends at (clean, `modeChoice`, a refusal, `timeout`, `internal`), since
      `finishTakeover` has already deleted the evidence (story 210).
-  4. M10 `indexFingerprint`, read first, then M10 `inventory`; M9 `hideFilter`; M15
+  4. M10 `indexFingerprint`, read first, then M10 `inventory`; in `split`, M10
+     `unplannableCaseRenames` (any → `case-rename`, discard); M9 `hideFilter`; M15
      `resolveMode` (passed `killedLeftover` from the takeover repair at step 3)
      (`modeChoice`, `staged-empty` or `killed-leftover` → discard; a `reword` run with
      `killedLeftover` goes on with its notice).

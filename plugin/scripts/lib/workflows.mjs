@@ -56,6 +56,7 @@ import {
 } from './repo-probe.mjs';
 import {
   assignIds, indexFingerprint, inventory as takeInventory, snapshot, trackedDirectories, treeState,
+  unplannableCaseRenames,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
 import {
@@ -220,13 +221,34 @@ async function createRunFolder(ctx) {
  * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
  * full `modeChoice` (M15 `resolveMode`) is a later slice's, and will count these same pre-cap
  * `candidates`/`stagedNew` lists (C:plan step 4: "candidates for the mode decision are
- * counted after the hidden rule and before the caps").
+ * counted after the hidden rule and before the caps"). In `split`, a staged case-only rename
+ * the temporary index cannot plan (M10 `unplannableCaseRenames`, over the pre-cap lists)
+ * refuses with `case-rename` (exit 6 `state`, CHG-07 decision, Q11).
  */
 async function inventory(ctx) {
   ctx.indexFingerprint = await indexFingerprint({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
   ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
+  if (ctx.mode === 'split') {
+    const renames = await unplannableCaseRenames({
+      stagedNew: ctx.inventory.stagedNew.map((entry) => entry.path),
+      tracked: ctx.inventory.tracked,
+      toplevel: ctx.toplevel,
+      env: ctx.injected.env,
+      now: ctx.injected.now,
+    });
+    if (renames.length > 0) return { refusal: { code: 'case-rename', message: caseRenameMessage(renames) } };
+  }
   return undefined;
+}
+
+// C:cli-and-exit-codes recorded text: the first five renames, then a count of the rest, so
+// the refusal stays within `plan`'s 1 kB output budget for short paths.
+function caseRenameMessage(renames) {
+  const named = renames.slice(0, 5).map(({ oldPath, path }) => `${oldPath} → ${path}`).join(', ');
+  const more = renames.length > 5 ? ` and ${renames.length - 5} more` : '';
+  return 'cannot plan a staged case-only rename on a case-insensitive filesystem or with '
+    + `core.ignorecase=true: ${named}${more}; commit the rename by hand, then run /commit again`;
 }
 
 /**
@@ -529,11 +551,11 @@ async function commitRefusals(ctx) {
   return subcommandRefusals(ctx, 'commit');
 }
 
-/** `commit` step 3: M12 `open`, the whole call's own lock check (RUN-04). */
+/** Step 3 of `commit` and `check`: M12 `open`, the whole call's own lock check (RUN-04). */
 async function openRun(ctx) {
   const opened = open(ctx.values.plan, { toplevel: ctx.toplevel, now: ctx.injected.now });
   if (!opened.ok) return { refusal: { code: opened.code, message: opened.message } };
-  // Marks that `open` succeeded, so `commit`'s `finally` knows there is a `call.lock` to
+  // Marks that `open` succeeded, so the caller's `finally` knows there is a `call.lock` to
   // close (a failed `open` leaves nothing for `close` to do).
   ctx.opened = true;
   return undefined;
@@ -560,8 +582,8 @@ async function checkRefusals(ctx) {
  * with exit 2 and the `errors` (the first failure, no `reply`; M15 `onLintFailure` and the
  * `lintFailed` handback are RUN-16's). On success the validated groups are stored with
  * `committed: false`; the output is `groups`, `notIncluded` and `notices` only, with the
- * lock kept: M15 `checkGate`, `computeConfirm` and the routing to `commit --all` arrive with
- * their own slices (RUN-17, RUN-18, EXE-02, INT-02).
+ * lock kept: M15 `checkGate` (RUN-19), `computeConfirm` and the routing to `commit --all`
+ * arrive with their own slices (RUN-17, RUN-18, EXE-02, INT-02).
  */
 async function validateWorkerPlan(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
