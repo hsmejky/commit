@@ -4,27 +4,29 @@
 // and never writes, never refuses `plan`, and spawns nothing.
 //
 // CFG-08 built the tracer: no settings files were read, source always `default`. CFG-09
-// added the user layer only (`<claudeHome>/settings.json`). CFG-10 adds the project-local
+// added the user layer only (`<claudeHome>/settings.json`). CFG-10 added the project-local
 // (`<projectDir>/.claude/settings.local.json`) and project (`<projectDir>/.claude/
-// settings.json`) layers, ahead of the user layer, and drops the `toplevel` param CFG-09
-// accepted and ignored: `projectDir` is the already-resolved project directory the entry
-// point injects (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`; no
-// walk-up to a git toplevel — PRE-11, Q5 Amended), the same way `claudeHome` is injected.
-// This resolver never reads `env` or the cwd itself to find it. The two-pass key lookup
-// (`attribution.commit` across every layer, highest first, then the deprecated
-// `includeCoAuthoredBy` across every layer) and the trailer-line filtering are unchanged:
-// each line of a winning `attribution.commit` value is tested on its own against M6's
-// `isFooterLine` (a line that is not footer-shaped, e.g. a 🤖 line or a blank line, is
+// settings.json`) layers, ahead of the user layer, and dropped the `toplevel` param CFG-09
+// accepted and ignored. CFG-11 adds the managed layer (`<managedDir>/managed-settings.json`,
+// PRE-16), ahead of every other layer: `managedDir` is the already-resolved, platform-derived
+// managed directory the entry point injects, the same way `claudeHome` and `projectDir` are
+// (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`; no walk-up to a git
+// toplevel — PRE-11, Q5 Amended). This resolver never reads `env` or the cwd itself to find
+// any of them, and never reads the managed layer's drop-in directory (Out of Scope). The
+// two-pass key lookup (`attribution.commit` across every layer, highest first, then the
+// deprecated `includeCoAuthoredBy` across every layer) and the trailer-line filtering are
+// unchanged: each line of a winning `attribution.commit` value is tested on its own against
+// M6's `isFooterLine` (a line that is not footer-shaped, e.g. a 🤖 line or a blank line, is
 // dropped with a warning; M5 has no use for M6's `lint`, which checks a message against the
-// configured rules). `env` and `managedDir` are still accepted (and ignored) for CFG-11 (the
-// managed layer) to read later. Claude's own settings.json is not ours to validate: a
-// missing file is no settings at all from that layer (same as a missing `commit.json`
-// layer, Q6), not a `config` refusal. When a layer's file exists but cannot be read, is not
-// valid UTF-8, is not valid JSON, or its top level is not a JSON object, it is likewise
-// treated as no settings from that layer, but a warning names the problem (Q5 Amended,
-// docs/spec/modules-m1-m9.md M5), so a broken file does not silently give way to a lower
-// layer (or the default trailer) unnoticed. Every layer's file is read and checked for this
-// warning regardless of which layer's key ends up winning.
+// configured rules). `env` is still accepted (and ignored) here: the managed directory is
+// never read from `env`, so M5 has no use for it either, by design (Q5 Amended). Claude's
+// own settings.json is not ours to validate: a missing file is no settings at all from that
+// layer (same as a missing `commit.json` layer, Q6), not a `config` refusal. When a layer's
+// file exists but cannot be read, is not valid UTF-8, is not valid JSON, or its top level is
+// not a JSON object, it is likewise treated as no settings from that layer, but a warning
+// names the problem (Q5 Amended, docs/spec/modules-m1-m9.md M5), so a broken file does not
+// silently give way to a lower layer (or the default trailer) unnoticed. Every layer's file
+// is read and checked for this warning regardless of which layer's key ends up winning.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,11 +39,13 @@ const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 const LINE_SPLIT = /\r\n?|\n/;
 
 /** Each layer's display label for a warning (`Claude <label> ignored: ...`), and the path
- * segments (relative to its own base directory: `projectDir` for the two project layers,
- * `claudeHome` for the user layer) its settings file lives at (Q5). Order matters: this is
- * the precedence order, highest first, project-local and project only applying when
- * `projectDir` is given. */
+ * segments (relative to its own base directory: `managedDir` for the managed layer,
+ * `projectDir` for the two project layers, `claudeHome` for the user layer) its settings
+ * file lives at (Q5, PRE-16). Order matters: this is the precedence order, highest first;
+ * the managed layer only applies when `managedDir` is given, project-local and project only
+ * when `projectDir` is given. */
 const LAYER_DEFS = [
+  { source: 'managed', label: 'managed managed-settings.json', segments: ['managed-settings.json'] },
   { source: 'project-local', label: 'project-local settings.local.json', segments: ['.claude', 'settings.local.json'] },
   { source: 'project', label: 'project settings.json', segments: ['.claude', 'settings.json'] },
   { source: 'user', label: 'user settings.json', segments: ['settings.json'] },
@@ -89,17 +93,18 @@ function readSettingsFile(filePath, label) {
 }
 
 /**
- * Builds the ordered, available layers (highest precedence first): project-local and project
- * (under `projectDir`) only when `projectDir` is a string (no walk-up to a git toplevel — a
+ * Builds the ordered, available layers (highest precedence first): managed (under
+ * `managedDir`) only when `managedDir` is a string, then project-local and project (under
+ * `projectDir`) only when `projectDir` is a string (no walk-up to a git toplevel — a
  * `projectDir` without its own `.claude/` yields no project layers, matching the entry
  * point's own resolution, PRE-11), then user (under `claudeHome`) only when `claudeHome` is a
  * string.
  *
- * @param {{ projectDir?: string, claudeHome?: string }} injected
+ * @param {{ managedDir?: string, projectDir?: string, claudeHome?: string }} injected
  * @returns {Array<{ source: string, settings: object, warning: string | null }>}
  */
-function readLayers({ projectDir, claudeHome }) {
-  const bases = { 'project-local': projectDir, project: projectDir, user: claudeHome };
+function readLayers({ managedDir, projectDir, claudeHome }) {
+  const bases = { managed: managedDir, 'project-local': projectDir, project: projectDir, user: claudeHome };
   return LAYER_DEFS
     .filter((def) => typeof bases[def.source] === 'string')
     .map((def) => {
@@ -138,9 +143,10 @@ function trailerLinesOf(commitValue) {
 }
 
 /**
- * Resolves the commit attribution trailer (M5, Q5). Layers, highest first: project-local
- * (`<projectDir>/.claude/settings.local.json`), project (`<projectDir>/.claude/
- * settings.json`), user (`<claudeHome>/settings.json`); the managed layer is CFG-11's.
+ * Resolves the commit attribution trailer (M5, Q5). Layers, highest first: managed
+ * (`<managedDir>/managed-settings.json`, PRE-16; its drop-in directory is not read, Out of
+ * Scope), project-local (`<projectDir>/.claude/settings.local.json`), project
+ * (`<projectDir>/.claude/settings.json`), user (`<claudeHome>/settings.json`).
  * `attribution.commit` wins at the first layer (highest first) where it is a string (`''`
  * means no trailer, a whitespace-only string behaves the same since every line of it is
  * dropped; otherwise its trailer-shaped lines are kept, every other line dropped with a
@@ -160,8 +166,10 @@ function trailerLinesOf(commitValue) {
  * @param {{ env?: object, claudeHome?: string, projectDir?: string|null,
  *   managedDir?: string|null }} [injected] `projectDir` is the entry point's already-resolved
  *   project directory (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`;
- *   PRE-11); omitted or not a string, there are no project layers. `env` and `managedDir` are
- *   accepted for CFG-11 and ignored here.
+ *   PRE-11); omitted or not a string, there are no project layers. `managedDir` is the
+ *   entry point's already-resolved, platform-derived managed directory (PRE-16); omitted or
+ *   not a string, there is no managed layer. `env` is accepted and always ignored: the
+ *   managed directory is never read from it (CFG-11, Q5 Amended).
  * @returns {{ trailer: string | null, source: string, warnings: string[] }}
  */
 export function resolveAttribution(injected = {}) {

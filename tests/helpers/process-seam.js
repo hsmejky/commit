@@ -366,6 +366,38 @@ function pathOverride(c, dirs) {
   return overrides;
 }
 
+/**
+ * The real, platform-fixed `managed-settings.json` path (PRE-16, mirroring commit.cjs's own
+ * `resolveManagedDir`, which a shipped entry point computes inline and never from `env`).
+ * Seam 1 managed-layer cases (CFG-11) use this to find the one file commit.cjs will itself
+ * read as the highest settings layer; they do not inject it, since the shipped CLI has no
+ * test-only switch for it.
+ *
+ * @returns {string}
+ */
+function managedSettingsPath() {
+  if (process.platform === 'darwin') {
+    return path.join('/Library', 'Application Support', 'ClaudeCode', 'managed-settings.json');
+  }
+  if (process.platform === 'win32') {
+    return path.join('C:\\', 'Program Files', 'ClaudeCode', 'managed-settings.json');
+  }
+  return path.join('/etc', 'claude-code', 'managed-settings.json');
+}
+
+/**
+ * True when the host already has its own `managed-settings.json` at the real path. Every
+ * attribution case run through the shipped entry point must skip (not fake a result) when
+ * this is true, whatever the CI status (CFG-11): commit.cjs always injects the real managed
+ * directory, with no override, so a host-owned file would otherwise silently leak into
+ * every attribution assertion in the suite.
+ *
+ * @returns {boolean}
+ */
+function hostHasManagedSettings() {
+  return fs.existsSync(managedSettingsPath());
+}
+
 module.exports = {
   COMMIT_ENTRY,
   GUARD_ENTRY,
@@ -375,4 +407,6 @@ module.exports = {
   runCommit,
   runGuard,
   pathOverride,
+  managedSettingsPath,
+  hostHasManagedSettings,
 };

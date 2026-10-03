@@ -190,7 +190,7 @@ test('M1 receives argv after the script path and the injected environment', asyn
   assert.deepEqual(result.json.argv, ['plan', '--split']);
   assert.deepEqual(
     result.json.keys,
-    ['claudeHome', 'cwd', 'env', 'now', 'osHome', 'osUser', 'projectDir', 'scriptPath'],
+    ['claudeHome', 'cwd', 'env', 'managedDir', 'now', 'osHome', 'osUser', 'projectDir', 'scriptPath'],
   );
   assert.equal(result.json.claudeHome, c.claudeHome);
   assert.equal(result.json.osHome, c.osHome);
@@ -200,6 +200,38 @@ test('M1 receives argv after the script path and the injected environment', asyn
   assert.equal(result.json.projectDir, c.repoDir);
   assert.equal(result.json.nowType, 'number');
   assert.equal(result.json.osUserType, 'string');
+});
+
+// CFG-11 (docs/roadmap/04-config-and-attribution.md; PRE-16): the injected managed
+// directory is derived from `process.platform` alone, with no env override at all — not
+// even a candidate variable that merely looks plausible.
+test('the injected managed directory is the fixed, platform-derived one, and no env variable changes it', async (t) => {
+  const c = createCase(t);
+  const { entry } = installEntryWithStubLib(c, [
+    'export async function main(argv, env) {',
+    '  return { stdoutJson: { version: 1, ok: true, managedDir: env.managedDir }, exitCode: 0 };',
+    '}',
+    '',
+  ].join('\n'));
+  const fakeManagedDir = path.join(c.root, 'fake-managed-dir');
+
+  const result = await runCommit(c, ['plan'], {
+    script: entry,
+    env: {
+      CLAUDE_MANAGED_SETTINGS_DIR: fakeManagedDir,
+      CLAUDE_CODE_MANAGED_DIR: fakeManagedDir,
+      MANAGED_SETTINGS_DIR: fakeManagedDir,
+    },
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.notEqual(result.json.managedDir, fakeManagedDir);
+  const expected = process.platform === 'darwin'
+    ? path.join('/Library', 'Application Support', 'ClaudeCode')
+    : process.platform === 'win32'
+      ? path.join('C:\\', 'Program Files', 'ClaudeCode')
+      : path.join('/etc', 'claude-code');
+  assert.equal(result.json.managedDir, expected);
 });
 
 test('without CLAUDE_PROJECT_DIR the injected project directory is the spawn cwd, not the repo', async (t) => {

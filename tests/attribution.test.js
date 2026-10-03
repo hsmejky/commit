@@ -323,7 +323,7 @@ test('attribution.commit wins over includeCoAuthoredBy: false when both are set'
   });
 });
 
-test('resolveAttribution ignores env and managedDir (CFG-11 fields) when no layer sets a key', (t) => {
+test('resolveAttribution ignores env, and a managedDir with no managed-settings.json in it is no managed layer', (t) => {
   const claudeHome = tempClaudeHome(t);
   const result = attribution.resolveAttribution({
     env: { CLAUDE_MODEL: 'opus', CLAUDE_CODE_MODEL: 'haiku' },
@@ -333,6 +333,108 @@ test('resolveAttribution ignores env and managedDir (CFG-11 fields) when no laye
   assert.deepEqual(result, {
     trailer: DEFAULT_TRAILER,
     source: 'default',
+    warnings: [],
+  });
+});
+
+// CFG-11 (docs/roadmap/04-config-and-attribution.md): the managed layer
+// (`<managedDir>/managed-settings.json`, PRE-16) beats every other layer. `managedDir` is
+// passed directly here, exactly as the entry point would inject it (platform derivation is
+// the entry point's own job, never this resolver's — see the "no process." source test
+// below); Seam 1 coverage of the real, platform-fixed path runs in CI only
+// (tests/managed/managed-attribution.test.js).
+function tempManagedDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-managed-dir-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  return dir;
+}
+
+function writeManagedSettings(managedDir, value) {
+  fs.writeFileSync(path.join(managedDir, 'managed-settings.json'), JSON.stringify(value));
+}
+
+test('managed attribution.commit beats project-local, project and user layers, source managed', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const projectDir = tempProjectDir(t);
+  const managedDir = tempManagedDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  writeProjectSettings(projectDir, 'settings.local.json', { attribution: { commit: 'Co-Authored-By: Local <l@x>' } });
+  writeManagedSettings(managedDir, { attribution: { commit: 'Co-Authored-By: Managed <m@x>' } });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, projectDir, managedDir }), {
+    trailer: 'Co-Authored-By: Managed <m@x>',
+    source: 'managed',
+    warnings: [],
+  });
+});
+
+test('managed includeCoAuthoredBy: false wins over a lower layer when no layer sets attribution.commit', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const managedDir = tempManagedDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  writeManagedSettings(managedDir, { includeCoAuthoredBy: false });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, managedDir }), {
+    trailer: 'Co-Authored-By: User <u@x>',
+    source: 'user',
+    warnings: [],
+  });
+  // Pass 1 (attribution.commit) checks every layer, managed included, before pass 2
+  // (includeCoAuthoredBy) checks any: the user layer's attribution.commit still wins.
+});
+
+test('managed includeCoAuthoredBy: false wins when no layer at all sets attribution.commit', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const managedDir = tempManagedDir(t);
+  writeManagedSettings(managedDir, { includeCoAuthoredBy: false });
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, managedDir }), {
+    trailer: null,
+    source: 'managed',
+    warnings: [],
+  });
+});
+
+// A drop-in file beside managed-settings.json has no effect (Out of Scope, PRE-16): only
+// the single managed-settings.json file is read, never anything under a managed-settings.d/
+// directory next to it.
+test('a managed-settings.d drop-in file beside managed-settings.json has no effect', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const managedDir = tempManagedDir(t);
+  writeManagedSettings(managedDir, { attribution: { commit: 'Co-Authored-By: Managed <m@x>' } });
+  const dropInDir = path.join(managedDir, 'managed-settings.d');
+  fs.mkdirSync(dropInDir, { recursive: true });
+  fs.writeFileSync(path.join(dropInDir, '10-override.json'),
+    JSON.stringify({ attribution: { commit: 'Co-Authored-By: DropIn <d@x>' } }));
+
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome, managedDir }), {
+    trailer: 'Co-Authored-By: Managed <m@x>',
+    source: 'managed',
+    warnings: [],
+  });
+});
+
+test('unparseable JSON in the managed layer is treated as no settings from it, with a warning naming it, and falls through', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  const managedDir = tempManagedDir(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  fs.writeFileSync(path.join(managedDir, 'managed-settings.json'), '{ not json');
+
+  const result = attribution.resolveAttribution({ claudeHome, managedDir });
+
+  assert.equal(result.trailer, 'Co-Authored-By: User <u@x>');
+  assert.equal(result.source, 'user');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /managed managed-settings\.json/);
+  assert.match(result.warnings[0], /not valid JSON/);
+});
+
+test('resolveAttribution has no managed layer, and does not throw, when managedDir is absent', (t) => {
+  const claudeHome = tempClaudeHome(t);
+  writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });
+  assert.deepEqual(attribution.resolveAttribution({ claudeHome }), {
+    trailer: 'Co-Authored-By: User <u@x>',
+    source: 'user',
     warnings: [],
   });
 });

@@ -63,6 +63,29 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # CFG-11 (docs/roadmap/04-config-and-attribution.md; PRE-16; docs/spec/testing-seams.md
+      # Seam 1): the managed-settings layer is machine-wide, so its cases live in
+      # tests/managed/, outside the tests/*.test.js glob `npm test` runs, and run here as a
+      # separate, final node --test invocation. On ubuntu-latest and macos-latest only, the
+      # managed directory needs creating and handing to the normal user first (passwordless
+      # sudo on both); windows-latest already runs as administrator, so this step is for
+      # the other two only.
+      - name: Prepare the managed settings directory
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            dir="/Library/Application Support/ClaudeCode"
+          else
+            dir="/etc/claude-code"
+          fi
+          sudo mkdir -p "$dir"
+          sudo chown "$USER" "$dir"
+
+      - name: Run managed-layer tests (final, separate invocation)
+        shell: bash
+        run: node --test "tests/managed/*.test.js"
+
   min-git:
     name: min-git (ubuntu:22.04 container)
     runs-on: ubuntu-latest
@@ -103,3 +126,8 @@ jobs:
         env:
           COMMIT_REQUIRE_LFS: '1'
         run: npm test
+
+      # CFG-11: the container runs as root, so the managed directory needs no sudo/chown
+      # step here (PRE-16).
+      - name: Run managed-layer tests (final, separate invocation)
+        run: node --test "tests/managed/*.test.js"

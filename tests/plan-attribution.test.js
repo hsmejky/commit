@@ -8,13 +8,39 @@
 // settings layer (`<claudeHome>/settings.json`) and `plan.json`'s `warnings` field. The
 // resolver itself (tests/attribution.test.js) is pinned at the unit level; this file covers
 // Seam 1 only, through the shipped entry point.
+//
+// CFG-11: commit.cjs now always injects the real, platform-derived managed directory (no
+// test-only switch, no override), so every case in this file runs with M5's managed layer
+// live against whatever the host actually has there. When the host already has its own
+// `managed-settings.json`, every case here is skipped, not faked, whatever the CI status
+// (docs/roadmap/04-config-and-attribution.md CFG-11): the `test` wrapper below checks this
+// once per file and skips uniformly, so no individual case has to. The managed layer's own
+// positive coverage (it beats every other layer; its drop-in directory is unread) runs only
+// in CI, in a separate, final `node --test` invocation that owns the real path end to end
+// (tests/managed/managed-attribution.test.js), not here.
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { test } = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, runCommit, hostHasManagedSettings } = require('./helpers/process-seam.js');
+
+const SKIP_REASON = hostHasManagedSettings()
+  ? 'the host already has its own managed-settings.json; every attribution case here is '
+    + 'skipped so it is not silently decided by that file (CFG-11)'
+  : null;
+
+/** Wraps `node:test`'s `test` so every case in this file honors the one skip gate above. */
+function test(name, fn) {
+  nodeTest.test(name, async (t) => {
+    if (SKIP_REASON !== null) {
+      t.skip(SKIP_REASON);
+      return;
+    }
+    return fn(t);
+  });
+}
 
 const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
@@ -343,4 +369,36 @@ test('without CLAUDE_CONFIG_DIR, the user layer is the OS-home default, not an u
   const folder = path.join(runDirOf(c), result.json.planId);
   assert.deepEqual(readJson(path.join(folder, 'plan.json')).attribution,
     { trailer: 'Co-Authored-By: OsHomeDefault <h2@x>', source: 'user' });
+});
+
+// CFG-11, AC "no env variable changes the managed directory": commit.cjs derives the
+// managed directory from `process.platform` only. A candidate variable pointed at a fake
+// directory holding its own `managed-settings.json` must have zero effect: the resolved
+// trailer must not be the fake directory's, and its source must not be `managed` (the real
+// managed directory, wherever it is, is what the entry point actually reads — this case
+// does not depend on what that real directory holds, only on the fake one being ignored).
+test('an env variable candidate pointed at a fake managed directory has no effect on attribution', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  const fakeManagedDir = path.join(c.root, 'fake-managed-dir');
+  fs.mkdirSync(fakeManagedDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(fakeManagedDir, 'managed-settings.json'),
+    JSON.stringify({ attribution: { commit: 'Co-Authored-By: FakeManaged <fm@x>' } }),
+  );
+  c.writeFile('a.txt', 'one\nmore\n');
+
+  const result = await runCommit(c, ['plan'], {
+    env: {
+      CLAUDE_MANAGED_SETTINGS_DIR: fakeManagedDir,
+      CLAUDE_CODE_MANAGED_DIR: fakeManagedDir,
+      MANAGED_SETTINGS_DIR: fakeManagedDir,
+    },
+  });
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const folder = path.join(runDirOf(c), result.json.planId);
+  const attribution = readJson(path.join(folder, 'plan.json')).attribution;
+  assert.notEqual(attribution && attribution.source, 'managed');
+  assert.notEqual(attribution && attribution.trailer, 'Co-Authored-By: FakeManaged <fm@x>');
 });

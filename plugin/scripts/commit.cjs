@@ -43,10 +43,25 @@ if (!(nodeMajor >= MIN_NODE_MAJOR)) {
   }
   if (!osUser) osUser = process.env.USER || process.env.USERNAME || null;
 
+  // M5's managed layer (CFG-11, Q5 Amended, PRE-16): the fixed, platform-derived directory
+  // holding `managed-settings.json` (its drop-in directory is not read in 0.1.0). Derived
+  // from `process.platform` only, never from `env`, so an agent cannot redirect the highest
+  // settings layer; there is no env knob for it, matching the "no test-only switch" rule
+  // (docs/spec/architectural-decisions.md). PRE-16's recorded paths: macOS
+  // `/Library/Application Support/ClaudeCode`; Linux and WSL (both report `linux`)
+  // `/etc/claude-code`; Windows `C:\Program Files\ClaudeCode` (not the legacy
+  // `C:\ProgramData\ClaudeCode`, which Claude Code no longer reads).
+  function resolveManagedDir(platform) {
+    if (platform === 'darwin') return path.join('/Library', 'Application Support', 'ClaudeCode');
+    if (platform === 'win32') return path.join('C:\\', 'Program Files', 'ClaudeCode');
+    return path.join('/etc', 'claude-code');
+  }
+
   var injected = {
     now: function () { return Date.now(); },
     osHome: osHome,
     claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(osHome, '.claude'),
+    managedDir: resolveManagedDir(process.platform),
     osUser: osUser,
     cwd: process.cwd(),
     // M5's project layers (CFG-10, Q5, PRE-11): the project directory is `CLAUDE_PROJECT_DIR`

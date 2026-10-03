@@ -155,7 +155,9 @@ async function readHeadState(ctx) {
  * `storeAndLock` to write into `plan.json`'s `warnings` field (C:plan). CFG-10 passes
  * `ctx.injected.projectDir` (the entry point's own `CLAUDE_PROJECT_DIR`-or-`cwd` resolution,
  * no walk-up, PRE-11) so M5 also reads the project-local and project layers ahead of the
- * user one; it no longer takes `toplevel`, which CFG-08/CFG-09 accepted and ignored.
+ * user one; it no longer takes `toplevel`, which CFG-08/CFG-09 accepted and ignored. CFG-11
+ * passes `ctx.injected.managedDir` (the entry point's platform-derived managed directory,
+ * never read from `env`, PRE-16) so M5 reads the managed layer ahead of every other one.
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
@@ -164,6 +166,7 @@ async function loadConfigLayers(ctx) {
   ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
   const { trailer, source, warnings } = resolveAttribution({
     env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, projectDir: ctx.injected.projectDir,
+    managedDir: ctx.injected.managedDir,
   });
   ctx.attribution = { trailer, source };
   for (const warning of warnings) {
