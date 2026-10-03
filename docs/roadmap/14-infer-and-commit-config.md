@@ -36,14 +36,14 @@ M6's header grammar; `ccShare` over all commits read (merges excluded, at most 2
 
 **Blocked by:** INF-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q7, C:infer, stories 128, 134.
 
-- [ ] Seam 1: `WIP: x` and `Update: x` do not count; merge commits are not read; 230
+- [x] Seam 1: `WIP: x` and `Update: x` do not count; merge commits are not read; 230
       commits → `commitCount: 200`.
-- [ ] Seam 1: 49% conventional → `not-conventional`, `proposal: null`; 50% → a proposal.
-- [ ] A static test asserts M19's module imports `parse` from M6 (no duplicate header
+- [x] Seam 1: 49% conventional → `not-conventional`, `proposal: null`; 50% → a proposal.
+- [x] A static test asserts M19's module imports `parse` from M6 (no duplicate header
       grammar).
 
 **Notes (from the INF-01 review):**
@@ -55,6 +55,10 @@ M6's header grammar; `ccShare` over all commits read (merges excluded, at most 2
   (`ccShare: 1`), which does not show that `ccShare`'s denominator is the commit count read
   through the real git path. Close this with a seam case over a mixed history (e.g. `WIP: x`
   at 49%/50%), alongside the criterion above.
+
+**Note (from the INF-02 review):** INF-02 ships `outcome: proposal` with `proposal: {}`,
+`wouldFail: null`, `configJson: null`, no `droppedTypes`; INF-03..05 fill the object, INF-06
+`wouldFail`, INF-07 `configJson`.
 
 
 ## INF-03: Scope and body proposal
