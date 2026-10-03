@@ -295,13 +295,13 @@ denied with the handback text; everything else the worker runs follows the norma
 
 **Blocked by:** GRD-13.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q25, C:guard (Worker-only rule), story 39.
 
-- [ ] Seam 2 with `agent_type: commit:commit-worker`: a `commit` and a `release` script call → `The handback is for your caller: return the reply verbatim and stop.`; `plan` and `check` → no output.
-- [ ] The same `commit` call with another or no `agent_type` → no output.
-- [ ] Seam 2 with `agent_type: commit:commit-worker`: `git commit -m x` (not a script call) gets the ordinary `Direct git commit is blocked` deny, not the handback text.
+- [x] Seam 2 with `agent_type: commit:commit-worker`: a `commit` and a `release` script call → `The handback is for your caller: return the reply verbatim and stop.`; `plan` and `check` → no output.
+- [x] The same `commit` call with another or no `agent_type` → no output.
+- [x] Seam 2 with `agent_type: commit:commit-worker`: `git commit -m x` (not a script call) gets the ordinary `Direct git commit is blocked` deny, not the handback text.
 
 
 ## GRD-15: S1 heartbeat write
