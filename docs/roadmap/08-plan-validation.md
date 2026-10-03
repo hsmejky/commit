@@ -36,14 +36,14 @@ rename is named by its new path only; `split` accepts zero groups.
 
 **Blocked by:** PLN-01, CHG-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Q16, C:check (validates), C:worker-plan (file-level slice), stories 66, 69, 97, M14.
 
-- [ ] Seam 1: a unit in no group and not in `notIncluded` → exit 2, "h7 (src/c.js) not placed; put it in a group or in notIncluded" (`group: null`).
-- [ ] Seam 1: a path in two groups → error naming it; a path that is not a change → error.
-- [ ] Seam 1: a rename named by its old path → "use the new path src/b.js for the rename of src/a.js".
-- [ ] Seam 1: all units in `notIncluded`, zero groups → `ok: true`, `groups: []` (the release and `nothing` reply are RUN-18's).
+- [x] Seam 1: a unit in no group and not in `notIncluded` → exit 2, "h7 (src/c.js) not placed; put it in a group or in notIncluded" (`group: null`).
+- [x] Seam 1: a path in two groups → error naming it; a path that is not a change → error.
+- [x] Seam 1: a rename named by its old path → "use the new path src/b.js for the rename of src/a.js".
+- [x] Seam 1: all units in `notIncluded`, zero groups → `ok: true`, `groups: []` (the release and `nothing` reply are RUN-18's).
 
 
 ## PLN-03: Hunk-level plans and identical hunks
