@@ -199,15 +199,20 @@ tools.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-human
+**Status:** done
 
 **Sources:** Q5, Open verification items (project directory), Further Notes.
 
 Gates: CFG-10 (settings layer precedence and the project directory).
 
-- [ ] With Claude launched in a repo subfolder and different project settings at the launch directory and the toplevel, the settings the harness applies are identified.
-- [ ] Whether `CLAUDE_PROJECT_DIR` is set in the main thread's Bash and PowerShell tool environments is recorded (a subagent's is already known not to be).
-- [ ] Q5 and the M5 resolution order are amended to match.
+- [x] With Claude launched in a repo subfolder and different project settings at the launch directory and the toplevel, the settings the harness applies are identified.
+- [x] Whether `CLAUDE_PROJECT_DIR` is set in the main thread's Bash and PowerShell tool environments is recorded (a subagent's is already known not to be).
+- [x] Q5 and the M5 resolution order are amended to match.
+
+**Finding:** no walk-up and no merge across layers: a launch directory's own `.claude/`
+settings apply on their own, and a launch directory without `.claude/` gets no project
+settings at all; the toplevel is never consulted. `CLAUDE_PROJECT_DIR` is unset in the main
+thread's shell tools, same as a subagent's.
 
 
 ## PRE-12: Spike: README allow rules and the worker's shell
