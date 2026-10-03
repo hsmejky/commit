@@ -38,6 +38,7 @@ export const DOMAIN_CODE_TO_KIND = Object.freeze({
   encoding: 'state',
   'run-folder': 'state',
   'killed-leftover': 'state',
+  'case-rename': 'state',
   // signing (exit 6)
   'signing-locked': 'signing',
   // pushed (exit 6)

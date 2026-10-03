@@ -75,7 +75,7 @@ worker handles itself (a first lint failure) carries none.
 | --- | --- | --- |
 | `config` | `plan` | a config layer is invalid: unparseable JSON, a wrong type, an out-of-range number, bad `types`, a `scanIgnore` glob that does not compile (Q6), or a `scanIgnore` pattern with no literal character ([scanIgnore globs](scanignore-globs.md), Q10); checked before the run folder exists. The repo config at HEAD is not a layer here: an invalid `scanIgnore` there is `[]` plus a warning (Q6 as amended by CFG-01) |
 | `env` | any subcommand | git is missing, git is older than 2.34, or Node is older than 22 (Q1, Q15); the commit entry point's install path contains `$`, a backtick, `"`, `\`, U+201C–U+201E (the typographic double quotes PowerShell reads as `"`), `!` or a control character, checked before any work on the path with Windows separators converted to `/` ([guard](guard.md)) (Q16, [Reply and handback](reply-and-handback.md)) |
-| `state` | `plan`; `infer` (only the first clause below: not a git repository, or a bare repository) | not a git repository, or a bare repository; refused repo state: merge, cherry-pick, revert, rebase, bisect, or a paused sequence (`sequencer/`) in progress, or a pending `merge --squash` (`SQUASH_MSG`, its own text) (Q21); `unmerged`: unmerged index entries without an in-progress marker, such as a conflicted `stash pop` ("resolve the conflicts first"); `i18n.commitEncoding` other than UTF-8 (compared case-insensitively with `utf-8` and `utf8`); unborn HEAD or merge-commit HEAD with `--reword` (Q20); `run-folder`: `.commit-plan` is tracked, a link or not a directory, or its filesystem does not support hard links ([run folder](run-folder.md)); `killed-leftover`: with `--no-user` and without `--reword`, a takeover found staging beyond the killed group's paths (text names the killed group's paths still staged; index untouched; [run folder](run-folder.md)) |
+| `state` | `plan`; `infer` (only the first clause below: not a git repository, or a bare repository) | not a git repository, or a bare repository; refused repo state: merge, cherry-pick, revert, rebase, bisect, or a paused sequence (`sequencer/`) in progress, or a pending `merge --squash` (`SQUASH_MSG`, its own text) (Q21); `unmerged`: unmerged index entries without an in-progress marker, such as a conflicted `stash pop` ("resolve the conflicts first"); `i18n.commitEncoding` other than UTF-8 (compared case-insensitively with `utf-8` and `utf8`); unborn HEAD or merge-commit HEAD with `--reword` (Q20); `run-folder`: `.commit-plan` is tracked, a link or not a directory, or its filesystem does not support hard links ([run folder](run-folder.md)); `killed-leftover`: with `--no-user` and without `--reword`, a takeover found staging beyond the killed group's paths (text names the killed group's paths still staged; index untouched; [run folder](run-folder.md)); `case-rename`: in `split`, a staged case-only rename (a staged-new path and a tracked path that differ only in case) on a case-insensitive filesystem or with `core.ignorecase=true`, which the temporary index cannot plan (step 4, after the inventory; text below; Q11) |
 | `signing` | `plan` | `signing-locked`: `signing.ready` is `false`, checked only after the clean-tree and `staged-hit` checks (Q18 as amended by PRE-15; text below) |
 | `pushed` | `plan --reword` | HEAD reachable from a remote-tracking ref (Q20) |
 | `staged-hit` | `plan --staged` | the index diff has a pattern hit (Q10), or the index holds a staged-new path the [hidden rule](untracked-files.md) excludes (Q11) |
@@ -93,13 +93,14 @@ worker handles itself (a first lint failure) carries none.
 the run: they release the lock and delete the run folder, so the next `/commit` starts
 fresh. `usage`, `lint` and `lock` do not (the run can go on, or it is
 not this run's lock), except a second `lint` failure with `--no-user`, which releases.
-`env`, `config`, `state` (except `run-folder` and `killed-leftover`) and `pushed` come
+`env`, `config`, `state` (except `run-folder`, `killed-leftover` and `case-rename`) and `pushed` come
 before a run folder exists and take no lock ([plan](plan.md) steps 1-2). `run-folder` comes
 from the directory check at step 3, before anything is written into `.commit-plan`, or
 from a lock link that fails at step 7 (or at a takeover's `acquire` at step 3).
+`case-rename` comes from step 4, after the inventory.
 `killed-leftover` comes only after a takeover at step 3, and so does a `plan`
 `index-lock` (a failed takeover repair, which also keeps the taken-over run's chain). Every other outcome of `plan`
-that takes no lock (`lock` from `peek` or a lost `acquire`, `staged-empty`, `staged-hit`,
+that takes no lock (`lock` from `peek` or a lost `acquire`, `staged-empty`, `case-rename`, `staged-hit`,
 `signing`, `git-failed`, `timeout`, a `run-folder` lock link, a clean tree, `modeChoice`)
 deletes the provisional folder before `plan` exits; after a takeover's `acquire` at step 3
 the lock is held, and each of them, `killed-leftover` included, also releases it.
@@ -123,6 +124,7 @@ the state; tests assert the domain code and that the state is named, not an exac
 | `in-progress` (`state`): paused sequence (`sequencer/`) | M3 via M15 (`plan`) | continue or abort it by hand | Q21 |
 | `in-progress` (`state`): pending `merge --squash` (`SQUASH_MSG`) | M3 via M15 (`plan`) | a squashed merge is staged: commit it by hand, or drop it with `git reset --merge` | Q21 |
 | `unmerged` (`state`) | M3 via M15 (`plan`) | resolve the conflicts first | Q21 |
+| `case-rename` (`state`) | M10 `unplannableCaseRenames` via M18 (`plan`, `split`) | cannot plan a staged case-only rename on a case-insensitive filesystem or with core.ignorecase=true: <renames>; commit the rename by hand, then run /commit again. `<renames>`: the first five as `<oldPath> → <path>`, sorted by new path in UTF-8 byte order and joined with `, `, then ` and <n> more` when there are more | Q11 (CHG-07 decision) |
 | discard-failure notice (no kind; the outcome is unchanged) | M12 `discard` (`plan`, every outcome that takes no lock) | run folder `` `.commit-plan/<planId>` `` was not removed (<code>); the 24-hour sweep removes it | C:run-folder |
 | guard notice (no kind; `env.guard: "not-seen"`, the run goes on) | M18 (`plan`, stored as a notice) | Guard hook did not run: `node` missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct `git commit` is not blocked. | Q23 |
 | signing prompt notice (no kind; `signing.ready: "prompt"`, the run goes on) | M18 (`plan`, stored as a notice) | signing enabled; a passphrase prompt may appear | Q18 |

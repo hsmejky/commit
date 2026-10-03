@@ -12,6 +12,7 @@
 | `not-a-repo`, `bare`, `in-progress` (incl. a pending `merge --squash`), `unmerged`, `unborn` or `merge` HEAD in reword, `encoding` | M3 via M15 | `state` | 6 |
 | `run-folder` (`.commit-plan` tracked, a link or not a directory; its filesystem does not support hard links) | M12 | `state` | 6 |
 | `killed-leftover` (`--no-user` without `--reword`: a takeover found staging beyond the killed group's paths; lock released, folder deleted, index untouched) | M15 `resolveMode` via M18 | `state` | 6 |
+| `case-rename` (`split`: a staged case-only rename on a case-insensitive filesystem or with `core.ignorecase=true`; folder deleted) | M10 `unplannableCaseRenames` via M18 | `state` | 6 |
 | `signing-locked` | M11 via M15 | `signing` | 6 |
 | `pushed` | M3 via M15 | `pushed` | 6 |
 | `staged-hit` | M15 | `staged-hit` | 6 |

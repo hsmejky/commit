@@ -118,6 +118,10 @@ and the module sections point here, and the README states it in full.
   each non-UTF-8 byte written as `\xNN`, for the user to commit by hand.
 - An unstaged case-only rename on a case-insensitive filesystem is invisible to git and not
   planned (Q11, story 78).
+- A staged case-only rename on a case-insensitive filesystem, or with
+  `core.ignorecase=true`, is not planned: `plan` refuses with `state` (`case-rename`) naming
+  each rename, for the user to commit by hand (Q11, CHG-07 decision). Full support may come
+  later.
 - The index fingerprint (Q11, M10 `indexFingerprint`, checked by `plan` and `commit`) sees an intent-to-add entry
   and a staged empty file alike (both the empty blob), so a switch between the two is not
   refused as `index-changed`.

@@ -177,18 +177,26 @@ stored; `hunks.txt` one block per hunk.
 ## CHG-07: Units independent of the user's diff config and working directory
 
 **What to build:** confirm the pinned options and `-c` pins make units independent of user
-config, the working directory and path characters; case-only renames staged with `git mv`
-and sparse-checkout / `skip-worktree` entries handled with no code of their own.
+config, the working directory and path characters; sparse-checkout / `skip-worktree`
+entries handled with no code of their own; a case-only rename staged with `git mv` one `R`
+unit on a case-sensitive filesystem and refused (`case-rename`) on a case-insensitive one
+(CHG-07 decision, 2026-10-03).
 
 **Blocked by:** CHG-06, CHG-05.
 
 **Status:** ready-for-agent
 
-**Sources:** Q9, Q11 (Consequences, pass 9), other-repo-configurations, stories 74, 78.
+**Sources:** Q9, Q11 (Consequences, pass 9, CHG-07 decision), other-repo-configurations,
+C:cli-and-exit-codes (`case-rename`), stories 74, 78.
 
 - [ ] Seam 1: `diff.relative=true` with `plan` run from a subfolder → changes outside it still listed; `diff.interHunkContext=10`, `diff.noprefix`, `color.diff=always`, `diff.autoRefreshIndex=false`, `diff.submodule=log`, an external diff driver → units unchanged.
 - [ ] Seam 1: paths `[id].tsx`, one with a space and one with a quote → units with the literal path.
-- [ ] Seam 1: a staged case-only `git mv` → one `R` unit.
+- [ ] Seam 1: a staged case-only `git mv` → on a case-sensitive filesystem with
+      `core.ignorecase=false`, one `R` unit; with `core.ignorecase=true` (every platform), or
+      on a case-insensitive filesystem even with `core.ignorecase=false`, exit 6 `state`
+      (`case-rename`) with the recorded text naming the renames (the first five, then
+      `and <n> more`) and no run folder left (CHG-07 decision, 2026-10-03: fail closed, no
+      silent loss).
 - [ ] Seam 1: cone-mode sparse checkout with an edit inside the cone, a path outside, and a `--skip-worktree` path whose file is removed → neither of the last two is a unit or in `notIncluded` (the commit-side half is asserted in CHG-20).
 
 

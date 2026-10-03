@@ -161,9 +161,12 @@
       content, and `git apply --cached` and `git add` stage it in git's converted form, so
       line endings never cause a mismatch. Conversion warnings on stderr are not errors; a
       `core.safecrlf=true` rejection after the reset is a staging failure (Q18).
-    - Case-only renames: planned when git reports them (a staged `git mv`). An unstaged
-      case-only rename on a case-insensitive filesystem is invisible to git and not
-      planned.
+    - Case-only renames: a staged `git mv` is one `R` unit on a case-sensitive filesystem
+      with `core.ignorecase=false`. With `core.ignorecase=true` or on a case-insensitive
+      filesystem the temporary index cannot plan it, and `split` refuses (exit 6 `state`,
+      `case-rename`) naming each rename, for the user to commit by hand (CHG-07 decision,
+      below). An unstaged case-only rename on a case-insensitive filesystem is invisible to
+      git and not planned.
     - Sparse-checkout and `skip-worktree` entries never appear in the diff and are never
       units.
   - The worker `Read`s nothing outside the run folder except a working-tree file at a line
@@ -265,6 +268,24 @@
   working-tree file is removed: neither is a unit or in `notIncluded`, and neither is
   committed as a deletion. The pass 2 rule that such entries are never units had no test,
   although out-of-cone paths are the failure a temporary index built from HEAD would show.
+- **Amended.** By the CHG-07 decision (2026-10-03): a staged case-only rename (`git mv
+  readme.txt README.txt`) is not planned on a case-insensitive filesystem. The temporary
+  index loses it: with `core.ignorecase=true`, `git add -N README.txt` matches the reset
+  copy's `readme.txt` entry and adds nothing, and the old path still exists for `lstat`,
+  so the worktree diff reports no deletion either; `plan` emitted zero units with no error
+  and the rename silently vanished. Decision: fail closed. In `split`, when a staged-new
+  path and a tracked path differ only in case (`toLowerCase`), and `core.ignorecase` is
+  true or `lstat` of the old path finds the new path's file (same device and inode),
+  `plan` refuses at step 4, after the inventory and before the caps, with exit 6 `state`,
+  domain code `case-rename`, naming the renames (C:cli-and-exit-codes recorded text).
+  Both triggers are checked because each alone breaks the snapshot: `core.ignorecase` is
+  what git's own index matching obeys (git sets it at `init` by probing the filesystem,
+  and a repo copied across systems keeps a stale value), while the `lstat` identity is the
+  filesystem itself, read on the pair's own paths with nothing written. On a
+  case-sensitive filesystem with `core.ignorecase=false` the rename stays one `R` unit.
+  `staged` mode commits the index as-is and `reword` takes no snapshot, so neither needs
+  the check. Full support (planning the rename through the temporary index) may come
+  later ([out of scope](../spec/out-of-scope.md)).
 - **Rejected.**
   - A top-level-directory split rule; dropping split detection.
   - Hunk IDs of the form `file#n`: they collide with paths containing `#`, spaces or commas.
@@ -328,6 +349,7 @@
   staged with the filter applied, scanned in its cleaned form), `diff.relative=true` with
   `plan` run from a subfolder (changes outside it still listed),
   `diff.interHunkContext=10` (units unchanged), CRLF content with `core.autocrlf=true` and
-  a `.gitattributes` `eol=crlf` file (no mismatch), a staged case-only `git mv`, and on
+  a `.gitattributes` `eol=crlf` file (no mismatch), a staged case-only `git mv` (one `R`
+  unit on a case-sensitive filesystem, the `case-rename` refusal otherwise), and on
   Windows a rename group of a few thousand paths that would exceed the command-line limit
   on argv (committed).

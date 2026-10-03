@@ -47,6 +47,7 @@ const rows = [
   ['encoding', 'state', 6],
   ['run-folder', 'state', 6],
   ['killed-leftover', 'state', 6],
+  ['case-rename', 'state', 6],
   ['signing-locked', 'signing', 6],
   ['pushed', 'pushed', 6],
   ['staged-hit', 'staged-hit', 6],

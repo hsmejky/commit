@@ -170,6 +170,65 @@ export async function trackedDirectories({ toplevel, env, now, unborn = false })
 }
 
 /**
+ * The staged case-only renames the temporary index cannot plan (CHG-07 decision, Q11). A
+ * pair is a staged-new path and a `tracked` path that differ only in case
+ * (`toLowerCase`). It cannot be planned when `core.ignorecase` is true (`git add -N` of the
+ * new path then matches the old entry of the reset temporary index, so no new entry is made)
+ * or when the filesystem is case-insensitive for it (`lstat` of the old path finds the new
+ * path's file, same device and inode, so the worktree diff never reports the deletion):
+ * either way the rename would silently give no unit, and `plan` refuses instead (fail
+ * closed). On a case-sensitive filesystem with `core.ignorecase` false the pair is a normal
+ * `R` unit and this returns nothing. Read-only; `git config` runs only when a pair exists.
+ *
+ * @param {{ stagedNew: string[], tracked: string[], toplevel: string, env: object,
+ *   now?: () => number }} options `stagedNew`, `tracked`: the inventory's pre-cap paths.
+ * @returns {Promise<Array<{ oldPath: string, path: string }>>} sorted by `path` in UTF-8
+ *   byte order.
+ * @throws {Error} when `git config` fails other than with an unset key, or on a filesystem
+ *   error other than a missing path.
+ */
+export async function unplannableCaseRenames({ stagedNew, tracked, toplevel, env, now }) {
+  const byFold = new Map();
+  for (const path of tracked) {
+    const key = path.toLowerCase();
+    if (!byFold.has(key)) byFold.set(key, []);
+    byFold.get(key).push(path);
+  }
+  const pairs = [];
+  for (const path of stagedNew) {
+    for (const oldPath of byFold.get(path.toLowerCase()) ?? []) {
+      if (oldPath !== path) pairs.push({ oldPath, path });
+    }
+  }
+  if (pairs.length === 0) return [];
+  pairs.sort((a, b) => byteOrder(a.path, b.path) || byteOrder(a.oldPath, b.oldPath));
+  const result = await run(
+    'git', ['config', '--bool', '--get', 'core.ignorecase'], { cwd: toplevel, env, now, readOnly: true },
+  );
+  if (result.code !== 0 && result.code !== 1) {
+    throw new Error(`git config --get core.ignorecase failed (${result.code}): ${result.stderr}`);
+  }
+  if (result.code === 0 && result.stdout.toString('utf8').trim() === 'true') return pairs;
+  return pairs.filter(({ oldPath, path }) => sameFile(toplevel, oldPath, path));
+}
+
+// Whether two worktree paths name one file (`lstat`: same device and inode); false when
+// either is missing.
+function sameFile(toplevel, a, b) {
+  const statOf = (path) => {
+    try {
+      return lstatSync(join(toplevel, path), { bigint: true });
+    } catch (err) {
+      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+      throw err;
+    }
+  };
+  const first = statOf(a);
+  const second = first === null ? null : statOf(b);
+  return second !== null && first.dev === second.dev && first.ino === second.ino;
+}
+
+/**
  * Each candidate's size and `binary` sniff: a NUL in its first 8000 bytes (only a regular
  * file is read; anything else is not binary). A path gone since `ls-files --others` listed
  * it (an editor temp file, build output) is skipped, as `snapshot` skips a missing path.

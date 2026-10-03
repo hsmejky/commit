@@ -47,7 +47,7 @@
 75. As a developer on Windows, I want files with `core.autocrlf` or `eol` attributes planned and staged in git's converted form, so that line endings never cause a mismatch. [Q11]
 76. As a developer, I want a changed tree detected before my index is touched, so that a `diff-changed` keeps my staging. [Q11, Q18]
 77. As a developer, I want a file I force-added despite `.gitignore` (`git add -f`) planned and committed like any other new file, so that a run neither drops it nor fails on it. [Q11]
-78. As a developer, I want a case-only rename staged with `git mv` planned as a rename, and sparse-checkout or `skip-worktree` entries never planned, so that neither shows up as a spurious change (an unstaged case-only rename on a case-insensitive filesystem is invisible to git and not planned). [Q11]
+78. As a developer, I want a case-only rename staged with `git mv` planned as a rename, and sparse-checkout or `skip-worktree` entries never planned, so that neither shows up as a spurious change (an unstaged case-only rename on a case-insensitive filesystem is invisible to git and not planned; a staged one on a case-insensitive filesystem or with `core.ignorecase=true` is refused with `case-rename`, naming it, never silently dropped). [Q11]
 
 ## Intent scope and modes
 

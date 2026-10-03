@@ -75,6 +75,23 @@ const ROWS = [
   },
   { row: 'run-folder', reachable: false },
   { row: 'killed-leftover', reachable: false },
+  {
+    row: 'case-rename',
+    kind: 'state',
+    exitCode: 6,
+    reachable: true,
+    // CHG-07: a staged case-only `git mv` with `core.ignorecase=true`
+    // (tests/plan-units-config.test.js).
+    async seam1Case(t) {
+      const c = createCase(t);
+      c.git(['config', 'core.ignorecase', 'true']);
+      c.writeFile('readme.txt', 'r\n');
+      c.git(['add', '--', 'readme.txt']);
+      c.git(['commit', '-q', '-m', 'seed']);
+      c.git(['mv', 'readme.txt', 'README.txt']);
+      return runCommit(c, ['plan']);
+    },
+  },
   { row: 'signing-locked', reachable: false },
   {
     row: 'pushed',
@@ -141,7 +158,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 6);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 7);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

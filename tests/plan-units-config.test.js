@@ -1,10 +1,11 @@
 'use strict';
 
 // CHG-07 (docs/roadmap/07-change-set.md): units are independent of the user's diff config,
-// the working directory and path characters (Q11 pinned options, story 74); a staged
-// case-only `git mv` and sparse-checkout / `skip-worktree` entries need no code of their own
-// (docs/spec/other-repo-configurations.md, Q11 pass 9). Seam 1 only: each case runs `plan`
-// and reads the hunk index and `state.json`.
+// the working directory and path characters (Q11 pinned options, story 74); sparse-checkout
+// / `skip-worktree` entries need no code of their own (docs/spec/other-repo-configurations.md,
+// Q11 pass 9); a staged case-only `git mv` is one `R` unit on a case-sensitive filesystem
+// and refused on a case-insensitive one (Q11, CHG-07 decision). Seam 1 only: each case runs
+// `plan` and reads the hunk index and `state.json`, or its refusal.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -109,10 +110,13 @@ test('paths with brackets, a space and a quote are units with the literal path',
   ]);
 });
 
-// git sets `core.ignorecase` at `init` by probing the filesystem. On a case-insensitive one
-// (Windows, macOS) the old path still exists for `lstat`, so the worktree diff against the
-// temporary index never reports its deletion, and `git add -N` of the new path matches the
-// old entry: the rename gives no unit at all. Open: needs a decision (reported with CHG-07).
+// A staged case-only rename (CHG-07 decision, 2026-10-03; Q11). git sets `core.ignorecase`
+// at `init` by probing the filesystem. On a case-insensitive one (Windows, macOS) the old
+// path still exists for `lstat`, so the worktree diff against the temporary index never
+// reports its deletion, and with `core.ignorecase=true` `git add -N` of the new path matches
+// the old entry: the rename would give no unit at all. `plan` refuses instead (exit 6
+// `state`, `case-rename`), naming each rename; on a case-sensitive filesystem with
+// `core.ignorecase=false` it is one `R` unit.
 const CASE_INSENSITIVE_FS = (() => {
   const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-case-'));
   try {
@@ -123,10 +127,57 @@ const CASE_INSENSITIVE_FS = (() => {
   }
 })();
 
-test('a staged case-only git mv is one R unit', {
-  todo: CASE_INSENSITIVE_FS && 'a case-insensitive filesystem gives no unit (CHG-07 open question)',
+function caseRenames(c, names) {
+  seed(c, Object.fromEntries(names.map((name) => [name, `${name}\n`])));
+  for (const name of names) c.git(['mv', name, name.toUpperCase()]);
+}
+
+async function assertCaseRenameRefusal(c, expected) {
+  const result = await runCommit(c, ['plan']);
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 6, detail);
+  assert.equal(result.json.ok, false, detail);
+  assert.equal(result.json.error.kind, 'state', detail);
+  assert.equal(result.json.error.message, 'cannot plan a staged case-only rename on a '
+    + `case-insensitive filesystem or with core.ignorecase=true: ${expected}; commit the `
+    + 'rename by hand, then run /commit again');
+  // The provisional run folder is gone (an outcome that takes no lock).
+  const runs = path.join(c.repoDir, '.commit-plan');
+  assert.deepEqual(fs.existsSync(runs) ? fs.readdirSync(runs) : [], []);
+}
+
+test('a staged case-only git mv with core.ignorecase=true refuses, naming the rename', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  caseRenames(c, ['readme.txt']);
+
+  await assertCaseRenameRefusal(c, 'readme.txt → README.TXT');
+});
+
+test('the case-rename refusal names the first five renames and counts the rest', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  caseRenames(c, ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt', 'f.txt', 'g.txt']);
+
+  await assertCaseRenameRefusal(c, 'a.txt → A.TXT, b.txt → B.TXT, c.txt → C.TXT, '
+    + 'd.txt → D.TXT, e.txt → E.TXT and 2 more');
+});
+
+test('a staged case-only git mv on a case-insensitive filesystem refuses even with core.ignorecase=false', {
+  skip: !CASE_INSENSITIVE_FS && 'needs a case-insensitive filesystem',
 }, async (t) => {
   const c = createCase(t);
+  caseRenames(c, ['readme.txt']);
+  c.git(['config', 'core.ignorecase', 'false']);
+
+  await assertCaseRenameRefusal(c, 'readme.txt → README.TXT');
+});
+
+test('a staged case-only git mv on a case-sensitive filesystem is one R unit', {
+  skip: CASE_INSENSITIVE_FS && 'needs a case-sensitive filesystem',
+}, async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'false']);
   seed(c, { 'readme.txt': 'r\n' });
   c.git(['mv', 'readme.txt', 'README.txt']);
 
