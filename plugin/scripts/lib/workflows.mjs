@@ -51,8 +51,8 @@
 // (`commit-executor.mjs`), releasing the run once no group remains.
 
 import {
-  commitEncoding, head, headState, inProgressState, isTracked, oldMessage, probe, recentSubjects,
-  rewordFacts,
+  commitEncoding, head, headState, historyMessages, inProgressState, isTracked, oldMessage, probe,
+  recentSubjects, rewordFacts,
 } from './repo-probe.mjs';
 import {
   assignIds, indexFingerprint, inventory as takeInventory, snapshot, trackedDirectories, treeState,
@@ -74,6 +74,7 @@ import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
 import { probeSigning } from './signing-probe.mjs';
 import { guardState } from './heartbeat.mjs';
+import { infer as inferFromMessages } from './history-inference.mjs';
 
 // GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
 // C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
@@ -641,13 +642,18 @@ async function openRun(ctx) {
 // `commit` step 4 (EXE-02): M16 `commitAll` over the stored groups, then the run's release
 // once no group remains (C:commit-release: the lock and the run folder go after the last
 // group; the folder takes this call's `call.lock` with it, so the `finally`'s `close` finds
-// nothing left). A run with no stored groups still ends the call at once with no commits,
-// the run kept, until EXE-05 builds the `no-groups` refusal. The release's notice and the
-// `reply` with `status: "committed"` are INT-02's (C:reply-and-handback).
+// nothing left). EXE-05 adds the phase (a) `no-groups` refusal, after the lock check (M12
+// `open`, step 3) and before any group work: no stored groups, or every stored group already
+// committed. The run is kept (no `releaseOpen`), only this call's `call.lock` goes, via the
+// `finally` in `commit()` below (`ctx.opened` is already true by the time this step runs).
+// The release's notice and the `reply` with `status: "committed"` are INT-02's
+// (C:reply-and-handback).
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { groups } = readState(run);
-  if (!Array.isArray(groups) || groups.every((group) => group.committed)) return { commits: [] };
+  if (!Array.isArray(groups) || groups.every((group) => group.committed)) {
+    return { refusal: { code: 'no-groups', message: 'no groups to commit; run check first, then commit again' } };
+  }
   const { env, now, osUser } = ctx.injected;
   const outcome = await commitAll(run, { now, osUser, env });
   if (outcome.remaining.length === 0) releaseOpen(run);
@@ -686,6 +692,33 @@ async function validateWorkerPlan(ctx) {
 }
 
 const CHECK_STEPS = Object.freeze([probeRepo, checkRefusals, openRun, validateWorkerPlan]);
+
+/**
+ * `infer` step 2 (INF-01): the probe's refusals, the `env` row and the first `state` clause
+ * (not a git repository, a bare repository) with `plan`'s own texts (C:infer,
+ * C:cli-and-exit-codes); no other `plan` row applies, since `infer` only reads history.
+ */
+async function inferRefusals(ctx) {
+  const refusal = planRefusal(ctx.probe);
+  if (refusal !== null) return { refusal };
+  ctx.toplevel = ctx.probe.repo.toplevel;
+  return undefined;
+}
+
+/**
+ * `infer` step 3: M3 reads the last 200 non-merge messages (none when unborn) and M19
+ * `infer` turns them into C:infer's fields. Read-only: no lock, no run folder. `configJson`
+ * is `null` while there is no proposal (C:infer); M4 `readLayers` and M19 `configFor` arrive
+ * with the proposal (INF-02 onwards).
+ */
+async function inferFromHistory(ctx) {
+  const { env, now } = ctx.injected;
+  const at = { cwd: ctx.toplevel, env, now };
+  const messages = await historyMessages({ ...at, head: await head(at) });
+  return { ...inferFromMessages(messages), configJson: null };
+}
+
+const INFER_STEPS = Object.freeze([probeRepo, inferRefusals, inferFromHistory]);
 
 async function runSteps(steps, ctx) {
   for (const step of steps) {
@@ -788,8 +821,9 @@ export async function release(values, injected, { cwd }) {
  * over the stored groups (EXE-02) and releases the run (lock and folder) once no group
  * remains. `run.close()` always runs for a call that reached a successful `open` (success or
  * a later failure alike), never when `open` itself failed (there is then no call.lock to
- * close). A run with no stored groups (or all committed) still ends the call at once, exit 0,
- * with `commits: []` and the run kept, until EXE-05 builds `no-groups`.
+ * close). A run with no stored groups (or all committed) is refused `no-groups` (exit 1
+ * `usage`, EXE-05) before any group work, right after the lock check: the run is kept (no
+ * `releaseOpen`), and `close()` still removes this call's own `call.lock`.
  *
  * The output holds C:commit-release's fields (`commits`, `failed`, `remaining`, `error`,
  * `gitOutput`, `unstaged`) but no `reply` yet: the `reply` with `status: "committed"` is
@@ -843,6 +877,21 @@ export async function check(values, injected, { cwd }) {
   } finally {
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
+}
+
+/**
+ * Runs `infer` (C:infer): read-only, takes no lock and creates no run folder.
+ *
+ * @param {object} values the parsed `infer` flags (none).
+ * @param {object} injected the injected environment.
+ * @param {{ cwd: string }} call the call's working directory.
+ * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
+ */
+export async function infer(values, injected, { cwd }) {
+  const ctx = { injected, cwd, values };
+  const facts = await runSteps(INFER_STEPS, ctx);
+  if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+  return { output: facts };
 }
 
 // A refusal before any reply: RPL-04 adds the `failed` reply.
