@@ -570,11 +570,14 @@ function runFolderRefusal(trackedAs) {
  * after creating `<planId>/` (C:run-folder, story 207), so a link swapped in meanwhile is
  * never written through.
  *
- * @param {{ toplevel: string, excludePath: string, tracked: string | boolean }} options
+ * @param {{ toplevel: string, excludePath: string, tracked: string | boolean,
+ *   sleep?: (ms: number) => void }} options
  *   `excludePath`: the common dir's `info/exclude` (M2 `gitPath`); `tracked`: the case-variant
  *   path the index holds under `.commit-plan`, such as `.Commit-Plan` (M3 `isTracked`), or
  *   `null`/`false` when it holds none, or `true` when the caller knows it is tracked but not
- *   which variant.
+ *   which variant; `sleep` (RUN-09): the delay `write`'s rename and `acquire`'s lock link use
+ *   between Windows file-in-use retries, injected so a test never waits out a real delay
+ *   (default a real synchronous sleep).
  * @returns {{ ok: true, provisional: { planId: string, runDir: string,
  *   write: (name: string, data: string | Uint8Array) => void,
  *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null }
@@ -591,7 +594,7 @@ function runFolderRefusal(trackedAs) {
  *   Inside M12 a local `runDir` is `.commit-plan` itself (`runDirOf`); only this output
  *   field names the `<planId>/` folder, keeping C:plan's `runDir` (review-RUN-05 finding 8).
  */
-export function create({ toplevel, excludePath, tracked }) {
+export function create({ toplevel, excludePath, tracked, sleep = sleepSync }) {
   const runDir = runDirOf(toplevel);
   if (tracked) return runFolderRefusal(tracked);
   if (!(isAbsent(runDir) || isPlainDirectory(runDir))) return runFolderRefusal();
@@ -617,19 +620,47 @@ export function create({ toplevel, excludePath, tracked }) {
       return discardNotice(planId, err.code || 'error');
     }
   };
-  const write = (name, data) => writeAtomic(folder, name, data);
-  const acquire = ({ now = Date.now } = {}) => acquireLock(runDir, planId, folder, now);
+  const write = (name, data) => writeAtomic(folder, name, data, sleep);
+  const acquire = ({ now = Date.now } = {}) => acquireLock(runDir, planId, folder, now, sleep);
   return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), write, acquire, discard } };
+}
+
+// RUN-09 (Q22, C:run-folder): on Windows a file another process briefly holds open (an AV
+// scanner, a backup tool, an indexer) fails a rename or a hard-link creation with `EPERM` or
+// `EBUSY`, which usually clears within about a second. `retryInUse` retries `attempt()` on
+// exactly those two codes, sleeping between tries (`sleep`, injected so a test never waits
+// out a real delay — the fault-injection preload makes a boundary fail deterministically,
+// docs/spec/testing-seams.md); any other code (`EEXIST`, `ENOTSUP`, `ENOSYS`, `EIO`, …)
+// rethrows at once, for the caller to map. Once the delays run out the last attempt's throw
+// (if any) propagates, for the caller to decide (the lock link's probe below; a plain
+// `writeAtomic` rename just counts it as a failure, C:run-folder "Versioned").
+const RETRY_DELAYS_MS = Object.freeze([100, 150, 200, 250, 300]); // ~1000 ms, a few retries.
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function retryInUse(attempt, sleep) {
+  for (const delay of RETRY_DELAYS_MS) {
+    try {
+      return attempt();
+    } catch (err) {
+      if (err.code !== 'EPERM' && err.code !== 'EBUSY') throw err;
+      sleep(delay);
+    }
+  }
+  return attempt();
 }
 
 // Every write of a run file (`state.json`, `plan.json`, `hunks.txt`) goes to a temporary name
 // in the run folder, then a rename into place, so no reader sees a half-written file
-// (C:run-folder "Versioned"). The Windows file-in-use retry of the rename is RUN-09's.
-function writeAtomic(folder, name, data) {
+// (C:run-folder "Versioned"). RUN-09: a Windows `EPERM`/`EBUSY` on the rename is retried
+// about a second before it counts as a failure, like the lock link below.
+function writeAtomic(folder, name, data, sleep = sleepSync) {
   const target = path.join(folder, name);
   const temp = path.join(folder, `${name}.tmp`);
   fs.writeFileSync(temp, data);
-  fs.renameSync(temp, target);
+  retryInUse(() => fs.renameSync(temp, target), sleep);
 }
 
 /**
@@ -643,6 +674,40 @@ export function lockTempName(planId) {
   return `lock-${planId}.tmp`;
 }
 
+// RUN-09 (Q22, C:run-folder "lock" row): once the lock link's `EPERM`/`EBUSY` persists past
+// `retryInUse`'s retries, this decides between `busy` (another process genuinely holds
+// `lock` open) and `run-folder` (the filesystem cannot hard-link at all): it hard-links the
+// already-written lock content once more, at a second, fixed name (not `<planId>`-scoped:
+// it lives only for the length of this one call, and reusing one fixed name keeps a test's
+// fault-injection basename independent of the random `planId`). A successful probe proves
+// hard links work here, so the original failure must be contention on `lock` itself; a
+// failing probe, whatever its own error, means the filesystem itself cannot be trusted.
+const PROBE_NAME = 'hardlink-probe.tmp';
+
+function hardLinkWorks(runDir, source) {
+  const target = insideRunDir(runDir, PROBE_NAME);
+  try {
+    fs.linkSync(source, target);
+  } catch {
+    return false;
+  }
+  try {
+    fs.rmSync(target, { force: true });
+  } catch {
+    // Best-effort: a leftover probe file is harmless and not even lock-shaped.
+  }
+  return true;
+}
+
+function cleanupLockTemp(temp) {
+  try {
+    fs.rmSync(temp, { force: true });
+  } catch {
+    // The lock was never linked: a leftover temp here is not even a lock-shaped file the
+    // sweep targets, but it is harmless and the original link error is what matters.
+  }
+}
+
 // M12 `acquire` without a takeover (CHG-03b, C:plan step 7): `{ planId, created }` written to
 // a temporary file in `.commit-plan/` and hard-linked into place as `.commit-plan/lock`
 // (`linkSync` never overwrites, so no reader sees a lock without its content). On a link
@@ -651,23 +716,32 @@ export function lockTempName(planId) {
 // happens to its temporary file, so that removal is best-effort too and a leftover goes to
 // the sweep (RUN-07, C:run-folder "leftover lock temporary files") rather than failing an
 // acquire whose lock already stands. A link that fails with `EEXIST` is a race lost to
-// another run's lock (RUN-06): `held`, naming that lock, and nothing of it is touched. Any
-// other link error throws for now: RUN-09 maps the Windows `EPERM`/`EBUSY` retries and the
-// probe.
-function acquireLock(runDir, planId, folder, now) {
+// another run's lock (RUN-06): `held`, naming that lock, and nothing of it is touched.
+// RUN-09: `ENOTSUP`/`ENOSYS` (the filesystem cannot hard-link at all) refuses `run-folder` at
+// once, without a probe; `EPERM`/`EBUSY` are retried about a second (`retryInUse`), and one
+// still failing after the retries falls back to the hard-link probe above. Any other error
+// (`EIO`, …) still throws, unchanged.
+function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
   const temp = insideRunDir(runDir, lockTempName(planId));
   const lock = insideRunDir(runDir, 'lock');
   fs.writeFileSync(temp, JSON.stringify({ planId, created: new Date(now()).toISOString() }), { flag: 'wx' });
   try {
-    fs.linkSync(temp, lock);
+    retryInUse(() => fs.linkSync(temp, lock), sleep);
   } catch (err) {
-    try {
-      fs.rmSync(temp, { force: true });
-    } catch {
-      // The lock was never linked: a leftover temp here is not even a lock-shaped file the
-      // sweep targets, but it is harmless and the original link error is what matters.
+    if (err.code === 'EEXIST') {
+      cleanupLockTemp(temp);
+      return held(runDir, now);
     }
-    if (err.code === 'EEXIST') return held(runDir, now);
+    if (err.code === 'ENOTSUP' || err.code === 'ENOSYS') {
+      cleanupLockTemp(temp);
+      return runFolderRefusal();
+    }
+    if (err.code === 'EPERM' || err.code === 'EBUSY') {
+      const result = hardLinkWorks(runDir, temp) ? busy(true) : runFolderRefusal();
+      cleanupLockTemp(temp);
+      return result;
+    }
+    cleanupLockTemp(temp);
     throw err;
   }
   try {

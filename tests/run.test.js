@@ -1025,6 +1025,122 @@ test('acquire: a lost race to a lock already in place returns held with the hold
   assert.equal(fs.readFileSync(path.join(runDir, 'lock'), 'utf8'), JSON.stringify({ planId: holderId, created }), "the winner's lock is untouched");
 });
 
+// RUN-09 (docs/roadmap/09-runs.md, Q22, C:run-folder "lock" row): Windows file-in-use errors
+// on the lock link (`EPERM`/`EBUSY`) retry about a second, then fall back to a hard-link
+// probe; `ENOTSUP`/`ENOSYS` skip straight to `run-folder`. `sleep` is stubbed to a no-op so no
+// case waits on a real delay (every CI OS, no real Windows lock needed).
+const NO_SLEEP = () => {};
+
+for (const code of ['EPERM', 'EBUSY']) {
+  test(`acquire: ${code} on the lock link that clears within the retries still succeeds`, (t) => {
+    const toplevel = tempDir(t);
+    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+    const realLinkSync = fs.linkSync;
+    let failuresLeft = 2;
+    t.mock.method(fs, 'linkSync', (existing, target) => {
+      if (path.basename(target) === 'lock' && failuresLeft > 0) {
+        failuresLeft -= 1;
+        throw Object.assign(new Error(code), { code });
+      }
+      return realLinkSync(existing, target);
+    });
+
+    const acquired = provisional.acquire({ now: () => T0 });
+
+    assert.equal(acquired.ok, true, JSON.stringify(acquired));
+    assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', 'lock')), true);
+    assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', 'hardlink-probe.tmp')), false, 'no probe when the link eventually succeeds');
+  });
+
+  test(`acquire: ${code} on the lock link persisting past the retries, probe succeeds → busy, nothing left`, (t) => {
+    const toplevel = tempDir(t);
+    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+    const realLinkSync = fs.linkSync;
+    t.mock.method(fs, 'linkSync', (existing, target) => {
+      if (path.basename(target) === 'lock') throw Object.assign(new Error(code), { code });
+      return realLinkSync(existing, target);
+    });
+
+    const acquired = provisional.acquire({ now: () => T0 });
+
+    assert.deepEqual(acquired, { ok: false, code: 'busy', message: run.BUSY_FILE_IN_USE_MESSAGE });
+    assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [provisional.planId], 'no lock and no temp left');
+  });
+}
+
+test('acquire: EPERM on the lock link persisting past the retries, probe also fails → run-folder', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+  t.mock.method(fs, 'linkSync', () => {
+    throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+  });
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.deepEqual(acquired, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+  assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [provisional.planId], 'no lock and no temp left');
+});
+
+for (const code of ['ENOTSUP', 'ENOSYS']) {
+  test(`acquire: ${code} on the lock link refuses run-folder at once, without a probe`, (t) => {
+    const toplevel = tempDir(t);
+    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+    const realLinkSync = fs.linkSync;
+    const linkTargets = [];
+    t.mock.method(fs, 'linkSync', (existing, target) => {
+      linkTargets.push(path.basename(target));
+      if (path.basename(target) === 'lock') throw Object.assign(new Error(code), { code });
+      return realLinkSync(existing, target);
+    });
+
+    const acquired = provisional.acquire({ now: () => T0 });
+
+    assert.deepEqual(acquired, { ok: false, code: 'run-folder', message: run.RUN_FOLDER_TEXT });
+    assert.deepEqual(linkTargets, ['lock'], 'a single attempt, no retry and no probe link');
+  });
+}
+
+test('acquire: EIO on the lock link still throws (unaffected by the retry/probe)', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+  t.mock.method(fs, 'linkSync', () => {
+    throw Object.assign(new Error('EIO'), { code: 'EIO' });
+  });
+
+  assert.throws(() => provisional.acquire({ now: () => T0 }), /EIO/);
+  assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')), [provisional.planId], 'the temp is still cleaned up');
+});
+
+for (const code of ['EPERM', 'EBUSY']) {
+  test(`write: ${code} on a run-file rename that clears within the retries still succeeds`, (t) => {
+    const toplevel = tempDir(t);
+    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+    const realRenameSync = fs.renameSync;
+    let failuresLeft = 2;
+    t.mock.method(fs, 'renameSync', (from, to) => {
+      if (path.basename(to) === 'state.json' && failuresLeft > 0) {
+        failuresLeft -= 1;
+        throw Object.assign(new Error(code), { code });
+      }
+      return realRenameSync(from, to);
+    });
+
+    provisional.write('state.json', '{}');
+
+    assert.equal(fs.readFileSync(path.join(provisional.runDir, 'state.json'), 'utf8'), '{}');
+  });
+
+  test(`write: ${code} on a run-file rename persisting past the retries still counts as a failure`, (t) => {
+    const toplevel = tempDir(t);
+    const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: NO_SLEEP });
+    t.mock.method(fs, 'renameSync', () => {
+      throw Object.assign(new Error(code), { code });
+    });
+
+    assert.throws(() => provisional.write('state.json', '{}'), new RegExp(code));
+  });
+}
+
 // review-CHG-03b finding 2: `release()` on a lock rename that hits a file-in-use error
 // (`busy`, like `releaseById`'s own case) must not silently lose the lock: it reports a
 // notice and `kept: true`, so `plan`'s `finally` leaves the folder in place too.
