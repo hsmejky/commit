@@ -190,8 +190,8 @@ test('plan whose lock link hits a real EEXIST against a garbage lock exits 6 loc
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
   c.writeFile('a.txt', 'one\nmore\n');
-  // No `peek` until RUN-07 lands, so this garbage lock survives until step 7's `acquire`
-  // hard-links onto it and hits a real `EEXIST`, cross-platform (review-RUN-06 finding 6).
+  // RUN-07's `peek` at step 3 catches this fresh garbage lock before any inventory work, the
+  // same text `held()` built for step 7's lost-race case (review-RUN-06 finding 6).
   fs.mkdirSync(runDirOf(c));
   fs.writeFileSync(path.join(runDirOf(c), 'lock'), 'not json');
 
@@ -200,5 +200,44 @@ test('plan whose lock link hits a real EEXIST against a garbage lock exits 6 loc
   assertLockRefusal(result, 'lock');
   assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), 'not json', 'the foreign lock is left alone');
+  assert.deepEqual(folderNames(c), []);
+});
+
+// RUN-07: a live lock in place before `plan` even starts refuses at step 3's `peek`, before
+// any inventory work, with no race or shim needed (the lock is already there).
+test('plan refused by a live lock already in place before inventory exits 6 lock, leaving that lock alone and creating nothing', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  fs.mkdirSync(runDirOf(c));
+  const placed = JSON.stringify({ planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
+  fs.writeFileSync(path.join(runDirOf(c), 'lock'), placed);
+
+  const result = await runCommit(c, ['plan']);
+
+  assertLockRefusal(result, 'lock');
+  assert.match(result.json.error.message, /^another \/commit run is in progress \(started 13:58, last active \d+ s ago\)$/);
+  assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed, "the holder's lock is untouched");
+  assert.deepEqual(folderNames(c), [], 'no provisional folder and no temporary index are left (peek refuses before inventory)');
+  assert.equal(result.json.reply.planId, null);
+  assert.equal(result.json.reply.handback, null, "the lock handback itself is INT-05's");
+});
+
+// RUN-07: a fresh lock whose planId is not in the minted form also refuses at `peek`, with
+// no holder planId and no handback (the unreadable-lock text, same as the garbage-content
+// case above).
+test('plan refused by a fresh lock with a non-UUID planId exits 6 lock with no handback', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  fs.mkdirSync(runDirOf(c));
+  fs.writeFileSync(path.join(runDirOf(c), 'lock'), JSON.stringify({ planId: 'not-a-uuid', created: '2026-09-26T13:58:02.000Z' }));
+
+  const result = await runCommit(c, ['plan']);
+
+  assertLockRefusal(result, 'lock');
+  assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
+  assert.equal(result.json.reply.planId, null);
+  assert.equal(result.json.reply.handback, null);
   assert.deepEqual(folderNames(c), []);
 });

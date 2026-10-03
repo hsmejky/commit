@@ -212,6 +212,11 @@ async function createRunFolder(ctx) {
   const created = create({ toplevel: ctx.toplevel, excludePath, tracked });
   if (!created.ok) return { refusal: { code: created.code, message: created.message } };
   ctx.provisional = created.provisional;
+  // RUN-07: a read-only `peek` before any inventory work. A live lock refuses `lock` the
+  // same way a lost race at step 7 does (RUN-06), carrying the same `holder` shape; `plan`'s
+  // `finally` discards this call's own provisional folder since `ctx.run` is never set here.
+  const peeked = ctx.provisional.peek({ now: ctx.injected.now });
+  if (!peeked.ok) return { refusal: { code: peeked.code, message: peeked.message, holder: peeked.holder } };
   return undefined;
 }
 

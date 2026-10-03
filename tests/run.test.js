@@ -1025,6 +1025,90 @@ test('acquire: a lost race to a lock already in place returns held with the hold
   assert.equal(fs.readFileSync(path.join(runDir, 'lock'), 'utf8'), JSON.stringify({ planId: holderId, created }), "the winner's lock is untouched");
 });
 
+// RUN-07: a read-only `peek` before any inventory work. A live lock refuses `held` the same
+// way `acquire`'s lost race does (RUN-06), carrying the same holder fields.
+test('peek: no lock is ok and touches nothing', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+
+  assert.deepEqual(provisional.peek({ now: () => T0 }), { ok: true });
+});
+
+test('peek: a fresh lock held by another planId refuses held with the holder fields, matching acquire\'s shape', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  const holderId = crypto.randomUUID();
+  const created = '2026-09-26T13:58:02.000Z';
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: holderId, created }));
+
+  const peeked = provisional.peek({ now: () => T0 });
+
+  assert.equal(peeked.ok, false);
+  assert.equal(peeked.code, 'held');
+  const touched = fs.statSync(path.join(runDir, 'lock')).mtimeMs;
+  assert.deepEqual(peeked.holder, { planId: holderId, created, touched });
+  assert.match(peeked.message, /^another \/commit run is in progress \(started \d{2}:\d{2}, last active \d+ s ago\)$/);
+  assert.equal(fs.readFileSync(path.join(runDir, 'lock'), 'utf8'), JSON.stringify({ planId: holderId, created }), 'the holder\'s lock is untouched');
+});
+
+test('peek: a fresh lock with garbage content refuses held with planId: null', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  fs.writeFileSync(path.join(runDir, 'lock'), 'not json');
+
+  const peeked = provisional.peek({ now: () => T0 });
+
+  assert.equal(peeked.ok, false);
+  assert.equal(peeked.code, 'held');
+  assert.equal(peeked.holder.planId, null);
+  assert.equal(peeked.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
+});
+
+test('peek: a fresh lock whose planId is not in the minted form refuses held with planId: null', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: 'not-a-uuid', created: '2026-09-26T13:58:02.000Z' }));
+
+  const peeked = provisional.peek({ now: () => T0 });
+
+  assert.equal(peeked.ok, false);
+  assert.equal(peeked.code, 'held');
+  assert.equal(peeked.holder.planId, null);
+});
+
+test('peek: a lock stale by mtime is ok, whatever its content (the automatic takeover is RUN-21\'s)', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  const holderId = crypto.randomUUID();
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: holderId, created: '2026-09-26T13:58:02.000Z' }));
+  const staleAt = fs.statSync(path.join(runDir, 'lock')).mtimeMs + run.STALE_AFTER_MS;
+
+  assert.deepEqual(provisional.peek({ now: () => staleAt }), { ok: true });
+});
+
+test('peek: a lock file in use (Windows) is busy, not held', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: crypto.randomUUID(), created: '2026-09-26T13:58:02.000Z' }));
+  const realLstat = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', (target, options) => {
+    if (path.resolve(target) === path.join(runDir, 'lock')) {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    }
+    return realLstat(target, options);
+  });
+
+  const peeked = provisional.peek({ now: () => T0 });
+
+  assert.equal(peeked.ok, false);
+  assert.equal(peeked.code, 'busy');
+});
+
 // RUN-09 (docs/roadmap/09-runs.md, Q22, C:run-folder "lock" row): Windows file-in-use errors
 // on the lock link (`EPERM`/`EBUSY`) retry about a second, then fall back to a hard-link
 // probe; `ENOTSUP`/`ENOSYS` skip straight to `run-folder`. `sleep` is stubbed to a no-op so no

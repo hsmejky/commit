@@ -596,6 +596,9 @@ function runFolderRefusal(trackedAs) {
  *   (default a real synchronous sleep).
  * @returns {{ ok: true, provisional: { planId: string, runDir: string,
  *   write: (name: string, data: string | Uint8Array) => void,
+ *   peek: (options?: { now?: () => number }) => { ok: true }
+ *     | { ok: false, code: 'held', message: string,
+ *         holder: { planId: string | null, created: string | null, touched: number } | null },
  *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null }
  *     | { ok: false, code: 'held', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
@@ -637,8 +640,9 @@ export function create({ toplevel, excludePath, tracked, sleep = sleepSync }) {
     }
   };
   const write = (name, data) => writeAtomic(folder, name, data, sleep);
+  const peek = ({ now = Date.now } = {}) => peekLock(runDir, now);
   const acquire = ({ now = Date.now } = {}) => acquireLock(runDir, planId, folder, now, sleep);
-  return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), write, acquire, discard } };
+  return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), write, peek, acquire, discard } };
 }
 
 // RUN-09 (Q22, C:run-folder): on Windows a file another process briefly holds open (an AV
@@ -835,6 +839,33 @@ function lockCreated(bytes) {
   } catch {
     return null;
   }
+}
+
+/**
+ * M12 `peek` (RUN-07, `plan` step 3): a read-only check of the run lock, before any inventory
+ * work. A live lock (its mtime under 15 minutes old, Q22) refuses the same way `acquire`'s
+ * lost race does (`held`, RUN-06's `held()`), so a `peek` refusal and a lost-race refusal
+ * carry the same `planId`/`created`/`touched` holder shape (the handback built on top of it
+ * is INT-05's). A file-in-use error reading the lock is `busy`, like every other lock
+ * operation (Q22). No lock, and a lock stale by mtime (whatever its content), are `ok`: the
+ * automatic takeover of a stale lock, and the orphan renamed locks `peek` also reports then,
+ * are RUN-21's; this slice never adopts anything.
+ *
+ * @param {string} runDir
+ * @param {() => number} now
+ * @returns {{ ok: true } | { ok: false, code: 'held', message: string,
+ *   holder: { planId: string | null, created: string | null, touched: number } | null }}
+ */
+function peekLock(runDir, now) {
+  let file;
+  try {
+    file = readLockFile(insideRunDir(runDir, 'lock'));
+  } catch (err) {
+    if (!(err instanceof InUse)) throw err;
+    return busy(true);
+  }
+  if (file === null || now() - file.stats.mtimeMs >= STALE_AFTER_MS) return { ok: true };
+  return held(runDir, now);
 }
 
 // The run `acquire` returns: `write` as before the lock, and `release()`, which removes the
