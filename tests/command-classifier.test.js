@@ -23,8 +23,8 @@ const ROUTE_TEXT =
   'Spawn the commit:commit-worker agent (model: sonnet; pass intent: <what you changed and why>). Edit no files until it replies.';
 const PERSONAL_TEXT = 'If a personal commit skill sent you here, remove it (see the commit plugin README).';
 
-test('G3 is pure (no I/O, no ambient state, no imports)', () => {
-  assertPureSource('command-classifier');
+test('G3 is pure (no I/O, no ambient state, imports only S2)', () => {
+  assertPureSource('command-classifier', { allowImports: ['./script-call.mjs'] });
 });
 
 test('the route and the personal-skill line are C:guard\'s fixed texts', () => {

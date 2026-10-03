@@ -21,7 +21,12 @@ README allow rules match. It escapes nothing: the commit entry point refuses (`e
 install path containing `$`, a backtick, `"`, `\` or a typographic double quote
 (U+201C-U+201E) before any work, so no shell can expand or mangle the path. The check runs on the path `build` emits, after the Windows separators
 are converted to `/`, so a native Windows path is not refused for its separators; a `\`
-left after the conversion can only be part of a POSIX file name; `recognise(tokens) → { subcommand, args } | null`. Sources: Q16,
+left after the conversion can only be part of a POSIX file name (`build` reads a path with
+a drive letter or a UNC start as Windows, one starting with `/` as POSIX). `build` throws a
+`TypeError` for a path that is not absolute or not to `commit.cjs`, a subcommand outside the
+list, or an argument outside the step 2 exemption's word characters, so its output is always
+in the exemption form; `recognise(tokens) → { subcommand, args } | null`, the arguments being
+the words after the subcommand up to the first operator token, redirections dropped. Sources: Q16,
 Q23, Q25, C:guard, C:reply-and-handback.
 
 **G1 Hook I/O.** Read the `PreToolUse` JSON from stdin to its end (not a synchronous read of

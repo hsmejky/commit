@@ -10,8 +10,11 @@
 // the prefix allowlist (C:guard step 3: shell keywords, literal assignments and a few runners
 // with fixed option grammars) is a possible wrapper, which may append arguments: it denies
 // what would otherwise be allowed (the wrapper row), and the bare/`-m`/`-F`/`--message`/
-// `--file` row applies only when nothing else matches. Git's own options before the
-// subcommand and script calls (S2) follow in later slices.
+// `--file` row applies only when nothing else matches. Each segment's script call (S2) is
+// reported in `scriptCalls`, a denied command's included; a blanket result has none.
+// Git's own options before the subcommand follow in a later slice.
+
+import { recognise } from './script-call.mjs';
 
 /** C:guard `<route>`. It never names the `/commit` skill, which the model cannot invoke (Q2, Q8). */
 export const ROUTE =
@@ -418,6 +421,9 @@ export function classify(parsed, context = {}) {
     const message = Object.hasOwn(BLANKET_ROWS, parsed.blanket) ? BLANKET_ROWS[parsed.blanket] : MESSAGES.blanket;
     return { decision: 'deny', message, scriptCalls: [] };
   }
+  // Every segment's script call (S2), a denied command's included: G1 writes the heartbeat
+  // for a `plan` call before the decision is emitted (C:guard Heartbeat).
+  const scriptCalls = parsed.map((segment) => recognise(segment)).filter((call) => call !== null);
   // A Start-Process word denies the command with the wrapper row, which ranks just above the
   // bare row (C:guard step 3, Precedence).
   const starter = shell === 'powershell' ? startProcessName(parsed) : undefined;
@@ -442,14 +448,14 @@ export function classify(parsed, context = {}) {
         // An argv[0] option may make this `git` run `commit` whatever follows it.
         const runner = argv0Runner(tokens, starts[i], i);
         if (runner === undefined) continue;
-        return { decision: 'deny', message: wrapperMessage(runner), scriptCalls: [] };
+        return { decision: 'deny', message: wrapperMessage(runner), scriptCalls };
       }
-      if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls: [] };
+      if (next > i + 1) return { decision: 'deny', message: MESSAGES.literalArguments, scriptCalls };
       const message = commitDecision(tokens, starts[i], i, dashed ? next : next + 1, shell);
       if (message !== null) {
-        return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls: [] };
+        return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls };
       }
     }
   }
-  return wrapped === null ? { decision: 'none', scriptCalls: [] } : { decision: 'deny', message: wrapped, scriptCalls: [] };
+  return wrapped === null ? { decision: 'none', scriptCalls } : { decision: 'deny', message: wrapped, scriptCalls };
 }
