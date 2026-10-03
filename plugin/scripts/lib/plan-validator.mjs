@@ -11,8 +11,12 @@
 // ID or by a `hunks: null` path entry), real-change paths in `files` and `notIncluded`, a
 // rename named by its new path only, and zero groups. A shape failure is always the only
 // error of its result: the plan rules run on a parsed plan only, so a shape error is never
-// mixed with plan-rule errors; RUN-16 still adds the shape marker. Later slices widen it:
-// hunk IDs and identical hunks (PLN-03),
+// mixed with plan-rule errors; RUN-16 still adds the shape marker. PLN-03 adds the hunk-level
+// slice: group `hunks` IDs exist and are used once (a second naming, also in the same group or
+// the same `notIncluded` entry, is a placement error), are never mixed with `files` (an ID in
+// `notIncluded[].hunks` counts as `hunks`), and a `notIncluded` ID belongs to the entry's
+// path; identical hunks (one stored identity key) share one placement; `files[].hunks` counts
+// the path's hunks in the group. Later slices widen it:
 // placement bans and `notIncluded` extras (PLN-04), `staged`/`reword` (PLN-05), message lint
 // and scan (PLN-06, M6 and M8), the attribution flag and the normalised message (PLN-07).
 //
@@ -102,7 +106,7 @@ function spansByPattern(hits) {
  * @param {Uint8Array | null} planBytes the bytes of `plan.groups.json`, or `null` when the
  *   run folder holds no such regular file.
  * @param {{ mode: string, units: Array<{ id: string, path: string, oldPath?: string | null,
- *   status: string }> }} runState the parsed `state.json`.
+ *   status: string, identityKey?: string }> }} runState the parsed `state.json`.
  * @param {{ osUser?: string | null }} [options] `osUser` is the entry point's injected OS
  *   user name, passed straight through to M8 `scanText` for each message (never stored,
  *   Q10 as amended by EXE-01).
@@ -112,8 +116,8 @@ function spansByPattern(hits) {
  *   spans?: Array<{ patternId: string, start: number, end: number }> }> }}
  *   `groups`/`notIncluded`/`notices` are `check`'s output fields (C:check); `stored` is what
  *   `check` writes into `state.json` per group (with `committed: false`).
- * @throws {Error} for a part of the worker plan no slice has built yet (hunk IDs, a mode
- *   other than `split`).
+ * @throws {Error} for a part of the worker plan no slice has built yet (a mode other than
+ *   `split`).
  */
 export function validatePlan(planBytes, runState, options = {}) {
   if (runState.mode !== 'split') {
@@ -130,9 +134,11 @@ export function validatePlan(planBytes, runState, options = {}) {
   const stored = [];
   const messageValues = runState.config?.values ?? DEFAULT_MESSAGE_VALUES;
   const osUser = options.osUser ?? null;
+  if (mixesFilesAndHunks(workerPlan)) {
+    errors.push({ group: null, reason: '`files` and `hunks` are mixed; use hunk IDs everywhere or paths everywhere' });
+  }
   workerPlan.groups.forEach((group, index) => {
     const n = index + 1;
-    if (group.hunks.length > 0) throw new Error('hunk-level worker plans are not built yet (PLN-03)');
     const normalisedMessage = messageOf(group.header, group.body);
     if (!normalisedMessage.ok) {
       errors.push({ group: n, reason: normalisedMessage.reason });
@@ -156,6 +162,26 @@ export function validatePlan(planBytes, runState, options = {}) {
       files.push({ path, status, new: status === 'A', hunks: null });
       units.push(...pathUnits.map((unit) => unit.id));
     }
+    // Hunk-level slice: one `files` entry per path, in first-ID order, counting the path's
+    // hunks in this group.
+    const filesByPath = new Map();
+    for (const id of group.hunks) {
+      const unit = table.byId.get(id);
+      if (unit === undefined) {
+        errors.push({ group: n, reason: `${id} is not a hunk ID of this run` });
+        continue;
+      }
+      placement.place([unit], { group: n }, `${id} (${unit.path})`, errors);
+      units.push(id);
+      const file = filesByPath.get(unit.path);
+      if (file !== undefined) {
+        file.hunks += 1;
+        continue;
+      }
+      const entry = { path: unit.path, status: unit.status, new: unit.status === 'A', hunks: 1 };
+      filesByPath.set(unit.path, entry);
+      files.push(entry);
+    }
     groups.push({
       n,
       header: group.header,
@@ -172,11 +198,16 @@ export function validatePlan(planBytes, runState, options = {}) {
       if (pathUnits !== null) placement.place(pathUnits, { group: null }, entry.path, errors);
       continue;
     }
-    for (const id of new Set(entry.hunks)) {
+    for (const id of entry.hunks) {
       const unit = table.byId.get(id);
-      // PLN-03 owns the full hunk-ID rules (IDs used once, not mixed with `files`).
-      if (unit === undefined) errors.push({ group: null, reason: `${id} is not a hunk ID of this run` });
-      else placement.place([unit], { group: null }, `${id} (${unit.path})`, errors);
+      if (unit === undefined) {
+        errors.push({ group: null, reason: `${id} is not a hunk ID of this run` });
+        continue;
+      }
+      if (unit.path !== entry.path) {
+        errors.push({ group: null, reason: `${id} is a hunk of ${unit.path}, not of ${entry.path}` });
+      }
+      placement.place([unit], { group: null }, `${id} (${unit.path})`, errors);
     }
   }
   for (const unit of runState.units) {
@@ -184,8 +215,22 @@ export function validatePlan(planBytes, runState, options = {}) {
     if (placement.has(unit.id) || table.namedByOldPath.has(unit.id)) continue;
     errors.push({ group: null, reason: `${unit.id} (${unit.path}) not placed; put it in a group or in notIncluded` });
   }
+  for (const ids of identicalClasses(runState.units)) {
+    const places = new Set(ids.filter((id) => placement.has(id)).map((id) => placement.of(id)));
+    if (places.size > 1) errors.push({ group: null, reason: `${listOf(ids)} are identical; place them together` });
+  }
   if (errors.length > 0) return lintFailure(errors);
   return { ok: true, groups, notIncluded: [...workerPlan.notIncluded], notices: [], stored };
+}
+
+// C:check: a plan is file-level (`files`) or hunk-level (`hunks`), never both. A
+// `notIncluded[].hunks` ID list counts as `hunks`; a `hunks: null` path entry is valid in
+// either slice.
+function mixesFilesAndHunks(workerPlan) {
+  const usesFiles = workerPlan.groups.some((group) => group.files.length > 0);
+  const usesHunks = workerPlan.groups.some((group) => group.hunks.length > 0)
+    || workerPlan.notIncluded.some((entry) => Array.isArray(entry.hunks) && entry.hunks.length > 0);
+  return usesFiles && usesHunks;
 }
 
 // The stored unit table indexed for path resolution: units by path, by ID, and the rename
@@ -233,12 +278,17 @@ class Placement {
     return this.#where.has(id);
   }
 
+  // The unit's group number, or `null` for `notIncluded`.
+  of(id) {
+    return this.#where.get(id);
+  }
+
   place(units, { group }, label, errors) {
     const earlier = units.find((unit) => this.#where.has(unit.id));
     if (earlier !== undefined) {
       const before = this.#where.get(earlier.id);
-      const places = before === null && group === null
-        ? 'notIncluded twice'
+      const places = before === group
+        ? `${describePlace(group)} twice`
         : `${describePlace(before)} and ${describePlace(group)}`;
       errors.push({ group, reason: `${label} is in ${places}; place it once` });
     }
@@ -246,6 +296,21 @@ class Placement {
       if (!this.#where.has(unit.id)) this.#where.set(unit.id, group);
     }
   }
+}
+
+// The IDs of every class of identical hunks (C:check: same path, same `-` / `+` lines, i.e.
+// one stored identity key) with more than one member, each in unit-table order.
+function identicalClasses(units) {
+  const byKey = new Map();
+  for (const unit of units) {
+    if (typeof unit.identityKey === 'string') pushTo(byKey, unit.identityKey, unit.id);
+  }
+  return [...byKey.values()].filter((ids) => ids.length > 1);
+}
+
+// "h3 and h5", "h1, h3 and h5".
+function listOf(ids) {
+  return `${ids.slice(0, -1).join(', ')} and ${ids[ids.length - 1]}`;
 }
 
 function describePlace(group) {

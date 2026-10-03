@@ -188,9 +188,10 @@ function validate(plan) {
   return validatePlan(Buffer.from(JSON.stringify(plan)), { mode: 'split', units: UNITS });
 }
 
-test('validatePlan: notIncluded by ID places single units; the rest by path', () => {
+// A plan naming IDs in `notIncluded[].hunks` is hunk-level (PLN-03: never mixed with `files`).
+test('validatePlan: notIncluded by ID places single units', () => {
   const result = validate({
-    groups: [{ header: 'feat: x', files: ['src/b.js', 'docs/new.md'] }],
+    groups: [{ header: 'feat: x', hunks: ['h3', 'h4'] }],
     notIncluded: [{ path: 'src/a.js', hunks: ['h1', 'h2'], reason: 'later' }],
   });
 
@@ -200,7 +201,7 @@ test('validatePlan: notIncluded by ID places single units; the rest by path', ()
 
 test('validatePlan: one ID of a path left out names the other unit as not placed', () => {
   const result = validate({
-    groups: [{ header: 'feat: x', files: ['src/b.js', 'docs/new.md'] }],
+    groups: [{ header: 'feat: x', hunks: ['h3', 'h4'] }],
     notIncluded: [{ path: 'src/a.js', hunks: ['h1'], reason: 'later' }],
   });
 
@@ -209,9 +210,9 @@ test('validatePlan: one ID of a path left out names the other unit as not placed
   ]);
 });
 
-test('validatePlan: an ID in notIncluded that a group already holds by path, and an unknown ID', () => {
+test('validatePlan: an ID in notIncluded that a group already holds, and an unknown ID', () => {
   const result = validate({
-    groups: [{ header: 'feat: x', files: ['src/a.js', 'src/b.js', 'docs/new.md'] }],
+    groups: [{ header: 'feat: x', hunks: ['h1', 'h2', 'h3', 'h4'] }],
     notIncluded: [{ path: 'src/a.js', hunks: ['h2', 'h9'], reason: 'later' }],
   });
 
