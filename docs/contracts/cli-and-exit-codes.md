@@ -16,7 +16,7 @@ commit.cjs infer
 `release` comes only, verbatim, from a handback's `run` in the caller, never from the
 worker: the guard denies both from `commit:commit-worker` (Q25, [Guard](guard.md)).
 Every subcommand writes exactly one JSON object to stdout, on failure too. stderr carries
-debug output only. No subcommand reads stdin. `--staged` with an empty index → exit 1
+debug output and config warnings (Q6) only. No subcommand reads stdin. `--staged` with an empty index → exit 1
 `usage`. `--dictated` without `--reword` → exit 1 `usage`. `--no-user` together with
 `--staged`, `--take-over`, or without `--split` or `--reword` → exit 1 `usage` (a run without a
 user never asks for a mode or a takeover, Q17). A `planId` (`--plan`, `--take-over`) must

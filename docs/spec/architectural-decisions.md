@@ -14,7 +14,8 @@
   entry point's own `process.cwd()`; no walk-up to a git toplevel, PRE-11), `osUser` (from
   `os.userInfo()`, falling back to `USER` or `USERNAME`, else `null`, which skips the
   OS-user rule, story 139), the script's own path, `cwd`
-  (`process.cwd()`) and `env`. Modules never read these ambiently. The shipped CLI has **no test-only switch**
+  (`process.cwd()`), `stderr` (the process's stderr stream, written only by M18
+  `loadConfigLayers` for Q6 warnings) and `env`. Modules never read these ambiently. The shipped CLI has **no test-only switch**
   (no env knob, no flag): anything reachable from the CLI is reachable by an agent.
 - **Asynchronous process adapter.** Every git call, read-only ones included, is spawned
   asynchronously by M2 with a timer from the call's `deadline`, so that a timeout can kill

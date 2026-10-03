@@ -160,7 +160,7 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   "signing": { "enabled": true, "format": "openpgp", "ready": "prompt" },
   "env": { "node": "22.11.0", "git": "2.47.1", "guard": "active" },
   "recentSubjects": ["feat: add stage subcommand"],
-  "warnings": ["unknown config key 'foo' ignored"]
+  "warnings": ["the repo config (.claude/commit.json) key 'foo' is unknown; ignored"]
 }
 ```
 

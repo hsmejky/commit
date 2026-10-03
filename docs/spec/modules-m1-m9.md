@@ -3,7 +3,8 @@
 **M1 CLI and envelope.** Peel the subcommand off argv, then one strict `parseArgs` per
 subcommand (`no-user` declared literally, never `allowNegative`); reject illegal flag
 combinations as `usage`; route to M18; print exactly one JSON object (`version: 1`) on
-success and failure; kind → exit code 0-6; debug to stderr only; no subcommand reads stdin.
+success and failure; kind → exit code 0-6; debug output and config warnings (Q6) to stderr
+only; no subcommand reads stdin.
 `main(argv, env) → { stdoutJson, exitCode }`. Sources: Q9, C:cli-and-exit-codes.
 
 **M2 Process adapter.** The only module that spawns processes. Mechanism only: for git,

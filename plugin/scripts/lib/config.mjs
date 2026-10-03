@@ -74,17 +74,17 @@ function collectConfigWarnings(obj, layer, kind) {
   const sanitized = { ...obj };
   for (const key of Object.keys(sanitized)) {
     if (!Object.hasOwn(DEFAULT_VALUES, key)) {
-      warnings.push(`unknown config key '${key}' ignored (${layer})`);
+      warnings.push(`the ${layer} key '${key}' is unknown; ignored`);
       delete sanitized[key];
       continue;
     }
     if (REPO_ONLY_KEYS.includes(key) && kind !== 'repo') {
-      warnings.push(`${key} is only valid in the repo layer; ignored in the ${layer}`);
+      warnings.push(`the ${layer} key '${key}' is only valid in the repo layer; ignored`);
       delete sanitized[key];
       continue;
     }
     if (Object.hasOwn(ENUM_VALUES, key) && !ENUM_VALUES[key].includes(sanitized[key])) {
-      warnings.push(`unknown value ${JSON.stringify(sanitized[key])} for ${key} ignored (${layer})`);
+      warnings.push(`the ${layer} value ${JSON.stringify(sanitized[key])} for ${key} is unknown; ignored`);
       delete sanitized[key];
     }
   }

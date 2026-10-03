@@ -173,6 +173,16 @@ and `REPO_CONFIG_PATH`. An invalid `scanIgnore` at HEAD is `[]` plus a warning, 
 `config` refusal; the worktree layer, its `scanIgnore` included, is validated as usual
 (CFG-01 item 5).
 
+**Forward note (review-CFG-06 finding 6):** `validateLayer` runs before
+`collectConfigWarnings` in `readLayer` (`config.mjs`, around line 254), so folding
+`scanIgnore`'s compile-and-validate into `validateLayer` itself would run it before
+CFG-06's wrong-layer check. Unguarded, a user-layer `scanIgnore` with a bad value (a
+string, or a glob error) would then refuse `plan` with `config` instead of Q6's
+warn-and-ignore for a repo-only key in the wrong layer. This slice must either validate
+`scanIgnore` inside `validateLayer` only for the repo layer, or strip repo-only keys
+before validation runs, and add a test for a user-layer `scanIgnore` with an invalid
+value (string, or a glob error) asserting a warning, not a `config` refusal.
+
 **Blocked by:** CFG-06, SCN-03, CFG-01.
 
 **Status:** ready-for-agent

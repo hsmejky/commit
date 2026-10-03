@@ -435,7 +435,12 @@ test('loadConfig warns and ignores an unknown key in the repo layer, with no eff
 
   assert.deepEqual(result.values.types, ['feat']);
   assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0], /workerModel/);
+  // Pins the exact text (review-CFG-06 finding 5): one shape, matching validateLayer's own
+  // "the <layer> ..." wording, shared by every warning kind.
+  assert.equal(
+    result.warnings[0],
+    "the repo config (.claude/commit.json) key 'workerModel' is unknown; ignored",
+  );
 });
 
 test('loadConfig warns and falls back to the user layer when the repo layer has an unknown value for a known key', (t) => {
@@ -450,7 +455,10 @@ test('loadConfig warns and falls back to the user layer when the repo layer has 
   assert.equal(result.values.body, 'optional');
   assert.equal(result.sources.body, 'user');
   assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0], /required/);
+  assert.equal(
+    result.warnings[0],
+    'the repo config (.claude/commit.json) value "required" for body is unknown; ignored',
+  );
 });
 
 test('loadConfig warns and ignores scanIgnore given in the user layer (repo only)', (t) => {
@@ -463,14 +471,39 @@ test('loadConfig warns and ignores scanIgnore given in the user layer (repo only
   assert.deepEqual(result.values.scanIgnore, []);
   assert.equal(result.sources.scanIgnore, 'default');
   assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0], /scanIgnore/);
+  assert.equal(
+    result.warnings[0],
+    "the user config (commit.json) key 'scanIgnore' is only valid in the repo layer; ignored",
+  );
 });
 
+// review-CFG-06 finding 1 (Medium): no test asserted that a *repo-layer* scanIgnore (the
+// right layer) produces no warning and keeps its value and source. A mutant that dropped
+// `&& kind !== 'repo'` from the wrong-layer check in `collectConfigWarnings` (so it warns
+// and strips scanIgnore in every layer, repo included) passed the whole suite before this
+// test existed. Every other known key is included too, each with a valid value, so this
+// also covers finding 7 (the previous version of this test wrote no layers at all).
 test('loadConfig returns an empty warnings array when every key is known, valid and in the right layer', (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
+  fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(toplevel, config.REPO_CONFIG_PATH),
+    JSON.stringify({
+      types: ['feat'],
+      scope: 'optional',
+      body: 'optional',
+      maxSubjectLength: 50,
+      subjectCase: 'any',
+      scanIgnore: ['a/**'],
+    }),
+  );
+
   const result = config.loadConfig({ toplevel, claudeHome });
+
   assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.values.scanIgnore, ['a/**']);
+  assert.equal(result.sources.scanIgnore, 'repo');
 });
 
 function claudeHomeConfigPath(claudeHome) {

@@ -53,6 +53,10 @@ test('an unknown value for a known key in the repo layer warns, naming the value
   const planJson = readJson(path.join(folder, 'plan.json'));
   assert.equal(planJson.config.values.body, 'optional');
   assert.equal(planJson.config.sources.body, 'user');
+  // review-CFG-06 finding 3 (Low): pins that the stored `config` has exactly these two keys,
+  // so a leak of `warnings` into `plan.json`/`state.json`'s `config` (CFG-05's shape,
+  // `workflows.mjs` `loadConfigLayers`) would be caught here.
+  assert.deepEqual(Object.keys(planJson.config), ['values', 'sources']);
   assert.equal(planJson.warnings.length, 1);
   assert.match(planJson.warnings[0], /required/);
   assert.ok(result.stderr.includes(planJson.warnings[0]), detail(result));
