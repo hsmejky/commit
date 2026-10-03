@@ -4,7 +4,8 @@
 //
 // CHG-03 builds the tracer: every unit gets a `body: "file"` block in `hunks.txt`. CHG-16
 // adds the per-entry `scan` and withheld bodies, CHG-17 summary-only entries and the body
-// cap, CHG-18 the stdout budget with the spill to `hunks.json`.
+// cap, CHG-18 the stdout budget with the spill to `hunks.json`. GIT-09 adds `oldMessage` in
+// `reword` mode.
 
 const LOSSY_UTF8 = new TextDecoder('utf-8');
 
@@ -12,8 +13,9 @@ const LOSSY_UTF8 = new TextDecoder('utf-8');
  * Renders the hunk index (C:plan-hunks) for the units `plan --hunks` matched.
  *
  * @param {{ runDir: string, mode: string, config: { values: object },
- *   recentSubjects?: string[] }} runState `runDir`: absolute, forward slashes;
- *   `config.values`: the resolved config, `scanIgnore` included (left out here).
+ *   recentSubjects?: string[], oldMessage?: string }} runState `runDir`: absolute, forward slashes;
+ *   `config.values`: the resolved config, `scanIgnore` included (left out here);
+ *   `oldMessage`: HEAD's message, returned only in `reword` mode (C:plan-hunks).
  * @param {Array<{ id: string, path: string, oldPath: string|null, status: string,
  *   kind: string, range: string, body: Uint8Array }>} units in ID order.
  * @returns {{ stdoutObj: object, hunksTxt: string }} `stdoutObj`: exactly the C:plan-hunks
@@ -54,6 +56,7 @@ export function renderHunks(runState, units) {
       mode: runState.mode,
       config: values,
       recentSubjects: runState.recentSubjects ?? [],
+      ...(runState.mode === 'reword' ? { oldMessage: runState.oldMessage } : {}),
       counts: { units: units.length, files: new Set(units.map((unit) => unit.path)).size },
       hunksFile: `${runState.runDir}/hunks.txt`,
       hunks,

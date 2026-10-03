@@ -12,6 +12,9 @@
 // practice: `unmerged`/`commitEncoding` are only ever facts inside a worktree); RUN-14
 // completes their order.
 //
+// GIT-09 adds the reword rows (Q20, C:plan step 2), after every other `state` row: an
+// unborn or merge-commit HEAD (`state`), then `pushed`.
+//
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 
 /** The oldest supported git (Q1, Q15, story 202). */
@@ -66,6 +69,20 @@ function isUtf8Encoding(value) {
   return UTF8_ENCODINGS.has(value.toLowerCase());
 }
 
+// GIT-09 (Q20): only the merge-commit text is recorded (C:cli-and-exit-codes); the unborn and
+// pushed texts only name their state.
+const UNBORN_REWORD_MESSAGE = 'HEAD is unborn (no commit yet): there is no commit to reword';
+const MERGE_REWORD_MESSAGE = 'HEAD is a merge commit; reword it by hand';
+const PUSHED_MESSAGE = 'HEAD is already on a remote-tracking ref (pushed): rewording it would rewrite shared history';
+
+function rewordRefusal(reword) {
+  if (reword == null) return null;
+  if (reword.unborn) return { code: 'unborn', message: UNBORN_REWORD_MESSAGE };
+  if (reword.merge) return { code: 'merge', message: MERGE_REWORD_MESSAGE };
+  if (reword.pushed) return { code: 'pushed', message: PUSHED_MESSAGE };
+  return null;
+}
+
 /**
  * The pre-folder refusals of `plan` (C:plan step 2), in order: `env`, then `config` (M4's
  * result, already loaded by M18 step 1: M15 stays pure, so it never reads a layer itself),
@@ -81,7 +98,9 @@ function isUtf8Encoding(value) {
  *   worktree, or when nothing is in progress), plus M3 `headState()`'s `unmerged` (GIT-04;
  *   `false`, `null` or omitted outside a worktree, or when the index holds no unmerged
  *   entry), plus M3 `commitEncoding()`'s result under `commitEncoding` (GIT-04; `null` or
- *   omitted outside a worktree, or when the key is unset).
+ *   omitted outside a worktree, or when the key is unset), plus M3 `rewordFacts()`'s result
+ *   under `reword` (GIT-09; `null` or omitted without `--reword`; a root commit refuses
+ *   nothing).
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */
@@ -102,6 +121,8 @@ export function planRefusal(facts) {
   if (facts.repo !== null && Object.hasOwn(STATE_MESSAGES, facts.repo.kind)) {
     return { code: facts.repo.kind, message: STATE_MESSAGES[facts.repo.kind] };
   }
+  const reword = rewordRefusal(facts.reword);
+  if (reword !== null) return reword;
   if (facts.git.status === 'timed-out' || (facts.repo !== null && facts.repo.kind === 'timed-out')) {
     return { code: 'timed-out', message: 'git did not answer its start-up call in time' };
   }

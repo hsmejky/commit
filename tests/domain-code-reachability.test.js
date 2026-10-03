@@ -76,7 +76,22 @@ const ROWS = [
   { row: 'run-folder', reachable: false },
   { row: 'killed-leftover', reachable: false },
   { row: 'signing-locked', reachable: false },
-  { row: 'pushed', reachable: false },
+  {
+    row: 'pushed',
+    kind: 'pushed',
+    exitCode: 6,
+    reachable: true,
+    // GIT-09: `plan --reword` on a HEAD a remote-tracking ref points at
+    // (tests/plan-reword-facts.test.js).
+    async seam1Case(t) {
+      const c = createCase(t);
+      c.writeFile('a.txt', 'one\n');
+      c.git(['add', '--', 'a.txt']);
+      c.git(['commit', '-q', '-m', 'seed']);
+      c.git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+      return runCommit(c, ['plan', '--reword']);
+    },
+  },
   { row: 'staged-hit', reachable: false },
   { row: 'held, taken-over, ended, busy', reachable: false },
   { row: 'index-locked', reachable: false },
@@ -111,7 +126,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 4);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 5);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

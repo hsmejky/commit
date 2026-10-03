@@ -163,7 +163,16 @@ test('every git call plan makes is read-only: only the keep-set and the pins rea
   // The start-up calls, the probes and the diff all ran.
   assert.ok(gitSpawns.some((e) => e.api === 'spawnSync' && e.args.includes('--show-toplevel')));
   assert.ok(gitSpawns.some((e) => e.args.includes('diff')), JSON.stringify(gitSpawns));
+  // GIT-09: the `recentSubjects` read is a history read, which adds M2's two history pins.
+  assert.ok(gitSpawns.some((e) => e.args.includes('log')), JSON.stringify(gitSpawns));
   for (const spawn of gitSpawns) {
+    const history = spawn.args.includes('log') ? {
+      GIT_CONFIG_COUNT: '4',
+      GIT_CONFIG_KEY_2: 'log.showSignature',
+      GIT_CONFIG_KEY_3: 'i18n.logOutputEncoding',
+      GIT_CONFIG_VALUE_2: 'false',
+      GIT_CONFIG_VALUE_3: 'UTF-8',
+    } : {};
     assert.deepEqual(spawn.gitEnv, {
       GIT_ASKPASS: 'askpass-decoy',
       GIT_CONFIG_COUNT: '2',
@@ -176,6 +185,7 @@ test('every git call plan makes is read-only: only the keep-set and the pins rea
       GIT_LITERAL_PATHSPECS: '1',
       GIT_OPTIONAL_LOCKS: '0',
       GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
+      ...history,
     }, JSON.stringify(spawn.args));
   }
 });

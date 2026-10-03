@@ -12,7 +12,8 @@
 // `release`/`commit` never spawn the extra status call. GIT-03 adds `inProgressState()`:
 // merge, cherry-pick, revert, rebase, bisect, a paused sequence and a pending
 // `merge --squash`, from one M2 `gitPath` call. GIT-04 adds the `unmerged` read, from the
-// same status call's `u` lines, and the encoding check.
+// same status call's `u` lines, and the encoding check. GIT-09 adds the history reads
+// (`recentSubjects`, `oldMessage`, `historyMessages` for `infer`) and `rewordFacts`.
 
 import { existsSync } from 'node:fs';
 
@@ -208,6 +209,90 @@ export async function headTree({ cwd, env, now }) {
   if (result.code === 0) return result.stdout.toString('utf8').trim();
   if (result.code === 1) return null;
   throw new Error(`git rev-parse HEAD^{tree} failed (${result.code}): ${result.stderr}`);
+}
+
+// GIT-09: the history reads (Q20, C:plan-hunks, C:infer). Each runs with M2's `history`
+// pins (`log.showSignature=false`, `i18n.logOutputEncoding=UTF-8`), so a repo's
+// `log.showSignature=true` never puts gpg's lines into the output, and each names the HEAD
+// SHA the caller recorded rather than `HEAD`, so a commit made in between is never read.
+// `-z` ends every record with NUL: no subject or message can hold one, and `%B` is the raw
+// message, byte for byte, with nothing added or trimmed.
+
+async function logRecords(args, { cwd, env, now }) {
+  const result = await run('git', ['log', '-z', ...args], { cwd, env, now, readOnly: true, history: true });
+  if (result.code !== 0) throw new Error(`git log failed (${result.code}): ${result.stderr}`);
+  const records = result.stdout.toString('utf8').split('\0');
+  records.pop();
+  return records;
+}
+
+/**
+ * The last 10 subjects, newest first (`recentSubjects`, C:plan, C:plan-hunks).
+ *
+ * @param {{ cwd: string, env: object, now?: () => number, head: string | null }} options
+ *   `cwd`: the toplevel; `head`: the recorded HEAD SHA, `null` when unborn.
+ * @returns {Promise<string[]>} `[]` on an unborn HEAD, with no spawn.
+ * @throws {Error} when git exits non-zero.
+ */
+export async function recentSubjects({ cwd, env, now, head }) {
+  if (head === null) return [];
+  return logRecords(['-n', '10', '--format=%s', head, '--'], { cwd, env, now });
+}
+
+/**
+ * The full message of the commit `head` names (`oldMessage`, `reword`, Q20), byte-exact.
+ *
+ * @param {{ cwd: string, env: object, now?: () => number, head: string }} options
+ * @returns {Promise<string>}
+ * @throws {Error} when git exits non-zero.
+ */
+export async function oldMessage({ cwd, env, now, head }) {
+  const [message] = await logRecords(['-n', '1', '--format=%B', head, '--'], { cwd, env, now });
+  return message;
+}
+
+/**
+ * The last 200 non-merge messages, newest first, each byte-exact (`infer`, C:infer).
+ *
+ * @param {{ cwd: string, env: object, now?: () => number, head: string | null }} options
+ * @returns {Promise<string[]>} `[]` on an unborn HEAD, with no spawn.
+ * @throws {Error} when git exits non-zero.
+ */
+export async function historyMessages({ cwd, env, now, head }) {
+  if (head === null) return [];
+  return logRecords(['-n', '200', '--no-merges', '--format=%B', head, '--'], { cwd, env, now });
+}
+
+/**
+ * The reword facts of `plan --reword` (Q20, C:plan step 1): unborn, merge commit, root
+ * commit and pushed. An unborn HEAD spawns nothing (Q21: the pushed check is skipped);
+ * otherwise one `rev-list --parents` call for the parent count and one `for-each-ref
+ * --contains` over `refs/remotes` (any remote-tracking ref, not only the upstream: Q20),
+ * run concurrently.
+ *
+ * @param {{ cwd: string, env: object, now?: () => number, head: string | null }} options
+ *   `cwd`: the toplevel; `head`: the recorded HEAD SHA, `null` when unborn.
+ * @returns {Promise<{ unborn: boolean, merge: boolean, root: boolean, pushed: boolean }>}
+ * @throws {Error} when either git call exits non-zero.
+ */
+export async function rewordFacts({ cwd, env, now, head }) {
+  if (head === null) return { unborn: true, merge: false, root: false, pushed: false };
+  const [parents, containing] = await Promise.all([
+    run('git', ['rev-list', '--parents', '-n', '1', head, '--'], { cwd, env, now, readOnly: true }),
+    run('git', ['for-each-ref', '--count=1', '--format=%(refname)', '--contains', head, 'refs/remotes'],
+      { cwd, env, now, readOnly: true }),
+  ]);
+  if (parents.code !== 0) throw new Error(`git rev-list --parents failed (${parents.code}): ${parents.stderr}`);
+  if (containing.code !== 0) {
+    throw new Error(`git for-each-ref --contains failed (${containing.code}): ${containing.stderr}`);
+  }
+  const count = parents.stdout.toString('utf8').trim().split(' ').length - 1;
+  return {
+    unborn: false,
+    merge: count > 1,
+    root: count === 0,
+    pushed: containing.stdout.toString('utf8').trim() !== '',
+  };
 }
 
 /**

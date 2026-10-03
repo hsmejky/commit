@@ -24,7 +24,9 @@
 // stdout `state`/`expectedHead` stand-in (KD-R65: they are stored in `plan.json` and
 // `state.json`). RUN-06 adds step 7's `held` and the HEAD re-read, and `--reword`'s
 // clean-tree lock; CHG-04 step 4's index fingerprint (stored in `state.json`) and step 7's
-// re-read of it; the sweep is RUN-08's. Later slices
+// re-read of it; the sweep is RUN-08's. GIT-09 adds `--reword`'s facts to the plan-only
+// HEAD step and their step 2 refusals, and a history step before step 7 (`recentSubjects`,
+// `oldMessage`), stored in `state.json`, `plan.json` and the hunk index. Later slices
 // insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in PLAN_STEPS,
 // and widen these.
 //
@@ -36,7 +38,10 @@
 // shared `subcommandRefusals`, M12 `open`, then a stub that ends the call at once with no
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
-import { commitEncoding, head, headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
+import {
+  commitEncoding, head, headState, inProgressState, isTracked, oldMessage, probe, recentSubjects,
+  rewordFacts,
+} from './repo-probe.mjs';
 import { assignIds, indexFingerprint, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
 import { bucketOf } from './path-classifier.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME, STATE_VERSION } from './run.mjs';
@@ -78,7 +83,9 @@ async function probeRepo(ctx) {
  * finding 14). `release` and `commit` run `probeRepo` but never this step, so they never
  * spawn either status call or the config call (review-GIT-02 finding 5); since only `plan`
  * calls it, no duck-typing of `ctx.notices` is needed to tell the subcommands apart
- * (review-GIT-02 finding 11).
+ * (review-GIT-02 finding 11). GIT-09: with `--reword` it also reads M3 `rewordFacts` (unborn,
+ * merge commit, root commit, pushed; C:plan step 1) for step 2's reword rows, concurrently
+ * with the other two reads; without it `ctx.reword` stays `null` and nothing is spawned.
  */
 async function readHeadState(ctx) {
   const { repo } = ctx.probe;
@@ -89,12 +96,14 @@ async function readHeadState(ctx) {
     ctx.expectedHead = result.head;
     if (result.kind === 'detached') ctx.notices.push(DETACHED_HEAD_NOTICE);
     ctx.unmerged = result.unmerged;
-    const [inProgress, encoding] = await Promise.all([
+    const [inProgress, encoding, reword] = await Promise.all([
       inProgressState({ cwd: repo.toplevel, env, now }),
       commitEncoding({ cwd: repo.toplevel, env, now }),
+      ctx.values.reword === true ? rewordFacts({ cwd: repo.toplevel, env, now, head: result.head }) : null,
     ]);
     ctx.inProgress = inProgress;
     ctx.commitEncoding = encoding;
+    ctx.reword = reword;
   }
   return undefined;
 }
@@ -123,6 +132,7 @@ async function preFolderRefusals(ctx) {
     inProgress: ctx.inProgress,
     unmerged: ctx.unmerged,
     commitEncoding: ctx.commitEncoding,
+    reword: ctx.reword,
   });
   if (refusal !== null) return { refusal };
   ctx.toplevel = ctx.probe.repo.toplevel;
@@ -200,6 +210,24 @@ async function postScanRefusals(ctx) {
 }
 
 /**
+ * GIT-09, ahead of step 7 (whose `state.json` stores them): M3 `recentSubjects` and, in
+ * `reword`, `oldMessage`, both read at the HEAD step 1 recorded, so a commit made since is
+ * never read (step 7's HEAD re-read refuses that run anyway). Read only once the clean-tree
+ * and refusal endings are behind, so those spawn neither read.
+ */
+async function readHistory(ctx) {
+  const { env, now } = ctx.injected;
+  const at = { cwd: ctx.toplevel, env, now, head: ctx.expectedHead };
+  const [subjects, message] = await Promise.all([
+    recentSubjects(at),
+    ctx.mode === 'reword' ? oldMessage(at) : undefined,
+  ]);
+  ctx.recentSubjects = subjects;
+  ctx.oldMessage = message;
+  return undefined;
+}
+
+/**
  * Step 7 (CHG-03b): in contract order (C:run-folder, C:plan step 7), M12 writes `state.json`
  * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the index
  * fingerprint, the unit table and the `id → hash` map; the later rows arrive with their slices), then takes the run
@@ -217,6 +245,10 @@ async function storeAndLock(ctx) {
     indexFingerprint: ctx.indexFingerprint,
     units: ctx.unitTable,
     idMap: ctx.idMap,
+    recentSubjects: ctx.recentSubjects,
+    // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
+    // commit, which CHG-15's snapshot diffs against the empty tree.
+    ...(ctx.mode === 'reword' ? { oldMessage: ctx.oldMessage, rootCommit: ctx.reword.root } : {}),
   })}\n`);
   // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
   // `plan`'s `finally` deletes only this call's own provisional folder. `holder` (the
@@ -248,6 +280,7 @@ async function storeAndLock(ctx) {
     state: ctx.state,
     clean: ctx.inventory.clean,
     tracked: ctx.tracked,
+    recentSubjects: ctx.recentSubjects,
   }));
   return undefined;
 }
@@ -266,7 +299,13 @@ function entryPerLine(object) {
  */
 async function renderHunkIndex(ctx) {
   const { stdoutObj, hunksTxt } = renderHunks(
-    { runDir: ctx.provisional.runDir, mode: ctx.mode, config: { values: {} } },
+    {
+      runDir: ctx.provisional.runDir,
+      mode: ctx.mode,
+      config: { values: {} },
+      recentSubjects: ctx.recentSubjects,
+      oldMessage: ctx.oldMessage,
+    },
     ctx.units,
   );
   ctx.run.write('hunks.txt', hunksTxt);
@@ -275,7 +314,7 @@ async function renderHunkIndex(ctx) {
 
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
-  snapshotUnits, postScanRefusals, storeAndLock, renderHunkIndex,
+  snapshotUnits, postScanRefusals, readHistory, storeAndLock, renderHunkIndex,
 ]);
 
 /**
@@ -362,7 +401,7 @@ async function runSteps(steps, ctx) {
  */
 export async function plan(values, injected, { cwd }) {
   // Only bare `plan`, `plan --split` and `plan --reword` (RUN-06: the lock on a clean tree;
-  // its reword facts are GIT-09's, its snapshot CHG-15's) are built: every other flag
+  // its reword facts GIT-09's, its snapshot CHG-15's) are built: every other flag
   // changes the mode or the clean-tree outcome (C:plan `mode`).
   const unbuilt = ['dictated', 'staged', 'take-over', 'hunks'].filter((f) => values[f] !== undefined);
   if (unbuilt.length > 0) {
