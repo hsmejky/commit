@@ -26,7 +26,7 @@
 // fragment overlapping a span quotes `[<pattern-id>]` in its place, so no matched text
 // reaches stdout (C:check).
 
-import { lint, normalise } from './message-grammar.mjs';
+import { lint, normalise, normaliseText } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
@@ -46,20 +46,20 @@ const DEFAULT_MESSAGE_VALUES = Object.freeze({
 });
 
 // The group's message as lint and the scanner see it: the header, then (when there is a
-// body) a blank line and the body, run through M6 `normalise` (MSG-06) so a CRLF or lone CR
-// an agent wrote into a JSON string, or a trailing run of blank lines, reads the same as its
-// LF form; `header`/`body` are always valid JS strings already (this file's bytes were
-// decoded by `parseWorkerPlan` below), so only normalise's line-ending and trailing-blank
-// steps can fire here, never its BOM or invalid-UTF-8 steps.
+// body) a blank line and the body, run through M6 `normaliseText` (MSG-06) so a CRLF or lone
+// CR an agent wrote into a JSON string, or a trailing run of blank lines, reads the same as
+// its LF form. `header`/`body` are already-decoded JS strings (this file's bytes were
+// decoded by `parseWorkerPlan` below via `normalise`), so there are no bytes to feed
+// `normalise` itself here, and its BOM/byte-decode steps never apply — but an unpaired
+// high-surrogate JSON escape (U+D800 written without a matching low surrogate) survives
+// `JSON.parse` as a lone surrogate, which `normaliseText` still catches (step 2).
+//
+// @returns {{ ok: true, text: string } | { ok: false, reason: string }}
 function messageOf(header, body) {
   const raw = body === null ? header : `${header}\n\n${body}`;
-  const normalised = normalise(new TextEncoder().encode(raw));
-  // A lone surrogate from an unpaired high-surrogate JSON escape re-encodes to U+FFFD and
-  // fails here too; that case is not among MSG-06's acceptance criteria, so it falls back to
-  // the raw text rather than silently dropping content (a later slice can wire it into
-  // `errors` as its own `message not UTF-8` entry if wanted).
-  if (!normalised.ok) return raw;
-  return normalised.text.replace(/\n$/, '');
+  const normalised = normaliseText(raw);
+  if (!normalised.ok) return normalised;
+  return { ok: true, text: normalised.text.replace(/\n$/, '') };
 }
 
 // M6's lint reasons quote three message fragments verbatim: the type, the scope and a footer
@@ -133,13 +133,18 @@ export function validatePlan(planBytes, runState, options = {}) {
   workerPlan.groups.forEach((group, index) => {
     const n = index + 1;
     if (group.hunks.length > 0) throw new Error('hunk-level worker plans are not built yet (PLN-03)');
-    const message = messageOf(group.header, group.body);
-    const hits = scanText(message, { osUser });
-    for (const reason of lint(message, messageValues, { quote: redactingQuote(message, hits) })) {
-      errors.push({ group: n, reason });
-    }
-    for (const [patternId, spans] of spansByPattern(hits)) {
-      errors.push({ group: n, reason: `message contains \`${patternId}\``, spans });
+    const normalisedMessage = messageOf(group.header, group.body);
+    if (!normalisedMessage.ok) {
+      errors.push({ group: n, reason: normalisedMessage.reason });
+    } else {
+      const message = normalisedMessage.text;
+      const hits = scanText(message, { osUser });
+      for (const reason of lint(message, messageValues, { quote: redactingQuote(message, hits) })) {
+        errors.push({ group: n, reason });
+      }
+      for (const [patternId, spans] of spansByPattern(hits)) {
+        errors.push({ group: n, reason: `message contains \`${patternId}\``, spans });
+      }
     }
     const files = [];
     const units = [];

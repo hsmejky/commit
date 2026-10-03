@@ -290,6 +290,47 @@ test('two different patterns give one scan error each, in hit order, each with i
   ]);
 });
 
+// review-MSG-06 finding 5 (Medium): C:scan-patterns gives span offsets into the normalised
+// message; a regression that scanned the raw (CRLF) text instead would shift every span
+// after the CRLF by one byte. The footer line before the secret carries a lone CR so the raw
+// and normalised forms diverge in length before the secret is reached.
+test('MSG-06: a CRLF body\'s secret span indexes the normalised (LF) message, not the raw text', async () => {
+  const { validatePlan } = await loadLib('plan-validator');
+  const body = `Closes #1\r\nRefs: ${HOME_ROOT}`;
+  const normalisedMessage = `feat: x\n\nCloses #1\nRefs: ${HOME_ROOT}`;
+
+  const result = validateMessage(validatePlan, 'feat: x', body);
+
+  const start = normalisedMessage.indexOf(HOME_ROOT);
+  assert.deepEqual(result.errors, [{
+    group: 1,
+    reason: 'message contains `local-path`',
+    spans: [{ patternId: 'local-path', start, end: start + HOME_ROOT.length }],
+  }]);
+});
+
+// review-MSG-06 finding 1 (Medium): an unpaired high-surrogate JSON escape re-encodes
+// cleanly through JSON.stringify/parse (a well-formed JSON escape, not an invalid byte), but
+// leaves a lone surrogate in the decoded JS string. `messageOf` used to swallow this and lint
+// the raw text instead; it must now report it the same way invalid UTF-8 bytes are reported.
+test('MSG-06: an unpaired high-surrogate JSON escape in the header fails with "message not UTF-8", not lint on the raw text', async () => {
+  const { validatePlan } = await loadLib('plan-validator');
+
+  const result = validateMessage(validatePlan, 'feat: x\ud800', null);
+
+  assert.deepEqual(result.errors, [{ group: 1, reason: 'message not UTF-8' }]);
+});
+
+// review-MSG-06 finding 4 (Low): step 4 used to trim only literal `\n` runs, so a
+// whitespace-only trailing line (not merely an empty one) survived normalisation.
+test('MSG-06: normalise trims a trailing whitespace-only line, not just empty ones', async () => {
+  const { normalise } = await loadLib('message-grammar');
+
+  const result = normalise(Buffer.from('feat: x\n  \n\t\n', 'utf8'));
+
+  assert.deepEqual(result, { ok: true, text: 'feat: x\n' });
+});
+
 // FND-10 Seam 1: os.userInfo() throws, so commit.cjs falls back to USER/USERNAME; `osUser`
 // reaches M14 unchanged and `state.json` never stores it (EXE-01 item 1).
 // Every call, `plan` included, runs under the fallback, and a passing `check` (which writes the
@@ -348,6 +389,7 @@ test('MSG-06: a worker plan encoded as UTF-16 LE with BOM passes check like its 
   const checked = await runCommit(c, ['check', '--plan', planId]);
 
   assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.groups[0].header, 'feat: x', detail(checked));
 });
 
 test('MSG-06: a worker plan encoded as UTF-16 BE with BOM passes check like its UTF-8 form', async (t) => {
@@ -359,13 +401,18 @@ test('MSG-06: a worker plan encoded as UTF-16 BE with BOM passes check like its 
   const checked = await runCommit(c, ['check', '--plan', planId]);
 
   assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.groups[0].header, 'feat: x', detail(checked));
 });
 
-test('MSG-06: a worker plan with an invalid UTF-8 byte fails check with "message not UTF-8", nothing committed', async (t) => {
+test('MSG-06: an invalid UTF-8 byte spliced into the header fails check with "message not UTF-8", nothing committed', async (t) => {
   const { c, planId, runDir } = await plannedRun(t);
   const before = c.git(['rev-parse', 'HEAD']).trim();
-  const json = workerPlanJson('feat: x', null);
-  const bytes = Buffer.concat([Buffer.from(json, 'utf8'), Buffer.from([0xff])]);
+  // 'Q' (0x51) stands in for the invalid byte so the marker's position in the JSON bytes is
+  // unambiguous; it is spliced inside the header's own string, not appended after the JSON
+  // (which would only pin the file-level case, not "a message with an invalid UTF-8 byte").
+  const json = workerPlanJson('feat: xQ', null);
+  const bytes = Buffer.from(json, 'utf8');
+  bytes[bytes.indexOf(0x51)] = 0xff;
   writeWorkerPlanBytes(runDir, bytes);
 
   const checked = await runCommit(c, ['check', '--plan', planId]);
@@ -375,9 +422,18 @@ test('MSG-06: a worker plan with an invalid UTF-8 byte fails check with "message
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), before);
 });
 
-test('MSG-06: a message whose lines end in a lone CR normalises to LF like its CRLF form', async (t) => {
+test('MSG-06: a lone-CR footer between two lines normalises to LF like its CRLF form', async (t) => {
   const { c, planId, runDir } = await plannedRun(t);
-  writeWorkerPlanBytes(runDir, Buffer.from(workerPlanJson('feat: x', 'Closes #12\r\r\r'), 'utf8'));
+  writeWorkerPlanBytes(runDir, Buffer.from(workerPlanJson('feat: x', 'Closes #12\rRefs #3'), 'utf8'));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+});
+
+test('MSG-06: the same footer written as CRLF passes check the same way as its lone-CR form', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+  writeWorkerPlanBytes(runDir, Buffer.from(workerPlanJson('feat: x', 'Closes #12\r\nRefs #3'), 'utf8'));
 
   const checked = await runCommit(c, ['check', '--plan', planId]);
 

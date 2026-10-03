@@ -3,9 +3,11 @@
 `check` reads the message as bytes (`plan.groups.json`), normalised first:
 
 1. UTF-8 BOM stripped; a UTF-16 LE or BE BOM → decoded as UTF-16.
-2. Invalid UTF-8 (U+FFFD after decoding) → lint error `message not UTF-8`.
+2. Invalid UTF-8 or UTF-16 (`TextDecoder`'s own `fatal` mode), or — for a message already
+   decoded from JSON, with no bytes to decode — a lone surrogate (not well-formed Unicode) →
+   lint error `message not UTF-8`.
 3. CRLF and lone CR → LF.
-4. Trailing blank lines trimmed; exactly one trailing LF.
+4. Trailing blank lines (empty, or made of only spaces/tabs) trimmed; exactly one trailing LF.
 
 Structure: header line, blank line, optional body, optional footer paragraph. All regexes use
 the `u` flag.

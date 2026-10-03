@@ -20,34 +20,61 @@ const FOOTER_LINE = /^(BREAKING CHANGE|[A-Za-z][A-Za-z0-9-]*)(: | #)(.+)$/u;
 const CONTINUATION = /^[ \t]+(\S.*)$/u;
 
 /**
+ * Steps 2-4 of M6 normalisation (C:message-grammar, MSG-06), over text that has already been
+ * decoded: step 1 (the byte-level BOM/UTF-16 decode) only applies to `normalise` below, which
+ * is the only caller that starts from bytes. Shared with M14 `messageOf`
+ * (plan-validator.mjs), which composes the message from JSON strings that `JSON.parse`
+ * already decoded, so it has no bytes to feed `normalise`, but can still receive a lone
+ * surrogate from an unpaired high-surrogate JSON escape (U+D800 written without a matching
+ * low surrogate) — a string `TextDecoder` can never produce, but one `JSON.parse` can.
+ *
+ * 2. A string that is not well-formed Unicode (a lone surrogate) is reported instead of
+ *    silently kept.
+ * 3. CRLF and lone CR become LF.
+ * 4. Trailing blank lines (empty or made of only spaces/tabs) are trimmed to exactly one
+ *    trailing LF.
+ *
+ * @param {string} text
+ * @returns {{ ok: true, text: string } | { ok: false, reason: string }}
+ */
+export function normaliseText(text) {
+  if (!text.isWellFormed()) {
+    return { ok: false, reason: 'message not UTF-8' };
+  }
+  let normalised = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  normalised = `${normalised.replace(/(\n[ \t]*)*$/, '')}\n`;
+  return { ok: true, text: normalised };
+}
+
+/**
  * M6 byte normalisation (C:message-grammar, MSG-06): turns `bytes` (a message `check` reads
  * from the worker plan) into the text `lint` sees.
  *
  * 1. A UTF-8 BOM is stripped; a UTF-16 LE or BE BOM selects that decoder instead, which
  *    strips its own BOM the same way.
- * 2. Invalid UTF-8 (a lone or malformed byte, which a non-fatal decode turns into U+FFFD) is
- *    reported instead of silently kept.
- * 3. CRLF and lone CR become LF.
- * 4. Trailing blank lines are trimmed to exactly one trailing LF.
+ * 2. Invalid UTF-8 or UTF-16 (`TextDecoder`'s own `fatal` mode) is reported instead of
+ *    silently replaced.
+ * 3-4. See `normaliseText`, which this delegates to once the bytes are decoded.
  *
  * @param {Uint8Array} bytes
  * @returns {{ ok: true, text: string } | { ok: false, reason: string }}
  */
 export function normalise(bytes) {
-  let text;
+  let decoder;
   if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    text = new TextDecoder('utf-16le').decode(bytes);
+    decoder = new TextDecoder('utf-16le', { fatal: true });
   } else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    text = new TextDecoder('utf-16be').decode(bytes);
+    decoder = new TextDecoder('utf-16be', { fatal: true });
   } else {
-    text = new TextDecoder('utf-8').decode(bytes); // strips a leading UTF-8 BOM itself
+    decoder = new TextDecoder('utf-8', { fatal: true }); // strips a leading UTF-8 BOM itself
   }
-  if (text.includes('�')) {
+  let text;
+  try {
+    text = decoder.decode(bytes);
+  } catch {
     return { ok: false, reason: 'message not UTF-8' };
   }
-  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  text = `${text.replace(/\n+$/, '')}\n`;
-  return { ok: true, text };
+  return normaliseText(text);
 }
 
 /**
