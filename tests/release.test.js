@@ -290,25 +290,37 @@ test('release --plan X removes a matching lock even when X/ does not exist', asy
   assert.equal(fs.existsSync(path.join(runDir, planId)), false);
 });
 
-// Finding 3 (review-RUN-01): the release itself (lock and folder gone) succeeds, but the
-// reply's tree-state read only renders a clean tree today (the walking skeleton's thin
-// read; CHG-04 completes it with the "N files left" case), so a release on a dirty tree
-// still ends the call `internal` even though the run has already ended.
-test('release on a dirty tree still ends the run, but the reply fails internal (thin tree-state read, CHG-04)', async (t) => {
+// CHG-04: the reply ends with the tree state read after the release, here "N files left"
+// with the count and the paths in `git status` order (untracked files listed one by one);
+// the cap of 10 plus "+N more" is RPL-05's.
+test('release on a dirty tree ends the run with a reply naming the files left', async (t) => {
   const c = createRepo(t);
   const runDir = runDirOf(c);
   const planId = crypto.randomUUID();
   writeLock(runDir, { planId, created: CREATED });
   writeRunFolder(runDir, planId);
   c.writeFile('dirty.txt', 'x\n');
+  c.writeFile('sub/new.txt', 'y\n');
 
   const result = await runCommit(c, ['release', '--plan', planId]);
 
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), false, 'the lock is removed');
   assert.equal(fs.existsSync(path.join(runDir, planId)), false, 'the run folder is deleted');
-  assert.equal(result.exitCode, 1, `stdout ${result.stdout}\nstderr ${result.stderr}`);
-  assert.equal(result.json.ok, false);
-  assert.equal(result.json.error.kind, 'internal');
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.text, 'nothing committed\n2 files left: dirty.txt, sub/new.txt');
+});
+
+test('release on a tree with one file left names it in the singular', async (t) => {
+  const c = createRepo(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  writeLock(runDir, { planId, created: CREATED });
+  c.writeFile('dirty.txt', 'x\n');
+
+  const result = await runCommit(c, ['release', '--plan', planId]);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.reply.text, 'nothing committed\n1 file left: dirty.txt');
 });
 
 test('release run from a subdirectory releases the run of the toplevel', async (t) => {

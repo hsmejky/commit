@@ -5,7 +5,7 @@
 // clean working tree, with the base `callerRule`; RUN-01 adds `release`'s two `nothing`
 // texts. RUN-03 adds the omitted tree state (past `release`'s 45 s `releaseDeadline`,
 // C:reply-and-handback). RPL-04 onward add `failed`, `committed` and `handback` replies, the
-// handback rule, notices, the trailer line and the "N files left" tree state.
+// handback rule, notices and the trailer line. CHG-04 adds the "N files left" tree state.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -20,9 +20,13 @@ export const BASE_CALLER_RULE = 'Show text to the user verbatim; a subagent puts
   + 'UUID); otherwise run nothing and show the command to the user. Run a command with '
   + '--confirmed only as the answer the user picked, or as ifNoUser.answer without a user.';
 
+// The tree state line (C:reply-and-handback): "working tree clean", or the count and the
+// paths left (CHG-04). The cap of 10 paths plus "+N more" is RPL-05's, the escaping of
+// control characters in a path RPL-06's.
 function renderTreeState(treeState) {
   if (treeState.clean === true) return 'working tree clean';
-  throw new Error('the "N files left" tree state is not built yet');
+  const noun = treeState.count === 1 ? 'file' : 'files';
+  return `${treeState.count} ${noun} left: ${treeState.paths.join(', ')}`;
 }
 
 // The first line of a `nothing` reply, per `reason`: `plan` on a clean tree; a `release`
