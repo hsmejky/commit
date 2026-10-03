@@ -32,7 +32,10 @@
 // `state.json` and `plan.json`, ahead of `recentSubjects` in both (C:run-folder). CHG-05
 // widens step 4's inventory (candidates, hidden, staged-new, pre-staged) and points step 5's
 // snapshot at the temporary index in the run folder's `git-index` (a failed `git add -N` is
-// `git-failed`); step 7 stores the lists in `state.json` and `plan.json`. Later
+// `git-failed`); step 7 stores the lists in `state.json` and `plan.json`. GIT-10 adds M11
+// `probeSigning` to step 6, after the clean-tree check: its `ready: false` refuses through
+// M15 `planRefusal`, `"prompt"` queues the signing note, and step 7 stores the result in
+// `plan.json` `signing`. Later
 // slices insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in
 // PLAN_STEPS, and widen these.
 //
@@ -58,10 +61,15 @@ import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
+import { probeSigning } from './signing-probe.mjs';
 
 // GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
 // C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
 const DETACHED_HEAD_NOTICE = 'HEAD is detached: new commits will not be on any branch';
+
+// GIT-10: the signing prompt notice (Q18, story 171), recorded verbatim in
+// C:cli-and-exit-codes; queued when M11 reports `ready: "prompt"`.
+const SIGNING_PROMPT_NOTICE = 'signing enabled; a passphrase prompt may appear';
 
 // RUN-06: the `head-moved` refusal text (Q18), recorded verbatim in C:cli-and-exit-codes.
 const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
@@ -263,10 +271,17 @@ async function snapshotUnits(ctx) {
 
 /**
  * Step 6: post-scan refusals. A clean tree ends the call with `nothing`, except in `reword`,
- * which takes the lock on a clean tree too (C:plan step 6, RUN-06).
+ * which takes the lock on a clean tree too (C:plan step 6, RUN-06). Then the signing probe
+ * (GIT-10, M11), so a clean tree on a locked key reports "nothing to commit": M15
+ * `planRefusal` refuses its `ready: false` (`signing-locked`); `"prompt"` queues the note.
  */
 async function postScanRefusals(ctx) {
   if (ctx.inventory.clean === true && ctx.mode !== 'reword') return { status: 'nothing', reason: 'clean' };
+  const { env, now } = ctx.injected;
+  ctx.signing = await probeSigning({ toplevel: ctx.toplevel, env, now });
+  const refusal = planRefusal({ ...ctx.probe, signing: ctx.signing });
+  if (refusal !== null) return { refusal };
+  if (ctx.signing.ready === 'prompt') ctx.notices.push(SIGNING_PROMPT_NOTICE);
   return undefined;
 }
 
@@ -366,6 +381,8 @@ async function storeAndLock(ctx) {
     },
     stagedExcluded: stagedExcludedOf(ctx),
     attribution: ctx.attribution.trailer === null ? null : ctx.attribution,
+    // GIT-10: M11's result from step 6 (C:plan `signing`).
+    signing: ctx.signing,
     recentSubjects: ctx.recentSubjects,
     warnings: ctx.warnings,
   }));

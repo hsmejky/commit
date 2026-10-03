@@ -15,6 +15,11 @@
 // GIT-09 adds the reword rows (Q20, C:plan step 2), after every other `state` row: an
 // unborn or merge-commit HEAD (`state`), then `pushed`.
 //
+// GIT-10 adds the `signing` row (Q18, C:plan step 6): M11's `ready: false` refuses
+// `signing-locked`, last, after every pre-folder row; `plan` calls it again at step 6, after
+// the clean-tree check, with the probe's result. RUN-15 asserts its place among the post-scan
+// rows (`staged-hit`, the clean tree).
+//
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 
 /** The oldest supported git (Q1, Q15, story 202). */
@@ -73,6 +78,9 @@ function isUtf8Encoding(value) {
 // pushed texts only name their state.
 const UNBORN_REWORD_MESSAGE = 'HEAD is unborn (no commit yet): there is no commit to reword';
 const MERGE_REWORD_MESSAGE = 'HEAD is a merge commit; reword it by hand';
+// Q18, C:cli-and-exit-codes recorded texts: verbatim.
+const SIGNING_LOCKED_MESSAGE = 'signing key locked — unlock it (e.g. sign once in a terminal), then `/commit`';
+
 const PUSHED_MESSAGE = 'HEAD is already on a remote-tracking ref (pushed): rewording it would rewrite shared history';
 
 function rewordRefusal(reword) {
@@ -91,7 +99,8 @@ function rewordRefusal(reword) {
  *
  * @param {{ git: object, node: object, repo: object|null, config?: { error: string } | null,
  *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null,
- *   reword?: { unborn: boolean, merge: boolean, root: boolean, pushed: boolean } | null }}
+ *   reword?: { unborn: boolean, merge: boolean, root: boolean, pushed: boolean } | null,
+ *   signing?: { enabled: boolean, format?: string, ready?: boolean|string } }}
  *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (`null` or
  *   omitted when no layer error was found; the user layer is checked even outside a
  *   worktree, so this can hold a user-layer error there too, CFG-04), plus M3
@@ -101,7 +110,8 @@ function rewordRefusal(reword) {
  *   entry), plus M3 `commitEncoding()`'s result under `commitEncoding` (GIT-04; `null` or
  *   omitted outside a worktree, or when the key is unset), plus M3 `rewordFacts()`'s result
  *   under `reword` (GIT-09; `null` or omitted without `--reword`; a root commit refuses
- *   nothing).
+ *   nothing), plus M11 `probeSigning()`'s result under `signing` (GIT-10; omitted at step 2,
+ *   which runs before the probe; only `ready: false` refuses).
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */
@@ -127,6 +137,7 @@ export function planRefusal(facts) {
   if (facts.git.status === 'timed-out' || (facts.repo !== null && facts.repo.kind === 'timed-out')) {
     return { code: 'timed-out', message: 'git did not answer its start-up call in time' };
   }
+  if (facts.signing?.ready === false) return { code: 'signing-locked', message: SIGNING_LOCKED_MESSAGE };
   return null;
 }
 
