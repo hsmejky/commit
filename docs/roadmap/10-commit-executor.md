@@ -230,16 +230,16 @@ since plan, run /commit again"; a failed `git add -N` while rebuilding the tempo
 
 **Blocked by:** EXE-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, C:commit-release (b), M16, story 161.
 
-- [ ] Seam 1: a planned file edited after `plan` → exit 6 `diff-changed` with that text,
+- [x] Seam 1: a planned file edited after `plan` → exit 6 `diff-changed` with that text,
       the real index byte-identical, `unstaged: null`.
-- [ ] Seam 1: a stored candidate path that makes `git add -N` fail on the temporary index
+- [x] Seam 1: a stored candidate path that makes `git add -N` fail on the temporary index
       (the fixture technique is chosen in the slice; the spec names the case, not the
       mechanism) → exit 4 `git-failed`, `gitOutput` set, real index untouched.
-- [ ] Seam 1: a stored path missing from the working tree is skipped by the rebuild, not an
+- [x] Seam 1: a stored path missing from the working tree is skipped by the rebuild, not an
       error.
 
 
