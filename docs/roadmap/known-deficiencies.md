@@ -118,7 +118,9 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R46.** No M3 operation reads HEAD's first parent (GIT-02, EXE-06). Add
   `parentOf(sha)` or a `firstParent` field; root commit → `null`.
 - **KD-R47.** The `infer` state refusal is only in C:infer and C:cli-and-exit-codes: M18's
-  `infer` steps lack it, the table sources it to M15, no Q7/Q21 amendment (KD-S20).
+  `infer` steps lack it, the table sources it to M15, no Q7/Q21 amendment (KD-S20). INF-01
+  implements it via M15 `planRefusal` over the probe (workflows.mjs `inferRefusals`); only
+  the docs remain.
 - **KD-R49.** The Q4 and Q18 amendments say "By spec pass 9"; they came later. Relabel.
 - **KD-R50.** C:guard precedence is not in Q4's amendment; the `-c` text also serves
   `--config-env`; GRD criteria cite an undefined "(D2)". Amend Q4, cite "C:guard

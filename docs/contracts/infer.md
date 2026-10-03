@@ -34,7 +34,8 @@ git repository or in a bare repository, the same text family as `plan`
   `not-conventional` (`ccShare` under 0.5; `proposal: null`, the skill points to the
   opt-out, Q14).
 - `commitCount`: non-merge commits read (at most 200). `ccShare` is over all of them, `null`
-  when `commitCount` is 0; every `evidence` share is over the Conventional Commits ones only.
+  when `commitCount` is 0, unrounded; every `evidence` share is over the Conventional Commits
+  ones only.
 - `types.value`: all 11 standard types always, plus each non-standard type at 5% or more.
 - `types.evidence`: the share of each non-standard type kept (5% or more).
 - `wouldFail`: how many of the **Conventional Commits** ones among the commits read fail

@@ -45,7 +45,7 @@ on stdin, NUL-separated, never on argv (Q11).
 | 2 | `lint` | lint (`check`) |
 | 3 | `scan` | scan backstop (`commit`, `check`) |
 | 4 | `git` | `git commit` failed, cause not parsed, or staging failed after the reset (`stage-failed`) (`commit`, `check`); a `git add` of the temporary index failed (`plan`, `plan --hunks`) |
-| 5 | `timeout` | timeout (`plan`, `plan --hunks`, `commit`, `check`) |
+| 5 | `timeout` | timeout (`plan`, `plan --hunks`, `commit`, `check`, `infer`) |
 | 6 | `state`, `signing`, `pushed`, `staged-hit`, `lock`, `index-lock`, `diff-changed`, `head-moved` | refused |
 
 Failure shape, shared by all subcommands:
