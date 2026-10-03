@@ -242,10 +242,15 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, input,
       child.kill('SIGKILL');
       child.stdout.destroy();
       child.stderr.destroy();
-      timer = setTimeout(() => {
-        if (!settled) reject(consumerError);
-        settled = true;
-      }, KILL_BACKSTOP_MS);
+      // A non-ESRCH `kill` failure rejects synchronously through the `error` handler below,
+      // which sets `settled` before this call returns; arming the backstop then would only
+      // keep the event loop alive for `KILL_BACKSTOP_MS` with nothing left to do.
+      if (!settled) {
+        timer = setTimeout(() => {
+          if (!settled) reject(consumerError);
+          settled = true;
+        }, KILL_BACKSTOP_MS);
+      }
     }
     child.on('error', (err) => {
       clearTimeout(timer);

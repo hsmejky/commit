@@ -11,6 +11,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { ChildProcess } = require('node:child_process');
 const { beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -341,6 +342,13 @@ test('run: an onStdout that throws rejects the call with its error once the chil
 
 const TICK_MS = 50;
 const LIFETIME_MS = 120_000;
+// `ticking()`'s default window: wide enough that a process stalled by antivirus-on-every-write
+// or CPU contention on a loaded Windows runner still reads as alive. `stopped()` passes the
+// narrower, original window instead (review-process-adapter-hang finding L3): a killed
+// process never ticks again, so detecting that needs no slack, and keeping it tight is what
+// lets `stopped()`'s short-attempt loop fail fast on a regression instead of hanging.
+const ALIVE_WINDOW_MS = 3000;
+const STOPPED_WINDOW_MS = 1000;
 
 function sleep(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -364,11 +372,11 @@ function readOrNull(file) {
   }
 }
 
-// True if the heartbeat process at `base` is still running: its counter moves within one
-// second (20 ticks), polled so a running process is reported as soon as it ticks.
-async function ticking(base) {
+// True if the heartbeat process at `base` is still running: its counter moves within
+// `windowMs`, polled so a running process is reported as soon as it ticks.
+async function ticking(base, windowMs = ALIVE_WINDOW_MS) {
   const before = readOrNull(`${base}.beat`);
-  for (let waited = 0; waited < 1000; waited += TICK_MS) {
+  for (let waited = 0; waited < windowMs; waited += TICK_MS) {
     await sleep(TICK_MS);
     const now = readOrNull(`${base}.beat`);
     if (now !== null && now !== before) return true;
@@ -404,10 +412,12 @@ function killLeftovers(t, bases) {
   });
 }
 
-// Waits (bounded) until the heartbeat process at `base` has stopped ticking.
+// Waits (bounded) until the heartbeat process at `base` has stopped ticking. Uses the
+// narrow, strict window (not the widened `ticking()` default): a killed process never ticks
+// again, so this still fails fast on a regression instead of hanging.
 async function stopped(base) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    if (!(await ticking(base))) return true;
+    if (!(await ticking(base, STOPPED_WINDOW_MS))) return true;
   }
   return false;
 }
@@ -475,5 +485,42 @@ test(
     // Still running when the call has settled: the call did not wait for it.
     assert.equal(await ticking(grandchild), true, 'the call waited for the grandchild to end');
     assert.equal(await stopped(child), true, 'child was not killed after the consumer threw');
+  },
+);
+
+test(
+  'run: the backstop rejects anyway when the kill never takes effect (review-process-adapter-hang L4)',
+  { timeout: 30_000 },
+  async (t) => {
+    let base = null;
+    killLeftovers(t, () => (base === null ? [] : [base]));
+    const c = createCase(t);
+    base = path.join(c.root, 'child');
+    const script = `${heartbeat(base)} process.stdout.write('first\\n');`;
+
+    // Faking `kill` as a no-op (restored below, before `killLeftovers` needs the real one) is
+    // the only deterministic way to make a kill "never take effect": SIGKILL/TerminateProcess
+    // themselves cannot be blocked from the outside. Since tests in this file run
+    // sequentially (node:test's default within one file), this cannot race another test's own
+    // child.
+    const originalKill = ChildProcess.prototype.kill;
+    ChildProcess.prototype.kill = function fakeKill() { return true; };
+    try {
+      await assert.rejects(
+        processAdapter.run(process.execPath, ['-e', script], {
+          cwd: os.tmpdir(),
+          env: c.env,
+          onStdout: () => { throw new Error('consumer failed'); },
+        }),
+        /consumer failed/,
+      );
+    } finally {
+      ChildProcess.prototype.kill = originalKill;
+    }
+
+    // The call only settled through the backstop: the fake kill never touched the process, so
+    // `exit`/`close` could not have fired it. `killLeftovers` (real `process.kill` by pid, not
+    // `ChildProcess#kill`) reaps it afterwards.
+    assert.equal(await ticking(base), true, 'the child should still be alive: its kill was faked as a no-op');
   },
 );
