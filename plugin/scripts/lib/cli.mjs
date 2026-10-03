@@ -8,8 +8,7 @@
 // C:cli-and-exit-codes; every illegal combination and a malformed `planId` is refused
 // `usage` here, before M18 (and everything below it, including any git call or the
 // `.commit-plan` folder) is ever reached. A legal argv routes to its M18 workflow (INT-01:
-// `plan`; RUN-01: `release`); a subcommand whose workflow is not built yet falls through to
-// an `internal` placeholder.
+// `plan`; RUN-01: `release`); every name in `SUBCOMMANDS` has one.
 
 import { parseArgs } from 'node:util';
 
@@ -238,11 +237,6 @@ export async function main(argv, env) {
   }
 
   const workflow = WORKFLOWS[subcommand];
-  if (workflow === undefined) {
-    // Every subcommand routes to M18 once its workflow exists; a legal argv is parsed and
-    // validated here already.
-    return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
-  }
   const result = await workflow(parsed.values, env, { cwd: env.cwd });
   if (result.failure !== undefined) {
     return failure(result.failure.kind, result.failure.message, result.failure.errors);

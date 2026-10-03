@@ -697,9 +697,10 @@ async function validateWorkerPlan(ctx) {
 const CHECK_STEPS = Object.freeze([probeRepo, checkRefusals, openRun, validateWorkerPlan]);
 
 /**
- * `infer` step 2 (INF-01): the probe's refusals, the `env` row and the first `state` clause
- * (not a git repository, a bare repository) with `plan`'s own texts (C:infer,
- * C:cli-and-exit-codes); no other `plan` row applies, since `infer` only reads history.
+ * `infer` step 2 (INF-01): the probe's refusals, the `env` row, the first `state` clause
+ * (not a git repository, a bare repository) and a start-up call's `timed-out`, with `plan`'s
+ * own texts (C:infer, C:cli-and-exit-codes); no other `plan` row applies, since `infer` only
+ * reads history.
  */
 async function inferRefusals(ctx) {
   const refusal = planRefusal(ctx.probe);
