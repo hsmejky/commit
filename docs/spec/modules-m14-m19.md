@@ -206,7 +206,7 @@ the reply with M17.
      M17 puts them in the reply's notices of every output `plan` ends with, whatever step
      it ends at (clean, `modeChoice`, a refusal, `timeout`, `internal`), since
      `finishTakeover` has already deleted the evidence (story 210).
-  4. M10 `inventory` and `indexFingerprint`; M9 `hideFilter`; M15 `resolveMode` (passed
+  4. M10 `indexFingerprint`, read first, then M10 `inventory`; M9 `hideFilter`; M15 `resolveMode` (passed
      `killedLeftover` from the takeover repair at step 3) (`modeChoice`, `staged-empty` or
      `killed-leftover` → discard; a `reword` run with `killedLeftover` goes on with its
      notice).

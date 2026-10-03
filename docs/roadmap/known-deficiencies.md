@@ -67,9 +67,6 @@ fixed, delete it here; IDs are never reused.
   `EPERM` while the probe link fails `ENOTSUP` in the same run; RUN-09 still needs a fixed
   probe basename to use it (or a prefix match added to FND-10, if the probe name is
   inherently random).
-- **KD-R25.** CHG-04 fires the `clean` filter during the inventory, which precedes the
-  fingerprint, so no `diff-changed` fires. Fire it during the step-5 snapshot diff, or fix
-  the step order in C:plan.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R28.** CFG-07's direct `validateLayer` call is an in-process test Seam 3 does not
@@ -172,5 +169,5 @@ Plan text that depends on a design fix; fix the design and the slice together.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R49, KD-R50, KD-R45.
 7. Edges: KD-R7, KD-R30, KD-R10.
-8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R25, KD-R26.
+8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R26.
 9. The rest of the text and bookkeeping items.

@@ -52,8 +52,9 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    `index-changed` and `internal` included. The taken-over run's folder is gone by then, so
    the reply is the only place the user learns of the takeover (Q22, story 210). An orphan
    that appears only after the `peek` is adopted by step 7's `acquire` (below).
-4. Inventory and the index fingerprint (a hash of `git ls-files --stage -z`: read-only, takes
-   no index lock); hidden rule; mode (`modeChoice`, `staged-empty` for `--staged` with an
+4. The index fingerprint (a hash of `git ls-files --stage -z`: read-only, takes no index
+   lock), read first, so step 7's re-read also sees an index change made while the
+   inventory's own git calls run; then the inventory; hidden rule; mode (`modeChoice`, `staged-empty` for `--staged` with an
    empty index, or after a takeover `killed-leftover` ([run folder](run-folder.md)) → delete
    the folder, after a takeover releasing the lock too). Candidates for the
    mode decision are counted after the hidden rule and before the caps.
