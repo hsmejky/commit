@@ -253,6 +253,7 @@ const ENV_READ_ALLOWLIST = new Set([
   'COMMIT_GUARD_DEBUG', // hook-io.mjs: guard debug output to stderr only, not scan-related.
   'USER', 'USERNAME', // commit.cjs: OS username fallback when os.userInfo() fails.
   'CLAUDE_CONFIG_DIR', // commit.cjs: the injected Claude home.
+  'CLAUDE_PROJECT_DIR', // commit.cjs: the injected project directory (Q5, PRE-11).
   'cwd', // cli.mjs: `main`'s `env` param is the injected environment (Q9), not
          // `process.env`; `env.cwd` reads the injected cwd, not scan-related.
 ]);

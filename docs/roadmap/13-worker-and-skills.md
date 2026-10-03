@@ -70,6 +70,9 @@ Q25, Prompt-only and manifest blocks, stories 41, 43, 44, 58, 226.
 - [ ] Final report is the reply JSON verbatim; one lint retry without replying; nothing
       is written after a failed script call (story 44)
 - [ ] CI size test: the prompt is ≤ 6 kB (story 228)
+- [ ] The prompt tells the worker to invoke `commit.cjs` from its starting directory, never
+      after a `cd` (Q25 "Script path", PRE-11: CFG-10's project-directory resolution has no
+      walk-up and depends on this)
 
 
 ## WRK-03: Fallback reply and the Node-missing reply

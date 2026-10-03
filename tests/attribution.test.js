@@ -440,9 +440,13 @@ test('includeCoAuthoredBy: false in project-local wins when no layer sets attrib
 });
 
 // No walk-up (PRE-11, Q5 Amended): this resolver only ever reads the given `projectDir`
-// itself, never a parent of it, so a subfolder passed as `projectDir` sees only its own
-// project layers, even when a parent directory has its own differing settings.
-test('a projectDir subfolder with its own .claude/ is read on its own, never a parent directory', (t) => {
+// itself, never a parent of it. These two cases pass a subfolder directly as `projectDir`,
+// so they only pin the resolver's own per-call behavior (it has no walk-up code to regress);
+// the no-walk-up guarantee as a whole also depends on the entry point's
+// `CLAUDE_PROJECT_DIR || process.cwd()` choice, which only a Seam 1 case can observe
+// (tests/commit-entry.test.js, tests/plan-attribution.test.js) — these two are not that
+// coverage.
+test('given a subfolder directly as projectDir, its own .claude/ is read, not a parent directory\'s', (t) => {
   const claudeHome = tempClaudeHome(t);
   const parent = tempProjectDir(t);
   const sub = path.join(parent, 'sub');
@@ -457,7 +461,7 @@ test('a projectDir subfolder with its own .claude/ is read on its own, never a p
   });
 });
 
-test('a projectDir subfolder with no .claude/ of its own has no project layers; the parent directory is never consulted', (t) => {
+test('given a subfolder directly as projectDir with no .claude/ of its own, a parent directory\'s is not consulted', (t) => {
   const claudeHome = tempClaudeHome(t);
   const parent = tempProjectDir(t);
   const bare = path.join(parent, 'bare');
@@ -514,4 +518,17 @@ test('attribution.mjs imports message-grammar.mjs\'s isFooterLine, and not lint'
   const imported = importMatch[1];
   assert.match(imported, /\bisFooterLine\b/);
   assert.doesNotMatch(imported, /\blint\b/);
+});
+
+// M5 "never reads `env` or the cwd itself" (Q5; `projectDir` and `claudeHome` always come
+// in already resolved): guarded for `env.X` reads by the cli-argv allowlist, but nothing
+// else bans `process.cwd()` creeping back in here. Strip comments first (block then line),
+// since the module's own doc comments name the entry point's `process.cwd()` fallback by
+// way of explanation.
+test('attribution.mjs source has no process. reference outside a comment', () => {
+  const source = fs.readFileSync(libPath('attribution'), 'utf8');
+  const withoutComments = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(withoutComments, /\bprocess\./);
 });

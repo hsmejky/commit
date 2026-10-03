@@ -180,7 +180,7 @@ test('M1 receives argv after the script path and the injected environment', asyn
     '  return {',
     '    stdoutJson: { version: 1, ok: true, argv, keys: Object.keys(env).sort(),',
     '      claudeHome: env.claudeHome, osHome: env.osHome, scriptPath: env.scriptPath,',
-    "      nowType: typeof env.now(), osUserType: typeof env.osUser },",
+    "      projectDir: env.projectDir, nowType: typeof env.now(), osUserType: typeof env.osUser },",
     '    exitCode: 0,',
     '  };',
     '}',
@@ -188,12 +188,32 @@ test('M1 receives argv after the script path and the injected environment', asyn
   ].join('\n'));
   const result = await runCommit(c, ['plan', '--split'], { script: entry });
   assert.deepEqual(result.json.argv, ['plan', '--split']);
-  assert.deepEqual(result.json.keys, ['claudeHome', 'cwd', 'env', 'now', 'osHome', 'osUser', 'scriptPath']);
+  assert.deepEqual(
+    result.json.keys,
+    ['claudeHome', 'cwd', 'env', 'now', 'osHome', 'osUser', 'projectDir', 'scriptPath'],
+  );
   assert.equal(result.json.claudeHome, c.claudeHome);
   assert.equal(result.json.osHome, c.osHome);
   assert.equal(result.json.scriptPath, entry);
+  // createCase's default `CLAUDE_PROJECT_DIR` is the repo, which is also the spawn cwd here,
+  // so this alone cannot tell the env-var path from the cwd fallback; the next test does.
+  assert.equal(result.json.projectDir, c.repoDir);
   assert.equal(result.json.nowType, 'number');
   assert.equal(result.json.osUserType, 'string');
+});
+
+test('without CLAUDE_PROJECT_DIR the injected project directory is the spawn cwd, not the repo', async (t) => {
+  const c = createCase(t, { projectDir: null });
+  const { entry } = installEntryWithStubLib(c, [
+    'export async function main(argv, env) {',
+    '  return { stdoutJson: { version: 1, ok: true, projectDir: env.projectDir }, exitCode: 0 };',
+    '}',
+    '',
+  ].join('\n'));
+  // Spawns outside the repo (`c.root`, which is never `c.repoDir`) so a wrong fallback to
+  // the repo path, rather than the true spawn cwd, cannot pass by coincidence.
+  const result = await runCommit(c, ['plan'], { script: entry, cwd: c.root });
+  assert.equal(result.json.projectDir, c.root);
 });
 
 test('without CLAUDE_CONFIG_DIR the Claude home is .claude in the OS home', async (t) => {

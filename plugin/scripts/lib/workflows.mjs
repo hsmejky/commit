@@ -35,7 +35,10 @@
 // `git-failed`); step 7 stores the lists in `state.json` and `plan.json`. GIT-10 adds M11
 // `probeSigning` to step 6, after the clean-tree check: its `ready: false` refuses through
 // M15 `planRefusal`, `"prompt"` queues the signing note, and step 7 stores the result in
-// `plan.json` `signing`. Later
+// `plan.json` `signing`. CFG-10 widens step 1's M5 call again, with the injected
+// `projectDir` (CFG-08/CFG-09's `toplevel` param, always ignored, is dropped), so the
+// project-local and project settings layers feed `resolveAttribution` ahead of the user
+// layer. Later
 // slices insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in
 // PLAN_STEPS, and widen these.
 //
@@ -149,7 +152,10 @@ async function readHeadState(ctx) {
  * of re-resolved. CFG-09 reads the user settings layer and can produce a warning (a dropped
  * `attribution.commit` line): it is queued into `ctx.notices` here, the same sink
  * `probeRepo`'s detached-HEAD notice uses, and also collected on `ctx.warnings` for
- * `storeAndLock` to write into `plan.json`'s `warnings` field (C:plan).
+ * `storeAndLock` to write into `plan.json`'s `warnings` field (C:plan). CFG-10 passes
+ * `ctx.injected.projectDir` (the entry point's own `CLAUDE_PROJECT_DIR`-or-`cwd` resolution,
+ * no walk-up, PRE-11) so M5 also reads the project-local and project layers ahead of the
+ * user one; it no longer takes `toplevel`, which CFG-08/CFG-09 accepted and ignored.
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
@@ -157,7 +163,7 @@ async function loadConfigLayers(ctx) {
     : null;
   ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
   const { trailer, source, warnings } = resolveAttribution({
-    env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, toplevel,
+    env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, projectDir: ctx.injected.projectDir,
   });
   ctx.attribution = { trailer, source };
   for (const warning of warnings) {
