@@ -15,6 +15,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createCase, runCommit, runGuard } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib');
+const { makeReadOnlyFolder, removalErrorCode } = require('./helpers/read-only-folder.js');
 
 const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
   + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
@@ -290,12 +291,10 @@ test('Seam 1: state.json stores the sweep\'s cleanup errors with the guard notic
   async (t) => {
     const c = dirtyCase(t);
     const id = '11111111-1111-4111-8111-111111111111';
-    const stuck = path.join(c.repoDir, '.commit-plan', id);
-    fs.mkdirSync(stuck, { recursive: true });
-    fs.writeFileSync(path.join(stuck, 'nested'), 'x');
+    const code = removalErrorCode();
+    const stuck = makeReadOnlyFolder(path.join(c.repoDir, '.commit-plan', id)); // its entries cannot be unlinked
     const when = new Date(Date.now() - 25 * HOUR_MS);
     fs.utimesSync(stuck, when, when);
-    fs.chmodSync(stuck, 0o555); // its entries cannot be unlinked
     let facts;
     try {
       facts = await planFacts(c);
@@ -304,6 +303,7 @@ test('Seam 1: state.json stores the sweep\'s cleanup errors with the guard notic
     }
     assert.deepEqual(facts.notices, [
       GUARD_NOTICE,
-      `\`.commit-plan/${id}\` was not swept (EACCES); the 24-hour sweep retries it`,
+      `\`.commit-plan/${id}\` was not swept (${code}); the 24-hour sweep retries it`,
     ]);
+    assert.equal(fs.existsSync(path.join(stuck, 'nested')), true, 'the stuck folder is kept');
   });

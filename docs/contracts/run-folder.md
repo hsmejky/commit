@@ -193,7 +193,9 @@ failed call whose unstage did not happen keeps its run, below):
   folders were not swept" (`<name>` is `lock` or a `lock.<planId>`). A removal error is the
   notice "`` `.commit-plan/<name>` `` was not swept (<code>); the 24-hour sweep retries it"
   (`<name>` empty, shown as `` `.commit-plan` ``, for a `readdir` failure on the directory
-  itself); a removal that fails partway may have already unlinked some children, which
+  itself; `<code>` is the removal's error code passed through, so it varies by platform:
+  a folder with a read-only child gives `EACCES` on Linux and `ENOTEMPTY` on macOS under
+  Node 24); a removal that fails partway may have already unlinked some children, which
   refreshes the entry's own mtime, so it is not necessarily the very next `plan` that retries
   it successfully (C:cli-and-exit-codes recorded texts).
 - Stdout budgets, each tested on its own (Q24): `plan`'s own fields 1 kB ([plan](plan.md));

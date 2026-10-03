@@ -12,6 +12,7 @@ const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { loadLib } = require('./helpers/load-lib.js');
+const { makeReadOnlyFolder, removalErrorCode } = require('./helpers/read-only-folder.js');
 
 let run;
 beforeEach(async () => {
@@ -91,14 +92,13 @@ test('sweep turns a removal error into a notice and goes on with the other entri
   { skip: (process.platform === 'win32' || process.getuid?.() === 0) && 'needs POSIX permissions as non-root' },
   (t) => {
     const toplevel = toplevelOf(t);
-    const stuck = folder(toplevel, A);
-    fs.writeFileSync(path.join(stuck, 'nested'), 'x');
-    fs.chmodSync(stuck, 0o555); // its entries cannot be unlinked
+    const code = removalErrorCode();
+    const stuck = makeReadOnlyFolder(path.join(toplevel, '.commit-plan', A)); // its entries cannot be unlinked
     folder(toplevel, B);
 
     // The mode is restored before `toplevelOf`'s own `t.after` removes the tree: `node:test`
     // runs `after` hooks in registration order, and a tree removal while `stuck` is still
-    // read-only would throw EACCES itself, failing the test on its own teardown rather than
+    // read-only would throw itself, failing the test on its own teardown rather than
     // on the assertions above (review-RUN-08 finding 1).
     let notices;
     try {
@@ -107,7 +107,8 @@ test('sweep turns a removal error into a notice and goes on with the other entri
       fs.chmodSync(stuck, 0o755);
     }
 
-    assert.deepEqual(notices, [`\`.commit-plan/${A}\` was not swept (EACCES); the 24-hour sweep retries it`]);
+    assert.deepEqual(notices, [`\`.commit-plan/${A}\` was not swept (${code}); the 24-hour sweep retries it`]);
+    assert.equal(fs.existsSync(path.join(stuck, 'nested')), true, 'the stuck folder is kept');
     assert.equal(fs.existsSync(path.join(toplevel, '.commit-plan', B)), false, 'the next entry is still swept');
   });
 
