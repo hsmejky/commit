@@ -22,8 +22,9 @@
     1. Copy the real index to `git-index` in the run folder and `git reset -q -- .` the copy
        (`GIT_INDEX_FILE`), so it matches HEAD and keeps its stat cache. The pathspec form
        writes no ref: a bare `git reset -q` would move the user's `ORIG_HEAD`, append a HEAD
-       reflog entry and take `HEAD.lock`, even with `GIT_INDEX_FILE` set. On an unborn HEAD
-       the copy starts empty.
+       reflog entry, take `HEAD.lock` and delete `MERGE_MSG`/`SQUASH_MSG`, even with
+       `GIT_INDEX_FILE` set. Every reset in this plugin, on the real index too, uses this
+       form. On an unborn HEAD the copy starts empty.
     2. `git add -N` into the copy: the untracked candidates, and the **staged-new** paths,
        i.e. every path the real index adds relative to HEAD (`git diff --cached
        --ita-visible-in-index --no-renames --name-only --diff-filter=A -z`; on an unborn
@@ -53,7 +54,9 @@
 
     `plan` computes the two lists (candidates, staged-new paths that pass the rules) once and
     stores them in the state file, each staged-new path with an `ignored` flag
-    (`git check-ignore`). `plan --hunks` and `commit` rebuild the copy from the **stored**
+    (`git ls-files --cached --ignored --exclude-standard`, which lists index entries an
+    ignore rule matches; `git check-ignore` reports a tracked path as not ignored and
+    refuses `GIT_LITERAL_PATHSPECS=1`). `plan --hunks` and `commit` rebuild the copy from the **stored**
     lists and never recompute them: `commit` resets the real index first, so afterwards no
     path is staged-new any more, and a force-added gitignored path (`git add -f
     build/config.js`) is not listed by `ls-files --others --exclude-standard` either. It

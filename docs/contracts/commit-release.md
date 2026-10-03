@@ -49,7 +49,8 @@ created between groups are both caught:
 - Units and message come from the state file; nothing is read from stdin.
 - (b) Match (`split`), without touching the real index:
   - Rebuilds the temporary index (Q11) as in [plan](plan.md): a copy of the real index,
-    reset with `git reset -q` on the copy, then `git add -N` of the candidate and
+    reset with `git reset -q -- .` on the copy (the pathspec form writes no ref, Q11), then
+    `git add -N` of the candidate and
     staged-new lists **stored by `plan`** (never recomputed: after group 1's reset no path
     is staged-new any more; stored paths missing from the working tree are skipped; paths
     with `ignored: true` in a separate `git add -N -f`); never built from HEAD. It
@@ -64,7 +65,9 @@ created between groups are both caught:
     since plan, run /commit again", or, when the state file has
     `treeChangedDuringCommit: n-1`, "files changed during the commit of group n-1 — a repo
     hook (lint-staged, a formatter) likely rewrote them; run /commit again".
-- (c) Apply (`split`): sets `indexReset: true` in the state file, runs `git reset -q`,
+- (c) Apply (`split`): sets `indexReset: true` in the state file, runs `git reset -q -- .`
+  (the pathspec form: a bare `git reset -q` would move `ORIG_HEAD`, append a HEAD reflog
+  entry, fail on `HEAD.lock` and delete `MERGE_MSG`, Q11),
   builds the patch from the current hunks (current ranges) and applies it to the real
   index with `git apply --cached --whitespace=nowarn`. Whole-file units (filtered files
   included, so git runs the filter) are staged with
@@ -122,12 +125,12 @@ created between groups are both caught:
   failed". The exit code stays 4, 5 or 1 and the run ends. When HEAD did not move, a
   `git commit` killed at the deadline (exit 5) has `error.message` "git commit did not
   finish in 9 min — a pre-commit hook or a signing prompt may be waiting" (Q18).
-- On failure: `split` runs `git reset -q` only when the failing group itself reached (c)
+- On failure: `split` runs `git reset -q -- .` only when the failing group itself reached (c)
   (`stage-failed`, a `diff-changed` from the verify, exits 3–5, `internal`); a refusal in
   (a) or a `diff-changed` in (b) leaves the real index as it is, even when an earlier group
   or call set `indexReset`. `staged` and `reword` leave the index as it is. A cleanup call
   that fails or is skipped past `cleanupDeadline` keeps the original cause's exit code and
-  kind and adds a notice; when that `git reset -q` did not happen, `unstaged` is `null`, the
+  kind and adds a notice; when that `git reset -q -- .` did not happen, `unstaged` is `null`, the
   notice says "group `<n>` staging may remain, the next /commit repairs it", and the lock
   and run folder are kept for the next run's takeover repair ([run folder](run-folder.md),
   Q18 as amended by EXE-01).

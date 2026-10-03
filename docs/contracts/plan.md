@@ -37,7 +37,7 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    takeover's `acquire`, and before step 4's inventory runs, `plan` applies the taken-over
    run's index-repair check (reset, or leave the index for step 4's mode decision), then
    deletes the taken-over run's folder ([run folder](run-folder.md)). A repair whose
-   `git reset -q` fails (`index-lock` for a foreign `index.lock`, `timeout`, `git-failed`)
+   `git reset -q -- .` fails (`index-lock` for a foreign `index.lock`, `timeout`, `git-failed`)
    keeps the taken-over folder and the renamed lock for the next `plan`, releases the lock,
    deletes the folder and ends with the notices so far plus a "repair failed" notice.
    From a step-3 `acquire` on, the run holds the lock: every

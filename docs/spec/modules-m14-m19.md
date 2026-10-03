@@ -195,7 +195,7 @@ the reply with M17.
      `acquire({ takeOver })`, then the index repair from its `killedRun` (the
      killed-process paragraph under the error table), then M12 `finishTakeover`, all
      before step 4, so inventory never sees a killed group's partial staging. A repair
-     whose `git reset -q` fails (`index-lock`, `timeout`, `git-failed`) skips
+     whose `git reset -q -- .` fails (`index-lock`, `timeout`, `git-failed`) skips
      `finishTakeover`, keeping the chain for the next `plan`, then releases its own lock and
      deletes its own folder, and the reply carries the notices so far plus a "repair
      failed" notice (C:run-folder). From here on the run holds the lock: every later outcome that takes no lock

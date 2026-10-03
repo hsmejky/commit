@@ -91,7 +91,7 @@ failed call whose unstage did not happen keeps its run, below):
   - Nothing staged (the index equals HEAD, e.g. a kill in phase (a) of a group after an
     earlier group committed) → no reset and no reset notice; the new run's reply still
     carries the `unstaged` notice (Q18).
-  - Some path staged, and every staged path belongs to the killed group's paths → `git reset -q`; the takeover
+  - Some path staged, and every staged path belongs to the killed group's paths → `git reset -q -- .` (the pathspec form: a bare `git reset -q` would move `ORIG_HEAD`, append a HEAD reflog entry, fail on `HEAD.lock` and delete `MERGE_MSG`, Q11); the takeover
     notice says the killed group's partial staging was reset. This also covers a kill before
     an in-progress reset finished: the compare above, not phase (c)'s own reset, is what
     clears it.
@@ -156,7 +156,7 @@ failed call whose unstage did not happen keeps its run, below):
     renamed lock file. A kill in between leaves renamed lock files whose chain ends at a
     missing folder: the next adopter counts that chain done (no facts, no check) and deletes
     them.
-  - **A failed repair.** When the check's `git reset -q` fails (a foreign `index.lock` →
+  - **A failed repair.** When the check's `git reset -q -- .` fails (a foreign `index.lock` →
     `index-lock`, domain code `index-locked`; the call's 540-second deadline → `timeout`;
     any other git error → `git`, `git-failed`), `finishTakeover` does not run: the chain
     (the taken-over folder and the renamed lock file) is kept as the evidence, while the run

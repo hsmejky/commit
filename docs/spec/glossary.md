@@ -28,8 +28,8 @@
   **unit table** holds each unit's ID, hash, path, old path, status, kind, identity key (the
   hash without the occurrence index, for identical hunks) and summary-only flag.
 - **pinned diff options**: the fixed diff flags that define a unit (Q11); private to M10.
-- **temporary index**: a copy of the real index in the run folder, `git reset -q` on the copy
-  so it matches HEAD while keeping its stat cache and sparse-checkout entries (empty when
+- **temporary index**: a copy of the real index in the run folder, `git reset -q -- .` on the copy
+  (the pathspec form writes no ref, unlike a bare `git reset -q`) so it matches HEAD while keeping its stat cache and sparse-checkout entries (empty when
   unborn), plus intent-to-add of the stored path lists (Q11 step 1); paths with
   `ignored: true` are added with `-f`. Never built from HEAD alone: out-of-cone
   sparse-checkout paths would then show as deleted.

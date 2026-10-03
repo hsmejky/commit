@@ -550,7 +550,7 @@ The items:
 (1) a kill between the lock rename and the link, which leaves an orphan renamed lock file
 with no lock in place;
 (2) the order of the deletions inside `finishTakeover`;
-(3) a failure of the index repair itself (a `git reset -q` blocked by a foreign
+(3) a failure of the index repair itself (a `git reset -q -- .` blocked by a foreign
 `index.lock`, or a timeout during the repair): whether `finishTakeover` still runs, what
 is kept, and which notices the reply carries;
 (4) `--take-over` of a lock or folder that is already gone (the `lock` handback answered
@@ -657,7 +657,7 @@ lock → `lock` naming it (RUN-20b item 4).
 killed group's paths (both halves of a rename), `preStaged`, `indexOnly`, `indexReset` and
 the group's status. It deletes nothing. M18 then repairs the index before inventory:
 nothing staged → no reset and no reset notice; every staged path within the killed group's
-paths → `git reset -q` with the reset notice. `finishTakeover` runs only after the repair.
+paths → `git reset -q -- .` with the reset notice. `finishTakeover` runs only after the repair.
 The takeover, reset and `unstaged` notices reach every output `plan` ends with. A repair
 that fails, and an adopted orphan chain, are RUN-25's (RUN-20b items 1 and 3).
 

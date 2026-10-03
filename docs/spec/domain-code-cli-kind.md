@@ -22,7 +22,7 @@
 | `head-moved` | M3 via `plan` (after `acquire`), `plan --hunks` and M16 | `head-moved` | 6 |
 | `lint` | M14 | `lint` | 2 |
 | `backstop-hit` | M8 via M16 | `scan` | 3 |
-| `git-failed` (also a failed `git add` in M10 `snapshot`, in `plan`, `plan --hunks`, `check` and `commit`, and a takeover repair's `git reset -q` failing otherwise at `plan` step 3) | M16, M10 via M18 and M16 | `git` | 4 |
+| `git-failed` (also a failed `git add` in M10 `snapshot`, in `plan`, `plan --hunks`, `check` and `commit`, and a takeover repair's `git reset -q -- .` failing otherwise at `plan` step 3) | M16, M10 via M18 and M16 | `git` | 4 |
 | `stage-failed` (`git apply --cached` or `git add` failed after the reset) | M10 via M16 | `git` | 4 |
 | `timed-out` (also `plan` or a separate `plan --hunks` past its 540-second deadline) | M2 via M16 and M18 | `timeout` | 5 |
 | unexpected throw | any | `internal` | 1 |
@@ -52,7 +52,7 @@ repairs the index; M12 `finishTakeover` then deletes the old folder. When those 
 before `inventory`: when nothing is staged (index equals HEAD, e.g. a kill in phase (a) of
 a later group), it neither resets nor gives the reset notice; when every staged path
 (index versus HEAD) belongs to the killed group's paths (the set C:run-folder defines), it
-runs `git reset -q` and the takeover notice says the killed group's partial staging was
+runs `git reset -q -- .` and the takeover notice says the killed group's partial staging was
 reset; otherwise (the user staged something else after the kill, so the index holds paths
 beyond that set) it leaves the index untouched and sets `killedLeftover` for `resolveMode`
 (below): an interactive `split` or `staged` run gets `modeChoice` whatever the flags
@@ -62,7 +62,7 @@ still staged; `--no-user` without `--reword` refuses with `killed-leftover` (exi
 goes on with a notice naming those paths, since `--amend --only` never touches the index.
 So the leftover is never committed unasked. A kill during the repair leaves the old folder
 and its `indexReset` for the next takeover (C:run-folder: the renamed lock file names the
-run to read). A repair whose `git reset -q` fails (a foreign `index.lock` → `index-lock`,
+run to read). A repair whose `git reset -q -- .` fails (a foreign `index.lock` → `index-lock`,
 the deadline → `timeout`, another git error → `git-failed`) skips `finishTakeover`: the
 taken-over folder and the renamed lock stay as evidence, M18 releases its own lock and
 deletes its own folder, and the reply carries the notices so far plus a "repair failed"

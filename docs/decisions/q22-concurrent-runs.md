@@ -161,7 +161,7 @@
   - If every staged path belongs to the killed group's paths (defined once in
     [contracts](../contracts/run-folder.md): the current group's unit paths from the stored
     validated groups, both halves of a rename included, ∪ the stored `preStaged` ∪ the
-    stored `indexOnly`) → run `git reset -q`, and the takeover notice says the killed
+    stored `indexOnly`) → run `git reset -q -- .` (the pathspec form writes no ref, Q11), and the takeover notice says the killed
     group's partial staging was reset (replacing, for this case, the old "reports
     `unstaged`" behaviour).
   - Otherwise (the user staged something else after the kill) → leave the index untouched;
@@ -244,7 +244,7 @@
     folder, which the next adopter counts as done (no facts, no repair) and deletes. The
     reverse order could leave a folder with `indexReset` and no renamed lock leading to it,
     forgetting a pending `killedLeftover`.
-  - A failed repair (KD-S2). When the repair's `git reset -q` fails, `finishTakeover` does
+  - A failed repair (KD-S2). When the repair's `git reset -q -- .` fails, `finishTakeover` does
     not run: the chain (the taken-over folder and the renamed lock) is kept as evidence and
     becomes an orphan for the next `plan`; the run releases its own lock and deletes its own
     folder. A foreign `index.lock` → `index-lock` (domain code `index-locked`), the
@@ -265,7 +265,7 @@
     corrected to match.
   - The run-integrity case of pass 10, "a reset plus a mixed index → `modeChoice` with the
     takeover, reset and `unstaged` notices" (KD-S1), cannot be built: the repair is
-    `git reset -q`, which leaves the index equal to HEAD, so a reset never leaves a mixed
+    `git reset -q -- .`, which leaves the index equal to HEAD, so a reset never leaves a mixed
     index. Replaced by two cases: an automatic stale takeover with `killedLeftover` in an
     interactive run → the forced `modeChoice` carrying the takeover, `killedLeftover` and
     `unstaged` notices; a reset under `--take-over <planId> --staged` → `staged-empty`

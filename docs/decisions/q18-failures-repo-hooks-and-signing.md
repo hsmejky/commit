@@ -15,7 +15,7 @@
     temporary index, diff and match the group's hashes (`diff-changed`), which never
     touches the real index; (c) reset the real index,
     stage, verify, scan, commit. A failure in (a) or (b) leaves the real index exactly as it
-    was. A failure in (c) runs `git reset -q` (index only), so the remaining changes are
+    was. A failure in (c) runs `git reset -q -- .` (index only), so the remaining changes are
     unstaged again and the working tree is untouched. The state file records
     `indexReset: true` the first time (c) starts. Once set, the output that ends the run
     (last group, or any failure, including (b) of a later group) lists as `unstaged` the
@@ -262,7 +262,7 @@
     600-second tool maximum, and three can pass the 15-minute lock window (Q22).
   - Counting lint attempts in the worker's prompt: a prompt rule, where the script can
     count deterministically.
-  - An unconditional `git reset -q` on every `split` failure: after a refusal in (a) or
+  - An unconditional `git reset -q -- .` on every `split` failure: after a refusal in (a) or
     (b) it reset an index the run never touched, and after `index-lock` it ran into the
     same `index.lock` and failed unmapped.
 - **Consequences.** A failed run leaves a clean, explainable state (amended by the EXE-01
