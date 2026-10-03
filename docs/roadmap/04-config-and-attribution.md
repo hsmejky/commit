@@ -264,20 +264,20 @@ directory is not read.
 
 **Blocked by:** CFG-09, PRE-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5, M5, testing-seams (Seam 1 managed layer), story 116.
 
-- [ ] Seam 1 (CI only): managed `attribution.commit` beats every other layer, source
+- [x] Seam 1 (CI only): managed `attribution.commit` beats every other layer, source
       `managed`; a drop-in file beside it has no effect.
-- [ ] The managed cases run in a separate, final `node --test` invocation that removes the
+- [x] The managed cases run in a separate, final `node --test` invocation that removes the
       file it wrote; those cases are skipped (not faked) outside CI.
-- [ ] Every attribution case, not only the managed ones, is skipped (not faked) when the
+- [x] Every attribution case, not only the managed ones, is skipped (not faked) when the
       host already has its own `managed-settings.json`, whatever the CI status.
-- [ ] No env variable changes the managed directory (a test sets a candidate variable and
+- [x] No env variable changes the managed directory (a test sets a candidate variable and
       sees no effect).
-- [ ] The managed-settings directory's fixed path and CI write permissions are the ones
+- [x] The managed-settings directory's fixed path and CI write permissions are the ones
       PRE-16 recorded.
-- [ ] The workflow adds the `sudo mkdir -p <managed dir> && sudo chown "$USER" <managed dir>`
+- [x] The workflow adds the `sudo mkdir -p <managed dir> && sudo chown "$USER" <managed dir>`
       step before the final managed-layer `node --test` invocation on ubuntu-latest and
       macos-latest only (PRE-16); Windows and the container job need no such step.
