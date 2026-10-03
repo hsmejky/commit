@@ -135,7 +135,7 @@ created between groups are both caught:
 
 `commitAll(run, { now, osUser, env }) → Outcome` (`env`: the injected environment its M10/M3 calls take), with `osUser` passed by M18 for the backstop's
 M8 `scanUnits` and never stored in the run state (Q10 as amended by EXE-01), where `Outcome` holds the output fields of
-C:commit-release, plus `refusal: { code, message } | null`: how a phase (a) check hands a mid-run refusal to M18, which
+C:commit-release, plus `refusal: { code, message } | null`: how a phase (a) or (b) check hands a mid-run refusal to M18, which
 maps `code` through the domain-code table (C:cli-and-exit-codes) and merges `message` into the CLI `error`; `null` on
 every other outcome, including success and a budget stop. `hits` is present on a backstop-scan refusal (exit 3), `sha` after exit 4 or 5, and before an
 `internal` reply (exit 1), when HEAD moved anyway; a budget stop is `ok` with `failed: null` and a non-empty `remaining`. M18

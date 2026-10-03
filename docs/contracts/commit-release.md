@@ -65,6 +65,10 @@ created between groups are both caught:
     since plan, run /commit again", or, when the state file has
     `treeChangedDuringCommit: n-1`, "files changed during the commit of group n-1 — a repo
     hook (lint-staged, a formatter) likely rewrote them; run /commit again".
+  - A `git add -N` that fails while rebuilding the temporary index above (a stored candidate
+    that became ignored since `plan`, for example) → exit 4 `git` (`git-failed`), git's
+    output verbatim in `gitOutput`; the real index is never touched, since the rebuild runs
+    entirely on the temporary one.
 - (c) Apply (`split`): sets `indexReset: true` in the state file, runs `git reset -q -- .`
   (the pathspec form: a bare `git reset -q` would move `ORIG_HEAD`, append a HEAD reflog
   entry, fail on `HEAD.lock` and delete `MERGE_MSG`, Q11),

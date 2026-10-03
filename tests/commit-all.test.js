@@ -818,7 +818,7 @@ test('a stored candidate git add -N refuses on the temporary index → exit 4 gi
   assert.equal(result.exitCode, 4, detail(result));
   assert.equal(result.json.ok, false);
   assert.equal(result.json.error.kind, 'git', detail(result));
-  assert.match(result.json.error.message, /git add failed/);
+  assert.equal(result.json.error.message, 'git add -N failed rebuilding the temporary index for group 1');
   assert.equal(typeof result.json.gitOutput, 'string', detail(result));
   assert.match(result.json.gitOutput, /new\.txt/, 'gitOutput holds git\'s own output');
   assert.deepEqual(result.json.commits, []);
@@ -843,4 +843,104 @@ test('a stored candidate missing from the working tree is skipped by the rebuild
   const sha = c.git(['rev-parse', 'HEAD']).trim();
   assert.deepEqual(result.json.commits, [{ n: 1, sha, header: HEADER }]);
   assert.equal(filesOf(c, sha), 'a.txt\nb.txt\n');
+});
+
+// review-EXE-09 remark 5: both (b) refusals above are pinned only on group 1 of a
+// single-group run. C:commit-release: "a `diff-changed` in (b) leaves the real index as it
+// is, even when an earlier group … set `indexReset`." These two pin that on group 2 of a
+// two-group run, after group 1 already committed and reset the real index.
+async function twoGroupRun(t) {
+  const c = createCase(t);
+  for (const name of ['a', 'b']) c.writeFile(`${name}.txt`, `${name}\n`);
+  c.git(['add', '--', 'a.txt', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  for (const name of ['a', 'b']) c.writeFile(`${name}.txt`, `${name}\nmore\n`);
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = ['a', 'b'].map((name, i) => ({
+    n: i + 1,
+    units: state.units.filter((unit) => unit.path === `${name}.txt`).map((unit) => unit.id),
+    header: THREE_HEADERS[i],
+    body: null,
+    committed: false,
+  }));
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return { c, planId, runDir, seed };
+}
+
+test('group 2 hits unmatched (diff-changed) after group 1 already committed → group 1 stays committed, the real index untouched by group 2, the run released', async (t) => {
+  const { c, planId, seed } = await twoGroupRun(t);
+  c.writeFile('b.txt', 'b\nedited after plan\n');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, UNMATCHED_TEXT);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'only group 1 was committed');
+  assert.equal(subjectOf(c, shas[0]), THREE_HEADERS[0]);
+  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2]);
+  // group 1's own (c) phase already set indexReset; group 2's (b) refusal runs before any
+  // reset of its own, so `unstaged` still reflects only group 1's reset, not group 2's.
+  assert.deepEqual(result.json.unstaged, []);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'nothing staged after the refusal');
+  assert.match(c.git(['status', '--porcelain']), /^ M b\.txt\r?\n?$/, 'b.txt is still a plain unstaged edit');
+});
+
+test('group 2 hits git-failed rebuilding the temporary index after group 1 already committed → group 1 stays committed, the real index untouched by group 2, the run released', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'a\n');
+  c.writeFile('b.txt', 'b\n');
+  c.git(['add', '--', 'a.txt', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('a.txt', 'a\nmore\n');
+  c.writeFile('b.txt', 'b\nmore\n');
+  c.writeFile('new.txt', 'new\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.ok(JSON.stringify(state.candidates).includes('new.txt'), 'new.txt is a stored candidate');
+  state.groups = ['a', 'b'].map((name, i) => ({
+    n: i + 1,
+    units: state.units.filter((unit) => unit.path === `${name}.txt`).map((unit) => unit.id),
+    header: THREE_HEADERS[i],
+    body: null,
+    committed: false,
+  }));
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  // new.txt is a not-ignored stored candidate throughout group 1's own rebuild (it commits
+  // fine); only after group 1's `git commit` does this hook exclude it, so group 2's rebuild
+  // is the first to hit the plain (no `-f`) `git add -N` failure.
+  const excludePath = path.join(c.repoDir, '.git', 'info', 'exclude');
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    `fs.appendFileSync(${JSON.stringify(excludePath)}, '\\nnew.txt\\n');`,
+    '',
+  ].join('\n'), 'post-commit');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 4, detail(result));
+  assert.equal(result.json.error.kind, 'git', detail(result));
+  assert.equal(result.json.error.message, 'git add -N failed rebuilding the temporary index for group 2');
+  assert.equal(typeof result.json.gitOutput, 'string', detail(result));
+  assert.match(result.json.gitOutput, /new\.txt/, 'gitOutput holds git\'s own output');
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'only group 1 was committed');
+  assert.equal(subjectOf(c, shas[0]), THREE_HEADERS[0]);
+  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2]);
+  assert.deepEqual(result.json.unstaged, []);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'nothing staged after the refusal');
 });

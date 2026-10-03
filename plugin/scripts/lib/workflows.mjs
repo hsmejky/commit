@@ -703,8 +703,9 @@ async function openRun(ctx) {
 // (M12 `open`, step 3) and before any group work. A
 // `no-groups`/`taken-over`/`busy` refusal keeps the run instead (no `releaseOpen`; only this
 // call's `call.lock` goes, via the `finally` in `commit()` below — `ctx.opened` is already
-// true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`
-// and `index-changed` (`diff-changed`) end it like `index-lock` does (C:cli-and-exit-codes).
+// true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`,
+// `index-changed` (`diff-changed`), `index-locked` (`index-lock`), and EXE-09's `unmatched`
+// (`diff-changed`) and `git-failed` all end it the same way (C:cli-and-exit-codes).
 // The release's notice and the `reply` with `status: "committed"` are INT-02's
 // (C:reply-and-handback).
 async function commitGroups(ctx) {

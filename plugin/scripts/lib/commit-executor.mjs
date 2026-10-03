@@ -234,7 +234,11 @@ export async function commitAll(run, { now, osUser, env }) {
       });
     } catch (err) {
       if (err.domainCode !== 'git-failed') throw err;
-      return refused(state, group, commits, { code: 'git-failed', message: err.message }, notices, err.gitOutput);
+      // Short, like the contract's other exit-4 example ("git commit failed for group 2"):
+      // `err.message` carries git's full raw output too, which would duplicate `gitOutput`
+      // uncut in the reply's capped, escaped `text` (INT-02).
+      const message = `git add -N failed rebuilding the temporary index for group ${group.n}`;
+      return refused(state, group, commits, { code: 'git-failed', message }, notices, err.gitOutput);
     }
     // EXE-09: a stored unit's hash missing from this fresh snapshot — the file changed since
     // `plan` (or during an earlier group's own `git commit`, EXE-15's hook-rewrite variant) —
