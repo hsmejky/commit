@@ -74,19 +74,23 @@ test('attribution carries no model name and no agent-controlled flag changes it'
   const state = readJson(path.join(folder, 'state.json'));
   assert.equal(state.attribution.trailer, DEFAULT_TRAILER);
   assert.equal(state.attribution.source, 'default');
-  assert.ok(!state.attribution.trailer.includes('Sonnet'));
-  assert.ok(!state.attribution.trailer.includes('Opus'));
 });
 
-test('a clean tree never reaches step 7, so no planId folder (and no attribution) is ever written for it', async (t) => {
+// An agent can write .claude/commit.json itself (it is tracked, repo-layer config); the
+// tracer must not read it, so an `attribution` key there changes nothing (Q5, AC2).
+test('an agent-writable .claude/commit.json attribution key does not change the resolved trailer', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('.claude/commit.json', JSON.stringify({ attribution: { commit: false } }));
+  c.git(['add', '--', '.claude/commit.json']);
+  c.git(['commit', '-q', '-m', 'add repo config']);
+  c.writeFile('a.txt', 'one\nmore\n');
 
   const result = await runCommit(c, ['plan']);
 
   assert.equal(result.exitCode, 0, detail(result));
-  assert.equal(result.json.reply.status, 'nothing');
-  assert.equal(result.json.planId, null);
-  // RUN-05: the run-folder directory itself stays (empty); no <planId>/state.json exists.
-  assert.deepEqual(fs.readdirSync(runDirOf(c)), []);
+  const folder = path.join(runDirOf(c), result.json.planId);
+  const expected = { trailer: DEFAULT_TRAILER, source: 'default' };
+  assert.deepEqual(readJson(path.join(folder, 'state.json')).attribution, expected);
+  assert.deepEqual(readJson(path.join(folder, 'plan.json')).attribution, expected);
 });

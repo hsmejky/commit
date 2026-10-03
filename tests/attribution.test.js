@@ -4,8 +4,8 @@
 // are read yet (CFG-09 adds `attribution.commit`, CFG-10 the project/user layers, CFG-11 the
 // managed layer); `resolveAttribution` always returns the fixed trailer, source `default`.
 // Unit-level coverage of the resolver itself; Seam 1 coverage of `plan`'s `attribution`
-// field awaits its wiring into `plan` step 1 and `state.json` (workflows.mjs, GIT-09's file,
-// not touched by this slice).
+// field (wired into `plan` step 1, `state.json` and `plan.json` in workflows.mjs) lives in
+// plan-attribution.test.js.
 
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');

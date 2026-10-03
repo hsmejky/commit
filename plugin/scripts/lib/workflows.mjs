@@ -26,9 +26,12 @@
 // clean-tree lock; CHG-04 step 4's index fingerprint (stored in `state.json`) and step 7's
 // re-read of it; the sweep is RUN-08's. GIT-09 adds `--reword`'s facts to the plan-only
 // HEAD step and their step 2 refusals, and a history step before step 7 (`recentSubjects`,
-// `oldMessage`), stored in `state.json`, `plan.json` and the hunk index. Later slices
-// insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in PLAN_STEPS,
-// and widen these.
+// `oldMessage`), stored in `state.json`, `plan.json` and the hunk index. CFG-08 widens step 1
+// again, with M5 `resolveAttribution` (the tracer reads no settings and never refuses): the
+// resolved `{ trailer, source }` is stored as `ctx.attribution` for step 7 to write into
+// `state.json` and `plan.json`, ahead of `recentSubjects` in both (C:run-folder). Later
+// slices insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in
+// PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
 // `nothing` reply ending with the tree state. RUN-02 added the `call.lock` and `busy`;
@@ -130,20 +133,19 @@ async function readHeadState(ctx) {
  * names ("resolve the attribution"): the tracer reads no settings and never refuses, so it
  * cannot change `preFolderRefusals`' outcome; it is stored on `ctx.attribution` for
  * `storeAndLock` (step 7) to write into `state.json` and `plan.json`, read from there by
- * later calls instead of re-resolved. Any warning it returns (none yet: CFG-09 is the first
- * slice that can produce one) is queued the way every other step 1 warning is, via
- * `ctx.notices` (C:plan "Notices stored for the reply").
+ * later calls instead of re-resolved. The tracer's `warnings` is always `[]` (no settings are
+ * read yet, so there is nothing to warn about); CFG-09, the first slice that can produce one,
+ * wires it into both `ctx.notices` and `plan.json`'s (not yet existing) `warnings` field.
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
     ? ctx.probe.repo.toplevel
     : null;
   ctx.config = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
-  const { trailer, source, warnings } = resolveAttribution({
+  const { trailer, source } = resolveAttribution({
     env: ctx.injected.env, claudeHome: ctx.injected.claudeHome, toplevel,
   });
   ctx.attribution = { trailer, source };
-  for (const warning of warnings) ctx.notices.push(warning);
   return undefined;
 }
 
@@ -259,7 +261,10 @@ async function readHistory(ctx) {
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
  * CFG-08 adds `attribution` (`{ trailer, source }`, step 1's `ctx.attribution`) to both
  * files, in the contract's order (C:run-folder): ahead of `recentSubjects`, so M16/M17 read
- * the resolved trailer from here instead of re-resolving it.
+ * the resolved trailer from here instead of re-resolving it. The tracer's `trailer` is never
+ * `null`, so both files always get the full `{ trailer, source }` object; C:plan l.248 wants
+ * `plan.json`'s `attribution` as `null` when no trailer is added (while `state.json` always
+ * keeps `{ trailer, source }`), a split CFG-09 must make once the resolver can return `null`.
  */
 async function storeAndLock(ctx) {
   const { planId, runDir } = ctx.provisional;
