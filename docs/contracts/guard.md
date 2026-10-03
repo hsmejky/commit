@@ -341,7 +341,16 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `git-commit` — git's own dashed form, runnable straight off `PATH` — classifies the
    segment as a `commit` straight away, skipping steps 4 and 5's global-option and
    subcommand scan: the tokens after it are `commit`'s own args, expanded and checked
-   against the allowlist as in step 5.
+   against the allowlist as in step 5. Such a token is a commit wherever it stands in its
+   command, not only in the command word: the command before it may run it (`xargs`,
+   `man -P`, `rg --pre`, `git bisect run`), and telling those apart would take a list of
+   commands known not to run their arguments. Accepted false denies (fail closed): a
+   `git-commit` word as a plain argument, e.g. Bash `grep -rn git-commit docs/` (the generic
+   row naming `docs/`), `man git-commit`, `ls /usr/lib/git-core/git-commit`,
+   `git help git-commit` (the wrapper row naming `man`, `ls`, `git`) and PowerShell
+   `Select-String -Path docs\*.md -Pattern git-commit` (naming `Select-String`). Workaround:
+   a pattern no token reads as `git-commit` (`grep -rn 'git-[c]ommit' docs/`) or
+   `git help commit`.
    git runs `git-<x>` read from argv[0]'s basename as `<x>`, and Bash `exec -a NAME` or
    coreutils `env -a NAME` / `--argv0=NAME` sets argv[0], so Linux bash commits on
    `(exec -agit-commit git --allow-empty -m e)` though no token reads `commit` after `git`
@@ -470,7 +479,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    is the same gap (`env -S A=@( git commit --fixup=HEAD'\c')`).
    Known gap: expansion or aliasing in the command position, where no token is `git` until
    the shell expands it, passes with no output (Q3): Bash brace expansion
-   `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` or an extglob
+   `{git,commit,-m,x}`, a glob such as `/usr/bin/gi? commit -m x` (PowerShell resolves one in
+   the command word too: `& 'C:\…\gi[t].exe' commit -m x` runs git in 5.1 and 7) or an extglob
    `@(git) commit -m x` (with `extglob` on; its `git` token is followed by the `)` that ends
    its arguments), a variable there (Bash
    `$GIT commit -m x`, PowerShell `& $g commit -m x`), a PowerShell expression there,

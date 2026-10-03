@@ -112,6 +112,21 @@ const table = [
   ['bash', 'echo x && git-commit -m x', 'bare'],
   ['bash', '(git-commit -m x)', 'bare'],
   ['bash', 'xargs git-commit --no-edit', () => wrapper('xargs')],
+  // Accepted false denies: a `git-commit` token is a commit wherever it stands, since the
+  // command before it may run it (`xargs`, `man -P`, `rg --pre`, `git bisect run`); the
+  // workaround is a pattern no token reads as `git-commit`, or `git help commit`.
+  ['bash', 'grep -rn git-commit docs/', generic('docs/')],
+  ['bash', 'man git-commit', () => wrapper('man')],
+  ['bash', 'git help git-commit', () => wrapper('git')],
+  ['powershell', r`Select-String -Path docs\*.md -Pattern git-commit`, () => wrapper('Select-String')],
+  ['bash', "grep -rn 'git-[c]ommit' docs/", null],
+  ['powershell', r`Select-String -Path docs\*.md -Pattern 'git-[c]ommit'`, null],
+  // Common commands that only mention commit pass.
+  ['bash', 'git help commit', null],
+  ['bash', 'git log --oneline -5 --grep=commit && git status', null],
+  ['bash', 'git show HEAD:docs/commit.md', null],
+  ['powershell', 'git log -1 --grep commit; git status', null],
+  ['powershell', 'git show HEAD:docs/commit.md', null],
   // An argv[0] option of `exec` or `env` before a `git` token may name it `git-commit`, which
   // git runs as `commit` (Linux bash ran `(exec -agit-commit git --allow-empty -m e)`): such
   // a `git` token not followed by `commit` denies with the wrapper row naming `exec` or
