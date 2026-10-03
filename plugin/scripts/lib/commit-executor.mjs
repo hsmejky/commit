@@ -228,6 +228,8 @@ export async function commitAll(run, { now, osUser, env }) {
       const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), { scanIgnore: [], osUser });
       if (hits.length > 0) throw notBuilt('the backstop refusal', 'EXE-13');
 
+      // EXE-23 (Q18): the repo's signing config stays untouched — never `--no-gpg-sign` or
+      // `-c commit.gpgsign=false`; M2's scrub keeps an exported `GIT_CONFIG_SYSTEM`.
       const committed = await commitGuarded({
         args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group), ...git,
       });
