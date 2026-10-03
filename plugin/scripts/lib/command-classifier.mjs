@@ -12,6 +12,8 @@
 // what would otherwise be allowed (the wrapper row), and the bare/`-m`/`-F`/`--message`/
 // `--file` row applies only when nothing else matches. Each segment's script call (S2) is
 // reported in `scriptCalls`, a denied command's included; a blanket result has none.
+// As `commit:commit-worker`, a script call to `commit` or `release` in any segment denies
+// with the handback text before any git row (the worker-only rule, Q25).
 // Git's own options before the subcommand are skipped (step 4): `-c`/`--config-env`
 // before `commit` and an unknown option followed later by a `commit` token deny, ranking
 // above the `commit` argument rows; every token read among them must be literal.
@@ -57,6 +59,18 @@ export const MESSAGES = Object.freeze({
       + ROUTE,
   ),
 });
+
+/**
+ * The worker-only rule's deny text (C:guard Worker-only rule, Q25): the only fixed text without
+ * the route, since it goes to the worker, which must hand the reply back rather than answer it.
+ */
+export const HANDBACK_MESSAGE = 'The handback is for your caller: return the reply verbatim and stop.';
+
+/** The `agent_type` the worker-only rule applies to, compared exactly (C:guard). */
+const WORKER_AGENT = 'commit:commit-worker';
+
+/** The script-call subcommands the worker must never run itself: they answer a handback. */
+const HANDBACK_SUBCOMMANDS = new Set(['commit', 'release']);
 
 // The blanket row for each G2 blanket kind with a row of its own; every other kind gets
 // MESSAGES.blanket.
@@ -522,6 +536,12 @@ export function classify(parsed, context = {}) {
   // Every segment's script call (S2), a denied command's included: G1 writes the heartbeat
   // for a `plan` call before the decision is emitted (C:guard Heartbeat).
   const scriptCalls = parsed.map((segment) => recognise(segment)).filter((call) => call !== null);
+  // The worker-only rule (C:guard, Q25) is checked before the git rows: the worker answering
+  // its own handback is told to stop even when the command also commits directly.
+  const { agentType } = context;
+  if (agentType === WORKER_AGENT && scriptCalls.some((call) => HANDBACK_SUBCOMMANDS.has(call.subcommand))) {
+    return { decision: 'deny', message: HANDBACK_MESSAGE, scriptCalls };
+  }
   // A Start-Process word denies the command with the wrapper row, which ranks just above the
   // bare row (C:guard step 3, Precedence).
   const starter = shell === 'powershell' ? startProcessName(parsed) : undefined;

@@ -682,7 +682,9 @@ above, are not covered): when `agent_type` is `commit:commit-worker` and any seg
 call with subcommand `commit` or `release`, deny with `The handback is for your caller:
 return the reply verbatim and stop.` (Q25). Everything else the worker runs is left to the
 normal rules. A blanket-denied command (parsing step 2) has no segments, so this rule does
-not apply to it; it gets its blanket row.
+not apply to it; it gets its blanket row. The rule is checked before any `git commit` row: a
+worker command that holds both such a script call and a denied `git commit` gets the handback
+text, so the instruction to stop is never hidden by another deny.
 
 **Precedence:** when a `commit` segment's expanded arguments match more than one row below,
 the most specific wins, in this order: `-c` / `--config-env` before `commit`; the
