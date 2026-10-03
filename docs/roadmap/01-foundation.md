@@ -140,13 +140,13 @@ scanner.
 
 **Blocked by:** FND-07, SCN-06, SCN-07, SCN-09, SCN-11.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, Q15, C:scan-patterns, Modules and how "Other checks".
 
-- [ ] A home-directory path with a non-exempt user name is caught on every OS leg, not just the runner's own form (Windows, macOS and Linux shapes each planted at run time).
-- [ ] Test sources holding a literal token of any scan pattern fail the test; a token built at run time does not.
-- [ ] The current repo passes on every CI leg.
+- [x] A home-directory path with a non-exempt user name is caught on every OS leg, not just the runner's own form (Windows, macOS and Linux shapes each planted at run time).
+- [x] Test sources holding a literal token of any scan pattern fail the test; a token built at run time does not.
+- [x] The current repo passes on every CI leg.
 
 
 ## FND-09: Roadmap graph check
