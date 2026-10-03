@@ -435,6 +435,30 @@ test('snapshot: a stored path gone from the worktree is skipped; the real index 
   assert.ok(fs.readFileSync(realIndex).equals(before));
 });
 
+// Racy git: a same-size edit within the second of the last index write keeps the entry's
+// stat data, so git sees it only because the entry is not older than the index file. A copy
+// with a fresh mtime lost that and the snapshot came back empty (CI on Linux and macOS, whose
+// git compares whole seconds). Fixed times make the race deterministic; `core.checkStat
+// minimal` compares only the mtime's seconds and the size on every platform.
+test('snapshot: a racily clean same-size edit is still a unit', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'racy.txt': 'old\n' });
+  c.git(['config', 'core.checkStat', 'minimal']);
+  const file = path.join(c.repoDir, 'racy.txt');
+  const realIndex = path.join(c.repoDir, '.git', 'index');
+  const then = new Date(Date.UTC(2020, 0, 1));
+  fs.utimesSync(file, then, then);
+  c.git(['update-index', '-q', '--refresh']);
+  c.writeFile('racy.txt', 'new\n');
+  fs.utimesSync(file, then, then);
+  fs.utimesSync(realIndex, then, then);
+  assert.equal(c.git(['diff-files', '--name-only']), 'racy.txt\n', 'git itself sees the edit');
+
+  const units = await snapshot(c);
+
+  assert.deepEqual(units.map((u) => [u.path, u.status, u.range]), [['racy.txt', 'M', '-1 +1']]);
+});
+
 test('snapshot: a failing git add -N is git-failed', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n' });

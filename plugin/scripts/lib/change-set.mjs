@@ -8,7 +8,8 @@
 // CHG-06 the streamed hunk-level pass, CHG-08 onward the other change kinds.
 
 import { createHash } from 'node:crypto';
-import { closeSync, copyFileSync, existsSync, lstatSync, openSync, readSync, rmSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readSync, rmSync, statSync } from 'node:fs';
+import { copyFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hideFilter } from './path-classifier.mjs';
 import { gitPath, run } from './process-adapter.mjs';
@@ -166,11 +167,11 @@ function byteOrder(a, b) {
  * Takes the snapshot's units (Q11, M10). `split` only (CHG-14, CHG-15 build the others):
  * one whole-file unit per changed text file, diffed against the temporary index.
  *
- * The temporary index (Q11 steps 1-3, C:plan): the real index is copied to `indexPath` and
- * the copy reset to HEAD (`git reset -q`); on an unborn HEAD it starts empty instead. Then
- * `git add -N` of the stored candidate and staged-new paths from stdin, the `ignored: true`
- * ones in a separate `-f` call; a path gone from the worktree since the inventory is
- * skipped. Only the copy is written: the real index never is.
+ * The temporary index (Q11 steps 1-3, C:plan): the real index is copied to `indexPath`
+ * (keeping its mtime, see `copyIndex`) and the copy reset to HEAD (`git reset -q`); on an
+ * unborn HEAD it starts empty instead. Then `git add -N` of the stored candidate and
+ * staged-new paths from stdin, the `ignored: true` ones in a separate `-f` call; a path gone
+ * from the worktree since the inventory is skipped. Only the copy is written: the real index never is.
  *
  * One pinned `git diff -z --raw -p` call from the toplevel against that index, with no
  * pathspecs. Paths come from the `--raw -z` records only, never from patch text (a header
@@ -219,7 +220,7 @@ async function buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, e
   rmSync(indexPath, { force: true });
   if (!unborn) {
     const [realIndex] = await gitPath(['index'], { cwd: toplevel, env, now });
-    if (existsSync(realIndex)) copyFileSync(realIndex, indexPath);
+    if (existsSync(realIndex)) await copyIndex(realIndex, indexPath);
     const reset = await run('git', ['reset', '-q'], { cwd: toplevel, env, now, index: indexPath });
     if (reset.code !== 0) throw new Error(`git reset failed (${reset.code}): ${reset.stderr}`);
   }
@@ -231,6 +232,17 @@ async function buildTemporaryIndex({ storedLists, indexPath, unborn, toplevel, e
   const forced = storedLists.stagedNew.filter((entry) => entry.ignored).map((entry) => entry.path).filter(present);
   await addIntentToAdd(plain, [], { toplevel, env, now, indexPath });
   await addIntentToAdd(forced, ['-f'], { toplevel, env, now, indexPath });
+}
+
+// Copies the real index, keeping its mtime (floored to the second) on the copy. git's racy-git
+// check trusts an entry's stat data only when the entry is older than the index file itself:
+// a fresh mtime on the copy would turn a racily clean entry (a same-size edit in the same
+// second as the last index write) into a trusted clean one, and the snapshot would miss the
+// edit. An older mtime only makes more entries racy, which git then checks by content.
+async function copyIndex(realIndex, indexPath) {
+  const seconds = Math.floor(statSync(realIndex).mtimeMs / 1000);
+  await copyFile(realIndex, indexPath);
+  await utimes(indexPath, seconds, seconds);
 }
 
 // One `git add -N` of `paths` from stdin into the temporary index; none spawns no git.

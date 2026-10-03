@@ -258,7 +258,9 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   against the temporary index (Q11), built in the run folder, so candidates, staged-new
   paths and tracked changes are scanned alike. A file with a `filter` attribute is scanned
   in the cleaned form the diff shows (Q10).
-- Temporary index (Q11): a copy of the real index, reset with `git reset -q` on the copy
+- Temporary index (Q11): a copy of the real index that keeps its mtime (floored to the
+  second, so racy-git detection still sees a same-size edit made in the second of the last
+  index write), reset with `git reset -q` on the copy
   (empty when unborn), then extended with `git add -N` of the stored candidate and
   staged-new lists, skipping missing paths; it is never built from HEAD. Paths with
   `ignored: true` go in a separate `git add -N -f` call, so no other ignored path is added.
