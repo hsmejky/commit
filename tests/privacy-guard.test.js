@@ -239,7 +239,7 @@ test('local-path (AC1): a home-directory path with a non-exempt user name is cau
 });
 
 test('local-path (AC1): a service-user or placeholder name is not caught on any OS shape', () => {
-  for (const name of ['node', 'runner', 'root']) {
+  for (const name of ['node', 'runner', 'root', 'example']) {
     const shapes = ['C:' + '\\Users\\' + name + '\\work', '/Users/' + name, '/home/' + name];
     for (const text of shapes) {
       const hits = scanText(text, { osUser: null }).filter((hit) => hit.patternId === 'local-path');
@@ -277,19 +277,81 @@ test('every other scan pattern (AC2): a test source holding a literal token fail
   assert.deepEqual(runtimeHits, [], `expected no hit on run-time-built content: ${JSON.stringify(runtimeHits)}`);
 });
 
-test('privacy guard (AC3): local-path finds no un-exempted path anywhere in the FND-06 file set', () => {
-  const osUser = currentOsUserName();
-  const hits = scanFileEntriesForPatterns(scanText, fileSet(), { osUser }).filter(
+// AC3's two compositions, named so a regression (narrowing `local-path`'s scope to tests, or
+// widening the token scan to docs) breaks a planted case below, not only the real-repo run
+// (review-FND-08 finding 5).
+function findLocalPathHits(scanTextFn, entries, osUser) {
+  return scanFileEntriesForPatterns(scanTextFn, entries, { osUser }).filter(
     (hit) => hit.patternId === 'local-path',
   );
+}
+
+function findTokenHits(scanTextFn, entries) {
+  const testEntries = entries.filter((entry) => isTestSourcePath(entry.path));
+  return scanFileEntriesForPatterns(scanTextFn, testEntries, { osUser: null }).filter(
+    (hit) => hit.patternId !== 'local-path',
+  );
+}
+
+// AC2 coverage, per pattern (review-FND-08 finding 4): the planted case above shows only
+// `github-token`. Each other pattern's own positive fixture is read at run time and planted
+// as a test source, so the guard path (not just the scanner) is shown to report every
+// pattern ID, without duplicating any fixture's literal text in this file's own source (Q10).
+const SCAN_PATTERN_FIXTURES_DIR = path.join(REPO_ROOT, 'tests', 'fixtures', 'scan-patterns');
+
+function fixturePositiveLines(patternId) {
+  return fs
+    .readFileSync(path.join(SCAN_PATTERN_FIXTURES_DIR, `${patternId}.positive.txt`), 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line !== '' && !line.startsWith('#'));
+}
+
+for (const file of fs.readdirSync(SCAN_PATTERN_FIXTURES_DIR).sort()) {
+  const match = /^(.+)\.positive\.txt$/.exec(file);
+  if (match === null || match[1] === 'local-path') continue;
+  const patternId = match[1];
+
+  test(`every other scan pattern (AC2): a test source holding a literal ${patternId} fixture line is caught`, () => {
+    for (const line of fixturePositiveLines(patternId)) {
+      const hits = scanFileEntriesForPatterns(
+        scanText,
+        [{ path: 'tests/planted.test.js', content: `${line}\n` }],
+        { osUser: null },
+      );
+      assert.ok(
+        hits.some((hit) => hit.patternId === patternId),
+        `expected a ${patternId} hit for fixture line "${line}"`,
+      );
+    }
+  });
+}
+
+test('privacy guard (AC3): local-path finds no un-exempted path anywhere in the FND-06 file set', () => {
+  const osUser = currentOsUserName();
+  const hits = findLocalPathHits(scanText, fileSet(), osUser);
   assert.deepEqual(hits, [], `found local-path hits: ${JSON.stringify(hits)}`);
 });
 
 test('privacy guard (AC3): every other scan pattern finds no literal token in test sources', () => {
-  const relPaths = listPrivacyFileSet(REPO_ROOT).filter(isTestSourcePath);
-  const entries = readFileSet(REPO_ROOT, relPaths);
-  const hits = scanFileEntriesForPatterns(scanText, entries, { osUser: null }).filter(
-    (hit) => hit.patternId !== 'local-path',
-  );
+  const hits = findTokenHits(scanText, fileSet());
   assert.deepEqual(hits, [], `found scan-pattern hits in test sources: ${JSON.stringify(hits)}`);
+});
+
+test('findLocalPathHits (AC3 wiring): a doc entry with a home path is caught', () => {
+  const name = nonExemptName();
+  const entries = [
+    { path: 'docs/example.md', content: 'see ' + '/home/' + name + '/project for details' },
+  ];
+  const hits = findLocalPathHits(scanText, entries, null);
+  assert.deepEqual(hits.map((hit) => hit.path), ['docs/example.md']);
+});
+
+test('findTokenHits (AC3 wiring): a doc entry with a token is ignored, a tests/ entry with the same token is caught', () => {
+  const literalToken = 'gh' + 'p_' + 'x'.repeat(36);
+  const entries = [
+    { path: 'docs/example.md', content: "const token = '" + literalToken + "';\n" },
+    { path: 'tests/planted.test.js', content: "const token = '" + literalToken + "';\n" },
+  ];
+  const hits = findTokenHits(scanText, entries);
+  assert.deepEqual(hits.map((hit) => hit.path), ['tests/planted.test.js']);
 });

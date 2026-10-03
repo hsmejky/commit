@@ -4349,11 +4349,11 @@
    "id": "b-exempt-typographic",
    "shell": "bash",
    "topic": "script-call exemption",
-   "command": "node \"/home/u/‘q’/commit.cjs\" plan",
+   "command": "node \"/home/app/‘q’/commit.cjs\" plan",
    "segments": [
     [
      "node",
-     "/home/u/‘q’/commit.cjs",
+     "/home/app/‘q’/commit.cjs",
      "plan"
     ]
    ],

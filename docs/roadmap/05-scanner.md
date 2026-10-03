@@ -111,8 +111,8 @@ placeholder and service-user list and the illegal-character rule.
 - [x] Seam 3: a home path with a real-looking name → hit per shape; `/home/node/app`,
       `/Users/<you>/x`, `C:\Users\%USERNAME%` → no hit.
 - [x] Seam 3: a lowercase-drive, forward-slash path with a non-exempt name → hit, since the
-      regex is case-insensitive and accepts either slash direction (this is a contract
-      fixture example, not a real path).
+      regex is case-insensitive and accepts either slash direction (fixture
+      `local-path.positive.txt`).
 - [x] Seam 3: the regex table text of C:scan-patterns scanned as added lines → no hit.
 
 
