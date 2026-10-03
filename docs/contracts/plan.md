@@ -54,15 +54,17 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    that appears only after the `peek` is adopted by step 7's `acquire` (below).
 4. The index fingerprint (a hash of `git ls-files --stage -z`: read-only, takes no index
    lock), read first, so step 7's re-read also sees an index change made while the
-   inventory's own git calls run; then the inventory; in `split`, a staged case-only
-   rename on a case-insensitive filesystem or with `core.ignorecase=true` (a staged-new
-   path and a tracked path that differ only in case, Q11) → exit 6 `state`, code
-   `case-rename`, delete the folder, naming the renames ([CLI and exit
-   codes](cli-and-exit-codes.md)); hidden rule; mode (`modeChoice`,
+   inventory's own git calls run; then the inventory; hidden rule; mode (`modeChoice`,
    `staged-empty` for `--staged` with an empty index, or after a takeover `killed-leftover`
    ([run folder](run-folder.md)) → delete the folder, after a takeover releasing the lock
    too). Candidates for the mode decision are counted after the hidden rule and before the
-   caps.
+   caps. Then, only when the resolved mode is `split` (a `split` flag, an index that
+   resolves to `split`, or the respawn of a `modeChoice` answered `split`), a staged
+   case-only rename on a case-insensitive filesystem or with `core.ignorecase=true` (a
+   staged-new path, hidden ones included, and a tracked path that differ only in case,
+   Q11) → exit 6 `state`, code `case-rename`, delete the folder, naming the renames ([CLI
+   and exit codes](cli-and-exit-codes.md)). `staged` and `reword` are never refused for
+   it, and a mixed index gets its `modeChoice` first.
 5. Caps (`split` only), snapshot (a failed `git add` → exit 4 `git`, code `git-failed`, delete the
    folder), unit IDs, scan.
 6. Post-scan refusals: `staged-hit`; a clean tree → `nothing`, except with `--reword`, which

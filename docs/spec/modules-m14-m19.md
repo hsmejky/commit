@@ -208,11 +208,12 @@ the reply with M17.
      M17 puts them in the reply's notices of every output `plan` ends with, whatever step
      it ends at (clean, `modeChoice`, a refusal, `timeout`, `internal`), since
      `finishTakeover` has already deleted the evidence (story 210).
-  4. M10 `indexFingerprint`, read first, then M10 `inventory`; in `split`, M10
-     `unplannableCaseRenames` (any → `case-rename`, discard); M9 `hideFilter`; M15
+  4. M10 `indexFingerprint`, read first, then M10 `inventory`; M9 `hideFilter`; M15
      `resolveMode` (passed `killedLeftover` from the takeover repair at step 3)
      (`modeChoice`, `staged-empty` or `killed-leftover` → discard; a `reword` run with
-     `killedLeftover` goes on with its notice).
+     `killedLeftover` goes on with its notice); then, only in the resolved `split` mode,
+     M10 `unplannableCaseRenames` over the staged-new paths, the hidden ones included, and
+     the tracked paths (any → `case-rename`, discard; never in `staged` or `reword`).
   5. M9 `applyCaps` (`split` only); M10 `snapshot` (a failed `git add` → `git-failed`,
      discard) and `assignIds`; when a unit's path or old path is the repo config (M4
      `isRepoConfigPath`), M4 `scanIgnoreChanged` compares step 1's HEAD patterns (`[]` when

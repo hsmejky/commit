@@ -27,7 +27,7 @@ const MAX_TREE_PATHS = 10;
 // nor carry a terminal escape.
 const CONTROL_CHAR = /[\x00-\x1f\x7f\x80-\x9f]/g;
 
-function escapePath(p) {
+export function escapePath(p) {
   return p.replace(CONTROL_CHAR, (ch) => {
     let escaped = '';
     for (const byte of Buffer.from(ch, 'utf8')) escaped += `\\x${byte.toString(16).padStart(2, '0')}`;

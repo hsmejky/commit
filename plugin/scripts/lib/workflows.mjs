@@ -67,7 +67,7 @@ import { commitAll } from './commit-executor.mjs';
 import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
-import { reply } from './reply.mjs';
+import { escapePath, reply } from './reply.mjs';
 import { planRefusal, releaseDeadline } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
@@ -222,34 +222,76 @@ async function createRunFolder(ctx) {
  * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
  * full `modeChoice` (M15 `resolveMode`) is a later slice's, and will count these same pre-cap
  * `candidates`/`stagedNew` lists (C:plan step 4: "candidates for the mode decision are
- * counted after the hidden rule and before the caps"). In `split`, a staged case-only rename
- * the temporary index cannot plan (M10 `unplannableCaseRenames`, over the pre-cap lists)
- * refuses with `case-rename` (exit 6 `state`, CHG-07 decision, Q11).
+ * counted after the hidden rule and before the caps").
  */
 async function inventory(ctx) {
   ctx.indexFingerprint = await indexFingerprint({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
   ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
-  if (ctx.mode === 'split') {
-    const renames = await unplannableCaseRenames({
-      stagedNew: ctx.inventory.stagedNew.map((entry) => entry.path),
-      tracked: ctx.inventory.tracked,
-      toplevel: ctx.toplevel,
-      env: ctx.injected.env,
-      now: ctx.injected.now,
-    });
-    if (renames.length > 0) return { refusal: { code: 'case-rename', message: caseRenameMessage(renames) } };
-  }
   return undefined;
 }
 
-// C:cli-and-exit-codes recorded text: the first five renames, then a count of the rest, so
-// the refusal stays within `plan`'s 1 kB output budget for short paths.
+/**
+ * Step 4, after the mode decision and only in the resolved `split` mode (C:plan step 4,
+ * review-CHG-07 finding 1): a staged case-only rename the temporary index cannot plan (M10
+ * `unplannableCaseRenames`, over the pre-cap lists) refuses with `case-rename` (exit 6
+ * `state`, CHG-07 decision, Q11). `staged` commits the index as-is and `reword` takes no
+ * snapshot, so neither is refused, and a mixed index gets its `modeChoice` first (RUN-13
+ * keeps M15 `resolveMode` before this step). The staged-new paths the hidden rule excluded
+ * count too: their old path's deletion would be lost the same way (review-CHG-07
+ * finding 4). Before the caps, so `stagedExcluded` holds only hidden entries here.
+ */
+async function refuseCaseRenames(ctx) {
+  if (ctx.mode !== 'split') return undefined;
+  const { stagedNew, stagedExcluded, tracked } = ctx.inventory;
+  const renames = await unplannableCaseRenames({
+    stagedNew: [
+      ...stagedNew.map((entry) => entry.path),
+      ...stagedExcluded.filter((entry) => entry.reason === 'hidden').map((entry) => entry.path),
+    ],
+    tracked,
+    toplevel: ctx.toplevel,
+    env: ctx.injected.env,
+    now: ctx.injected.now,
+  });
+  if (renames.length === 0) return undefined;
+  return { refusal: { code: 'case-rename', message: caseRenameMessage(renames) } };
+}
+
+// `plan`'s own stdout fields, a refusal's `error` object included, stay within 1 kB (C:plan,
+// Q24): the message gets at most 900 bytes once JSON-encoded, the rest is the envelope.
+const CASE_RENAME_MESSAGE_BUDGET = 900;
+
+// The size of `text` inside a JSON string: UTF-8 bytes after JSON escaping.
+function jsonBytes(text) {
+  return Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
+}
+
+// The longest tail of `text` (whole code points) that fits in `max` JSON bytes behind `…`.
+function tailWithin(text, max) {
+  if (jsonBytes(text) <= max) return text;
+  const chars = [...text];
+  let tail = '';
+  for (let i = chars.length - 1; i >= 0 && jsonBytes(`…${chars[i]}${tail}`) <= max; i -= 1) {
+    tail = `${chars[i]}${tail}`;
+  }
+  return `…${tail}`;
+}
+
+// C:cli-and-exit-codes recorded text: the first five renames, then a count of the rest, each
+// path escaped as in the reply (RPL-06 `\xNN`, M17 `escapePath`); when the message would pass
+// its budget, every named path is cut to an equal share of it, keeping its tail behind `…`.
 function caseRenameMessage(renames) {
-  const named = renames.slice(0, 5).map(({ oldPath, path }) => `${oldPath} → ${path}`).join(', ');
+  const shown = renames.slice(0, 5)
+    .map(({ oldPath, path }) => ({ oldPath: escapePath(oldPath), path: escapePath(path) }));
   const more = renames.length > 5 ? ` and ${renames.length - 5} more` : '';
-  return 'cannot plan a staged case-only rename on a case-insensitive filesystem or with '
-    + `core.ignorecase=true: ${named}${more}; commit the rename by hand, then run /commit again`;
+  const build = (cut) => 'cannot plan a staged case-only rename on a case-insensitive filesystem or with '
+    + `core.ignorecase=true: ${shown.map(({ oldPath, path }) => `${cut(oldPath)} → ${cut(path)}`).join(', ')}`
+    + `${more}; commit the rename by hand, then run /commit again`;
+  const whole = build((p) => p);
+  if (jsonBytes(whole) <= CASE_RENAME_MESSAGE_BUDGET) return whole;
+  const share = Math.floor((CASE_RENAME_MESSAGE_BUDGET - jsonBytes(build(() => ''))) / (2 * shown.length));
+  return build((p) => tailWithin(p, share));
 }
 
 /**
@@ -505,6 +547,7 @@ async function renderHunkIndex(ctx) {
 
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
+  refuseCaseRenames,
   collapseCandidates, snapshotUnits, postScanRefusals, readHistory, storeAndLock, renderHunkIndex,
 ]);
 

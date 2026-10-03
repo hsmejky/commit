@@ -274,9 +274,11 @@
   copy's `readme.txt` entry and adds nothing, and the old path still exists for `lstat`,
   so the worktree diff reports no deletion either; `plan` emitted zero units with no error
   and the rename silently vanished. Decision: fail closed. In `split`, when a staged-new
-  path and a tracked path differ only in case (`toLowerCase`), and `core.ignorecase` is
+  path (a hidden one included: its old path's deletion would be lost the same way) and a
+  tracked path differ only in case (`toLowerCase`), and `core.ignorecase` is
   true or `lstat` of the old path finds the new path's file (same device and inode),
-  `plan` refuses at step 4, after the inventory and before the caps, with exit 6 `state`,
+  `plan` refuses at step 4, after the mode decision (only when it resolves to `split`, so
+  a mixed index gets its `modeChoice` first) and before the caps, with exit 6 `state`,
   domain code `case-rename`, naming the renames (C:cli-and-exit-codes recorded text).
   Both triggers are checked because each alone breaks the snapshot: `core.ignorecase` is
   what git's own index matching obeys (git sets it at `init` by probing the filesystem,

@@ -25,10 +25,10 @@ function numbered(count) {
   return Array.from({ length: count }, (_, i) => `${i + 1}\n`);
 }
 
-// Runs `plan` (from `cwd`, the repo by default) and returns its JSON reply, the hunk index,
-// `state.json` and `plan.json`.
-async function plan(c, cwd) {
-  const result = await runCommit(c, ['plan'], cwd === undefined ? {} : { cwd });
+// Runs `plan` with `flags` (from `cwd`, the repo by default) and returns its JSON reply, the
+// hunk index, `state.json` and `plan.json`.
+async function plan(c, cwd, flags = []) {
+  const result = await runCommit(c, ['plan', ...flags], cwd === undefined ? {} : { cwd });
   assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
   const runDir = path.join(c.repoDir, '.commit-plan', result.json.planId);
   const read = (name) => fs.readFileSync(path.join(runDir, name), 'utf8');
@@ -49,25 +49,38 @@ function units({ hunks, state }) {
 }
 
 // Two edits 9 lines apart in `src/a.txt` (two units under `-U3`, one under
-// `diff.interHunkContext=10`), one edit in `top.txt` outside `src/`, and a submodule-free
-// tree, so every pinned option has something to change.
+// `diff.interHunkContext=10`), one edit in `top.txt` outside `src/`, a staged rename
+// (`diff.renames=false`), an edit to a non-ASCII path (`core.quotePath`) and a file touched
+// but unchanged (`diff.autoRefreshIndex=false`), so every pinned option has something to
+// change. `diff.submodule=log` waits for submodule units (CHG-09), which pins it there.
 function fixture(c) {
   const lines = numbered(30);
-  seed(c, { 'src/a.txt': lines.join(''), 'top.txt': 'top\n', 'data.bin.txt': 'x\n' });
+  seed(c, {
+    'src/a.txt': lines.join(''), 'top.txt': 'top\n', 'data.bin.txt': 'x\n',
+    'old.txt': numbered(8).join(''), 'café.txt': 'c\n', 'touched.txt': 't\n',
+  });
   const edited = [...lines];
   edited[4] = 'five\n';
   edited[16] = 'seventeen\n';
   c.writeFile('src/a.txt', edited.join(''));
   c.writeFile('top.txt', 'TOP\n');
   c.writeFile('data.bin.txt', 'y\n');
+  c.git(['mv', 'old.txt', 'new.txt']);
+  c.writeFile('café.txt', 'C\n');
+  c.writeFile('touched.txt', 't\n');
+  const later = new Date('2030-01-01T00:00:00Z');
+  fs.utimesSync(path.join(c.repoDir, 'touched.txt'), later, later);
 }
 
 test('user diff config and a subfolder working directory leave the units unchanged', async (t) => {
   const plain = createCase(t);
   fixture(plain);
-  const baseline = units(await plan(plain));
-  assert.deepEqual(baseline.map(({ file, range }) => [file, range]), [
-    ['data.bin.txt', '-1 +1'], ['src/a.txt', '-2,7 +2,7'], ['src/a.txt', '-14,7 +14,7'], ['top.txt', '-1 +1'],
+  const baseline = units(await plan(plain, undefined, ['--split']));
+  // `touched.txt` is no unit; the rename is one `R` unit.
+  assert.deepEqual(baseline.map(({ file, oldPath, status, range }) => [file, oldPath, status, range]), [
+    ['café.txt', null, 'M', '-1 +1'], ['data.bin.txt', null, 'M', '-1 +1'],
+    ['new.txt', 'old.txt', 'R', '-0,0 +0,0'], ['src/a.txt', null, 'M', '-2,7 +2,7'],
+    ['src/a.txt', null, 'M', '-14,7 +14,7'], ['top.txt', null, 'M', '-1 +1'],
   ]);
 
   const c = createCase(t);
@@ -88,7 +101,7 @@ test('user diff config and a subfolder working directory leave the units unchang
   fs.writeFileSync(path.join(c.repoDir, '.git', 'info', 'attributes'), '*.txt diff=boom\n');
 
   // `diff.relative=true` with `plan` run from `src/`: `top.txt` outside it is still listed.
-  assert.deepEqual(units(await plan(c, path.join(c.repoDir, 'src'))), baseline);
+  assert.deepEqual(units(await plan(c, path.join(c.repoDir, 'src'), ['--split'])), baseline);
 });
 
 test('paths with brackets, a space and a quote are units with the literal path', async (t) => {
@@ -132,18 +145,41 @@ function caseRenames(c, names) {
   for (const name of names) c.git(['mv', name, name.toUpperCase()]);
 }
 
-async function assertCaseRenameRefusal(c, expected) {
-  const result = await runCommit(c, ['plan']);
+// Stages each `[oldPath, path]` case-only rename in the index alone, with no working-tree
+// file, so a path can hold characters or a length a filesystem refuses. Such an index is
+// mixed (each new path is also an unstaged deletion), so these cases run `plan --split`.
+function indexCaseRenames(c, pairs) {
+  seed(c, { 'blob.txt': 'b\n' });
+  const blob = c.git(['rev-parse', 'HEAD:blob.txt']).trim();
+  for (const [oldPath] of pairs) c.git(['update-index', '--add', '--cacheinfo', `100644,${blob},${oldPath}`]);
+  c.git(['commit', '-q', '-m', 'paths']);
+  for (const [oldPath, newPath] of pairs) {
+    c.git(['update-index', '--force-remove', '--', oldPath]);
+    c.git(['update-index', '--add', '--cacheinfo', `100644,${blob},${newPath}`]);
+  }
+}
+
+function caseRenameText(renames) {
+  return 'cannot plan a staged case-only rename on a case-insensitive filesystem or with '
+    + `core.ignorecase=true: ${renames}; commit the rename by hand, then run /commit again`;
+}
+
+// Runs `plan` with `flags` and returns its `case-rename` refusal (exit 6 `state`).
+async function caseRenameRefusal(c, flags = []) {
+  const result = await runCommit(c, ['plan', ...flags]);
   const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
   assert.equal(result.exitCode, 6, detail);
   assert.equal(result.json.ok, false, detail);
   assert.equal(result.json.error.kind, 'state', detail);
-  assert.equal(result.json.error.message, 'cannot plan a staged case-only rename on a '
-    + `case-insensitive filesystem or with core.ignorecase=true: ${expected}; commit the `
-    + 'rename by hand, then run /commit again');
   // The provisional run folder is gone (an outcome that takes no lock).
   const runs = path.join(c.repoDir, '.commit-plan');
   assert.deepEqual(fs.existsSync(runs) ? fs.readdirSync(runs) : [], []);
+  return result;
+}
+
+async function assertCaseRenameRefusal(c, expected, flags = []) {
+  const result = await caseRenameRefusal(c, flags);
+  assert.equal(result.json.error.message, caseRenameText(expected));
 }
 
 test('a staged case-only git mv with core.ignorecase=true refuses, naming the rename', async (t) => {
@@ -186,6 +222,84 @@ test('a staged case-only git mv on a case-sensitive filesystem is one R unit', {
   assert.deepEqual(hunks.map(({ path: file, oldPath, status }) => ({ file, oldPath, status })), [
     { file: 'README.txt', oldPath: 'readme.txt', status: 'R' },
   ]);
+});
+
+test('two distinct files differing only in case on a case-sensitive filesystem still plan', {
+  skip: CASE_INSENSITIVE_FS && 'needs a case-sensitive filesystem',
+}, async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'false']);
+  seed(c, { 'README.txt': 'R\n' });
+  c.writeFile('README.txt', 'RR\n');
+  c.writeFile('readme.txt', 'r\n');
+  c.git(['add', '--', 'readme.txt']);
+
+  const { hunks } = await plan(c, undefined, ['--split']);
+
+  assert.deepEqual(hunks.map(({ path: file, status }) => [file, status]), [
+    ['README.txt', 'M'], ['readme.txt', 'A'],
+  ]);
+});
+
+test('a staged case-only directory rename refuses, naming each file', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  seed(c, { 'Dir/a.txt': 'a\n', 'Dir/b.txt': 'b\n' });
+  // Through a temporary name, the usual way on a case-insensitive filesystem.
+  c.git(['mv', 'Dir', 'tmp']);
+  c.git(['mv', 'tmp', 'dir']);
+
+  await assertCaseRenameRefusal(c, 'Dir/a.txt → dir/a.txt, Dir/b.txt → dir/b.txt');
+});
+
+test('a case-only rename to a hidden name refuses too, sorted by new path', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  // `.ENV.EXAMPLE` is hidden (only the lowercase template is excepted), `.env.example` is
+  // not; the hidden rule's staged-new paths come last in the inventory.
+  caseRenames(c, ['a.txt', '.env.example']);
+
+  await assertCaseRenameRefusal(c, '.env.example → .ENV.EXAMPLE, a.txt → A.TXT');
+});
+
+test('plan --reword skips the case-rename check', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  caseRenames(c, ['readme.txt']);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  assert.equal(result.json.mode, 'reword');
+});
+
+test('the case-rename refusal escapes control characters in paths', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  // Git for Windows refuses control characters in index paths unless this is off.
+  c.git(['config', 'core.protectNTFS', 'false']);
+  indexCaseRenames(c, [['esc\x1b[31m\u0085.txt', 'ESC\x1b[31m\u0085.TXT']]);
+
+  await assertCaseRenameRefusal(c, 'esc\\x1b[31m\\xc2\\x85.txt → ESC\\x1b[31m\\xc2\\x85.TXT', ['--split']);
+});
+
+test('the case-rename refusal cuts long paths so its error stays within 1 kB', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.ignorecase', 'true']);
+  const olds = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `deep/${'x'.repeat(150)}/${name}.txt`);
+  indexCaseRenames(c, olds.map((oldPath) => [oldPath, oldPath.toUpperCase()]));
+
+  const result = await caseRenameRefusal(c, ['--split']);
+
+  // The message gets 900 bytes, shared equally by the ten named paths; each keeps its tail
+  // behind `…` (3 bytes).
+  const shown = olds.slice(0, 5);
+  const fixed = Buffer.byteLength(caseRenameText(`${shown.map(() => ' → ').join(', ')} and 1 more`));
+  const share = Math.floor((900 - fixed) / 10);
+  const cut = (p) => `…${p.slice(-(share - 3))}`;
+  assert.equal(result.json.error.message,
+    caseRenameText(`${shown.map((p) => `${cut(p)} → ${cut(p.toUpperCase())}`).join(', ')} and 1 more`));
+  assert.ok(Buffer.byteLength(result.stdout.trim()) <= 1024, result.stdout);
 });
 
 test('sparse-checkout and skip-worktree paths are never units', async (t) => {

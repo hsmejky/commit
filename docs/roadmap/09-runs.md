@@ -380,6 +380,10 @@ is built by INT-13.
 into their own later step (`collapseCandidates`), so `ctx.inventory.candidates`/`stagedNew`
 are pre-cap for `resolveMode` to count here; do not move the caps call earlier than this step.
 
+**Note (review-CHG-07 finding 1):** the `case-rename` check (`refuseCaseRenames`) runs
+after the mode decision and only when it resolves to `split` (C:plan step 4); keep
+`resolveMode` before it, so `plan --staged` and a mixed index are never refused for it.
+
 **Status:** ready-for-agent
 
 **Sources:** Q9, Q16, C:plan (mode), M15 `resolveMode`, stories 81, 225.
@@ -392,6 +396,9 @@ are pre-cap for `resolveMode` to count here; do not move the caps call earlier t
 - [ ] Seam 1: `plan --staged` with an empty index → exit 1 `usage` (`staged-empty`).
 - [ ] Seam 1: `--split` or `--staged` on a mixed index skips `modeChoice` (the flag wins,
       as stated above) and plans directly in that mode.
+- [ ] Seam 1: with `core.ignorecase=true`, a staged case-only `git mv` beside an unstaged
+      edit → `modeChoice`, not `case-rename`; `plan --split` on it → `case-rename`
+      (the `--staged` half is CHG-14's).
 
 
 ## RUN-14: pre-folder refusals come in order

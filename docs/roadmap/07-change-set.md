@@ -237,6 +237,7 @@ one whole-file unit (main and `--text` pass), and `dirtySubmodules` from
 - [ ] Seam 1: a new symlink and a changed target → `symlink` units.
 - [ ] Seam 1: a file→symlink and a file→submodule change → one `T` unit each, no `internal`.
 - [ ] Seam 1: a pointer change in a submodule with untracked files inside → one `submodule` unit.
+- [ ] Seam 1: the same pointer change with `diff.submodule=log` set → the same unit and hash (the `diff.submodule=log` half of CHG-07's first criterion, which had no submodule to act on before this slice; review-CHG-07 finding 7).
 - [ ] Seam 1: dirt without a pointer change → `dirtySubmodules: ["libs/x"]`, no unit, tree clean (`nothing` once RUN's clean-tree rule is wired).
 - [ ] Seam 1: a submodule with only inner dirt (status ` M`, no pointer change) → `inventory` lists it but the pinned diff finds no unit for it; the non-clean, zero-unit case throws "not built yet (CHG-09)" explicitly rather than a bare count-mismatch `internal`.
 
@@ -337,6 +338,7 @@ misses, [known deficiencies](../spec/known-deficiencies.md)).
 - [ ] Seam 1: `plan --staged` with a partial `git add -p` → units from the index only, `unstagedLeft` = count of unstaged changes, the file in both `preStaged` and `tracked`.
 - [ ] Seam 1: `git add x && rm x`, a staged edit reverted in the worktree, and `git add -p` plus more edits under `--split` → `indexOnly` stored with the blob ID, no unit, no `diff-changed`.
 - [ ] Seam 1: a force-added hidden file under `--staged` → `staged-hit` (exit 6); a staged 60-file new directory under `--staged` → scanned units, no collapse.
+- [ ] Seam 1: with `core.ignorecase=true`, `plan --staged` on a staged case-only `git mv` → not refused (`case-rename` is `split`-only, C:plan step 4; review-CHG-07 finding 1).
 
 
 ## CHG-15: `reword` snapshot

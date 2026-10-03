@@ -183,7 +183,8 @@ export async function trackedDirectories({ toplevel, env, now, unborn = false })
  * `R` unit and this returns nothing. Read-only; `git config` runs only when a pair exists.
  *
  * @param {{ stagedNew: string[], tracked: string[], toplevel: string, env: object,
- *   now?: () => number }} options `stagedNew`, `tracked`: the inventory's pre-cap paths.
+ *   now?: () => number }} options `stagedNew`, `tracked`: the inventory's pre-cap paths,
+ *   `stagedNew` with the staged-new paths the hidden rule excluded (`stagedExcluded`).
  * @returns {Promise<Array<{ oldPath: string, path: string }>>} sorted by `path` in UTF-8
  *   byte order.
  * @throws {Error} when `git config` fails other than with an unset key, or on a filesystem

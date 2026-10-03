@@ -7,11 +7,11 @@ and of the real index.
   which M9 `applyCaps` and M13 read; in `staged` mode it also counts `unstagedLeft`, `null`
   in `split` and `reword`, C:plan).
 - `unplannableCaseRenames({ stagedNew, tracked })` → `[{ oldPath, path }]`: the staged
-  case-only renames (a staged-new path and a tracked path equal under `toLowerCase`) the
-  temporary index cannot plan, because `core.ignorecase` is true or `lstat` of the old path
-  finds the new path's file (same device and inode); empty on a case-sensitive filesystem
-  with `core.ignorecase=false`. Read-only; one `git config` call, only when a pair exists
-  (Q11, CHG-07 decision).
+  case-only renames (a staged-new path, hidden ones included, and a tracked path equal under
+  `toLowerCase`) the temporary index cannot plan, because `core.ignorecase` is true or
+  `lstat` of the old path finds the new path's file (same device and inode); empty on a
+  case-sensitive filesystem with `core.ignorecase=false`. Read-only; one `git config` call,
+  only when a pair exists (Q11, CHG-07 decision).
 - `snapshot({ mode, storedLists, indexPath })` → units. Builds the temporary index by
   copying the real index and running `git reset -q -- .` on the copy (no ref written;
   empty when unborn), then
