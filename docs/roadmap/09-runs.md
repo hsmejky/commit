@@ -253,18 +253,21 @@ hard-link probe decides: `busy` when the probe succeeds, `run-folder` when it fa
 
 **Blocked by:** RUN-04, RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:run-folder (`lock` row, versioned state), M12, stories 193, 220.
 
-- [ ] Seam 1 (windows runner): a PowerShell/.NET helper opens the lock file with
+- [x] Seam 1 (windows runner): a PowerShell/.NET helper opens the lock file with
       `FileShare.None` and holds it until an observable event (a marker file the test
       writes) tells it to close → `commit --plan <id> --all` meets `EPERM`/`EBUSY` while
       held, exits 6 `lock` (`busy`), never `internal`.
-- [ ] Seam 1 (windows runner): the same helper holds `state.json` with `FileShare.None`
-      and releases it on its own observable event before the retry window elapses → the
-      call succeeds.
-- [ ] Seam 1 (fault preload, every runner): the lock link fails `EPERM` (and, separately,
+- [ ] Accepted gap (KD-R23): the same helper holding `state.json` with `FileShare.None`,
+      released on its own observable event before the retry window elapses → the call
+      succeeds. No deterministic Seam 1 case can hold `state.json`'s rename this way
+      (`commit` is still a stub, and `plan` writes it once into a folder minted during the
+      call). Covered instead by M12's in-process clears-partway case (`tests/run.test.js`)
+      and a Seam 1 persisting-`EPERM` case (six attempts, then `internal`).
+- [x] Seam 1 (fault preload, every runner): the lock link fails `EPERM` (and, separately,
       `EBUSY`) on every try → six `lock` link attempts over about a second, then the
       hard-link probe (`<planId>/hardlink-probe.link`) decides: the probe succeeds → exit 6
       `lock` (`busy`); the probe link also fails (`hardlink-probe.link=ENOTSUP`) → exit 6
@@ -272,7 +275,7 @@ hard-link probe decides: `busy` when the probe succeeds, `run-folder` when it fa
       this path: while `lock` exists, held or not, the link fails `EEXIST` (`held`); a
       persisting `EPERM`/`EBUSY` comes from a delete-pending `lock` or a held link source,
       which no fixture can create on demand (review-RUN-09 finding 4).
-- [ ] Seam 1 (windows runner): a stubbed `ENOTSUP`/`ENOSYS` on the lock link → `run-folder`
+- [x] Seam 1 (windows runner): a stubbed `ENOTSUP`/`ENOSYS` on the lock link → `run-folder`
       at once, without a probe (to RUN-10's manual check, or an accepted gap where it
       cannot be forced).
 
