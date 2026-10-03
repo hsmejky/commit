@@ -413,7 +413,7 @@ test('snapshot: a binary edit is one binary unit hashed over its path and full b
     { status: unit.status, kind: unit.kind, range: unit.range, added: unit.added, deleted: unit.deleted, body: unit.body.length },
     { status: 'M', kind: 'binary', range: '-0,0 +0,0', added: 0, deleted: 0, body: 0 },
   );
-  const expected = crypto.createHash('sha256').update(`bin.dat\0blob ${oldId} ${newId}\0`).digest('hex');
+  const expected = crypto.createHash('sha256').update(`M\0bin.dat\0blob ${oldId} ${newId}\0`).digest('hex');
   assert.equal(unit.hash, expected);
   assert.equal(unit.identityKey, expected);
 });
@@ -431,8 +431,8 @@ test('snapshot: a new and a deleted binary file use the zero ID on the missing s
 
   assert.deepEqual(units.map((u) => [u.path, u.status, u.kind]), [['new.dat', 'A', 'binary'], ['old.dat', 'D', 'binary']]);
   const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
-  assert.equal(units[0].hash, sha(`new.dat\0blob ${zero} ${newId}\0`));
-  assert.equal(units[1].hash, sha(`old.dat\0blob ${oldId} ${zero}\0`));
+  assert.equal(units[0].hash, sha(`A\0new.dat\0blob ${zero} ${newId}\0`));
+  assert.equal(units[1].hash, sha(`D\0old.dat\0blob ${oldId} ${zero}\0`));
 });
 
 test('snapshot: a deleted text file is one D unit of - lines', async (t) => {
@@ -448,7 +448,7 @@ test('snapshot: a deleted text file is one D unit of - lines', async (t) => {
     { path: 'b.txt', status: 'D', kind: 'text', range: '-1,2 +0,0', added: 0, deleted: 2 },
   );
   assert.equal(unit.body.toString('utf8'), '@@ -1,2 +0,0 @@\n-one\n-two\n');
-  assert.equal(unit.hash, crypto.createHash('sha256').update('b.txt\0-one\n-two\n').digest('hex'));
+  assert.equal(unit.hash, crypto.createHash('sha256').update('D\0b.txt\0-one\n-two\n').digest('hex'));
 });
 
 // A committed 100755 file whose worktree copy reads as 100644 under `core.fileMode=true`
@@ -469,9 +469,82 @@ test('snapshot: a mode change, alone or with an edit, is one mode unit hashed ov
     ['run.sh', 'M', 'mode', '-0,0 +0,0'],
   ]);
   const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
-  assert.equal(units[0].hash, sha('ed.sh\0mode 100755 100644\0-2\n+two\n'));
-  assert.equal(units[1].hash, sha('run.sh\0mode 100755 100644\0'));
+  assert.equal(units[0].hash, sha('M\0ed.sh\0mode 100755 100644\0-2\n+two\n'));
+  assert.equal(units[1].hash, sha('M\0run.sh\0mode 100755 100644\0'));
   assert.equal(units[1].body.length, 0);
+});
+
+// CHG-08 decision: the status tag rules out the rename-vs-mode collision the review found
+// (a pure rename to a path spelled like a mode marker used to hash the same as a chmod of
+// the same path: both unions were `a.txt\0mode 100755 100644\0` without the tag).
+test('snapshot: a rename to a path spelled like a mode marker does not collide with a chmod', async (t) => {
+  const c1 = createCase(t);
+  seed(c1, { 'a.txt': 'x\n' });
+  fs.renameSync(path.join(c1.repoDir, 'a.txt'), path.join(c1.repoDir, 'mode 100755 100644'));
+  const inv1 = await inventory(c1);
+  const [renameUnit] = await snapshot(c1, { candidates: inv1.candidates.map((x) => x.path), stagedNew: inv1.stagedNew });
+
+  const c2 = createCase(t);
+  c2.git(['config', 'core.fileMode', 'true']);
+  seed(c2, { 'a.txt': 'x\n' });
+  c2.git(['update-index', '--chmod=+x', '--', 'a.txt']);
+  c2.git(['commit', '-q', '-m', 'exec']);
+  fs.chmodSync(path.join(c2.repoDir, 'a.txt'), 0o644);
+  const [chmodUnit] = await snapshot(c2);
+
+  assert.deepEqual([renameUnit.status, renameUnit.oldPath, renameUnit.path], ['R', 'a.txt', 'mode 100755 100644']);
+  assert.deepEqual([chmodUnit.status, chmodUnit.path, chmodUnit.kind], ['M', 'a.txt', 'mode']);
+  assert.notEqual(renameUnit.hash, chmodUnit.hash);
+  const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+  assert.equal(renameUnit.hash, sha('R\0a.txt\0mode 100755 100644\0'));
+  assert.equal(chmodUnit.hash, sha('M\0a.txt\0mode 100755 100644\0'));
+});
+
+test('snapshot: a binary file with a mode change is one binary unit hashing both mode and blob IDs', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.fileMode', 'true']);
+  seed(c, { 'bin.dat': Buffer.from([0, 1, 2, 10]) });
+  c.git(['update-index', '--chmod=+x', '--', 'bin.dat']);
+  c.git(['commit', '-q', '-m', 'exec']);
+  fs.chmodSync(path.join(c.repoDir, 'bin.dat'), 0o644);
+  const oldId = blobId(c, 'HEAD:bin.dat');
+  c.writeFile('bin.dat', Buffer.from([0, 1, 3, 10]));
+  const newId = c.git(['hash-object', 'bin.dat']).trim();
+
+  const [unit, ...rest] = await snapshot(c);
+
+  assert.equal(rest.length, 0);
+  assert.deepEqual(
+    { status: unit.status, kind: unit.kind, range: unit.range, body: unit.body.length },
+    { status: 'M', kind: 'binary', range: '-0,0 +0,0', body: 0 },
+  );
+  const expected = crypto.createHash('sha256')
+    .update(`M\0bin.dat\0mode 100755 100644\0blob ${oldId} ${newId}\0`).digest('hex');
+  assert.equal(unit.hash, expected);
+});
+
+test('snapshot: a rename with a mode change hashes old and new path and both modes', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.fileMode', 'true']);
+  seed(c, { 'old.sh': 'echo\n' });
+  c.git(['update-index', '--chmod=+x', '--', 'old.sh']);
+  c.git(['commit', '-q', '-m', 'exec']);
+  fs.renameSync(path.join(c.repoDir, 'old.sh'), path.join(c.repoDir, 'moved.sh'));
+  fs.chmodSync(path.join(c.repoDir, 'moved.sh'), 0o644);
+  const inv = await inventory(c);
+
+  const units = await snapshot(c, { candidates: inv.candidates.map((x) => x.path), stagedNew: inv.stagedNew });
+
+  assert.equal(units.length, 1);
+  const [unit] = units;
+  assert.deepEqual(
+    { status: unit.status, oldPath: unit.oldPath, path: unit.path, kind: unit.kind, range: unit.range },
+    { status: 'R', oldPath: 'old.sh', path: 'moved.sh', kind: 'mode', range: '-0,0 +0,0' },
+  );
+  assert.equal(
+    unit.hash,
+    crypto.createHash('sha256').update('R\0old.sh\0moved.sh\0mode 100755 100644\0').digest('hex'),
+  );
 });
 
 test('snapshot: a type change is not built yet (CHG-09)', { skip: process.platform === 'win32' && 'no symlinks without privileges' }, async (t) => {
@@ -499,7 +572,7 @@ test('snapshot: a stored untracked candidate is an A unit of + lines', async (t)
   );
   assert.deepEqual({ added: unit.added, deleted: unit.deleted, range: unit.range }, { added: 2, deleted: 0, range: '-0,0 +1,2' });
   assert.equal(unit.body.toString('utf8'), '@@ -0,0 +1,2 @@\n+one\n+two\n');
-  const expected = crypto.createHash('sha256').update('new.txt\0+one\n+two\n').digest('hex');
+  const expected = crypto.createHash('sha256').update('A\0new.txt\0+one\n+two\n').digest('hex');
   assert.equal(unit.hash, expected);
 });
 
@@ -525,7 +598,7 @@ test('snapshot: a plain mv and a git mv each give one R unit with oldPath', asyn
       { added: unit.added, deleted: unit.deleted, range: unit.range, body: unit.body.length },
       { added: 0, deleted: 0, range: '-0,0 +0,0', body: 0 },
     );
-    assert.equal(unit.hash, crypto.createHash('sha256').update('old.txt\0moved.txt\0').digest('hex'));
+    assert.equal(unit.hash, crypto.createHash('sha256').update('R\0old.txt\0moved.txt\0').digest('hex'));
   }
 });
 
@@ -538,7 +611,7 @@ test('snapshot: a renamed and edited file hashes both paths and its -/+ lines', 
   const [unit] = await snapshot(c, { candidates: ['moved.txt'], stagedNew: [] });
 
   assert.deepEqual([unit.status, unit.oldPath, unit.path, unit.added, unit.deleted], ['R', 'old.txt', 'moved.txt', 1, 1]);
-  assert.equal(unit.hash, crypto.createHash('sha256').update('old.txt\0moved.txt\0-c\n+C\n').digest('hex'));
+  assert.equal(unit.hash, crypto.createHash('sha256').update('R\0old.txt\0moved.txt\0-c\n+C\n').digest('hex'));
 });
 
 test('snapshot: staged-new paths, also ignored ones and on an unborn HEAD, are A units', async (t) => {

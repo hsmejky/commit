@@ -53,7 +53,8 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   `Read` one hunk with `offset` / `limit`, or the whole file in pages. Both are `null` for
   a unit without a block (below). A whole-file unit whose body holds several hunks has one
   `range` enclosing them all: per side, the span from the first hunk's first line to the
-  last hunk's last line.
+  last hunk's last line. A unit without a hunk at all — mode-only, binary, an empty new or
+  deleted file, or a pure rename — has range `-0,0 +0,0`.
 - `body`: `file` (block in `hunks.txt`), `cap` (past the [cap](summary-only-files.md): no
   block, but its own ID, range and `added` / `deleted` counts, so the worker can still
   split the file by ranges or `Read` the working-tree file at a range), `none` (binary,
@@ -101,7 +102,9 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   hunk covering the whole file.
 - `kind`: `text`, `binary`, `mode` (mode change, with or without content), `symlink`,
   `submodule` (a pointer change only; dirt inside the submodule is ignored by the pinned
-  `--ignore-submodules=dirty` and reported in `plan.dirtySubmodules`), `filtered` (a
+  `--ignore-submodules=dirty` and reported in `plan.dirtySubmodules`). A binary file with a
+  mode change is still `kind: "binary"`: the mode is hashed too, but the body stays `none`
+  like any binary unit. `filtered` (a
   `filter` attribute: whole file, body = the cleaned diff, `body: "none"` when that is
   binary; staged with `git add`). An attribute-binary text file (git reports it as binary
   through a `-diff` or `binary` attribute or a custom `diff` driver, but its new content has no NUL byte in the first

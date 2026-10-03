@@ -272,6 +272,10 @@ attribute stays binary.
 
 **Blocked by:** CHG-10.
 
+**Note (review-CHG-08 finding 2):** until this slice lands, such a file is reported
+`kind: "binary"` (git's own classification wins), `body: "none"`, hashed over blob IDs,
+instead of `kind: "text"` with its added lines scanned (KD-R70, interim only).
+
 **Status:** ready-for-agent
 
 **Sources:** Q10 (as amended), Q11 (pass 5), C:plan (binary rule), story 212, M10.

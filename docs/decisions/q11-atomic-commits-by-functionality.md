@@ -208,12 +208,9 @@
     range, never a file with a hit.
   - The per-group temporary index stays deferred past 0.1.0 (see [Non-goals](non-goals.md)).
 - **Amended.** By spec pass 4 (2026-09-27):
-  - The pinned list above is complete (text hunks go through `git apply --cached`, which
-    needs no full blob IDs) and has no pinned rename limit. `--full-index` was added by the
-    CHG-08 decision (2026-10-03): a binary unit hashes its path and blob IDs, which come from
-    the patch's `index` line (the raw record shows zeros for a worktree side), and only
-    full IDs keep that hash stable, since an abbreviation lengthens as the object count
-    grows (`gc --auto` after a group's commit) and depends on `core.abbrev`. `diff.renameLimit` is left to the user's config like
+  - The pinned list above is complete: no `--full-index` (text hunks go through
+    `git apply --cached`, which needs no full blob IDs; binary files are whole-file adds)
+    and no pinned rename limit. `diff.renameLimit` is left to the user's config like
     `diff.orderFile`: `plan` and `commit` read the same limit, so a skipped rename detection
     yields the same delete-plus-add units on both sides.
   - Content keeps its raw bytes: diff output stays a `Buffer`, and hunk bodies, unit hashes
@@ -291,6 +288,23 @@
   `staged` mode commits the index as-is and `reword` takes no snapshot, so neither needs
   the check. Full support (planning the rename through the temporary index) may come
   later ([out of scope](../spec/out-of-scope.md)).
+- **Amended.** By the CHG-08 decision (2026-10-03):
+  - `--full-index` joins the pinned list above: a binary unit hashes its path and blob IDs,
+    which come from the patch's `index` line (the raw record shows zeros for a worktree
+    side), and only full IDs keep that hash stable, since an abbreviation lengthens as the
+    object count grows (`gc --auto` after a group's commit) and depends on `core.abbrev`.
+  - The whole-file hash (the table above) opens with the unit's one-letter status (`A`, `D`,
+    `M` or `R`) and a NUL, before any path, mode or blob bytes. Without it, a pure rename
+    hashes `old path, NUL, new path, NUL`, which can read byte for byte the same as another
+    status's own framing when a path happens to be spelled like that framing's marker — for
+    example a rename to a path literally named `mode 100644 100755` hashes the same as a
+    `chmod` of the unchanged path, and a rename to `blob <id> <id>` the same as a binary
+    edit. The status tag, fixed and never containing NUL, rules this out for every pair of
+    statuses, not only the one found.
+  - A git-reported-binary file with a mode change is still `kind: "binary"`, hashing its
+    mode and its blob IDs; its body is `none` either way, like any binary unit with no
+    hunks. A unit with no hunk at all (mode-only, binary, empty new/deleted, pure rename)
+    has range `-0,0 +0,0`.
 - **Rejected.**
   - A top-level-directory split rule; dropping split detection.
   - Hunk IDs of the form `file#n`: they collide with paths containing `#`, spaces or commas.

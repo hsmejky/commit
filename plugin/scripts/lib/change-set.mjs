@@ -779,10 +779,14 @@ function sectionLine(section, line) {
 // its hash (a path has one whole-file unit): an `A`, `D` or `R` (`kind: "text"`), a mode
 // change with or without content edits (`kind: "mode"`), and a file git reports as binary
 // (`kind: "binary"`, also with a mode change: its body is none either way, C:plan-hunks).
-// The whole-file hash frames its parts so none can pass for another: `[old path, NUL,] path,
-// NUL`, then `mode <old> <new>` and a NUL for a mode change, then `blob <old> <new>` and a NUL
-// (the `index` line's full blob IDs, all zeros on the missing side) for a binary, else the
-// `-`/`+` lines (which start with `-`, `+` or `\`, never `m` or `b`).
+// The whole-file hash opens with the section's one-letter status (`A`, `D`, `M` or `R`) and
+// a NUL, so none of what follows can pass for another status's framing (CHG-08 decision:
+// without the tag, a pure rename to a path spelled like a mode or blob marker — for example
+// `mode 100644 100755` — hashes byte for byte the same as that marker's own unit, since both
+// are just path bytes followed by NUL). After the tag: `[old path, NUL,] path, NUL`, then
+// `mode <old> <new>` and a NUL for a mode change, then `blob <old> <new>` and a NUL (the
+// `index` line's full blob IDs, all zeros on the missing side) for a binary, else the `-`/`+`
+// lines (which start with `-`, `+` or `\`, never `m` or `b`).
 function unitsOf(section) {
   const { path, pathBytes, oldPath, oldPathBytes, status, modes, blobs, binary, hunks } = section;
   if (binary && blobs === null) throw new Error(`a binary section without an index line (${path})`);
@@ -805,7 +809,7 @@ function unitsOf(section) {
       };
     });
   }
-  const whole = createHash('sha256');
+  const whole = createHash('sha256').update(Buffer.from(`${status}\0`));
   if (status === 'R') whole.update(oldPathBytes).update(Buffer.from([NUL]));
   whole.update(pathBytes).update(Buffer.from([NUL]));
   if (modes !== null) whole.update(Buffer.from(`mode ${modes}\0`));

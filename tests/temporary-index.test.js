@@ -36,7 +36,8 @@ const FIXED_IDENTITY = {
 const PINNED_DIFF_ARGS = [
   '--no-ext-diff', '--no-color', '--no-textconv', '--no-relative', '-U3',
   '--inter-hunk-context=0', '--indent-heuristic', '-M', '--diff-algorithm=myers',
-  '--ignore-submodules=dirty', '--src-prefix=a/', '--dst-prefix=b/',
+  '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
+  '--full-index',
 ];
 const PINNED_CONFIG_ARGS = ['-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false'];
 

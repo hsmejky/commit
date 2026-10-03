@@ -152,6 +152,14 @@ Plan text that depends on a design fix; fix the design and the slice together.
   i-t-a paths still uncommitted when building `unstaged`, or accept and document the loss.
   Slices: EXE-11, CHG-20, RUN-23.
 
+- **KD-R70.** CHG-08 leaves CHG-11's gap interim: a NUL-free text file hidden by `-diff`,
+  `binary` or a `diff` driver is reported by git as binary and gets `kind: "binary"`,
+  `body: "none"`, hashed over blob IDs, instead of Q11/C:plan-hunks's `kind: "text"` with its
+  added lines scanned. The scanner is not wired yet (CHG-16) and CHG-11 fixes the
+  classification, so the impact is interim only (review-CHG-08 finding 2). Where:
+  `plugin/scripts/lib/change-set.mjs` (binary classification). Fix: none needed beyond
+  CHG-11 landing as scheduled; this row documents the gap until then. Slice: CHG-11.
+
 ## Bookkeeping
 
 - **KD-R53.** CFG-03 lacks a wrong-JSON-type case such as `body: 1` → `config` (not
