@@ -59,9 +59,10 @@ group or all in `notIncluded`; `files[].hunks` counts the path's hunks in the gr
 **Sources:** Q11, C:check, C:worker-plan (hunk-level slice), stories 64, 67, M14.
 
 - [ ] Seam 1: an unknown ID and an ID used twice → one error each with the group number.
-- [ ] Seam 1: `files` and `hunks` mixed → error.
+- [ ] Seam 1: `files` and `hunks` mixed → error; a `notIncluded[].hunks` entry counts as `hunks`, so a plan with `files` in a group and IDs in `notIncluded[].hunks` is also mixed.
 - [ ] Seam 1: identical hunks h3 and h5 split across groups, or one in `notIncluded` → "h3 and h5 are identical; place them together"; both in one group → valid.
 - [ ] Seam 1: a group holding two of a file's three hunks → `files[].hunks: 2`.
+- [ ] Seam 1: a `notIncluded` entry whose `hunks` ID resolves to a unit with a different `path` than the entry's `path` → error (PLN-02 left this unchecked).
 
 
 ## PLN-04: Placement bans, `notIncluded` extras and notices

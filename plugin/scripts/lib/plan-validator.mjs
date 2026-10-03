@@ -10,8 +10,8 @@
 // completeness in `split` (every unit placed exactly once, in a group or in `notIncluded`, by
 // ID or by a `hunks: null` path entry), real-change paths in `files` and `notIncluded`, a
 // rename named by its new path only, and zero groups. A shape failure is always the only
-// error of its result: the plan rules run on a parsed plan only, so a shape error never
-// shares an `errors` array with them (RUN-16's shape-only rule). Later slices widen it:
+// error of its result: the plan rules run on a parsed plan only, so a shape error is never
+// mixed with plan-rule errors; RUN-16 still adds the shape marker. Later slices widen it:
 // hunk IDs and identical hunks (PLN-03),
 // placement bans and `notIncluded` extras (PLN-04), `staged`/`reword` (PLN-05), message lint
 // and scan (PLN-06, M6 and M8), the attribution flag and the normalised message (PLN-07).

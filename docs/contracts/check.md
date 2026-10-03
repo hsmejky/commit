@@ -77,9 +77,11 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   - completeness (`split` only): every unit in the state file is placed exactly once, in a
     group or in `notIncluded` (by ID, or by a `hunks: null` path entry): a unit placed nowhere
     is one error per unit ("h7 (src/c.js) not placed; put it in a group or in notIncluded",
-    `group: null`), one placed twice one error per naming ("src/a.js is in group 1 and
-    group 2; place it once", the group number of the second naming, `null` for
-    `notIncluded`). In `staged` and `reword` the single group holds every unit implicitly;
+    `group: null`), one placed twice one error per naming, naming both places (`group N` or
+    `notIncluded`): "src/a.js is in group 1 and group 2; place it once", "src/a.js is in
+    group 1 and notIncluded; place it once", "src/a.js is in notIncluded twice; place it
+    once" (the group number of the second naming, `null` for `notIncluded`). In `staged` and
+    `reword` the single group holds every unit implicitly;
   - identical hunks (same path, same `-` / `+` lines) have the same placement: all in one
     group, or all in `notIncluded` ("h3 and h5 are identical; place them together");
   - `files` and `hunks` are not mixed; every path in `files` and `notIncluded` is a real
