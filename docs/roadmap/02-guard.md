@@ -185,17 +185,17 @@ behavior.
 
 **Blocked by:** GRD-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q3 (pass 5, pass 8, PRE-03 amendment), C:guard (Parsing step 2, blanket rule, heredoc row, typographic quotes row), stories 13, 15, 22.
 
-- [ ] `git commit -m x 2>&1` and `git commit -m x > log.txt` → denied, one segment, the target not read as an argument; the `&` in `2>&1` does not split.
-- [ ] `(git commit -m x)` in both shells → denied; `(git commit --no-edit)` → no output; PowerShell `git status (git commit -m x)` → denied (the inner `git` token is classified too).
-- [ ] Bash `diff <(git commit -m x) f` → denied; PowerShell `&{git commit -m x}`, `. {git commit -m x}` and `if ($true) {git commit -m x}` → denied; `&{git commit --no-edit}` → no output.
-- [ ] `cat <<'EOF' > f`, body line `git commit -m x`, `EOF` → denied by the blanket rule (documented false positive); `<<<` treated as a plain redirection.
-- [ ] `git “commit” -m x` (Bash) and PowerShell `git co‘’mmit -m x` → denied.
-- [ ] Bash typographic-quote fixtures are blanket cases (oracle `blanket`); PowerShell ones are cross-checked.
-- [ ] Bash extglob: `!(git commit -m x)` → denied (command position); `!(git commit --no-edit)` → no output. `git @(commit) -m x` tokenizes as `git`, `@(commit)`, `-m`, `x` (argument position, one word, no `(` token), its body read as a segment `commit` of its own (review round 8), and is denied once GRD-12's literal-subcommand rule lands.
+- [x] `git commit -m x 2>&1` and `git commit -m x > log.txt` → denied, one segment, the target not read as an argument; the `&` in `2>&1` does not split.
+- [x] `(git commit -m x)` in both shells → denied; `(git commit --no-edit)` → no output; PowerShell `git status (git commit -m x)` → denied (the inner `git` token is classified too).
+- [x] Bash `diff <(git commit -m x) f` → denied; PowerShell `&{git commit -m x}`, `. {git commit -m x}` and `if ($true) {git commit -m x}` → denied; `&{git commit --no-edit}` → no output.
+- [x] `cat <<’EOF’ > f`, body line `git commit -m x`, `EOF` → denied by the blanket rule (documented false positive); `<<<` treated as a plain redirection.
+- [x] `git “commit” -m x` (Bash) and PowerShell `git co’’mmit -m x` → denied.
+- [x] Bash typographic-quote fixtures are blanket cases (oracle `blanket`); PowerShell ones are cross-checked.
+- [x] Bash extglob: `!(git commit -m x)` → denied (command position); `!(git commit --no-edit)` → no output. Moved to GRD-12: `git @(commit) -m x` deny (needs the literal-subcommand rule).
 
 
 ## GRD-10: Detecting `git` in every spelling
@@ -256,6 +256,7 @@ options (with GRD-11), and the PowerShell forms (with GRD-06).
 - [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
 - [ ] Denied (review GRD-06 round 2; each runs `git commit --no-verify -m x` under PowerShell 5.1 and 7): PowerShell `git $null commit --no-verify -m x` (PowerShell drops `$null`), `git --% commit --no-verify -m x` and `git '--%' commit --no-verify -m x`.
 - [ ] PowerShell `git co$'m'mit -m x` → denied: PowerShell reads `co$mmit` (a token holding `$`) and may run `commit` at runtime; currently allowed, GRD-12's literal-subcommand rule must deny it.
+- [ ] PowerShell `git @(commit) -m x` → denied: the `@(…)` array form reads its body as the subcommand (moved from GRD-08; seed entry already expects deny).
 - [ ] `git COMMIT -m x` → denied as a commit.
 - [ ] The documented gap: `git $(echo com)mit` → no output.
 - [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
