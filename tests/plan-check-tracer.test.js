@@ -156,9 +156,15 @@ test('check on a run that has ended is refused with lock', async (t) => {
   assert.equal(checked.json.error.kind, 'lock');
 });
 
-// M14 is pure (docs/spec/modules.md).
+// M14 is pure (docs/spec/modules.md), importing only M6 and M8 (PLN-06).
 test('plan-validator.mjs is pure', () => {
-  assertPureSource('plan-validator');
+  assertPureSource('plan-validator', { allowImports: ['./message-grammar.mjs', './scanner.mjs'] });
+});
+
+// PLN-06: M14 lints every message through M6's own `lint`, never a copy of its rules.
+test('plan-validator.mjs imports lint from message-grammar.mjs', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugin', 'scripts', 'lib', 'plan-validator.mjs'), 'utf8');
+  assert.match(source, /import\s*\{[^}]*\blint\b[^}]*\}\s*from\s*'\.\/message-grammar\.mjs'/);
 });
 
 const UNITS = Object.freeze([

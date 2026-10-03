@@ -15,8 +15,41 @@
 // hunk IDs and identical hunks (PLN-03),
 // placement bans and `notIncluded` extras (PLN-04), `staged`/`reword` (PLN-05), message lint
 // and scan (PLN-06, M6 and M8), the attribution flag and the normalised message (PLN-07).
+//
+// PLN-06 lints and scans each group's message. The lint `values` are `runState.config.values`
+// when present; CFG-05 (not built yet) is the slice that makes
+// `plan` actually store the layered, effective values there, so until it lands every run
+// falls back to `DEFAULT_MESSAGE_VALUES`, the exact Q6 defaults CFG-05 will also use as its
+// own default layer. A scan hit becomes one error naming the first hit's pattern ID
+// ("message contains `local-path`"); its `spans` (never the matched value) ride along on
+// the error for M17's future redaction, which needs every span to redact the message it
+// quotes, not just the one the reason text names.
+
+import { lint } from './message-grammar.mjs';
+import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
+
+// Q6's defaults (docs/decisions/q06-config-layers-and-keys.md): the commitlint
+// `config-conventional` types, no scope, no body, 72 code points, lowercase. Used only when
+// `runState.config.values` is absent (CFG-05 not wired yet); once it lands, its own default
+// layer should read these same values rather than duplicate them.
+const DEFAULT_MESSAGE_VALUES = Object.freeze({
+  types: Object.freeze([
+    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
+  ]),
+  scope: 'forbidden',
+  maxSubjectLength: 72,
+  subjectCase: 'lower',
+  body: 'forbidden',
+});
+
+// The group's message as lint and the scanner see it: the header, then (when there is a
+// body) a blank line and the body, its own trailing blank lines dropped so they cannot read
+// as an extra empty body paragraph.
+function messageOf(header, body) {
+  return body === null ? header : `${header}\n\n${body.replace(/\n+$/, '')}`;
+}
 
 /**
  * Validates the worker plan against the run state (C:check "Validates").
@@ -25,11 +58,13 @@ const WORKER_PLAN = 'plan.groups.json';
  *   run folder holds no such regular file.
  * @param {{ mode: string, units: Array<{ id: string, path: string, oldPath?: string | null,
  *   status: string }> }} runState the parsed `state.json`.
- * @param {{ osUser?: string }} [options] the entry point's injected OS user (unused until
- *   PLN-07's attribution flag).
+ * @param {{ osUser?: string | null }} [options] `osUser` is the entry point's injected OS
+ *   user name, passed straight through to M8 `scanText` for each message (never stored,
+ *   Q10 as amended by EXE-01).
  * @returns {{ ok: true, groups: object[], notIncluded: object[], notices: string[],
  *   stored: Array<{ n: number, units: string[], header: string, body: string | null }> }
- *   | { ok: false, code: 'lint', errors: Array<{ group: number | null, reason: string }> }}
+ *   | { ok: false, code: 'lint', errors: Array<{ group: number | null, reason: string,
+ *   spans?: Array<{ patternId: string, start: number, end: number }> }> }}
  *   `groups`/`notIncluded`/`notices` are `check`'s output fields (C:check); `stored` is what
  *   `check` writes into `state.json` per group (with `committed: false`).
  * @throws {Error} for a part of the worker plan no slice has built yet (hunk IDs, a mode
@@ -48,9 +83,19 @@ export function validatePlan(planBytes, runState, options = {}) {
   const errors = [];
   const groups = [];
   const stored = [];
+  const messageValues = runState.config?.values ?? DEFAULT_MESSAGE_VALUES;
+  const osUser = options.osUser ?? null;
   workerPlan.groups.forEach((group, index) => {
     const n = index + 1;
     if (group.hunks.length > 0) throw new Error('hunk-level worker plans are not built yet (PLN-03)');
+    const message = messageOf(group.header, group.body);
+    for (const reason of lint(message, messageValues)) {
+      errors.push({ group: n, reason });
+    }
+    const hits = scanText(message, { osUser });
+    if (hits.length > 0) {
+      errors.push({ group: n, reason: `message contains \`${hits[0].patternId}\``, spans: hits });
+    }
     const files = [];
     const units = [];
     for (const path of new Set(group.files)) {
