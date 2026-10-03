@@ -18,11 +18,12 @@ that does not depend on an item does not wait for it.
   need a Q1 amendment; reconsidered only if the spike shows the hand-written tokenizer is
   fragile. Run 2026-09-29; findings settled in Q3.
 - **Hook `if` on compound commands, the heartbeat under the sandbox, exec-form hooks** (Q3,
-  Q13, Q23): one spike settling whether an `if` condition matches when any subcommand of a
+  Q13, Q23): the spike settled whether an `if` condition matches when any subcommand of a
   compound command matches (with the script-call forms for the heartbeat), whether a
   sandboxed command reaches the heartbeat file on macOS and Linux, and the minimum Claude
-  Code version that supports exec-form hooks in a plugin. If a sandboxed command cannot reach
-  the heartbeat file, the spike picks another location. Before the guard slice.
+  Code version that supports exec-form hooks in a plugin. Findings are recorded in
+  [open-verification-items](../decisions/open-verification-items.md) and
+  [q23-guard-heartbeat](../decisions/q23-guard-heartbeat.md).
 - **Guard cold-start time** (Q13, story 22; introduced by this spec): measure the exec-form
   hook's cold start on all three OSes and set the target before the guard slice claims it.
 - **Git and tool checks**, each on git 2.34 and the current release where git is involved,

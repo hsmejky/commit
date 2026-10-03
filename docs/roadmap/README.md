@@ -57,7 +57,7 @@ slices widen it.
 ## Can start immediately
 
 Agent work: none (PRE-01, PRE-03, PRE-09, PRE-10 and FND-01 are done).
-Human work: PRE-02, PRE-05, PRE-11, PRE-13, PRE-16.
+Human work: PRE-02, PRE-13, PRE-16.
 
 After FND-01 → FND-03 → FND-04 → RPL-01, the walking skeleton INT-01 opens most groups.
 FND-09 (agent work, the roadmap graph check) also starts right after FND-01.
