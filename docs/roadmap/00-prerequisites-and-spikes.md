@@ -100,6 +100,11 @@ Gates: GRD-15 (heartbeat write) and GRD-17 (`env.guard` read side).
 - [ ] If the heartbeat moves, the relocation constraints (both sides can reach it, per-user,
       no repo path) are recorded in Q23
 
+**Linux result:** confirmed on WSL2 Ubuntu 24.04 (bubblewrap 0.9.0) — a sandboxed Bash
+command reads the heartbeat under the default Claude home and under `CLAUDE_CONFIG_DIR`,
+but the Claude home is mounted read-only inside the sandbox, so it can neither write nor
+forge the file; no relocation needed on Linux. macOS (Seatbelt) pending.
+
 
 ## PRE-06: Spike: exec-form hooks in a plugin
 

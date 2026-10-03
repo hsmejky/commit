@@ -18,7 +18,10 @@
     `plan` resolve the Claude home the same way, so a relocated Claude home moves both
     ends. Not
     `os.tmpdir()`: Claude Code's sandbox gives sandboxed Bash commands their own `TMPDIR`,
-    while `HOME` stays the same, and only the unsandboxed hook writes the file.
+    while `HOME` stays the same, and only the unsandboxed hook writes the file. The sandbox
+    mounts the Claude home read-only, so the sandboxed `plan` reads the heartbeat but can
+    neither write nor forge it (verified on Linux/bubblewrap, where the hook sees no
+    `TMPDIR` against the sandboxed side's `TMPDIR=/tmp/claude-<uid>`; macOS pending).
   - `plan` reads it: a `ts` under 15 minutes old and a `cwd` that matches →
     `env.guard: "active"`, otherwise `"not-seen"`. Matching: both paths are normalised
     (realpath, `\` → `/`, case-folded on Windows and macOS), and the hook's `cwd` must be

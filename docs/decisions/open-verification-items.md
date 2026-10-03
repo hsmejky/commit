@@ -14,6 +14,10 @@
   `commit-guard/heartbeat.json` under the Claude home (Q5) on macOS (Seatbelt) and Linux
   (bubblewrap). If not, the spike picks another location both sides reach. Spike together
   with the `if` condition one.
+  - Linux (bubblewrap) result: confirmed — a sandboxed Bash command reads the heartbeat
+    under the default Claude home and under `CLAUDE_CONFIG_DIR`, but the Claude home is
+    mounted read-only inside the sandbox, so it can neither write nor forge the file.
+    macOS pending.
 - The shell tokenizer (Q3): a spike runs the hand-written tokenizer design against
   heredocs, `$(...)`, backticks, `bash -c '…'`, reordered flags, PowerShell here-strings
   and unterminated quotes, plus escaped newlines (Bash `\` plus newline, PowerShell
