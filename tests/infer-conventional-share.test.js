@@ -130,14 +130,20 @@ test('M19 infer: a 20-commit history at 50% is a proposal, not too-few-commits',
 
 test('M19 history-inference imports parse from M6 (no duplicate header grammar)', () => {
   const source = fs.readFileSync(libPath('history-inference'), 'utf8');
+  const importMatch = source.match(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/message-grammar\.mjs['"];?\s*$/m);
+  assert.notEqual(
+    importMatch,
+    null,
+    'history-inference.mjs must import from ./message-grammar.mjs',
+  );
   assert.match(
-    source,
-    /^import\s*\{\s*parse\s*\}\s*from\s*['"]\.\/message-grammar\.mjs['"];?\s*$/m,
-    'history-inference.mjs must import parse from ./message-grammar.mjs, not redefine the header grammar',
+    importMatch[1],
+    /\bparse\b/,
+    'the message-grammar.mjs import must include parse, not redefine the header grammar',
   );
   // Not vacuous: a module that only mentions "parse" without importing it from M6 fails.
   assert.doesNotMatch(
     'function parse(message) { return /^[a-z]+: /.test(message); }',
-    /^import\s*\{\s*parse\s*\}\s*from\s*['"]\.\/message-grammar\.mjs['"];?\s*$/m,
+    /^import\s*\{([^}]*)\bparse\b([^}]*)\}\s*from\s*['"]\.\/message-grammar\.mjs['"];?\s*$/m,
   );
 });

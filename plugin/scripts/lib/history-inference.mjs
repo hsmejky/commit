@@ -7,8 +7,7 @@
 // The proposal carries `scope`, `body`, `subjectCase` and `maxSubjectLength` until INF-05
 // adds its remaining field (`types`); `wouldFail` stays `null` until INF-06 computes it.
 
-import { parse } from './message-grammar.mjs';
-import { passesLowerCase } from './message-grammar.mjs';
+import { headerLineOf, parse, passesLowerCase } from './message-grammar.mjs';
 
 /** Under this many non-merge commits read, `infer` proposes nothing (C:infer). */
 export const MIN_COMMITS = 20;
@@ -98,28 +97,29 @@ function proposeSubjectCase(conventional) {
 }
 
 /**
- * The header line's length in code points: everything up to (not including) the first
- * `\n`, or the whole message when it has none. Counted the same way M6 `lint` counts it
- * against `maxSubjectLength`, but computed locally since M6 does not export the split.
+ * The header line's length in code points: `headerLineOf` (M6), the same split `lint` uses
+ * to measure the header against `maxSubjectLength`, counted via `Array.from` so a surrogate
+ * pair (an astral character) counts as one code point, not two UTF-16 units.
  *
  * @param {string} message
  * @returns {number}
  */
 function headerCodePointLength(message) {
-  return Array.from(message.split('\n', 1)[0]).length;
+  return Array.from(headerLineOf(message)).length;
 }
 
 /**
  * The 95th percentile of `lengths` by the nearest-rank method: sorted ascending, the value
- * at index `ceil(0.95 * n) - 1`.
+ * at index `ceil(0.95 * n) - 1` (always an observed length, never interpolated). The index
+ * is always within `[0, n - 1]` for a non-empty `lengths` (the caller's contract), so no
+ * clamp is needed.
  *
  * @param {readonly number[]} lengths non-empty.
  * @returns {number}
  */
 function percentile95(lengths) {
   const sorted = [...lengths].sort((a, b) => a - b);
-  const index = Math.ceil(sorted.length * 0.95) - 1;
-  return sorted[Math.min(sorted.length - 1, Math.max(0, index))];
+  return sorted[Math.ceil(sorted.length * 0.95) - 1];
 }
 
 /**

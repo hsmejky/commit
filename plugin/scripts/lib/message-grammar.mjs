@@ -97,12 +97,14 @@ export function normalise(bytes) {
 
 /**
  * The message's header line: everything up to (not including) the first `\n`, or the whole
- * message when it has none. Shared by `parse` and `lint` so the header line is split once.
+ * message when it has none. Shared by `parse` and `lint` so the header line is split once,
+ * and exported for `infer` (M19), which measures the same header line's code-point length
+ * for `maxSubjectLength` and must split it the same way `lint` does.
  *
  * @param {string} message
  * @returns {string}
  */
-function headerLineOf(message) {
+export function headerLineOf(message) {
   return message.split('\n', 1)[0];
 }
 

@@ -42,6 +42,10 @@ git repository or in a bare repository, the same text family as `plan`
   lint under the proposed config (same lint functions), so it measures the threshold loss
   (Q7) only. `nonConventional`: the commits read that are not Conventional Commits (they
   would all fail). `wouldFail` is `null` when there is no proposal.
+- `maxSubjectLength.evidence.p95`: the 95th percentile of the Conventional Commits header
+  lengths (code points) read, by the nearest-rank method: sorted ascending, the element at
+  position `ceil(0.95n)` (1-indexed) — always one of the observed lengths, never
+  interpolated, so it stays an integer.
 - `maxSubjectLength.evidence.flagged`: `true` when p95 is over 100 and the value was rounded
   up to the next multiple of 10, or clamped to 200 (the key's maximum).
 - `droppedTypes`: non-standard types under 5%, with counts.
