@@ -20,7 +20,9 @@ import * as workflows from './workflows.mjs';
 
 // The M18 workflow each subcommand routes to, as far as built. `plan --hunks` is its own
 // synopsis form and not built yet, so `workflows.plan` refuses it.
-const WORKFLOWS = Object.freeze({ plan: workflows.plan, release: workflows.release, commit: workflows.commit });
+const WORKFLOWS = Object.freeze({
+  plan: workflows.plan, check: workflows.check, release: workflows.release, commit: workflows.commit,
+});
 
 /** The subcommands of the synopsis in C:cli-and-exit-codes. */
 const SUBCOMMANDS = Object.freeze(['plan', 'check', 'commit', 'release', 'infer']);
@@ -152,19 +154,20 @@ export const EXIT_CODES = Object.freeze({
  *
  * @param {string} kind a CLI error kind (C:cli-and-exit-codes).
  * @param {string} message
+ * @param {object[]} [errors] a lint failure's `errors` array (C:check), added to the shape.
  * @returns {{ stdoutJson: object, exitCode: number }}
  * @throws {Error} when `kind` has no entry in `EXIT_CODES`: an unmapped kind would otherwise
  *   silently exit 0 with `ok: false` (`EXIT_CODES[kind]` reading `undefined`), or, for a kind
  *   spelled like an inherited property (e.g. `toString`), resolve to that inherited value
  *   instead of being rejected (`Object.hasOwn` checks ownership, not just presence).
  */
-export function failure(kind, message) {
+export function failure(kind, message, errors) {
   if (!Object.hasOwn(EXIT_CODES, kind)) {
     throw new Error(`no exit code mapped for kind ${JSON.stringify(kind)}`);
   }
   const exitCode = EXIT_CODES[kind];
   return {
-    stdoutJson: { version: 1, ok: false, error: { kind, message } },
+    stdoutJson: { version: 1, ok: false, error: { kind, message }, ...(errors === undefined ? {} : { errors }) },
     exitCode,
   };
 }
@@ -237,6 +240,8 @@ export async function main(argv, env) {
     return failure('internal', `subcommand ${JSON.stringify(subcommand)} is not built yet`);
   }
   const result = await workflow(parsed.values, env, { cwd: env.cwd });
-  if (result.failure !== undefined) return failure(result.failure.kind, result.failure.message);
+  if (result.failure !== undefined) {
+    return failure(result.failure.kind, result.failure.message, result.failure.errors);
+  }
   return { stdoutJson: { version: 1, ok: true, ...result.output }, exitCode: 0 };
 }

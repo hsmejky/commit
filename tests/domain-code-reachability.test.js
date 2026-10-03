@@ -98,7 +98,22 @@ const ROWS = [
   { row: 'unmatched, mismatch', reachable: false },
   { row: 'index-changed', reachable: false },
   { row: 'head-moved', reachable: false },
-  { row: 'lint', reachable: false },
+  {
+    row: 'lint',
+    kind: 'lint',
+    exitCode: 2,
+    reachable: true,
+    // PLN-01: `check` on a run whose folder holds no `plan.groups.json`.
+    async seam1Case(t) {
+      const c = createCase(t);
+      c.writeFile('a.txt', 'one\n');
+      c.git(['add', '--', 'a.txt']);
+      c.git(['commit', '-q', '-m', 'seed']);
+      c.writeFile('a.txt', 'two\n');
+      const planned = await runCommit(c, ['plan']);
+      return runCommit(c, ['check', '--plan', planned.json.planId]);
+    },
+  },
   { row: 'backstop-hit', reachable: false },
   { row: 'git-failed', reachable: false },
   { row: 'stage-failed', reachable: false },
@@ -126,7 +141,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 5);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 6);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

@@ -930,3 +930,47 @@ export function open(planId, {
   if (call.path === null) return takenOver();
   return { ok: true, run: { toplevel, planId, callLockPath: call.path } };
 }
+
+/**
+ * M12 `run.state` (PLN-01): the parsed `<planId>/state.json` of a run `open` returned, read
+ * after `open` already checked its `version`. A read or parse error throws (`internal`).
+ *
+ * @param {{ toplevel: string, planId: string }} run
+ * @returns {object}
+ */
+export function readState({ toplevel, planId }) {
+  return JSON.parse(fs.readFileSync(insideRunDir(runDirOf(toplevel), `${planId}/state.json`), 'utf8'));
+}
+
+/**
+ * M12 `run.write('state.json', …)` (PLN-01): replaces `<planId>/state.json` atomically
+ * (temporary name, then rename, C:run-folder "Versioned"), one JSON object plus a newline.
+ *
+ * @param {{ toplevel: string, planId: string }} run
+ * @param {object} state
+ * @returns {void}
+ */
+export function writeState({ toplevel, planId }, state) {
+  writeAtomic(insideRunDir(runDirOf(toplevel), planId), 'state.json', `${JSON.stringify(state)}\n`);
+}
+
+/**
+ * M12 `run.readWorkerPlan()` (PLN-01): the bytes of `<planId>/plan.groups.json`
+ * (C:worker-plan), or `null` when there is no such regular file (missing, a link, a
+ * directory, a FIFO), which M14 reports as a lint error. Other errors throw (`internal`).
+ *
+ * @param {{ toplevel: string, planId: string }} run
+ * @returns {Buffer | null}
+ */
+export function readWorkerPlan({ toplevel, planId }) {
+  const file = insideRunDir(runDirOf(toplevel), `${planId}/plan.groups.json`);
+  let stats;
+  try {
+    stats = fs.lstatSync(file);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+    throw err;
+  }
+  if (!stats.isFile()) return null;
+  return fs.readFileSync(file);
+}

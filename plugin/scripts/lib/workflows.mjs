@@ -58,7 +58,11 @@ import {
   assignIds, indexFingerprint, inventory as takeInventory, snapshot, trackedDirectories, treeState,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
-import { releaseById, open, close, create, RUN_DIR_NAME, STATE_VERSION } from './run.mjs';
+import {
+  releaseById, open, close, create, readState, readWorkerPlan, writeState, RUN_DIR_NAME,
+  STATE_VERSION,
+} from './run.mjs';
+import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { reply } from './reply.mjs';
@@ -256,9 +260,10 @@ async function collapseCandidates(ctx) {
 /**
  * Step 5 (snapshot part, CHG-03): M10 `snapshot` in `split` and `assignIds`. Puts on `ctx`
  * the units (bodies included, for M13), the unit table rows CHG-03b stores in `state.json`
- * (`{ id, hash, path, oldPath, status, kind, identityKey }`, the identity key CHG-06's), the
- * `id → hash` map and `plan.json`'s `tracked` list, one entry per file (`bucket` from M9
- * `bucketOf`; an untracked candidate's `A` unit is left to `untracked.candidates`). CHG-05: the snapshot diffs against the temporary index in the run
+ * (`{ id, hash, path, oldPath, status, kind, identityKey }`; `identityKey` is built by
+ * CHG-06), the `id → hash` map and `plan.json`'s `tracked` list, one entry per file
+ * (`bucket` from M9 `bucketOf`; an untracked candidate's `A` unit is left to
+ * `untracked.candidates`). CHG-05: the snapshot diffs against the temporary index in the run
  * folder's `git-index`, built from the stored lists; a failed `git add -N` is the
  * `git-failed` refusal. A clean tree takes no snapshot. The scan part is CHG-16's.
  */
@@ -543,6 +548,37 @@ async function stubEnd() {
 
 const COMMIT_STEPS = Object.freeze([probeRepo, commitRefusals, openRun, stubEnd]);
 
+/** `check` step 2: see `subcommandRefusals`. */
+async function checkRefusals(ctx) {
+  return subcommandRefusals(ctx, 'check');
+}
+
+/**
+ * `check` step 4 (PLN-01): clears the stored groups and `awaitingConfirm` before anything is
+ * validated (C:check), so a failed `check` leaves no group that `commit` would accept, then
+ * M14 `validatePlan` over `plan.groups.json` and the run state. A lint failure ends the call
+ * with exit 2 and the `errors` (the first failure, no `reply`; M15 `onLintFailure` and the
+ * `lintFailed` handback are RUN-16's). On success the validated groups are stored with
+ * `committed: false`; the output is `groups`, `notIncluded` and `notices` only, with the
+ * lock kept: M15 `checkGate`, `computeConfirm` and the routing to `commit --all` arrive with
+ * their own slices (RUN-17, RUN-18, EXE-02, INT-02).
+ */
+async function validateWorkerPlan(ctx) {
+  const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
+  const state = readState(run);
+  if (state.groups !== undefined || state.awaitingConfirm !== undefined) {
+    delete state.groups;
+    delete state.awaitingConfirm;
+    writeState(run, state);
+  }
+  const validated = validatePlan(readWorkerPlan(run), state, { osUser: ctx.injected.osUser });
+  if (!validated.ok) return { lint: validated.errors };
+  writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
+  return { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
+}
+
+const CHECK_STEPS = Object.freeze([probeRepo, checkRefusals, openRun, validateWorkerPlan]);
+
 async function runSteps(steps, ctx) {
   for (const step of steps) {
     const ending = await step(ctx);
@@ -668,6 +704,38 @@ export async function commit(values, injected, { cwd }) {
   } finally {
     // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
     // `ended`, `busy`) leaves no `call.lock` of this call's own to close.
+    if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
+  }
+}
+
+/**
+ * Runs `check --plan <planId>` (C:check), the thin file-level form PLN-01 builds: M12 `open`
+ * (the call's own lock check, as in `commit`), then `validateWorkerPlan`. `run.close()`
+ * always runs for a call that reached a successful `open`.
+ *
+ * @param {{ plan: string }} values the parsed and validated `check` flags (M1 `parseArgv`).
+ * @param {object} injected the injected environment.
+ * @param {{ cwd: string }} call the call's working directory.
+ * @returns {Promise<{ output: object } | { failure: { kind: string, message: string,
+ *   errors?: object[] } }>} a lint failure carries C:check's `errors`.
+ */
+export async function check(values, injected, { cwd }) {
+  const ctx = { injected, cwd, values, opened: false };
+  try {
+    const facts = await runSteps(CHECK_STEPS, ctx);
+    if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+    if (facts.lint !== undefined) {
+      const count = facts.lint.length;
+      return {
+        failure: {
+          kind: kindForDomainCode('lint'),
+          message: `${count} ${count === 1 ? 'error' : 'errors'}`,
+          errors: facts.lint,
+        },
+      };
+    }
+    return { output: facts };
+  } finally {
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
 }
