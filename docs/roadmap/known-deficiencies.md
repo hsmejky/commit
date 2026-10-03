@@ -52,9 +52,11 @@ fixed, delete it here; IDs are never reused.
 
 ## Test mechanisms
 
-- **KD-R21. PATH git shims** (RUN-06, RUN-12, GIT-01, GIT-05, EXE shim cases) do not work on
+- **KD-R21. PATH git shims** (RUN-06, RUN-12, GIT-01, EXE shim cases) do not work on
   Windows and their argv/env log is undefined (KD-S35). Fix: a shim paragraph in
   testing-seams (POSIX script, compiled `.exe`, log format) or mark cases POSIX-only.
+  GIT-05's argument/env case needs no shim: the spawn-record preload logs each spawn's
+  `GIT_*` environment (`gitEnv`) on every platform.
 - **KD-R22.** RUN-12's first clock step fires before the provisional folder exists, so the
   discard is never exercised; its `plan --hunks` deadline case has no clock setup or
   observable. Tie the step to "folder exists, no lock"; add setup and exit code.

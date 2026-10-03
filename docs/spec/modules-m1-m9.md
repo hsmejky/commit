@@ -19,8 +19,10 @@ user's hooks; `GIT_OPTIONAL_LOCKS=0` on read-only calls
 (never on staging or commit); optional alternate index; `GIT_LITERAL_PATHSPECS=1`,
 `core.quotePath=false` and `diff.suppressBlankEmpty=false` on every call except `git commit`,
 which takes no pathspec and runs with neither, so hooks inherit the user's own git
-environment (stories 147 and 163, Q9); history reads also pin
-`log.showSignature=false` and `i18n.logOutputEncoding=UTF-8`; NUL-separated output where git
+environment (stories 147 and 163, Q9); history reads (`history: true`) also pin
+`log.showSignature=false` and `i18n.logOutputEncoding=UTF-8`; M2 sets these `-c` pins as
+`GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` (the same command-line scope as `-c`, git 2.31+), so a
+call's argv stays as its caller wrote it; NUL-separated output where git
 offers `-z`; stdin for message input and path lists; `windowsHide` on every spawn; a timeout
 that kills the process tree: on POSIX `SIGTERM` to the process group, then `SIGKILL` after a
 5-second grace; on Windows `taskkill /T`, then `taskkill /T /F` after the same grace (the grace is
@@ -36,7 +38,7 @@ as it arrives and nothing is buffered. M2 tracks the child it is running; `killA
 kills that child's tree the same way, for the entry point's `SIGINT`/`SIGTERM`/`SIGHUP`
 handler.
 
-`run(cmd, args, { cwd, env, now, index?, input?, timeoutMs, readOnly?, commit?, onStdout? }) →
+`run(cmd, args, { cwd, env, now, index?, input?, timeoutMs, readOnly?, history?, commit?, onStdout? }) →
 { code, stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`);
 `toplevel(fromCwd, { env })`; `gitVersion({ cwd, env })`; `gitPath(names, { cwd, env, now })` (one
 `rev-parse --git-path` call, absolute paths); `killActive()`. Sources: Q9, Q18.
