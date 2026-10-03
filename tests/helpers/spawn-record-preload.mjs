@@ -6,7 +6,10 @@
 //
 // Environment variable:
 //   COMMIT_TEST_SPAWN_LOG   a file path; every `node:child_process` call appends one JSON
-//                           line `{ api, file, args, windowsHide, encoding, caller }`, and a
+//                           line `{ api, file, args, windowsHide, encoding, gitEnv, caller }`
+//                           (`gitEnv`: the `GIT_*` variables of the spawn's `env` option,
+//                           names matched case-insensitively, sorted by name; `null` without
+//                           an `env` option; GIT-05's argument/env record), and a
 //                           `setEncoding` call on an asynchronous child's stdout appends
 //                           `{ api: 'stdout.setEncoding', encoding, caller }`. For an
 //                           asynchronous `spawn`, each stdout `'data'` chunk also appends
@@ -47,6 +50,14 @@ function splitArgs(rest) {
   return { args: [], options: (rest[0] && typeof rest[0] === 'object') ? rest[0] : {} };
 }
 
+// The `GIT_*` entries of a spawn's `env` option, sorted by name, or `null` without one.
+function gitEnvOf(env) {
+  if (!env || typeof env !== 'object') return null;
+  const entries = Object.entries(env).filter(([key]) => key.toUpperCase().startsWith('GIT_'));
+  entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return Object.fromEntries(entries);
+}
+
 function wrap(api) {
   const original = childProcess[api];
   childProcess[api] = function recorded(file, ...rest) {
@@ -58,6 +69,7 @@ function wrap(api) {
       args: args.map(String),
       windowsHide: options.windowsHide === true,
       encoding: options.encoding === undefined ? null : options.encoding,
+      gitEnv: gitEnvOf(options.env),
       caller,
     });
     const result = original.call(this, file, ...rest);

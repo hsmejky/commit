@@ -100,7 +100,7 @@ export async function snapshot({ mode, toplevel, env, now }) {
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', 'HEAD'],
-    { cwd: toplevel, env, now },
+    { cwd: toplevel, env, now, readOnly: true },
   );
   if (result.code !== 0) {
     throw new Error(`git diff failed (${result.code}): ${result.stderr}`);

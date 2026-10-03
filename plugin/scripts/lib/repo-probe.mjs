@@ -55,7 +55,7 @@ function probeNode(versionText) {
 // inside a `.git` directory, which has no working tree either). Git's own messages are
 // localized, so the answer is read from `--is-bare-repository`, never from stderr.
 async function classifyNoWorkTree({ cwd, env, now }) {
-  const result = await run('git', ['rev-parse', '--is-bare-repository'], { cwd, env, now });
+  const result = await run('git', ['rev-parse', '--is-bare-repository'], { cwd, env, now, readOnly: true });
   const bare = result.code === 0 && result.stdout.toString('utf8').trim() === 'true';
   return bare ? { kind: 'bare' } : { kind: 'not-a-repo' };
 }
@@ -92,7 +92,7 @@ export async function headState({ cwd, env, now }) {
   const result = await run('git', [
     'status', '--porcelain=v2', '--branch', '--untracked-files=no', '--ignore-submodules=all',
     '--no-ahead-behind',
-  ], { cwd, env, now });
+  ], { cwd, env, now, readOnly: true });
   if (result.code !== 0) throw new Error(`git status failed (${result.code}): ${result.stderr}`);
   let head = null;
   let unborn = false;
@@ -130,7 +130,7 @@ export async function headState({ cwd, env, now }) {
  *   `git config --get` resolves to its last value) or 1 (unset).
  */
 export async function commitEncoding({ cwd, env, now }) {
-  const result = await run('git', ['config', '--get', 'i18n.commitEncoding'], { cwd, env, now });
+  const result = await run('git', ['config', '--get', 'i18n.commitEncoding'], { cwd, env, now, readOnly: true });
   if (result.code === 1) return null;
   if (result.code !== 0) {
     throw new Error(`git config --get i18n.commitEncoding failed (${result.code}): ${result.stderr}`);
@@ -189,7 +189,7 @@ export async function inProgressState({ cwd, env, now }) {
  * @throws {Error} on any exit code other than 0 or 1.
  */
 export async function head({ cwd, env, now }) {
-  const result = await run('git', ['rev-parse', '--verify', '-q', 'HEAD'], { cwd, env, now });
+  const result = await run('git', ['rev-parse', '--verify', '-q', 'HEAD'], { cwd, env, now, readOnly: true });
   if (result.code === 0) return result.stdout.toString('utf8').trim();
   if (result.code === 1) return null;
   throw new Error(`git rev-parse HEAD failed (${result.code}): ${result.stderr}`);
@@ -204,7 +204,7 @@ export async function head({ cwd, env, now }) {
  * @throws {Error} on any exit code other than 0 or 1.
  */
 export async function headTree({ cwd, env, now }) {
-  const result = await run('git', ['rev-parse', '--verify', '-q', 'HEAD^{tree}'], { cwd, env, now });
+  const result = await run('git', ['rev-parse', '--verify', '-q', 'HEAD^{tree}'], { cwd, env, now, readOnly: true });
   if (result.code === 0) return result.stdout.toString('utf8').trim();
   if (result.code === 1) return null;
   throw new Error(`git rev-parse HEAD^{tree} failed (${result.code}): ${result.stderr}`);
@@ -282,7 +282,7 @@ const BOUND_LAST_BYTE = 0x30; // '0': the byte right after '/' (0x2F) in ASCII o
  * @throws {Error} when git exits non-zero.
  */
 export async function isTracked(name, { cwd, env, now }) {
-  const result = await run('git', ['ls-files', '-z', '--cached'], { cwd, env, now });
+  const result = await run('git', ['ls-files', '-z', '--cached'], { cwd, env, now, readOnly: true });
   if (result.code !== 0) throw new Error(`git ls-files failed (${result.code}): ${result.stderr}`);
   const buf = result.stdout;
   const wantedLen = name.length;

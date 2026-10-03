@@ -4,7 +4,8 @@
 // INT-01 built `toplevel` and an asynchronous `run`; GIT-01 adds `gitVersion`, the fixed
 // short timeout of the two start-up `spawnSync` calls, typed start-up results (git missing,
 // timed out) and `run`'s `timedOut` and `spawnedAt`. RUN-05 adds `gitPath`. GIT-05 adds the `GIT_*` environment
-// hygiene and `-c` pins, GIT-07 the deadline-driven timeout and process-tree kill.
+// hygiene, the config pins, `readOnly`, `index`, `history` and `input`; GIT-07 the
+// deadline-driven timeout and process-tree kill.
 
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -12,11 +13,53 @@ import path from 'node:path';
 /** The fixed timeout of each start-up `spawnSync` call (`toplevel`, `gitVersion`). */
 export const STARTUP_TIMEOUT_MS = 10_000;
 
-// Runs one named start-up git call synchronously under the fixed short timeout.
+/**
+ * The inherited `GIT_*` variables every git call except `git commit` keeps (M2, story 147):
+ * the ones that choose git itself, its config files and its credentials, never ones that
+ * redirect what a call reads.
+ */
+export const GIT_ENV_KEEP_SET = Object.freeze([
+  'GIT_EXEC_PATH', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_NOSYSTEM', 'GIT_SSH',
+  'GIT_SSH_COMMAND', 'GIT_ASKPASS',
+]);
+
+const KEEP = new Set(GIT_ENV_KEEP_SET);
+
+// The config every git call except `git commit` pins (Q9, Q11), and what history reads pin
+// on top. They go in through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` (git 2.31+), the same
+// command-line scope as `-c`, so the caller's argv stays as the caller wrote it; the
+// inherited `GIT_CONFIG_COUNT` family is removed first, like every non-kept `GIT_*`.
+const PINNED_CONFIG = [['core.quotePath', 'false'], ['diff.suppressBlankEmpty', 'false']];
+const HISTORY_CONFIG = [['log.showSignature', 'false'], ['i18n.logOutputEncoding', 'UTF-8']];
+
+// Builds the environment of one git call except `git commit` (M2): every inherited `GIT_*`
+// variable outside the keep-set is removed, matched case-insensitively because Windows
+// environment names are, then the pins are set. `index` is the optional alternate index.
+function gitEnv(env, { readOnly = false, index, history = false } = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(env || {})) {
+    const upper = key.toUpperCase();
+    if (upper.startsWith('GIT_') && !KEEP.has(upper)) continue;
+    out[key] = value;
+  }
+  out.GIT_LITERAL_PATHSPECS = '1';
+  if (readOnly) out.GIT_OPTIONAL_LOCKS = '0';
+  if (index !== undefined) out.GIT_INDEX_FILE = index;
+  const config = history ? [...PINNED_CONFIG, ...HISTORY_CONFIG] : PINNED_CONFIG;
+  out.GIT_CONFIG_COUNT = String(config.length);
+  config.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${i}`] = key;
+    out[`GIT_CONFIG_VALUE_${i}`] = value;
+  });
+  return out;
+}
+
+// Runs one named start-up git call synchronously under the fixed short timeout. Both
+// start-up calls are read-only.
 function startupGit(args, { cwd, env }) {
   const result = spawnSync('git', args, {
     cwd,
-    env,
+    env: gitEnv(env, { readOnly: true }),
     encoding: 'utf8',
     windowsHide: true,
     timeout: STARTUP_TIMEOUT_MS,
@@ -82,7 +125,7 @@ export function gitVersion({ cwd, env }) {
 export async function gitPath(names, { cwd, env, now }) {
   const args = ['rev-parse'];
   for (const name of names) args.push('--git-path', name);
-  const result = await run('git', args, { cwd, env, now });
+  const result = await run('git', args, { cwd, env, now, readOnly: true });
   const lines = result.stdout.toString('utf8').split(/\r?\n/).filter((line) => line !== '');
   if (result.code !== 0 || lines.length !== names.length) {
     throw new Error(`git rev-parse --git-path failed (${result.code}): ${result.stderr}`);
@@ -93,18 +136,41 @@ export async function gitPath(names, { cwd, env, now }) {
 /**
  * Runs one process asynchronously and collects its output.
  *
+ * For `git` (every call so far; `git commit`'s own environment is GIT-06's) the call runs
+ * with the hygiene of M2: every inherited `GIT_*` variable outside `GIT_ENV_KEEP_SET` is
+ * removed, `GIT_LITERAL_PATHSPECS=1`, `core.quotePath=false` and
+ * `diff.suppressBlankEmpty=false` are pinned, and the options below add the rest.
+ *
  * @param {string} cmd
  * @param {string[]} args
- * @param {{ cwd: string, env: object, now?: () => number }} options `cwd`: the toplevel for
- *   git; `env`: the injected process environment; `now`: the injected clock, read once when
- *   the child has spawned.
+ * @param {{ cwd: string, env: object, now?: () => number, readOnly?: boolean,
+ *   index?: string, history?: boolean, input?: string|Buffer }} options `cwd`: the toplevel
+ *   for git; `env`: the injected process environment; `now`: the injected clock, read once
+ *   when the child has spawned; `readOnly`: a read-only call, which gets
+ *   `GIT_OPTIONAL_LOCKS=0` (never a staging call); `index`: an alternate index file
+ *   (`GIT_INDEX_FILE`); `history`: a history read, which also pins
+ *   `log.showSignature=false` and `i18n.logOutputEncoding=UTF-8`; `input`: written to the
+ *   child's stdin, which is then closed (message input, path lists); without it stdin is
+ *   ignored.
  * @returns {Promise<{ code: number|null, stdout: Buffer, stderr: string, timedOut: boolean,
  *   spawnedAt: number|null }>} `stdout` is the raw bytes, never decoded here; `spawnedAt`
  *   is `null` without `now`. `timedOut` stays `false` until GIT-07 adds the call's timer.
  */
-export function run(cmd, args, { cwd, env, now }) {
+export function run(cmd, args, { cwd, env, now, readOnly, index, history, input }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const childEnv = cmd === 'git' ? gitEnv(env, { readOnly, index, history }) : env;
+    const child = spawn(cmd, args, {
+      cwd,
+      env: childEnv,
+      windowsHide: true,
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    });
+    if (input !== undefined) {
+      // A child that exits without reading all of its stdin closes the pipe (EPIPE); the
+      // call's result is then its exit code and stderr, not a write error.
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+    }
     const stdout = [];
     const stderr = [];
     let spawnedAt = null;
