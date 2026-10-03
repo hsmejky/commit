@@ -1,8 +1,8 @@
 // M10 Change-set engine (docs/spec/modules-m10-m13.md, Q11): the inventory, the temporary
 // index, units and the tree state. Effectful; spawns only through M2.
 //
-// INT-01 builds the thinnest `treeState` the walking skeleton needs; CHG-04 completes it
-// (the tree state every reply ends with). CHG-03 builds the tracer `inventory` (unstaged
+// INT-01 builds the `treeState` every reply ends with; CHG-04 adds `indexFingerprint` and
+// M17's "N files left" rendering of that tree state. CHG-03 builds the tracer `inventory` (unstaged
 // modifications of tracked files only), `snapshot` in `split` (one whole-file unit per
 // modified file, diffed against HEAD) and `assignIds`; CHG-05 adds the temporary index,
 // CHG-06 the streamed hunk-level pass, CHG-08 onward the other change kinds.
@@ -46,6 +46,24 @@ const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
 export async function treeState({ toplevel, env, now }) {
   const paths = (await statusEntries({ toplevel, env, now })).map((entry) => entry.path);
   return paths.length === 0 ? { clean: true } : { count: paths.length, paths };
+}
+
+/**
+ * The index fingerprint (C:plan steps 4 and 7, Q11): SHA-256 hex over the raw stdout bytes of
+ * one `git ls-files --stage -z` call. Read-only: it takes no index lock, so it works while an
+ * `index.lock` exists, and never rewrites the index. An intent-to-add entry and a staged empty
+ * file look alike (both the empty blob), an accepted gap (Q11).
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<string>}
+ * @throws {Error} when `git ls-files` exits non-zero.
+ */
+export async function indexFingerprint({ toplevel, env, now }) {
+  const result = await run('git', ['ls-files', '--stage', '-z'], { cwd: toplevel, env, now, readOnly: true });
+  if (result.code !== 0) {
+    throw new Error(`git ls-files failed (${result.code}): ${result.stderr}`);
+  }
+  return createHash('sha256').update(result.stdout).digest('hex');
 }
 
 /**

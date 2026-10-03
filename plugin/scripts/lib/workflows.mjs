@@ -23,7 +23,8 @@
 // takeover, `plan.json`, in that order) and step 8's in-process hunk index, and drops GIT-02's
 // stdout `state`/`expectedHead` stand-in (KD-R65: they are stored in `plan.json` and
 // `state.json`). RUN-06 adds step 7's `held` and the HEAD re-read, and `--reword`'s
-// clean-tree lock; the fingerprint re-read is CHG-04's, the sweep RUN-08's. Later slices
+// clean-tree lock; CHG-04 step 4's index fingerprint (stored in `state.json`) and step 7's
+// re-read of it; the sweep is RUN-08's. Later slices
 // insert the other rows (3 lock peek, 5 scan, 8 guard state) in their place in PLAN_STEPS,
 // and widen these.
 //
@@ -36,7 +37,7 @@
 // commits; EXE-02 replaces the stub with the real per-group loop.
 
 import { commitEncoding, head, headState, inProgressState, isTracked, probe } from './repo-probe.mjs';
-import { assignIds, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
+import { assignIds, indexFingerprint, inventory as takeInventory, snapshot, treeState } from './change-set.mjs';
 import { bucketOf } from './path-classifier.mjs';
 import { releaseById, open, close, create, RUN_DIR_NAME, STATE_VERSION } from './run.mjs';
 import { renderHunks } from './hunk-index.mjs';
@@ -52,6 +53,10 @@ const DETACHED_HEAD_NOTICE = 'HEAD is detached: new commits will not be on any b
 
 // RUN-06: the `head-moved` refusal text (Q18), recorded verbatim in C:cli-and-exit-codes.
 const HEAD_MOVED_TEXT = 'HEAD moved since plan (commit made elsewhere?), run /commit again';
+
+// CHG-04: the `index-changed` refusal text. C:cli-and-exit-codes records no text for it, so
+// tests assert the domain code's kind and that the text names the index.
+const INDEX_CHANGED_TEXT = 'the index changed since plan (staged elsewhere?), run /commit again';
 
 /**
  * Step 1: probe the repo state, git and Node versions (M3). Shared with `release`/`commit`;
@@ -142,11 +147,14 @@ async function createRunFolder(ctx) {
 }
 
 /**
- * Step 4: M10 `inventory`. CHG-03: tracked modifications only (other kinds throw). Also the
+ * Step 4: M10 `indexFingerprint` (CHG-04), read first, before the inventory's own git calls,
+ * so step 7's re-read covers every index change since the inventory began (C:plan step 4).
+ * Then M10 `inventory`. CHG-03: tracked modifications only (other kinds throw). Also the
  * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
  * full `modeChoice` (M15 `resolveMode`) is a later slice's.
  */
 async function inventory(ctx) {
+  ctx.indexFingerprint = await indexFingerprint({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
   return undefined;
@@ -193,8 +201,8 @@ async function postScanRefusals(ctx) {
 
 /**
  * Step 7 (CHG-03b): in contract order (C:run-folder, C:plan step 7), M12 writes `state.json`
- * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the unit
- * table and the `id → hash` map; the later rows arrive with their slices), then takes the run
+ * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the index
+ * fingerprint, the unit table and the `id → hash` map; the later rows arrive with their slices), then takes the run
  * lock (`acquire`, no takeover; RUN-06: a lost race → `held`, then the HEAD re-read; the
  * takeover path is RUN-21's), then writes `plan.json`. A lock is never taken without `state.json` in place. From
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
@@ -206,6 +214,7 @@ async function storeAndLock(ctx) {
     mode: ctx.mode,
     interactive: ctx.values['no-user'] !== true,
     head: ctx.expectedHead,
+    indexFingerprint: ctx.indexFingerprint,
     units: ctx.unitTable,
     idMap: ctx.idMap,
   })}\n`);
@@ -222,6 +231,13 @@ async function storeAndLock(ctx) {
   const { env, now } = ctx.injected;
   if (await head({ cwd: ctx.toplevel, env, now }) !== ctx.expectedHead) {
     return { refusal: { code: 'head-moved', message: HEAD_MOVED_TEXT } };
+  }
+  // CHG-04: then the index fingerprint, against step 4's (the one `state.json` stores for
+  // M16): changed with HEAD unchanged → `index-changed` (CLI kind `diff-changed`), released
+  // and deleted the same way. Not checked in `reword`, which `--amend --only` never touches.
+  if (ctx.mode !== 'reword'
+    && await indexFingerprint({ toplevel: ctx.toplevel, env, now }) !== ctx.indexFingerprint) {
+    return { refusal: { code: 'index-changed', message: INDEX_CHANGED_TEXT } };
   }
   ctx.run.write('plan.json', entryPerLine({
     version: 1,
