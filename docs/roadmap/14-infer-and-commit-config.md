@@ -125,13 +125,13 @@ proposed config and reports `wouldFail`; `nonConventional` counts the rest.
 
 **Blocked by:** INF-03, INF-04, INF-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q7, C:infer, M19, story 130.
 
-- [ ] Seam 1: a history with known over-length and dropped-type commits gives the exact
+- [x] Seam 1: a history with known over-length and dropped-type commits gives the exact
       `wouldFail`; non-conventional commits are not in it.
-- [ ] A static test asserts M19's module imports `lint` from M6.
+- [x] A static test asserts M19's module imports `lint` from M6.
 
 
 ## INF-07: `configJson` per layer
