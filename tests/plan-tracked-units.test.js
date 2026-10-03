@@ -66,6 +66,7 @@ test('plan on modified tracked files runs one pinned diff with no pathspec and k
   const statusCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('status'));
   assert.ok(
     statusCalls.some((e) => e.args.includes('--porcelain') && e.args.includes('--untracked-files=no')
+      && e.args.includes('--no-renames')
       && e.args.includes('-z')),
     JSON.stringify(statusCalls),
   );

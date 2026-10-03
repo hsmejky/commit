@@ -166,6 +166,11 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
 - `clean`: `true` when no tracked change and no candidate is left. Hidden-only or
   collapsed-only untracked files, staged-new paths in `stagedExcluded`, and
   `dirtySubmodules` are clean; `plan` still reports them, and the index is left as it is.
+  The inventory's tracked-change read is `git status --porcelain -z --untracked-files=no
+  --no-renames`: a rename's old path is its own deletion there, so a tracked file renamed
+  (`git mv`, or `mv` plus `git add -N`) to a hidden path in `stagedExcluded` still leaves
+  the tree dirty. This affects only `clean`; `tracked` still shows a rename as one `R`
+  entry, from the snapshot.
 - `stagedExcluded`: staged-new paths (added in the real index relative to HEAD, Q11) that
   the [hidden or collapse rule](untracked-files.md) excludes. Never planned or scanned; `check`
   adds them to `notIncluded` ("`.env.local` was staged but is hidden — commit by hand;
@@ -244,7 +249,9 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   A plain `mv` (no `git mv`) makes the target an untracked candidate whose unit is an `R`
   with `oldPath`; it is listed once, in `tracked`, and left out here. `state.json` keeps it
   in its candidate list, which the temporary index is rebuilt from.
-- `preStaged`: paths with staged changes. In `staged` mode `tracked` lists only the unstaged
+- `preStaged`: paths with staged changes. An intent-to-add entry (`git add -N`) stages no
+  content (a commit leaves it out of the tree), so it is not listed here; it is in `stagedNew`
+  (or `stagedExcluded`), and an index holding only such entries is not pre-staged. In `staged` mode `tracked` lists only the unstaged
   changes, and `unstagedLeft` counts them. A partially staged file appears in both lists. In
   `split` mode (`--split`, or an index that holds every change), `tracked` lists every
   change against HEAD, `preStaged` is informational and `unstagedLeft` is `null`; `null` in

@@ -78,13 +78,15 @@ export async function indexFingerprint({ toplevel, env, now }) {
  *   its `lstat` size and `binary` (a NUL in the first 8000 bytes; `.gitattributes` is not
  *   read here, CHG-08/CHG-11).
  * - preStaged: every path of `git diff --cached --ita-visible-in-index --no-renames
- *   --name-status -z`; its `A` paths are the staged-new ones, a user's intent-to-add
- *   (`git add -N`) entries included (plain `diff --cached` hides them). A hidden
+ *   --name-status -z` but the intent-to-add ones (`git status` ` A`: no staged content);
+ *   its `A` paths are the staged-new ones, a user's intent-to-add (`git add -N`) entries
+ *   included (plain `diff --cached` hides them). A hidden
  *   staged-new path goes to `stagedExcluded`, the rest to `stagedNew` with `ignored`:
  *   listed by `git ls-files --cached --ignored
  *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore` refuses
  *   M2's `GIT_LITERAL_PATHSPECS=1`).
- * - tracked: the `git status --untracked-files=no` entries that are not staged-new.
+ * - tracked: the `git status --untracked-files=no --no-renames` entries that are not
+ *   staged-new (a rename's old path is its own deletion).
  * Unborn HEAD needs no special case: `diff --cached` then lists every index entry as `A`,
  * as C:untracked-files asks.
  *
@@ -108,13 +110,19 @@ export async function inventory({ toplevel, env, now }) {
     sample: [...filtered.hidden].sort(byteOrder).slice(0, 5),
   };
 
+  // `--no-renames`: a rename's old path is its own deletion, kept in `tracked` also when the
+  // new path is staged-new or hidden (C:plan).
+  const status = await statusEntries({ toplevel, env, now, untracked: 'no', renames: false });
+  // An intent-to-add entry (` A`: nothing in the index column) stages no content, so it is
+  // staged-new but not pre-staged (C:plan).
+  const intentToAdd = new Set(status.filter((entry) => entry.xy[0] === ' ').map((entry) => entry.path));
   const cached = nulList(await gitOk(
     ['diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z'], opts,
   ));
   const preStaged = [];
   const added = [];
   for (let i = 0; i + 1 < cached.length; i += 2) {
-    preStaged.push(cached[i + 1]);
+    if (!intentToAdd.has(cached[i + 1])) preStaged.push(cached[i + 1]);
     if (cached[i] === 'A') added.push(cached[i + 1]);
   }
   const split = hideFilter(added);
@@ -125,7 +133,7 @@ export async function inventory({ toplevel, env, now }) {
   const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
 
   const addedSet = new Set(added);
-  const tracked = (await statusEntries({ toplevel, env, now, untracked: 'no' }))
+  const tracked = status
     .filter((entry) => !addedSet.has(entry.path))
     .map((entry) => entry.path);
   return {
@@ -327,9 +335,11 @@ export function assignIds(units) {
 
 // One `git status --porcelain -z --untracked-files=<untracked>` call, as `{ xy, path }`
 // entries. The inventory passes `no`: its candidates come from `ls-files --others`, so the
-// untracked walk would only be discarded.
-async function statusEntries({ toplevel, env, now, untracked }) {
-  const result = await run('git', ['status', '--porcelain', '-z', `--untracked-files=${untracked}`], {
+// untracked walk would only be discarded. `renames: false` adds `--no-renames` (git 2.18).
+async function statusEntries({ toplevel, env, now, untracked, renames = true }) {
+  const args = ['status', '--porcelain', '-z', `--untracked-files=${untracked}`];
+  if (!renames) args.push('--no-renames');
+  const result = await run('git', args, {
     cwd: toplevel,
     env,
     now,

@@ -135,6 +135,28 @@ test('a force-added gitignored file is a unit, stored with ignored: true', async
   assert.deepEqual(state.stagedNew, [{ path: 'ignored.txt', ignored: true }]);
 });
 
+// The temporary index's `git add -N` takes paths on stdin, NUL-separated: non-ASCII names, an
+// untracked candidate and a force-added staged-new path, come through as they are.
+test('non-ASCII untracked and force-added paths are A units through the temporary index', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', '.gitignore': '*.log\n' });
+  c.writeFile('déjà ü.txt', 'new\n');
+  c.writeFile('ñ.log', 'log\n');
+  c.git(['add', '-f', 'ñ.log']);
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  for (const name of ['déjà ü.txt', 'ñ.log']) {
+    const added = unitsByPath(result, name);
+    assert.equal(added.length, 1, `${name}\n${detail(result)}`);
+    assert.equal(added[0].status, 'A');
+  }
+  const state = readJson(path.join(result.json.runDir, 'state.json'));
+  assert.deepEqual(state.candidates, ['déjà ü.txt']);
+  assert.deepEqual(state.stagedNew, [{ path: 'ñ.log', ignored: true }]);
+});
+
 test('on an unborn HEAD, git add newfile && git mv newfile renamed gives one A unit for renamed, no R', async (t) => {
   const c = createCase(t);
   c.writeFile('newfile', 'x\n');

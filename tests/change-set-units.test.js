@@ -146,6 +146,51 @@ test('inventory: a staged-new file on an unborn HEAD', async (t) => {
   });
 });
 
+// C:plan: the inventory reads `git status` with `--no-renames`, so a rename's old path is its
+// own deletion in `tracked`, also when the new path is hidden and goes to `stagedExcluded`.
+test('inventory: a tracked file renamed to a hidden name keeps its deletion (mv + add -N)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  fs.renameSync(path.join(c.repoDir, 'a.txt'), path.join(c.repoDir, '.env'));
+  c.git(['add', '-N', '.env']);
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    clean: false,
+    tracked: ['a.txt'],
+    stagedExcluded: [{ path: '.env', reason: 'hidden' }],
+  });
+});
+
+test('inventory: a tracked file renamed to a hidden name keeps its deletion (git mv)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.git(['mv', 'a.txt', '.env']);
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    clean: false,
+    tracked: ['a.txt'],
+    preStaged: ['.env', 'a.txt'],
+    stagedExcluded: [{ path: '.env', reason: 'hidden' }],
+  });
+});
+
+// C:plan: an intent-to-add entry stages no content (a commit leaves it out of the tree), so
+// it is staged-new but not pre-staged. A non-ASCII path comes through unquoted.
+test('inventory: an intent-to-add path is staged-new, not pre-staged', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('déjà ü.txt', 'n\n');
+  c.git(['add', '-N', 'déjà ü.txt']);
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    clean: false,
+    stagedNew: [{ path: 'déjà ü.txt', ignored: false }],
+  });
+});
+
 test('snapshot: two modified files become two sorted whole-file text units', async (t) => {
   const c = createCase(t);
   seed(c, { 'src/b.js': 'one\ntwo\nthree\n', 'a.md': 'x\n' });
