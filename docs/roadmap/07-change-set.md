@@ -251,14 +251,14 @@ and scanned in its cleaned form (`body: "none"` when the cleaned diff is binary)
 
 **Blocked by:** CHG-08, CHG-02, PRE-10, GIT-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, Q11, C:plan-hunks (`kind: filtered`), stories 72, M10.
 
-- [ ] Seam 1: a `sed`-based `filter.<x>.clean` in the fixture → one `filtered` unit whose body is the cleaned diff.
-- [ ] Seam 1: a path marked `linguist-generated` → `summaryOnly` reason `generated` (entry rendered by CHG-17).
-- [ ] The attribute call reads paths from stdin, never argv.
-- [ ] Seam 1: a decoy `GIT_ATTR_SOURCE` exported to the entry point → `check-attr` still reads the real `.gitattributes` (a `filter`-attributed path is still a `filtered` unit, GIT-05's environment hygiene holds for this call too).
+- [x] Seam 1: a `sed`-based `filter.<x>.clean` in the fixture → one `filtered` unit whose body is the cleaned diff.
+- [x] Seam 1: a path marked `linguist-generated` → `summaryOnly` reason `generated` (entry rendered by CHG-17).
+- [x] The attribute call reads paths from stdin, never argv.
+- [x] Seam 1: a decoy `GIT_ATTR_SOURCE` exported to the entry point → `check-attr` still reads the real `.gitattributes` (a `filter`-attributed path is still a `filtered` unit, GIT-05's environment hygiene holds for this call too).
 
 
 ## CHG-11: Attribute-hidden text files and size limits
