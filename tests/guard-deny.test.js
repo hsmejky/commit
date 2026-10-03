@@ -145,6 +145,7 @@ test('G3: in `b-bypass-escaped-cr` the second reading\'s segments alone are the 
     decision: 'deny',
     message: MESSAGES.bare,
     scriptCalls: [],
+    matched: { options: ['-m'] },
   });
 });
 

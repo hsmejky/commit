@@ -20,10 +20,12 @@ const PLAN_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
 let heartbeat;
 let runHook;
+let MESSAGES;
 
 beforeEach(async () => {
   heartbeat = await loadLib('heartbeat');
   ({ runHook } = await loadLib('hook-io'));
+  ({ MESSAGES } = await loadLib('command-classifier'));
 });
 
 function guardDirEntries(claudeHome) {
@@ -149,7 +151,10 @@ test('Seam 2: a Claude home that is a file fails the write; the allowed plan cal
   assert.equal(debugged.stdout, '');
   assert.equal(debugged.exitCode, 0);
   assert.equal(debugged.heartbeat, null);
-  assert.equal(debugged.stderr, '{"agent_id":"a1","heartbeat":"failed"}\n');
+  assert.equal(
+    debugged.stderr,
+    '{"agent_id":"a1","decision":"none","command":"commit.cjs plan","heartbeat":"failed"}\n',
+  );
 
   const plain = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome } });
   assert.equal(plain.stdout, '');
@@ -166,7 +171,10 @@ test('Seam 2: a denied compound command with a plan call is still denied when th
   const debugged = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome, COMMIT_GUARD_DEBUG: '1' } });
   assert.equal(debugged.exitCode, 0);
   assert.equal(JSON.parse(debugged.stdout).hookSpecificOutput.permissionDecision, 'deny');
-  assert.equal(debugged.stderr, '{"agent_id":"a2","heartbeat":"failed"}\n');
+  assert.equal(
+    debugged.stderr,
+    `${JSON.stringify({ agent_id: 'a2', decision: 'deny', reason: MESSAGES.bare, command: '-m', heartbeat: 'failed' })}\n`,
+  );
 
   const plain = await runGuard(c, hook, { env: { CLAUDE_CONFIG_DIR: fileHome } });
   assert.equal(plain.exitCode, 0);
@@ -219,7 +227,10 @@ test('Seam 3: runHook keeps the decision when the heartbeat write fails', (t) =>
   assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(denied.stderr, '');
   const allowed = runHook(payload('node "/p/commit.cjs" plan'), { env: { COMMIT_GUARD_DEBUG: '1' }, claudeHome, now: () => 1 });
-  assert.deepEqual({ ...allowed }, { stdout: '', stderr: '{"heartbeat":"failed"}\n' });
+  assert.deepEqual(
+    { ...allowed },
+    { stdout: '', stderr: '{"decision":"none","command":"commit.cjs plan","heartbeat":"failed"}\n' },
+  );
 });
 
 // GRD-15 review (round 2) L1: guard.cjs itself passes no Claude home when its own
@@ -231,7 +242,10 @@ test('Seam 3: runHook keeps a compound deny when claudeHome is undefined', () =>
   assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(denied.stderr, '');
   const allowed = runHook(payload('node "/p/commit.cjs" plan'), { env: { COMMIT_GUARD_DEBUG: '1' }, claudeHome: undefined, now: () => 1 });
-  assert.deepEqual({ ...allowed }, { stdout: '', stderr: '{"heartbeat":"failed"}\n' });
+  assert.deepEqual(
+    { ...allowed },
+    { stdout: '', stderr: '{"decision":"none","command":"commit.cjs plan","heartbeat":"failed"}\n' },
+  );
 });
 
 test('Seam 3: redactCommand keeps only --flag words and planIds, cut at --% and at 200', () => {

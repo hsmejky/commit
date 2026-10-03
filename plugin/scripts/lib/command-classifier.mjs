@@ -407,24 +407,35 @@ function allowlistDecision(items) {
 // The name the generic row gives an item: its flag, or the argument (an empty one as `""`).
 const nameOf = (item) => (item.flag !== undefined ? item.flag : item.argument || '""');
 
+// The matched segment's options for GRD-16's debug log (G1): each expanded item's flag only,
+// never a value (so `-m`'s or `--file`'s message text never persists) and never a plain
+// argument (a pathspec).
+function commitOptions(items) {
+  return items.filter((item) => item.flag !== undefined).map((item) => item.flag);
+}
+
 // One `git commit` invocation, its `git` token at `at` in a command starting at `from`
-// and its arguments starting at `start` (after `commit`): the deny message, or null when
-// allowed. Every argument read must be
-// literal (C:guard step 4). A possible wrapper before `git` denies what would otherwise be
-// allowed or the bare row; its row ranks just above the bare row (C:guard Precedence).
+// and its arguments starting at `start` (after `commit`): `{ message, options }`, `message`
+// null when allowed. Every argument read must be
+// literal (C:guard step 4); a non-literal one gives the literal-arguments row with no options
+// (nothing here is safe to redact). A possible wrapper before `git` denies what would
+// otherwise be allowed or the bare row; its row ranks just above the bare row (C:guard
+// Precedence). `options` is GRD-16's debug-log data (G1), unaffected by which row wins.
 function commitDecision(tokens, from, at, start, shell) {
   const args = [];
   for (let i = start; i < tokens.length && !endsArguments(tokens[i], shell); i += 1) {
-    if (!isLiteral(tokens[i], shell)) return MESSAGES.literalArguments;
+    if (!isLiteral(tokens[i], shell)) return { message: MESSAGES.literalArguments };
     args.push(tokens[i]);
   }
-  const message = argumentsDecision(expandCommitArgs(args));
-  if (message !== null && message !== MESSAGES.bare) return message;
+  const items = expandCommitArgs(args);
+  const options = commitOptions(items);
+  const message = argumentsDecision(items);
+  if (message !== null && message !== MESSAGES.bare) return { message, options };
   const wrapper = wrapperBefore(tokens, from, at, shell);
-  if (wrapper === undefined) return message;
+  if (wrapper === undefined) return { message, options };
   // An `env` whose `-a` option is the first unfit token is named rather than that option.
   const runner = ARGV0_A.test(wrapper) ? argv0Runner(tokens, from, at) : undefined;
-  return wrapperMessage(runner ?? wrapper);
+  return { message: wrapperMessage(runner ?? wrapper), options };
 }
 
 // C:guard step 4: git's known options before the subcommand. A value-taking one takes the next
@@ -525,7 +536,9 @@ function gitOptionsDecision(found) {
  *
  * @param {Array<Array<string|object>> | { blanket: string }} parsed G2 `segments` output.
  * @param {{ agentType?: string, shell?: 'bash'|'powershell' }} [context]
- * @returns {{ decision: 'deny'|'none', message?: string, scriptCalls: object[] }}
+ * @returns {{ decision: 'deny'|'none', message?: string, scriptCalls: object[],
+ *   matched?: { options: string[] } }} `matched` holds the matched `git commit` segment's
+ *   options (flags only, never a value or a plain argument) for G1's debug log (GRD-16).
  */
 export function classify(parsed, context = {}) {
   const { shell = 'bash' } = context;
@@ -571,9 +584,17 @@ export function classify(parsed, context = {}) {
         if (runner === undefined) continue;
         return { decision: 'deny', message: wrapperMessage(runner), scriptCalls };
       }
-      const message = commitDecision(tokens, starts[i], i, found.commit + 1, shell);
+      const { message, options } = commitDecision(tokens, starts[i], i, found.commit + 1, shell);
       if (message !== null) {
-        return { decision: 'deny', message: message === MESSAGES.bare ? wrapped ?? message : message, scriptCalls };
+        const deny = {
+          decision: 'deny',
+          message: message === MESSAGES.bare ? wrapped ?? message : message,
+          scriptCalls,
+        };
+        // `options` is absent for the literal-arguments row (nothing there is safe to
+        // redact); every other row has one, possibly empty.
+        if (options !== undefined) deny.matched = { options };
+        return deny;
       }
     }
   }

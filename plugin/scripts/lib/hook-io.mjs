@@ -8,7 +8,7 @@
 import { Buffer } from 'node:buffer';
 import { segments } from './shell-tokenizer.mjs';
 import { classify } from './command-classifier.mjs';
-import { redactCommand, writeHeartbeat } from './heartbeat.mjs';
+import { redactCommand, writeHeartbeat, COMMAND_LIMIT } from './heartbeat.mjs';
 
 const NO_OUTPUT = Object.freeze({ stdout: '', stderr: '' });
 
@@ -79,11 +79,40 @@ export function runHook(stdinText, context = {}) {
     // then reports the guard `not-seen`, a false warning, never a lost deny.
     const heartbeatFailed = writePlanHeartbeat(result.scriptCalls, payload.cwd, context);
     const stdout = result.decision === 'deny' ? denyOutput(result.message) : '';
-    const stderr = heartbeatFailed && debug ? formatDebugLine({ ...known, heartbeat: 'failed' }) : '';
+    const stderr = debug ? formatDebugLine(decisionFields(known, parsed, result, heartbeatFailed)) : '';
     return stdout === '' && stderr === '' ? NO_OUTPUT : { stdout, stderr };
   } catch {
     return failOpen(known, debug);
   }
+}
+
+// GRD-16: the decision's debug-log fields (C:guard Output; G1), in the fixed order agent_id,
+// decision, reason, command, heartbeat. `reason` is a blanket deny's trigger kind (G2, carried
+// on `parsed.blanket`) or, otherwise, the deny's own catalogue message (never the matched
+// command's message text, which is kept out of `command` instead, not `reason`); left out for
+// an allowed (non-blanket) command, which explains nothing. `command` is the matched `git
+// commit` segment's redacted options (G3 `matched`) when there is one, else a `plan` script
+// call's redacted script-call form when the command holds one, else left out.
+function decisionFields(known, parsed, result, heartbeatFailed) {
+  const fields = { ...known, decision: result.decision };
+  const reason = reasonField(parsed, result);
+  if (reason !== undefined) fields.reason = reason;
+  const command = commandField(parsed, result);
+  if (command !== undefined) fields.command = command;
+  if (heartbeatFailed) fields.heartbeat = 'failed';
+  return fields;
+}
+
+function reasonField(parsed, result) {
+  if (!Array.isArray(parsed)) return parsed.blanket;
+  return result.decision === 'deny' ? result.message : undefined;
+}
+
+function commandField(parsed, result) {
+  if (result.matched) return result.matched.options.join(' ').slice(0, COMMAND_LIMIT);
+  if (!Array.isArray(parsed)) return undefined;
+  const planCall = result.scriptCalls.find((call) => call.subcommand === 'plan');
+  return planCall ? redactCommand(planCall) : undefined;
 }
 
 // Writes the heartbeat for the first `plan` script call, if any; a missing or non-string
