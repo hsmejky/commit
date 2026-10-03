@@ -2,7 +2,9 @@
 
 1. **Seam 1: the commit entry point as a subprocess over a temp git repo.** Inputs: argv; env
    with a temp OS home and Claude home (user config, heartbeat, Claude settings),
-   `CLAUDE_PROJECT_DIR`, fixed identities and dates; the repo's contents, hooks, filters and
+   `CLAUDE_PROJECT_DIR`, fixed identities and dates; the subprocess's spawned cwd, which is
+   the project-dir input when `CLAUDE_PROJECT_DIR` is unset (a subfolder with its own
+   `.claude/` vs. one without, PRE-11); the repo's contents, hooks, filters and
    config; the files the worker would write. Assertions: the single JSON object, the exit
    code, the resulting repo and the run folder. Lock ageing is set up by changing the lock's
    mtime (Q22). The managed-settings layer (`managed-settings.json` only) is covered at

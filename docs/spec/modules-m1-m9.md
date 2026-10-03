@@ -92,8 +92,10 @@ copy that carries patterns counts as changed, so its units are flagged (`humanOn
 
 **M5 Attribution resolver.** Resolve the trailer from the Claude settings layers, highest
 first: managed (`managed-settings.json` only; the drop-in directory is not read, Out of
-Scope), project-local, project (project directory = `CLAUDE_PROJECT_DIR`, else the
-toplevel), user (in the Claude home). Two passes: `attribution.commit` (empty string, or a
+Scope), project-local, project (project directory: `CLAUDE_PROJECT_DIR` when the entry point
+sees it, else the entry point's `process.cwd()`; no walk-up to a git toplevel, so a cwd
+without `.claude/` has no project layers, matching the harness — PRE-11), user (in the
+Claude home). Two passes: `attribution.commit` (empty string, or a
 string that is whitespace-only once its lines are dropped, = no trailer), then
 `includeCoAuthoredBy` (`true` or `false` both count as the key being set in that layer, same
 as a non-empty `attribution.commit`); otherwise the fixed trailer `Co-Authored-By: Claude
@@ -107,10 +109,12 @@ settings from that layer (never a `config` refusal — Claude's own settings fil
 script's to validate), but a warning names the problem so it is not silent (Q5 Amended).
 MDM profiles, registry policy and server-managed settings are not read; the source is
 reported and the README names the gap (story 116). `managedDir` is the injected managed
-directory. `plan` outputs `attribution: null` when the resolution yields no trailer (an
+directory; `projectDir` is injected the same way, resolved once by the entry point
+(`CLAUDE_PROJECT_DIR` else its own `process.cwd()`, never re-read from `env` or recomputed
+here — PRE-11). `plan` outputs `attribution: null` when the resolution yields no trailer (an
 empty/whitespace-only `attribution.commit` or `includeCoAuthoredBy: false`); the source is
 known at `plan` and stored for M16 and M17 (C:plan).
-`resolveAttribution({ env, claudeHome, toplevel, managedDir }) → { trailer | null, source,
+`resolveAttribution({ env, claudeHome, projectDir, managedDir }) → { trailer | null, source,
 warnings }`. Sources: Q5, C:plan.
 
 **M6 Message grammar.** Byte normalisation (BOM, UTF-16, invalid UTF-8, CRLF and lone CR,

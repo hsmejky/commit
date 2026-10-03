@@ -231,9 +231,13 @@ warning; else `includeCoAuthoredBy: false` → `null`.
 
 ## CFG-10: Settings layer precedence and the project directory
 
-**What to build:** M5 over project-local, project and user layers (project directory =
-`CLAUDE_PROJECT_DIR`, else the toplevel), first layer defining a key wins, two passes
-(`attribution.commit` across all layers, then `includeCoAuthoredBy`).
+**What to build:** M5 over project-local, project and user layers (project directory:
+`CLAUDE_PROJECT_DIR` when the entry point sees it, else the entry point's `process.cwd()`;
+no walk-up to a git toplevel, PRE-11), first layer defining a key wins, two passes
+(`attribution.commit` across all layers, then `includeCoAuthoredBy`). `plugin/scripts/lib/attribution.mjs` currently accepts a `toplevel` param (ignored for now, per
+its CFG-08/CFG-09 header comment) earmarked for the project layer's `CLAUDE_PROJECT_DIR`
+fallback; this slice drops that param and reads the already-resolved `projectDir` the entry
+point injects instead (no toplevel fallback, matching PRE-11).
 
 **Blocked by:** CFG-09, PRE-11.
 
@@ -245,8 +249,9 @@ warning; else `includeCoAuthoredBy: false` → `null`.
       `attribution.commit`; `source` names the layer (`project-local`, `project`, `user`).
 - [ ] Seam 1: `includeCoAuthoredBy: false` in project-local with `attribution.commit` set in
       user → the user trailer applies (two passes).
-- [ ] Seam 1: `CLAUDE_PROJECT_DIR` pointing at a subfolder is read instead of the
-      toplevel; the behaviour matches the spike's finding, recorded in Q5.
+- [ ] Seam 1: `CLAUDE_PROJECT_DIR` set → project layers read from it; unset → from the
+      process cwd: a subfolder with its own `.claude/` beats the toplevel's, a subfolder
+      without `.claude/` yields no project layers (toplevel settings not read).
 - [ ] Seam 1: with `CLAUDE_CONFIG_DIR` set, the user settings layer is read from
       `$CLAUDE_CONFIG_DIR/settings.json`, not the OS-home default (story 112).
 

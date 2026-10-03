@@ -123,6 +123,14 @@
   directory or git toplevel), and whether `CLAUDE_PROJECT_DIR` reaches the Bash and
   PowerShell tools' environment (the commit-worker spike: not in a subagent's Bash
   environment; the main thread's is unchecked). Spike before the attribution slice.
+  **Resolved** on 2026-10-03 (PRE-11): launched in a repo subfolder with its own
+  `.claude/settings.json`, only that subfolder's settings apply (no walk-up, no merge with
+  the toplevel's); launched in a subfolder without `.claude/`, no project settings apply at
+  all (no walk-up to the toplevel). `CLAUDE_PROJECT_DIR` is not set in the main thread's
+  Bash or PowerShell tool environment, confirmed (checked interactively and in `claude -p`),
+  matching the already-known subagent case. Decision: the project directory is
+  `CLAUDE_PROJECT_DIR` when the script sees it, else the entry point's `process.cwd()`; no
+  walk-up to a git toplevel. Q5 and M5 amended.
 - The temporary index (Q11): that `git diff -M` against an index copy with `git add -N`
   entries shows each intent-to-add path as `A` with its content, and pairs a deleted path
   with an intent-to-add path as `R` (a plain `mv` and a `git mv` after step 1's reset), and

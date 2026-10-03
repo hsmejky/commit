@@ -8,8 +8,9 @@
     drop-in directory is not read in 0.1.0), project `.claude/settings.local.json`,
     project `.claude/settings.json`, user `settings.json` in the Claude home. The first
     layer that defines a key wins. "Project" is the directory the harness reads project
-    settings from: `CLAUDE_PROJECT_DIR` when the script sees it, else the git toplevel. The
-    two differ when Claude runs in a monorepo subfolder (open verification item).
+    settings from: `CLAUDE_PROJECT_DIR` when the script sees it, else the entry point's
+    `process.cwd()`. No walk-up to a git toplevel: a cwd without `.claude/` has no project
+    layers, matching the harness.
   - The Claude home is `CLAUDE_CONFIG_DIR` when set, else `~/.claude`, resolved once by each
     entry point. It holds the user `commit.json` (Q6), the user Claude settings and the
     guard heartbeat (Q23), so all three follow a relocated Claude home.
@@ -54,12 +55,30 @@
   `false` does ("the first layer that defines a key wins"): the layer it is read from is
   the reported `source`, even though the trailer it produces reads the same as the `default`
   source's.
+- **Amended.** By PRE-11 (2026-10-03): headless `claude -p` probes in a temp git repo whose
+  toplevel `.claude/settings.json` and `sub/.claude/settings.json` set different `env`
+  values, plus a `bare/` subfolder without `.claude/`. Launched in `sub/`, only `sub`'s
+  settings applied (no walk-up, no merge with the toplevel). Launched in `bare/`, no project
+  settings applied at all (no walk-up to the toplevel). Launched at the toplevel, the
+  toplevel's settings applied. `CLAUDE_PROJECT_DIR` is not set in the main thread's Bash nor
+  PowerShell tool environment (checked interactively and in `-p`); a subagent's is unset too
+  (already known, re-confirmed). A subagent's Bash starts at the launch directory even after
+  the main thread changes directory. Decision: the project directory is `CLAUDE_PROJECT_DIR`
+  when the script sees it, else the entry point's `process.cwd()` (the worker's shell starts
+  at the launch directory, the directory the harness reads project settings from); no
+  walk-up to the git toplevel. The entry point resolves it and injects it into M5 (like the
+  Claude home), not the library reading `env`/cwd itself. The worker must invoke
+  `commit.cjs` from its starting directory, never after a `cd`.
 - **Rejected.**
   - Hard-coded opinionated rules; reading `commitlint.config.*` (executes third-party JS).
   - Reproducing the harness default footer: it contains the model name, which the script
     cannot know. Having the worker pass the model name in reopens the path Q13 closes.
   - Appending `attribution.commit` verbatim: a multi-line value becomes body text.
   - `git interpret-trailers --trailer` for appending (Q13).
+  - Keeping the git toplevel as the project directory fallback (PRE-11): wrong layer in a
+    monorepo subfolder, contradicting the spike's findings.
+  - The worker passing `--project-dir` on the command line (PRE-11): an agent-chosen layer,
+    and an extra CLI flag the script would have to trust.
 - **Consequences.** Without an attribution setting the trailer omits the model name. The
   trailer is produced deterministically; no agent-supplied text reaches it. Settings passed
   on the command line (`claude --settings <file>`) are invisible to the script, and so are

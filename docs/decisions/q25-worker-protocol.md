@@ -143,7 +143,11 @@
     `${CLAUDE_PLUGIN_ROOT}/scripts/commit.cjs`, which the plugin loader substitutes (docs and
     spike). The variable is **not** in the worker's shell
     environment (spike), so no command relies on it. A handback's `run` carries the script's
-    own absolute path (`process.argv[1]`), so the caller needs none.
+    own absolute path (`process.argv[1]`), so the caller needs none. The prompt tells the
+    worker to invoke `commit.cjs` from its starting directory, never after a `cd`: the
+    worker's shell starts at the launch directory, the directory the harness reads project
+    settings from and now the project-directory fallback when `CLAUDE_PROJECT_DIR` is unset
+    (PRE-11); a `cd` first is a known residual gap.
   - **The script call, not `git commit`.** The worker's prompt tells it to commit only
     through the script call (`check`, which commits when no confirmation is needed, Q9),
     never with `git commit`: the guard denies that anyway (Q3), and a denied attempt costs

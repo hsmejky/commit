@@ -43,7 +43,9 @@ that does not depend on an item does not wait for it.
     tool's line cap and page size, which set the stdout budget and the hunk-index paging.
 - **Project directory and `CLAUDE_PROJECT_DIR`** (Q5): which directory the harness reads the
   project settings from when Claude runs in a subfolder, and whether the variable reaches the
-  main thread's shell tools. Before the attribution slice.
+  main thread's shell tools. Before the attribution slice. Run 2026-10-03 (PRE-11); findings
+  settled in Q5: no walk-up to the toplevel, the variable unset in the main thread's shell
+  tools, confirmed.
 - **Handback answers by hand** (Q16, Q18, Q25): a manual hand-test at the end of the
   worker-protocol slice, run in the delivery shape current at the time, and in both if both
   can still be reached; the cases are the full list in the decisions
