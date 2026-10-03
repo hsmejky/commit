@@ -227,11 +227,9 @@
     is needed. It runs over the whole diff with no pathspecs: `git diff` has no
     `--pathspec-from-file`, so a path list would go on argv and could pass the Windows
     command-line limit, and a pathspec narrows rename detection (and what counts against
-    `diff.renameLimit`), so its records could differ from the raw pass. One exception: when
-    a rename's old path is not UTF-8 and its new path is, the same call runs once more with
-    `--no-renames` (still no pathspecs) and only those new paths' `A` units are kept, so
-    the UTF-8 side is not lost with its old path (review-CHG-12). The output is read
-    as a stream and only what a later step needs is kept: hunks of units that carry a body
+    `diff.renameLimit`), so its records could differ from the raw pass (one exception,
+    below). The output is read as a stream and only what a later step needs is kept: hunks
+    of units that carry a body
     and, for the scan, added lines up to the 1 MB limit (Q10), past which the section is
     dropped. Retained memory is bounded by the existing caps (256 KB and 1000 changed lines
     per body-carrying file, Q19; 1 MB of scanned additions per file); binary and submodule
@@ -308,6 +306,17 @@
     mode and its blob IDs; its body is `none` either way, like any binary unit with no
     hunks. A unit with no hunk at all (mode-only, binary, empty new/deleted, pure rename)
     has range `-0,0 +0,0`.
+- **Amended.** By the review-CHG-12 fix (2026-10-03): a narrowing of the "one call, no
+  pathspecs" rule above, not a reversal of it. When a rename's old path is not UTF-8 and
+  its new path is, the same pinned call runs once more with `--no-renames` appended (still
+  no pathspecs) and only those new paths' `A` units are kept, so the UTF-8 side is not lost
+  with its old path. It runs only for a case pass 4's plan never covered: a rename whose
+  path pairing straddles the UTF-8 boundary. "Never planned" in the pass 4 amendment still
+  holds for every non-UTF-8 path itself; this second call never produces a unit for one.
+  Since the second pass's output is filtered down to exactly the paths the first pass
+  dropped for this reason, it cannot double-count a path the first pass already turned into
+  a unit, and it cannot misattribute: the unit is the new path's whole-file content, and at
+  commit time `stage` only ever adds that new path (review-CHG-12).
 - **Rejected.**
   - A top-level-directory split rule; dropping split detection.
   - Hunk IDs of the form `file#n`: they collide with paths containing `#`, spaces or commas.

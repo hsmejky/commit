@@ -88,6 +88,17 @@ failed call whose unstage did not happen keeps its run, below):
   - **The killed group's paths**, defined once here (cited elsewhere, never redefined): the
     current group's unit paths, taken from the stored validated groups (both halves of a
     rename included), union the stored `preStaged` list, union the stored `indexOnly` list.
+    "Belongs to" and "still staged" compare by string, against the new run's own freshly
+    listed `preStaged` and staged paths: a non-UTF-8 path on either side is its `\xNN` string
+    (the same form `state.json` stores it in, CHG-12), never a decode or the raw bytes.
+    Since that form is lossy (`escapeNonUtf8`, change-set.mjs), it collides with a UTF-8 path
+    literally spelled with `\x`, for example a real file named `t\xe9.txt` next to a
+    non-UTF-8 one whose single invalid byte also escapes to `\xe9` (review-CHG-12 finding
+    5): the two strings read identically, so a byte-exact, non-UTF-8 killed-group path can
+    make the comparison also match an unrelated, valid-UTF-8 path of that literal spelling.
+    This has no effect today: neither side of the comparison is ever used as a pathspec (it
+    only decides which branch above runs and what a notice names), and the collision is the
+    same one C:plan's `preStaged` already accepts for rendering.
   - Nothing staged (the index equals HEAD, e.g. a kill in phase (a) of a group after an
     earlier group committed) → no reset and no reset notice; the new run's reply still
     carries the `unstaged` notice (Q18).

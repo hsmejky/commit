@@ -294,12 +294,12 @@ UTF-8 is not a unit; it is stored for `notIncluded` with each bad byte as `\xNN`
 
 **Blocked by:** CHG-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
-**Sources:** Q11 (pass 3, 4 amendments), C:plan, M10.
+**Sources:** Q11 (pass 3, 4, review-CHG-12 amendments), C:plan, M10.
 
-- [ ] Seam 1: a Latin-1 file and a CRLF file under `core.autocrlf=false` → units whose stored hashes equal hashes of the raw bytes (a lossy decode would change them).
-- [ ] Seam 1 (POSIX): a path with a non-UTF-8 byte → no unit; stored non-UTF-8 path list holds it with `\xNN` (reported in `notIncluded` by PLN-04).
+- [x] Seam 1: a Latin-1 file and a CRLF file under `core.autocrlf=false` → units whose stored hashes equal hashes of the raw bytes (a lossy decode would change them).
+- [x] Seam 1 (POSIX): a path with a non-UTF-8 byte → no unit; stored non-UTF-8 path list holds it with `\xNN` (reported in `notIncluded` by PLN-04).
 
 
 ## CHG-13: Count caps and collapsed directories (`split`)
@@ -349,7 +349,19 @@ form) and in the stored non-UTF-8 list that `check` reports in `notIncluded` ("p
 UTF-8 — commit by hand"). `staged` commits the index as-is, so it would commit that path
 (under its real bytes, not mangled) while `notIncluded` tells the user to commit it by hand.
 This slice settles which one holds in `staged`: leave the path out of `notIncluded` there,
-or keep it out of the commit, and documents the choice in C:plan.
+or keep it out of the commit, and documents the choice in C:plan. Two further consequences
+belong here too (review-CHG-12 finding 4):
+- **`indexOnly` content.** A non-UTF-8 path can itself be `indexOnly` (staged content that
+  differs from both HEAD and the worktree, for example staged as `t\xe9.txt`=`b` with `c`
+  left in the worktree). If `indexOnly` is built from UTF-8 paths only, a later `split` run's
+  `git reset -q -- .` discards that staged blob with no `git cat-file -p <blob>` hint (Q18).
+  This slice must carry such a path in `indexOnly` too, in its `\xNN` form, with its blob ID.
+- **Hidden rule and scan in `staged` mode.** The hidden rule and the scan currently run only
+  on UTF-8 staged-new paths. A force-added `.env\xe9` gets no `staged-hit` fact, and its
+  content is never scanned (it is never a unit), yet `staged` would still commit it. This
+  slice must run the hidden rule on a staged-new non-UTF-8 path's `\xNN` form too (so it
+  gives `staged-hit`), and keep such a path out of the `staged` commit, or refuse, consistent
+  with whichever choice the paragraph above settles for `notIncluded`.
 
 
 ## CHG-15: `reword` snapshot
