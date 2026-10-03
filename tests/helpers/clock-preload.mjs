@@ -10,6 +10,9 @@
 // is expected to occur in that same order while the schedule is driven. `event` is one of:
 //   { "type": "path", "path": "<absolute path>" }
 //     holds once that path exists.
+//   { "type": "childPath", "dir": "<absolute path>", "name": "<file name>" }
+//     holds once `<dir>/<some child>/<name>` exists, for a file in a folder whose name the test
+//     cannot know in advance (a run's minted `<planId>/plan.json`, RUN-08).
 //   { "type": "reflogCount", "repo": "<dir>", "ref": "<ref, default HEAD>", "atLeast": <n> }
 //     holds once `<ref>`'s reflog in `repo` has at least `n` entries.
 //
@@ -21,7 +24,8 @@
 // step already passed is never re-checked, so the schedule reacts only to the events
 // themselves, never to how many times `Date.now()` was called.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const realDateNow = Date.now.bind(Date);
@@ -45,6 +49,10 @@ for (const step of schedule) {
 /** @param {{type: string, [key: string]: unknown}} event */
 function eventHolds(event) {
   if (event.type === 'path') return existsSync(event.path);
+  if (event.type === 'childPath') {
+    if (!existsSync(event.dir)) return false;
+    return readdirSync(event.dir).some((child) => existsSync(join(event.dir, child, event.name)));
+  }
   if (event.type === 'reflogCount') {
     const ref = event.ref || 'HEAD';
     const result = spawnSync('git', ['reflog', 'show', '--no-color', '--format=%H', ref], {

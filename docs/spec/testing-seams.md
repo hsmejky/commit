@@ -21,7 +21,8 @@
    point with Node's `--import` of a preload module that lives in the test tree and is never
    packaged; the preload replaces `Date.now` with a stepping clock whose schedule it reads
    from a file in the test's temp directory: a JSON list of steps, each keyed to an event
-   the preload can observe (a path that must exist, such as a hook's marker file, or a
+   the preload can observe (a path that must exist, such as a hook's marker file, a file of
+   a given name in any child folder of a directory, such as a run's `<planId>/plan.json`, or a
    reflog entry count) and giving the elapsed milliseconds from then on: after a step,
    `Date.now()` returns the frozen value `callStarted + elapsed`, where `callStarted` is the
    real time of the preload's first `Date.now()` call, which that call returns unchanged (the

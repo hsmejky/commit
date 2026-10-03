@@ -60,7 +60,7 @@ import {
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
 import {
-  releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState,
+  releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState, sweep,
   RUN_DIR_NAME, STATE_VERSION,
 } from './run.mjs';
 import { commitAll } from './commit-executor.mjs';
@@ -509,6 +509,10 @@ async function storeAndLock(ctx) {
     recentSubjects: ctx.recentSubjects,
     warnings: ctx.warnings,
   }));
+  // RUN-08 (C:plan step 7): then the sweep of old run folders and leftover lock temporary
+  // files. Its cleanup errors are notices, never a changed outcome; step 8 stores them in
+  // `state.json` with the others once that write lands (S1).
+  ctx.notices.push(...sweep({ toplevel: ctx.toplevel, now: ctx.injected.now }));
   return undefined;
 }
 

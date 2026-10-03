@@ -182,6 +182,14 @@ failed call whose unstage did not happen keeps its run, below):
   leftover takeover and lock temporary files. The sweep considers only entries named in the
   minted form and never follows a link. It never deletes a renamed lock file
   (`lock.<planId>`), nor a folder on such a file's chain: adoption (above) owns them.
+  RUN-08: age is the entry's own mtime (`lstat`) against the call's clock; the leftover
+  temporary files are `lock-<planId>.tmp` in `.commit-plan/` (the takeover's private names
+  are renamed lock files, and its `call.lock.<uuid>` copies live inside a run folder), and
+  they get the same 24 hours, since a fresh one may be another `plan`'s between its write and
+  its link. A chain's folders are every `planId` a `lock.<planId>` file names, in its name or
+  its content; when the lock or one of those files cannot be read, no folder is swept that
+  time. A removal error is the notice "`` `.commit-plan/<name>` `` was not swept (<code>); the
+  next /commit retries it" (C:cli-and-exit-codes recorded texts).
 - Stdout budgets, each tested on its own (Q24): `plan`'s own fields 1 kB ([plan](plan.md));
   a `reply` 2 kB without its `text`, and its `text` 4 kB with every list at its cap
   ([Reply and handback](reply-and-handback.md)); `plan --hunks` 20 000 characters, also when

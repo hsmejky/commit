@@ -985,6 +985,109 @@ export function releaseOpen({ toplevel, planId }) {
   return releaseOwn(runDirOf(toplevel), planId);
 }
 
+/** A `<planId>/` folder or a lock temporary file is swept once its mtime is this old (Q22). */
+export const SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
+
+const RENAMED_LOCK_PREFIX = 'lock.';
+const LOCK_TEMP_PATTERN = /^lock-(.+)\.tmp$/;
+
+/**
+ * The notice for an entry the sweep could not remove (RUN-08): the outcome is unchanged, and
+ * the next `plan`'s sweep tries again (C:run-folder, C:cli-and-exit-codes recorded texts).
+ *
+ * @param {string} name the entry's name in the run-folder directory, `''` for the directory.
+ * @param {string} code the error code.
+ * @returns {string}
+ */
+export function sweepNotice(name, code) {
+  const shown = name === '' ? RUN_DIR_NAME : `${RUN_DIR_NAME}/${name}`;
+  return `\`${shown}\` was not swept (${code}); the next /commit retries it`;
+}
+
+// The `planId`s whose folders the sweep must keep whatever their age, or `null` when one of
+// the lock-type files could not be read (the folders are then left for the next sweep): the
+// one the lock names, and every run on a renamed lock file's chain (C:run-folder "Orphan
+// renamed locks"). A chain links `lock.<A>` (A's provisional folder) to the run its content
+// names, X, and on from X through `lock.X`, which is itself one of the listed files, so
+// collecting the name and the content of every `lock.<planId>` covers every chain without
+// walking one. Nothing here follows a link (`readLockFile` reads by `lstat`).
+function sweepKeeps(runDir, names) {
+  const keep = new Set();
+  try {
+    const holder = lockHolder(runDir);
+    if (holder !== null) keep.add(holder);
+    for (const name of names) {
+      if (!name.startsWith(RENAMED_LOCK_PREFIX)) continue;
+      const renamer = name.slice(RENAMED_LOCK_PREFIX.length);
+      if (!isValidPlanId(renamer)) continue;
+      keep.add(renamer);
+      const file = readLockFile(insideRunDir(runDir, name));
+      const named = file === null ? null : lockPlanId(file.bytes);
+      if (named !== null) keep.add(named);
+    }
+  } catch {
+    return null;
+  }
+  return keep;
+}
+
+// What the sweep may remove of one entry, judged by its name and `lstat` alone: a plain
+// `<planId>/` directory, or a regular `lock-<planId>.tmp` file, each in the minted form.
+// A link of any kind (symlink, junction) is never a candidate, so it is never followed.
+function sweepKind(name, stats) {
+  if (stats.isSymbolicLink()) return null;
+  if (isValidPlanId(name)) return stats.isDirectory() ? 'folder' : null;
+  const temp = LOCK_TEMP_PATTERN.exec(name);
+  if (temp !== null && isValidPlanId(temp[1])) return stats.isFile() ? 'temp' : null;
+  return null;
+}
+
+/**
+ * M12 `sweep` (RUN-08, Q22, C:run-folder, story 195), run by `plan` at the end of step 7:
+ * deletes the `<planId>/` folders older than 24 hours (by mtime, against the injected clock)
+ * that the lock does not name, and the lock temporary files (`lock-<planId>.tmp`) as old.
+ * It considers only entries named in the minted form and never follows a link: a link in
+ * place of an entry, or of `.commit-plan` itself, is left alone. It never deletes a renamed
+ * lock file (`lock.<planId>`, its own or a release's put-back) nor a folder on such a file's
+ * chain: adoption owns them (RUN-20b). A fresh lock temporary file may be another `plan`'s,
+ * between its write and its link, so the 24 hours apply to it too. Never throws: a cleanup
+ * error becomes a notice (`sweepNotice`) and never changes the outcome.
+ *
+ * @param {{ toplevel: string, now?: () => number }} options the clock, injectable for tests.
+ * @returns {string[]} the notices, one per entry that could not be removed.
+ */
+export function sweep({ toplevel, now = Date.now }) {
+  const runDir = runDirOf(toplevel);
+  const notices = [];
+  let names;
+  try {
+    if (!isPlainDirectory(runDir)) return notices;
+    names = fs.readdirSync(runDir);
+  } catch (err) {
+    notices.push(sweepNotice('', err.code || 'error'));
+    return notices;
+  }
+  const keep = sweepKeeps(runDir, names);
+  const cutoff = now() - SWEEP_AFTER_MS;
+  for (const name of names) {
+    try {
+      const entry = insideRunDir(runDir, name);
+      const stats = fs.lstatSync(entry);
+      const kind = sweepKind(name, stats);
+      if (kind === null || stats.mtimeMs >= cutoff) continue;
+      if (kind === 'folder' && (keep === null || keep.has(name))) continue;
+      // Re-checked right before each removal: nothing is removed through a `.commit-plan`
+      // swapped for a link mid-sweep, like `discard` and `release`.
+      if (!isPlainDirectory(runDir)) return notices;
+      fs.rmSync(entry, { recursive: kind === 'folder', force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (err) {
+      // An entry gone by now (another call's own cleanup) is nothing to report.
+      if (err.code !== 'ENOENT') notices.push(sweepNotice(name, err.code || 'error'));
+    }
+  }
+  return notices;
+}
+
 /**
  * M12 `run.state` (PLN-01): the parsed `<planId>/state.json` of a run `open` returned, read
  * after `open` already checked its `version`. A read or parse error throws (`internal`).

@@ -76,6 +76,29 @@ test('a path step is real time until the path exists, then frozen at callStarted
   assert.equal(stillFrozen, frozenAt, 'the clock must stay frozen on the next read too');
 });
 
+// --- RUN-08: a childPath step holds once a file of that name exists in any child folder ----
+
+test('a childPath step is real time until <dir>/<any child>/<name> exists, then frozen', async (t) => {
+  const c = createCase(t, { repo: false });
+  const dir = path.join(c.root, 'runs');
+  const schedule = [{ event: { type: 'childPath', dir, name: 'plan.json' }, elapsedMs: 10_000_000 }];
+
+  const [callStarted, otherName, afterFile] = await runOps(
+    c,
+    [
+      { op: 'now' },
+      { op: 'touch', path: path.join(dir, 'some-id', 'state.json') },
+      { op: 'now' },
+      { op: 'touch', path: path.join(dir, 'some-id', 'plan.json') },
+      { op: 'now' },
+    ],
+    schedule,
+  );
+
+  assert.notEqual(otherName, callStarted + 10_000_000, 'another file name does not hold the event');
+  assert.equal(afterFile, callStarted + 10_000_000);
+});
+
 // --- AC1: two path steps freeze in turn, each until the next step's event holds -----------
 
 test('two path steps freeze in turn at callStarted + each elapsed', async (t) => {
