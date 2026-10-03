@@ -145,6 +145,14 @@ spec testing-modules (M6 lint through `check`).
 - [ ] Seam 1: a message whose lines end in a lone CR (no LF) passes `check` normalised to
       LF, like its CRLF form.
 
+**Forward note (review-PLN-06 finding 7):** C:scan-patterns gives span offsets into the
+normalised message, but M14's `messageOf` (`plan-validator.mjs`) only trims a body's
+trailing LFs, so a CRLF or BOM message yields spans into the raw text, which do not line up
+with the normalised message PLN-07 stores and M17 redacts. Here M14 runs `lint`,
+`scanText` and its lint-reason redaction on `normalise`'s output, replacing
+`messageOf`'s partial trim; add one test asserting a CRLF body's span against the stored
+message.
+
 
 ## MSG-07: Trailers appended to committed messages
 

@@ -122,6 +122,14 @@ merged) and `plan`'s `config.values` and `config.sources` (`default`, `user`, `r
 - [ ] Seam 1: the effective values reach `check`'s lint (a type allowed only by the repo
       layer passes, a type the repo layer removed fails).
 
+**Forward note (review-PLN-06 finding 6):** PLN-06 gave M14 a stand-in for the Q6
+defaults, `DEFAULT_MESSAGE_VALUES` in `plan-validator.mjs`, used through
+`runState.config?.values ?? DEFAULT_MESSAGE_VALUES` while `plan` stores no values. M4
+owns the effective values and their defaults (`docs/spec/architectural-decisions.md`
+owner table), so once `plan` stores `config.values` in `state.json`, delete
+`DEFAULT_MESSAGE_VALUES` and the fallback: M14 reads only the stored values, and the
+defaults live in M4 `config.mjs` alone.
+
 
 ## CFG-06: Warnings for unknown and misplaced keys
 
