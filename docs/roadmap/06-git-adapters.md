@@ -237,14 +237,14 @@ refusal ("signing key locked — unlock it …") once `ssh-add -L` is wired.
 
 **Blocked by:** GIT-10.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:plan (SSH readiness tables), stories 170, M11, testing-modules row M11.
 
-- [ ] Seam 1: an unencrypted OpenSSH key and an unencrypted PEM key → `ready: true` (no agent involved).
-- [ ] Seam 1: a passphrase-protected key file, with no `ssh-add` check yet available → `ready: "unknown"` (last table row: an untrusted `false` becomes `"unknown"`; the `signing` refusal is GIT-12's, once `ssh-add -L` is wired).
-- [ ] Seam 1: `user.signingKey` set to a `.pub` path reads the private file beside it; a `~/` path expands against the temp OS home; a `.pub` without its private file → `"unknown"` when no agent check ran (last table row).
-- [ ] Seam 1: `user.signingKey` unset with `gpg.ssh.defaultKeyCommand` set, and unset without it → `"unknown"`.
+- [x] Seam 1: an unencrypted OpenSSH key and an unencrypted PEM key → `ready: true` (no agent involved).
+- [x] Seam 1: a passphrase-protected key file, with no `ssh-add` check yet available → `ready: "unknown"` (last table row: an untrusted `false` becomes `"unknown"`; the `signing` refusal is GIT-12's, once `ssh-add -L` is wired).
+- [x] Seam 1: `user.signingKey` set to a `.pub` path reads the private file beside it; a `~/` path expands against the temp OS home; a `.pub` without its private file → `"unknown"` when no agent check ran (last table row).
+- [x] Seam 1: `user.signingKey` unset with `gpg.ssh.defaultKeyCommand` set, and unset without it → `"unknown"`.
 
 
 ## GIT-12: SSH readiness through the agent (`ssh-add -L`)
