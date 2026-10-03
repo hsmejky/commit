@@ -89,6 +89,21 @@ function parseFooterParagraph(lines) {
 }
 
 /**
+ * Whether `line`, taken on its own, is a footer entry's own line (`FOOTER_LINE`): a token,
+ * then `: ` or ` #`, then a non-empty value. An indented continuation line (`CONTINUATION`)
+ * does not match: it only continues an entry already open in a paragraph. Shared by `parse`
+ * (whole-paragraph footer parsing, via the same regex) and the attribution resolver (M5),
+ * which tests a config value's lines independently rather than as a paragraph (Q5): the
+ * value is not message prose, so M6's paragraph/continuation rules do not apply to it.
+ *
+ * @param {string} line
+ * @returns {boolean}
+ */
+export function isFooterLine(line) {
+  return FOOTER_LINE.test(line);
+}
+
+/**
  * Whether `description` (the header's description) satisfies the `subjectCase: lower` rule:
  * its first character is not an uppercase letter, unless the first word is an acronym (every
  * letter uppercase, at least two letters), which is exempt. Shared with `infer` (M19), which

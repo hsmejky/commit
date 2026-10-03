@@ -43,6 +43,17 @@
   `managed-settings.json` only; reading its drop-in directory is deferred past 0.1.0 (see
   [Non-goals](non-goals.md)) to keep the first release's resolver small. The drop-in files
   join the policy sources the README names as unread.
+- **Amended.** By review-CFG-09 (2026-10-03): a missing `settings.json` in a layer is no
+  settings at all, same as a missing `commit.json` layer. When a layer's `settings.json`
+  exists but cannot be read, is not valid UTF-8, is not valid JSON, or its top level is not
+  a JSON object, it is also treated as no settings from that layer — Claude's own settings
+  file is not this script's to validate, and a malformed one is never a `config` refusal —
+  but `plan.warnings` gets a line naming the problem, so a layer's `includeCoAuthoredBy:
+  false` does not silently give way to a lower layer's (or the fixed) default trailer
+  without the user seeing why. `includeCoAuthoredBy: true` defines the key exactly as
+  `false` does ("the first layer that defines a key wins"): the layer it is read from is
+  the reported `source`, even though the trailer it produces reads the same as the `default`
+  source's.
 - **Rejected.**
   - Hard-coded opinionated rules; reading `commitlint.config.*` (executes third-party JS).
   - Reproducing the harness default footer: it contains the model name, which the script

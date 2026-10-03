@@ -21,9 +21,10 @@ function config(values = {}) {
 let parse;
 let lint;
 let passesLowerCase;
+let isFooterLine;
 
 beforeEach(async () => {
-  ({ parse, lint, passesLowerCase } = await loadLib('message-grammar'));
+  ({ parse, lint, passesLowerCase, isFooterLine } = await loadLib('message-grammar'));
 });
 
 // MSG-01 AC: `feat: add x` parses to type `feat`, no scope, no breaking flag, description
@@ -375,6 +376,28 @@ test('a last paragraph starting with an indented line is body (continuation with
   assert.equal(result.footer, null);
   assert.deepEqual(result.body, ['  cont\nRefs: a']);
 });
+
+// M5 (CFG-09) tests a config value's lines independently against this same regex, rather
+// than grouping them into paragraphs the way `parse` does for a commit message.
+
+const footerLineTable = [
+  ['Co-Authored-By: A <a@b>', true],
+  ['Refs #12', true],
+  ['Closes #12', true],
+  ['BREAKING CHANGE: x', true],
+  ['co-authored-by: a <a@b>', true], // token case is not checked here, only the shape
+  ['🤖 Generated', false],
+  ['some text', false],
+  ['', false],
+  ['   ', false],
+  ['  cont', false], // an indented continuation line does not start a footer entry on its own
+];
+
+for (const [line, expected] of footerLineTable) {
+  test(`isFooterLine(${JSON.stringify(line)}) is ${expected}`, () => {
+    assert.equal(isFooterLine(line), expected);
+  });
+}
 
 // MSG-04 AC: under `body: forbidden`, header plus `Closes #12` passes (story 121); header
 // plus a prose paragraph fails; header plus prose plus footers fails.

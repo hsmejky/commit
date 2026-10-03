@@ -93,14 +93,23 @@ copy that carries patterns counts as changed, so its units are flagged (`humanOn
 **M5 Attribution resolver.** Resolve the trailer from the Claude settings layers, highest
 first: managed (`managed-settings.json` only; the drop-in directory is not read, Out of
 Scope), project-local, project (project directory = `CLAUDE_PROJECT_DIR`, else the
-toplevel), user (in the Claude home). Two passes: `attribution.commit` (empty string = no
-trailer), then `includeCoAuthoredBy`; otherwise the fixed trailer `Co-Authored-By: Claude
-<noreply@anthropic.com>`, source `default`. Keep trailer-shaped lines only, warn on dropped
-lines. MDM profiles, registry policy and server-managed settings are not read; the source
-is reported and the README names the gap (story 116). `managedDir` is the injected managed
+toplevel), user (in the Claude home). Two passes: `attribution.commit` (empty string, or a
+string that is whitespace-only once its lines are dropped, = no trailer), then
+`includeCoAuthoredBy` (`true` or `false` both count as the key being set in that layer, same
+as a non-empty `attribution.commit`); otherwise the fixed trailer `Co-Authored-By: Claude
+<noreply@anthropic.com>`, source `default`. Keep trailer-shaped lines only: each line of the
+value is tested on its own against M6's footer-line grammar (`isFooterLine`), not grouped
+into paragraphs the way a commit message body is, after CRLF/lone-CR normalisation; warn on
+dropped lines (a non-footer line or a blank line). A layer's `settings.json` that is
+missing is no settings from that layer; one that exists but cannot be read, is not valid
+UTF-8, is not valid JSON, or whose top level is not a JSON object is also treated as no
+settings from that layer (never a `config` refusal — Claude's own settings file is not this
+script's to validate), but a warning names the problem so it is not silent (Q5 Amended).
+MDM profiles, registry policy and server-managed settings are not read; the source is
+reported and the README names the gap (story 116). `managedDir` is the injected managed
 directory. `plan` outputs `attribution: null` when the resolution yields no trailer (an
-empty `attribution.commit` or `includeCoAuthoredBy: false`); the source is known at `plan`
-and stored for M16 and M17 (C:plan).
+empty/whitespace-only `attribution.commit` or `includeCoAuthoredBy: false`); the source is
+known at `plan` and stored for M16 and M17 (C:plan).
 `resolveAttribution({ env, claudeHome, toplevel, managedDir }) → { trailer | null, source,
 warnings }`. Sources: Q5, C:plan.
 
