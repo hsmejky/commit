@@ -40,9 +40,11 @@ git repository or in a bare repository, the same text family as `plan`
   type (5% or more) appended in ascending order.
 - `types.evidence`: the share of each non-standard type kept (5% or more).
 - `wouldFail`: how many of the **Conventional Commits** ones among the commits read fail
-  lint under the proposed config (same lint functions), so it measures the threshold loss
-  (Q7) only. `nonConventional`: the commits read that are not Conventional Commits (they
-  would all fail). `wouldFail` is `null` when there is no proposal.
+  lint under the proposed config (same lint functions): mostly the threshold loss (Q7) of
+  adopting the proposal, but also any fixed-rule lint failure the proposal's keys do not
+  control, such as a footer-token rule (Q13). `nonConventional`: the commits read that are
+  not Conventional Commits (they would all fail). `wouldFail` is `null` when there is no
+  proposal.
 - `maxSubjectLength.evidence.p95`: the 95th percentile of the Conventional Commits header
   lengths (code points) read, by the nearest-rank method: sorted ascending, the element at
   position `ceil(0.95n)` (1-indexed) — always one of the observed lengths, never

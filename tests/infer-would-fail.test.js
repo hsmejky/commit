@@ -66,6 +66,35 @@ test('Seam 1: a history with no lint failures among the Conventional Commits giv
   assert.equal(result.json.wouldFail, 0, detail(result));
 });
 
+test('Seam 1: wouldFail lints under the proposal, not under the defaults', async (t) => {
+  const c = createCase(t);
+  // 100 Conventional Commits: 94 "feat" and 6 "deps" (6%, at or above the 5% kept threshold,
+  // so "deps" joins types.value). All headers are short and lowercase with no scope or body,
+  // so every one of the 100 lints clean under the proposal (types.value includes "deps") --
+  // wouldFail: 0. Linting against DEFAULT_VALUES instead (which has no "deps") would fail the
+  // 6 "deps" commits on type, giving wouldFail: 6: this is the regression this case targets,
+  // since every other seam in this file has a proposal identical to DEFAULT_VALUES and cannot
+  // tell "linted under the proposal" apart from "linted under the defaults".
+  const messages = [];
+  for (let i = 1; i <= 94; i += 1) messages.push(`feat: change ${i}\n`);
+  for (let i = 1; i <= 6; i += 1) messages.push(`deps: bump dep ${i}\n`);
+  fastImportLinear(c, messages.length, (i) => messages[i - 1]);
+
+  const result = await runCommit(c, ['infer']);
+
+  assertOk(result);
+  assert.equal(result.json.commitCount, 100, detail(result));
+  assert.deepEqual(
+    result.json.proposal.types.value,
+    [
+      'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style',
+      'test', 'deps',
+    ],
+    detail(result),
+  );
+  assert.equal(result.json.wouldFail, 0, detail(result));
+});
+
 test('M19 history-inference imports lint from M6, separately from the step table (no duplicate lint logic)', () => {
   const source = fs.readFileSync(libPath('history-inference'), 'utf8');
   const importMatch = source.match(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/message-grammar\.mjs['"];?\s*$/m);
