@@ -423,8 +423,8 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
    `if (…) { … }`. So no target or position is read. Every other row ranks above it, the bare
    row below it (Precedence): `saps git commit --no-verify` keeps the `--no-verify` row, while
    `saps git commit -m x` gets the wrapper row, and `Start-Process git -ArgumentList { git
-   commit -m x }` the unknown-global-option row (step 4: `-ArgumentList` reads as an unknown
-   git option followed by a `commit` token). Accepted false
+   commit -m x }` the literal-arguments row (step 4: the `{` token after `-ArgumentList` is
+   not literal). Accepted false
    denies: `start https://github.com/o/r/commit/abc`, `npm start` in a command that mentions
    commit, `git log --grep start --grep commit`, and
    `Start-Process -ArgumentList { git commit --amend --no-edit }`.
