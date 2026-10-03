@@ -79,9 +79,14 @@ test('plan honours an exported GIT_CONFIG_SYSTEM (in the keep-set)', async (t) =
   assert.match(result.json.error.message, /ISO-8859-1/);
 });
 
-// Story 74: a path holding glob magic is a literal path. `*` cannot be in a Windows file
-// name, so that file is added on POSIX only; `[id]` runs everywhere.
-test('plan inventories a path containing [id] and * literally', async (t) => {
+// Story 74, smoke test only: no `plan` call passes a pathspec (diff `HEAD`,
+// `ls-files --cached` and `status` all run without one), so this exercises only that a
+// glob-magic path round-trips through the inventory undisturbed; it passes whether or not
+// `GIT_LITERAL_PATHSPECS` is set. The mechanism itself (a pathspec taken literally) is
+// asserted directly below, by `run: GIT_LITERAL_PATHSPECS makes [id] and * name themselves`.
+// `*` cannot be in a Windows file name, so that file is added on POSIX only; `[id]` runs
+// everywhere.
+test('plan inventories a path containing [id] and * literally (smoke test)', async (t) => {
   const c = createCase(t);
   const names = ['src/[id].tsx', 'src/d.tsx'];
   if (process.platform !== 'win32') names.push('src/a*b.txt', 'src/axb.txt');
@@ -146,6 +151,10 @@ test('every git call plan makes is read-only: only the keep-set and the pins rea
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'core.quotePath',
     GIT_CONFIG_VALUE_0: 'true',
+    // The most direct config-injection vector besides GIT_CONFIG_COUNT, and the object-store
+    // redirect: both are outside the keep-set, so the generic strip rule removes them too.
+    GIT_CONFIG_PARAMETERS: "'core.quotepath'='true'",
+    GIT_OBJECT_DIRECTORY: path.join(c.root, 'decoy-objects'),
     GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
     GIT_ASKPASS: 'askpass-decoy',
   });
@@ -180,6 +189,34 @@ beforeEach(async () => {
 function indexBytes(c) {
   return fs.readFileSync(path.join(c.repoDir, '.git', 'index'));
 }
+
+// Story 74, the mechanism itself. `[id].tsx` and `d.tsx`/`i.tsx` are seeded so that, without
+// the pin, `[id]` is glob magic matching the single characters `i` or `d`: an `ls-files`
+// pathspec of `src/[id].tsx` would then list `src/d.tsx` and `src/i.tsx`, never the file
+// actually named `src/[id].tsx`. With `GIT_LITERAL_PATHSPECS=1` pinned, the pathspec names
+// exactly the file with that literal name. `*` cannot be in a Windows file name, so the
+// second case runs on POSIX only.
+test('run: GIT_LITERAL_PATHSPECS makes [id] name itself, not a character-class match', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'src/[id].tsx': 'bracket\n', 'src/i.tsx': 'i\n', 'src/d.tsx': 'd\n' });
+  const options = { cwd: c.repoDir, env: c.env, readOnly: true };
+
+  const result = await processAdapter.run('git', ['ls-files', '--', 'src/[id].tsx'], options);
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout.toString('utf8'), 'src/[id].tsx\n');
+});
+
+test('run: GIT_LITERAL_PATHSPECS makes * name itself, not a glob match (POSIX only)', { skip: process.platform === 'win32' }, async (t) => {
+  const c = createCase(t);
+  seed(c, { 'src/a*b.txt': 'star\n', 'src/axb.txt': 'x\n' });
+  const options = { cwd: c.repoDir, env: c.env, readOnly: true };
+
+  const result = await processAdapter.run('git', ['ls-files', '--', 'src/a*b.txt'], options);
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout.toString('utf8'), 'src/a*b.txt\n');
+});
 
 test('run: GIT_OPTIONAL_LOCKS=0 on a read-only call only, so only a staging call may write the index', async (t) => {
   const c = createCase(t);

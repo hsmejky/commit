@@ -23,13 +23,16 @@ user never asks for a mode or a takeover, Q17). A `planId` (`--plan`, `--take-ov
 be a lowercase UUID v4, the form `crypto.randomUUID()` mints; any other value → exit 1
 `usage` ([run folder](run-folder.md)). `--confirmed` belongs on a `confirm` handback's `yes`
 answer only ([commit](commit-release.md)). Every git call except `git commit` runs with
-`GIT_LITERAL_PATHSPECS=1` and the `-c` pins (`core.quotePath=false`,
-`diff.suppressBlankEmpty=false`), and with every inherited `GIT_*` variable removed except
-`GIT_EXEC_PATH`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`, `GIT_SSH`,
-`GIT_SSH_COMMAND` and `GIT_ASKPASS`, so `GIT_ATTR_SOURCE`, `GIT_TRACE*` and the
-object-directory variables cannot reach the scan, while every call reads the config files
-`git commit` reads (Q9). `git commit` takes no pathspec and runs with neither the pins nor
-`GIT_LITERAL_PATHSPECS`; it removes only `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+`GIT_LITERAL_PATHSPECS=1` and the config pins (`core.quotePath=false`,
+`diff.suppressBlankEmpty=false`), set via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
+`GIT_CONFIG_VALUE_*` (git 2.31+) rather than argv, the same command-line scope as `-c`, so
+the caller's argv stays as the caller wrote it; and with every inherited `GIT_*` variable
+removed except `GIT_EXEC_PATH`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`,
+`GIT_CONFIG_NOSYSTEM`, `GIT_SSH`, `GIT_SSH_COMMAND` and `GIT_ASKPASS`, so `GIT_ATTR_SOURCE`,
+`GIT_TRACE*` and the object-directory variables cannot reach the scan, while every call
+reads the config files `git commit` reads (Q9). `git commit` takes no pathspec and runs
+with neither the pins nor `GIT_LITERAL_PATHSPECS`; it removes only `GIT_DIR`,
+`GIT_WORK_TREE`, `GIT_INDEX_FILE`,
 `GIT_COMMON_DIR`, `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*`, `GIT_CONFIG_PARAMETERS`,
 `GIT_ATTR_SOURCE`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES`, so repo
 hooks inherit the rest of the user's own git environment (story 147). Path lists go to git

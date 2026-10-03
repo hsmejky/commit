@@ -168,8 +168,10 @@
   config files `git commit` reads (an exported `GIT_CONFIG_SYSTEM` that sets
   `commit.gpgsign` reaches the signing probe too). Every call except `git commit` also runs with
   `GIT_LITERAL_PATHSPECS=1` in its environment, so a path such as `[id].tsx`, `*.js` or
-  `:foo` names exactly that file, and with the `-c` pins (`core.quotePath=false`,
-  `diff.suppressBlankEmpty=false`, Q11). `git commit` takes no pathspec and runs with
+  `:foo` names exactly that file, and with the config pins (`core.quotePath=false`,
+  `diff.suppressBlankEmpty=false`, Q11), set via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
+  `GIT_CONFIG_VALUE_*` (git 2.31+) so the caller's own argv stays untouched, the same
+  command-line scope as `-c`. `git commit` takes no pathspec and runs with
   neither; it removes only the redirecting variables (`GIT_DIR`, `GIT_WORK_TREE`,
   `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_CONFIG_COUNT` / `KEY_*` / `VALUE_*`,
   `GIT_CONFIG_PARAMETERS`,
@@ -190,7 +192,7 @@
 - **Amended.** By spec pass 1 (2026-09-27): `check` always commits when `confirm` is
   null; the `--commit` flag is dropped (no caller). By spec pass 2 (2026-09-27): the CLI
   kinds `config` and `env` (exit 1); `git commit` runs without `GIT_LITERAL_PATHSPECS` and
-  the `-c` pins (story 147).
+  the config pins (story 147).
 - **Amended.** By spec pass 3 (2026-09-27):
   - Signing order: `plan` refuses on signing only after the clean-tree and `staged-hit`
     checks, so a clean tree is never blocked by a locked key; `signing` leaves the

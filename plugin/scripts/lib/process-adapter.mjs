@@ -36,15 +36,16 @@ const HISTORY_CONFIG = [['log.showSignature', 'false'], ['i18n.logOutputEncoding
 // variable outside the keep-set is removed, matched case-insensitively because Windows
 // environment names are, then the pins are set. `index` is the optional alternate index.
 function gitEnv(env, { readOnly = false, index, history = false } = {}) {
+  if (!env) throw new Error('gitEnv: env is required');
   const out = {};
-  for (const [key, value] of Object.entries(env || {})) {
+  for (const [key, value] of Object.entries(env)) {
     const upper = key.toUpperCase();
     if (upper.startsWith('GIT_') && !KEEP.has(upper)) continue;
     out[key] = value;
   }
   out.GIT_LITERAL_PATHSPECS = '1';
   if (readOnly) out.GIT_OPTIONAL_LOCKS = '0';
-  if (index !== undefined) out.GIT_INDEX_FILE = index;
+  if (index != null) out.GIT_INDEX_FILE = index;
   const config = history ? [...PINNED_CONFIG, ...HISTORY_CONFIG] : PINNED_CONFIG;
   out.GIT_CONFIG_COUNT = String(config.length);
   config.forEach(([key, value], i) => {
@@ -136,10 +137,13 @@ export async function gitPath(names, { cwd, env, now }) {
 /**
  * Runs one process asynchronously and collects its output.
  *
- * For `git` (every call so far; `git commit`'s own environment is GIT-06's) the call runs
- * with the hygiene of M2: every inherited `GIT_*` variable outside `GIT_ENV_KEEP_SET` is
- * removed, `GIT_LITERAL_PATHSPECS=1`, `core.quotePath=false` and
- * `diff.suppressBlankEmpty=false` are pinned, and the options below add the rest.
+ * `cmd` is matched against `git` by basename, case-insensitively and with an `.exe` suffix
+ * stripped, so a resolved or absolute git path still gets the hygiene below; every other
+ * `cmd` runs with `env` untouched. For git (every call so far; `git commit`'s own
+ * environment is GIT-06's) the call runs with the hygiene of M2: every inherited `GIT_*`
+ * variable outside `GIT_ENV_KEEP_SET` is removed, `GIT_LITERAL_PATHSPECS=1`,
+ * `core.quotePath=false` and `diff.suppressBlankEmpty=false` are pinned, and the options
+ * below add the rest.
  *
  * @param {string} cmd
  * @param {string[]} args
@@ -158,7 +162,8 @@ export async function gitPath(names, { cwd, env, now }) {
  */
 export function run(cmd, args, { cwd, env, now, readOnly, index, history, input }) {
   return new Promise((resolve, reject) => {
-    const childEnv = cmd === 'git' ? gitEnv(env, { readOnly, index, history }) : env;
+    const isGit = path.basename(cmd, '.exe').toLowerCase() === 'git';
+    const childEnv = isGit ? gitEnv(env, { readOnly, index, history }) : env;
     const child = spawn(cmd, args, {
       cwd,
       env: childEnv,
