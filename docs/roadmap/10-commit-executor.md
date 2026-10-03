@@ -159,18 +159,18 @@ groups refused"), and the next group is refused `head-moved`.
 
 **Blocked by:** EXE-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, C:cli-and-exit-codes, story 168.
 
-- [ ] Seam 1: a manual commit between `plan` and `commit` → exit 6 `head-moved`, no new
+- [x] Seam 1: a manual commit between `plan` and `commit` → exit 6 `head-moved`, no new
       commit, the index byte-identical to before the call, `unstaged: null`, the text "HEAD
       moved since plan (commit made elsewhere?), run /commit again" (Q18).
-- [ ] Seam 1: a fixture `post-commit` hook that commits again during group 1 (of three
+- [x] Seam 1: a fixture `post-commit` hook that commits again during group 1 (of three
       stored groups) → group 1 reported committed with the SHA HEAD holds and the "another
       commit was made during group 1; later groups refused" notice, group 2 refused
       `head-moved`, `failed: 2`, `remaining: [2, 3]`.
-- [ ] Seam 1: every mid-run refusal output of `commit --all` — including a `lock`
+- [x] Seam 1: every mid-run refusal output of `commit --all` — including a `lock`
       (`taken-over`/`busy`) refusal from `touch` between groups (EXE-04) — carries `commits`
       (the groups already committed), `failed`, `remaining` and `unstaged` per
       C:commit-release, not only `head-moved`'s; extend EXE-04's takeover test to assert
