@@ -18,14 +18,14 @@ status `A` or untracked, never from the worker. It builds the thin `check` workf
 
 **Blocked by:** CHG-03, RUN-04, RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q11, C:worker-plan, C:check, stories 63, 66, M14.
 
-- [ ] Seam 1: a plan with one group naming both modified files → `check` output `groups[0]` with both paths, `new: false`, `hunks: null`, `newFiles: []`.
-- [ ] Seam 1: no `plan.groups.json` → exit 2, `error.kind: "lint"`, one error with `group: null`.
-- [ ] Seam 1: `plan.groups.json` not valid JSON, and valid JSON missing `groups` → exit 2 shape error, `group: null`.
-- [ ] Seam 1: after a failed `check`, no stored group remains in `state.json`.
+- [x] Seam 1: a plan with one group naming both modified files → `check` output `groups[0]` with both paths, `new: false`, `hunks: null`, `newFiles: []`.
+- [x] Seam 1: no `plan.groups.json` → exit 2, `error.kind: "lint"`, one error with `group: null`.
+- [x] Seam 1: `plan.groups.json` not valid JSON, and valid JSON missing `groups` → exit 2 shape error, `group: null`.
+- [x] Seam 1: after a failed `check`, no stored group remains in `state.json`.
 
 
 ## PLN-02: Completeness and path resolution in `split`

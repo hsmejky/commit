@@ -452,6 +452,13 @@ With `--no-user`, the ending failure releases the lock and deletes the folder.
 
 **Sources:** Q18, Q20, M15 `onLintFailure`/`runEnd`, C:check, story 214.
 
+Note (PLN-01 review): `plan-validator.mjs`'s lint errors are all `group: null` today; a
+shape error (`parseWorkerPlan`) is not marked apart from a completeness error (PLN-02),
+though both land in the same `errors` array. The "failure made only of shape errors" rule
+above needs to tell them apart, so `onLintFailure` needs a marker on the lint result (for
+example `kind: 'shape'` per error, or on the overall failure) added here, not retrofitted
+onto PLN-01.
+
 - [ ] Seam 1: two bad `check` calls in a row → exit 2 and then `lintFailed`. Running
       `plan --hunks` between them → exit 2 both times.
 - [ ] Seam 1: a `source: user` plan with a lint error → `lintFailed` on the first failure.
