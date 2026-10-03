@@ -96,13 +96,16 @@ function rewordRefusal(reword) {
  * then `state`, then a start-up call's `timed-out` (M2's fixed short timeout, before any run
  * folder exists).
  *
- * @param {{ git: object, node: object, repo: object|null, config?: { error: string } | null,
+ * @param {{ git: object, node: object, repo: object|null,
+ *   config?: { error: string } | { values: object, sources: object } | null,
  *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null,
  *   reword?: { unborn: boolean, merge: boolean, root: boolean, pushed: boolean } | null,
  *   signing?: { enabled: boolean, format?: string, ready?: boolean|string } }}
- *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (`null` or
- *   omitted when no layer error was found; the user layer is checked even outside a
- *   worktree, so this can hold a user-layer error there too, CFG-04), plus M3
+ *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (CFG-05: an
+ *   `{ error }` object only when a layer error was found, else the effective `{ values,
+ *   sources }`, which never refuses; `null` or omitted is also "no error" for callers that
+ *   never loaded a config at all, e.g. the pure unit tests below). The user layer is checked
+ *   even outside a worktree, so this can hold a user-layer error there too (CFG-04). Plus M3
  *   `inProgressState()`'s result under `inProgress` (GIT-03; `null` or omitted outside a
  *   worktree, or when nothing is in progress), plus M3 `headState()`'s `unmerged` (GIT-04;
  *   `false`, `null` or omitted outside a worktree, or when the index holds no unmerged
@@ -117,7 +120,7 @@ function rewordRefusal(reword) {
 export function planRefusal(facts) {
   const envMessage = envRefusal(facts);
   if (envMessage !== null) return { code: 'env', message: envMessage };
-  if (facts.config != null) return { code: 'config', message: facts.config.error };
+  if (facts.config?.error !== undefined) return { code: 'config', message: facts.config.error };
   if (facts.inProgress != null) {
     return { code: 'in-progress', message: IN_PROGRESS_MESSAGES[facts.inProgress.kind] };
   }

@@ -21,10 +21,9 @@
 // and scan (PLN-06, M6 and M8), the attribution flag and the normalised message (PLN-07).
 //
 // PLN-06 lints and scans each group's message. The lint `values` are `runState.config.values`
-// when present; CFG-05 (not built yet) is the slice that makes
-// `plan` actually store the layered, effective values there, so until it lands every run
-// falls back to `DEFAULT_MESSAGE_VALUES`, the exact Q6 defaults CFG-05 will also use as its
-// own default layer. Scan hits become one error per distinct pattern ID, in first-hit order
+// (CFG-05: `plan` now always stores the layered, effective values there, M4 `config.mjs`
+// `DEFAULT_VALUES` included, so this module keeps no default layer of its own). Scan hits
+// become one error per distinct pattern ID, in first-hit order
 // ("message contains `local-path`"); each carries that ID's `spans` (never the matched
 // value) for M17's future redaction of the quoted message. A lint reason that quotes a
 // fragment overlapping a span quotes `[<pattern-id>]` in its place, so no matched text
@@ -34,20 +33,6 @@ import { lint, normalise, normaliseText } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
-
-// Q6's defaults (docs/decisions/q06-config-layers-and-keys.md): the commitlint
-// `config-conventional` types, no scope, no body, 72 code points, lowercase. Used only when
-// `runState.config.values` is absent (CFG-05 not wired yet); once it lands, its own default
-// layer should read these same values rather than duplicate them.
-const DEFAULT_MESSAGE_VALUES = Object.freeze({
-  types: Object.freeze([
-    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
-  ]),
-  scope: 'forbidden',
-  maxSubjectLength: 72,
-  subjectCase: 'lower',
-  body: 'forbidden',
-});
 
 // The group's message as lint and the scanner see it: the header, then (when there is a
 // body) a blank line and the body, run through M6 `normaliseText` (MSG-06) so a CRLF or lone
@@ -132,7 +117,7 @@ export function validatePlan(planBytes, runState, options = {}) {
   const errors = [];
   const groups = [];
   const stored = [];
-  const messageValues = runState.config?.values ?? DEFAULT_MESSAGE_VALUES;
+  const messageValues = runState.config.values;
   const osUser = options.osUser ?? null;
   if (mixesFilesAndHunks(workerPlan)) {
     errors.push({ group: null, reason: '`files` and `hunks` are mixed; use hunk IDs everywhere or paths everywhere' });

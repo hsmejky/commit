@@ -32,18 +32,30 @@ function tempClaudeHome(t) {
   return dir;
 }
 
-test('loadConfig returns null when neither layer has a config file at all', (t) => {
+test('loadConfig returns the effective defaults when neither layer has a config file at all', (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
-  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
+  const result = config.loadConfig({ toplevel, claudeHome });
+  assert.deepEqual(result.values, config.DEFAULT_VALUES);
+  assert.deepEqual(result.sources, {
+    types: 'default',
+    scope: 'default',
+    body: 'default',
+    maxSubjectLength: 'default',
+    subjectCase: 'default',
+    scanIgnore: 'default',
+  });
 });
 
-test('loadConfig returns null when the repo config is valid JSON', (t) => {
+test('loadConfig returns the repo layer\'s types as effective, sourced to repo', (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": ["feat", "fix"] }');
-  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
+  const result = config.loadConfig({ toplevel, claudeHome });
+  assert.deepEqual(result.values.types, ['feat', 'fix']);
+  assert.equal(result.sources.types, 'repo');
+  assert.equal(result.sources.scope, 'default');
 });
 
 test('loadConfig reports an error naming the repo layer on unparseable JSON', (t) => {
@@ -84,7 +96,9 @@ test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
     Buffer.concat([bom, Buffer.from('{ "types": ["feat"] }', 'utf8')]),
   );
 
-  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
+  const result = config.loadConfig({ toplevel, claudeHome });
+  assert.deepEqual(result.values.types, ['feat']);
+  assert.equal(result.sources.types, 'repo');
 });
 
 // review-CFG-02 finding 4, Q6 (amended): invalid UTF-8 is treated as unparseable (a `config`
@@ -168,16 +182,20 @@ test('USER_CONFIG_FILENAME is commit.json (Q5, Q6, public surface)', () => {
   assert.equal(config.USER_CONFIG_FILENAME, 'commit.json');
 });
 
-test('loadConfig returns null when the user config is absent, even with no toplevel at all', (t) => {
+test('loadConfig returns the effective defaults when the user config is absent, even with no toplevel at all', (t) => {
   const claudeHome = tempClaudeHome(t);
-  assert.equal(config.loadConfig({ toplevel: null, claudeHome }), null);
+  const result = config.loadConfig({ toplevel: null, claudeHome });
+  assert.deepEqual(result.values, config.DEFAULT_VALUES);
+  assert.equal(result.sources.types, 'default');
 });
 
-test('loadConfig returns null when the user config is valid JSON', (t) => {
+test('loadConfig returns the user layer\'s types as effective, sourced to user, when valid JSON', (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": ["feat", "fix"] }');
-  assert.equal(config.loadConfig({ toplevel, claudeHome }), null);
+  const result = config.loadConfig({ toplevel, claudeHome });
+  assert.deepEqual(result.values.types, ['feat', 'fix']);
+  assert.equal(result.sources.types, 'user');
 });
 
 test('loadConfig reports an error naming the user layer on unparseable JSON, with no toplevel', (t) => {

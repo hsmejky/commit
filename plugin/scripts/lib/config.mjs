@@ -203,28 +203,79 @@ const REPO_LAYER = `repo config (${REPO_CONFIG_PATH})`;
 const USER_LAYER = `user config (${USER_CONFIG_FILENAME})`;
 
 /**
+ * Q6's defaults (commitlint `config-conventional` types, no scope, no body, 72 code points,
+ * lowercase, no `scanIgnore` patterns), used by `effectiveConfig` for whichever key neither
+ * layer sets. The sole default layer: nothing else in the codebase should duplicate these
+ * values (CFG-05 forward note, review-PLN-06 finding 6).
+ */
+export const DEFAULT_VALUES = Object.freeze({
+  types: Object.freeze([
+    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
+  ]),
+  scope: 'forbidden',
+  body: 'forbidden',
+  maxSubjectLength: 72,
+  subjectCase: 'lower',
+  scanIgnore: Object.freeze([]),
+});
+
+/**
+ * Computes the effective config values and their sources (CFG-05, Q6): per key, the repo
+ * layer wins over the user layer wins over the default; arrays are replaced whole, never
+ * merged. Pure: no file reads, so a caller with already-parsed layers (M19 `configFor`)
+ * could use it without going through `loadConfig`. `scanIgnore`'s `repo@HEAD` source and its
+ * HEAD-vs-worktree read are CFG-07's; here it is just another repo-or-user-or-default key.
+ *
+ * @param {{ user: object | null, repo: object | null }} layers the parsed, already-validated
+ *   layer objects (`null` when that layer is absent).
+ * @returns {{ values: object, sources: object }} `sources` values are `default`, `user` or
+ *   `repo` (C:plan `config.sources`).
+ */
+export function effectiveConfig({ user, repo }) {
+  const values = {};
+  const sources = {};
+  for (const key of Object.keys(DEFAULT_VALUES)) {
+    if (repo !== null && Object.hasOwn(repo, key)) {
+      values[key] = repo[key];
+      sources[key] = 'repo';
+    } else if (user !== null && Object.hasOwn(user, key)) {
+      values[key] = user[key];
+      sources[key] = 'user';
+    } else {
+      values[key] = DEFAULT_VALUES[key];
+      sources[key] = 'default';
+    }
+  }
+  return { values, sources };
+}
+
+/**
  * Loads the config layers: the user layer, read from `commit.json` directly under the
  * Claude home (CFG-04, Q5, Q6), then, when `toplevel` names a worktree, the repo layer, read
- * from `.claude/commit.json` under it (CFG-02). Thin: no per-key override yet (CFG-05), no
- * `scanIgnore` at HEAD yet (CFG-07).
+ * from `.claude/commit.json` under it (CFG-02); on success, folds both into the effective
+ * values and sources (CFG-05 `effectiveConfig`). No `scanIgnore` at HEAD yet (CFG-07), no
+ * warnings for unknown keys or values yet (CFG-06).
  *
  * @param {{ toplevel: string | null, claudeHome: string }} options `toplevel`: the working
  *   tree's toplevel (M3), or `null` when `plan` is not inside one (the user layer is still
  *   read and validated: C:plan step 2 puts `config` ahead of `state`). `claudeHome`: the
  *   Claude home the entry point resolved once and injected (`CLAUDE_CONFIG_DIR`, else
  *   `.claude` in the OS home, Q5).
- * @returns {{ error: string } | null} `null` when neither layer present errors; otherwise
- *   the `config` refusal's message, naming whichever layer errored first (user, then repo,
- *   matching Q6's layer order) (C:cli-and-exit-codes).
+ * @returns {{ error: string } | { values: object, sources: object }} `error` names
+ *   whichever layer errored first (user, then repo, matching Q6's layer order)
+ *   (C:cli-and-exit-codes); otherwise the effective config (CFG-05), even with neither layer
+ *   present (every source `default`).
  */
 export function loadConfig({ toplevel, claudeHome }) {
   const userResult = readLayer(path.join(claudeHome, USER_CONFIG_FILENAME), USER_LAYER);
   if (userResult.error !== undefined) return { error: userResult.error };
 
-  if (toplevel === null || toplevel === undefined) return null;
+  let repoValue = null;
+  if (toplevel !== null && toplevel !== undefined) {
+    const repoResult = readLayer(path.join(toplevel, REPO_CONFIG_PATH), REPO_LAYER);
+    if (repoResult.error !== undefined) return { error: repoResult.error };
+    repoValue = repoResult.value;
+  }
 
-  const repoResult = readLayer(path.join(toplevel, REPO_CONFIG_PATH), REPO_LAYER);
-  if (repoResult.error !== undefined) return { error: repoResult.error };
-
-  return null;
+  return effectiveConfig({ user: userResult.value, repo: repoValue });
 }

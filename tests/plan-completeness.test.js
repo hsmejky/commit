@@ -184,8 +184,24 @@ const UNITS = Object.freeze([
   { id: 'h4', path: 'docs/new.md', oldPath: null, status: 'A' },
 ]);
 
+// Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
+// `DEFAULT_VALUES`: this direct `validatePlan` call builds its own runState (CFG-05).
+const DEFAULT_VALUES = Object.freeze({
+  types: Object.freeze([
+    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
+  ]),
+  scope: 'forbidden',
+  body: 'forbidden',
+  maxSubjectLength: 72,
+  subjectCase: 'lower',
+  scanIgnore: Object.freeze([]),
+});
+
 function validate(plan) {
-  return validatePlan(Buffer.from(JSON.stringify(plan)), { mode: 'split', units: UNITS });
+  return validatePlan(
+    Buffer.from(JSON.stringify(plan)),
+    { mode: 'split', units: UNITS, config: { values: DEFAULT_VALUES } },
+  );
 }
 
 // A plan naming IDs in `notIncluded[].hunks` is hunk-level (PLN-03: never mixed with `files`).

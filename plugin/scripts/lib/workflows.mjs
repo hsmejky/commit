@@ -165,6 +165,8 @@ async function readHeadState(ctx) {
  * user one; it no longer takes `toplevel`, which CFG-08/CFG-09 accepted and ignored. CFG-11
  * passes `ctx.injected.managedDir` (the entry point's platform-derived managed directory,
  * never read from `env`, PRE-16) so M5 reads the managed layer ahead of every other one.
+ * CFG-05: on success `ctx.config` is M4's effective `{ values, sources }` (never bare
+ * `null` any more), read by `storeAndLock` (step 7) into `state.json` and `plan.json`.
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
@@ -445,7 +447,10 @@ async function readHistory(ctx) {
  * e.g. to tell an explicit `includeCoAuthoredBy: false` apart from nothing to report);
  * `plan.json`'s `attribution` is `null` when `ctx.attribution.trailer` is `null` (C:plan,
  * CFG-09). `plan.json` also gets `warnings` (step 1's `ctx.warnings`, C:plan): empty until
- * CFG-09, the first producer.
+ * CFG-09, the first producer. CFG-05 adds `config` (`ctx.config`, step 1's M4 `loadConfig`
+ * result) to both files, `{ values, sources }` (C:plan `config.sources`): by this step a
+ * `config` error would already have refused at step 2, so `ctx.config` always holds the
+ * effective values here.
  */
 async function storeAndLock(ctx) {
   const { planId, runDir } = ctx.provisional;
@@ -472,6 +477,10 @@ async function storeAndLock(ctx) {
     notUtf8: ctx.mode === 'reword' ? [] : ctx.inventory.notUtf8,
     // C:run-folder: untracked embedded repositories, for `check`'s `notIncluded` (CHG-09).
     embeddedRepos: ctx.mode === 'reword' ? [] : ctx.inventory.embeddedRepos,
+    // CFG-05: M4's effective config values and their sources, stored so `plan --hunks`,
+    // `check` and `commit` read them from here instead of re-reading a config layer
+    // (C:run-folder).
+    config: ctx.config,
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
@@ -525,6 +534,8 @@ async function storeAndLock(ctx) {
     },
     stagedExcluded: stagedExcludedOf(ctx),
     dirtySubmodules: dirtySubmodulesOf(ctx),
+    // CFG-05 (C:plan `config.sources`): the effective values, repo over user over default.
+    config: ctx.config,
     attribution: ctx.attribution.trailer === null ? null : ctx.attribution,
     // GIT-10: M11's result from step 6 (C:plan `signing`).
     signing: ctx.signing,
@@ -572,15 +583,16 @@ function entryPerLine(object) {
 /**
  * Step 8 (CHG-03b, `plan --hunks` part): M13 `renderHunks` over the snapshot's units, in
  * process; M12 writes `hunks.txt` and the output object becomes `plan`'s stdout `hunks`.
- * Guard state and the stored notices come before it (GRD-17); the effective config
- * values are CFG-05's (empty until then); the spill to `hunks.json` is CHG-18's.
+ * Guard state and the stored notices come before it (GRD-17); the effective config values
+ * are CFG-05's `ctx.config.values` (`scanIgnore` dropped by `renderHunks` itself); the spill
+ * to `hunks.json` is CHG-18's.
  */
 async function renderHunkIndex(ctx) {
   const { stdoutObj, hunksTxt } = renderHunks(
     {
       runDir: ctx.provisional.runDir,
       mode: ctx.mode,
-      config: { values: {} },
+      config: { values: ctx.config.values },
       recentSubjects: ctx.recentSubjects,
       oldMessage: ctx.oldMessage,
     },

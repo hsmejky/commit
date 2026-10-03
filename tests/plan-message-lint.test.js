@@ -5,10 +5,10 @@
 // scan error carries the `scanText` spans (never the matched value) for M17's future
 // redaction. A lint reason quoting a message fragment (type, scope, footer token) that
 // overlaps a scan-hit span quotes `[<pattern-id>]` instead (C:check). Built on PLN-01's
-// file-level tracer. Until CFG-05 wires `plan`'s real layered
-// config into `state.json`, `validatePlan` falls back to the Q6 defaults (see
-// plan-validator.mjs's DEFAULT_MESSAGE_VALUES): 11 standard types, scope/body forbidden,
-// maxSubjectLength 72, subjectCase lower.
+// file-level tracer. CFG-05 wires `plan`'s real layered config into `state.json`, so the
+// direct `validatePlan` calls below (unlike the Seam-1 `check` ones, which get it from a real
+// `plan` run) build their own `config: { values: DEFAULT_VALUES }` (M4 `config.mjs`'s Q6
+// defaults: 11 standard types, scope/body forbidden, maxSubjectLength 72, subjectCase lower).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -20,6 +20,20 @@ const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib.js');
 
 const PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
+
+// Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
+// `DEFAULT_VALUES`: these direct `validatePlan` calls build their own runState rather than
+// reading a real `plan`-produced `state.json` (CFG-05).
+const DEFAULT_VALUES = Object.freeze({
+  types: Object.freeze([
+    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
+  ]),
+  scope: 'forbidden',
+  body: 'forbidden',
+  maxSubjectLength: 72,
+  subjectCase: 'lower',
+  scanIgnore: Object.freeze([]),
+});
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -173,18 +187,19 @@ test('validatePlan passes osUser through to scanText', async () => {
     groups: [{ header: 'feat: x', body: 'Refs: /srv/jdoe-fixture/x', files: ['a.txt'] }],
   }));
 
-  const withOsUser = validatePlan(bytes, { mode: 'split', units }, { osUser: 'jdoe-fixture' });
+  const runState = { mode: 'split', units, config: { values: DEFAULT_VALUES } };
+  const withOsUser = validatePlan(bytes, runState, { osUser: 'jdoe-fixture' });
   assert.equal(withOsUser.ok, false);
   assert.equal(withOsUser.errors[0].reason, 'message contains `local-path`');
 
-  const withoutOsUser = validatePlan(bytes, { mode: 'split', units }, {});
+  const withoutOsUser = validatePlan(bytes, runState, {});
   assert.equal(withoutOsUser.ok, true);
 });
 
 function validateMessage(validatePlan, header, body) {
   const units = [{ id: 'h1', path: 'a.txt', status: 'M' }];
   const bytes = Buffer.from(JSON.stringify({ groups: [{ header, body, files: ['a.txt'] }] }));
-  return validatePlan(bytes, { mode: 'split', units });
+  return validatePlan(bytes, { mode: 'split', units, config: { values: DEFAULT_VALUES } });
 }
 
 // Built at run time so this file holds no literal hit.

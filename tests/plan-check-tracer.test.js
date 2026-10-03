@@ -173,10 +173,23 @@ const UNITS = Object.freeze([
   { id: 'h3', path: 'docs/new.md', status: 'A' },
 ]);
 
+// Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
+// `DEFAULT_VALUES`: these direct `validatePlan` calls build their own runState (CFG-05).
+const DEFAULT_VALUES = Object.freeze({
+  types: Object.freeze([
+    'build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test',
+  ]),
+  scope: 'forbidden',
+  body: 'forbidden',
+  maxSubjectLength: 72,
+  subjectCase: 'lower',
+  scanIgnore: Object.freeze([]),
+});
+
 test('validatePlan resolves a path to all of its units and stores them per group', () => {
   const bytes = Buffer.from(JSON.stringify({ groups: [{ header: 'feat: x', files: ['src/a.js', 'docs/new.md'] }] }));
 
-  const result = validatePlan(bytes, { mode: 'split', units: UNITS });
+  const result = validatePlan(bytes, { mode: 'split', units: UNITS, config: { values: DEFAULT_VALUES } });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.stored, [{ n: 1, units: ['h1', 'h2', 'h3'], header: 'feat: x', body: null }]);
