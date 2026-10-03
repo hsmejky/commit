@@ -116,7 +116,8 @@ Otherwise `plan` has taken the lock and goes straight on as [`plan --hunks`](pla
 in the same process, and `hunks` holds that output. The full output below goes to
 `plan.json` in the run folder (for tests and debugging; the worker does not read it). With no folder
 kept (clean, `modeChoice`, refusals) there is no `plan.json`, and `reply.text` carries what
-the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySubmodules`).
+the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySubmodules`,
+`embeddedRepos`).
 
 ```json
 {
@@ -193,7 +194,9 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   the worktree has a `.gitmodules` file (the dirt of a gitlink added without one is not
   reported); a non-UTF-8 path is written as `\xNN`. The inventory's status read pins
   `--ignore-submodules=dirty` too, so a `submodule.<name>.ignore=all` setting hides no
-  pointer change from `clean`.
+  pointer change from `clean`. The dirt read itself pins `--ignore-submodules=none`, so a
+  submodule's own `ignore` setting does not suppress its `dirtySubmodules` report either,
+  like every pinned option (config-independent output).
 - `embeddedRepos` (`state.json` only): untracked embedded repositories (C:untracked-files),
   never candidates or units; `check` adds them to `notIncluded` ("nested is an embedded
   git repository — add it as a submodule by hand"). They leave the tree clean, and the
