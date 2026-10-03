@@ -336,6 +336,8 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   | no private key file (a literal key, or a `.pub` without its private file) | `false` |
   | a `false` above while the `ssh-add -L` check was not run or not trusted (next row) | `"unknown"` |
 
+  With no public key to compare, the `ssh-add -L` check counts as not run.
+
   `ssh-add` is the one in the directory of the `ssh-keygen` git runs (the first on git's
   `PATH`; on Windows, Git for Windows' own `usr/bin`, located from `git --exec-path`, comes
   first), so it talks to the same agent; a `PATH` `ssh-add` elsewhere (such as Windows
@@ -345,7 +347,7 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   run.
 
   The probe never pops up a prompt and runs only git and `ssh-add`, each under a fixed
-  timeout; a timeout gives `"unknown"`. The private key file is `stat`ed before it is
+  timeout (a fixed 5-second `ssh-add -L` timeout); a timeout gives `"unknown"`. The private key file is `stat`ed before it is
   opened: anything but a regular file, or one over a 64 KiB cap, gives `"unknown"` without
   being read, and only a bounded prefix within the cap is read for the ones that qualify,
   so a FIFO, a device file or an oversized file can never block or cost unbounded work.

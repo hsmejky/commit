@@ -131,10 +131,11 @@ and `ssh-add` is taken only from the directory of the `ssh-keygen` git runs. ope
 `"prompt"`, with the note "signing enabled; a passphrase prompt may appear" (a locked
 openpgp key is not detected; Out of Scope). x509 or custom `gpg.program` → `"unknown"`;
 custom `gpg.ssh.program` → `"prompt"`. Never pops up a prompt. The probe runs only git and
-`ssh-add`, each under a fixed timeout; a timeout ends as `"unknown"` instead of stalling
-`plan`. It runs after clean-tree and `staged-hit` detection (M18 `plan` step 6), so a clean
-tree on a locked key reports "nothing to commit". `probeSigning({ osHome, toplevel, execPath, deadline, env })
- → { enabled, format?, ready }`. The `signing-locked` refusal text and the openpgp note are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, C:plan, C:cli-and-exit-codes.
+`ssh-add`, each under a fixed timeout (a fixed 5-second `ssh-add -L` timeout); a timeout
+ends as `"unknown"` instead of stalling `plan`. It runs after clean-tree and `staged-hit`
+detection (M18 `plan` step 6), so a clean tree on a locked key reports "nothing to commit".
+`probeSigning({ osHome, toplevel, execPath, deadline, env }) → { enabled, format?, ready }`
+(`execPath` asked of git when not given). The `signing-locked` refusal text and the openpgp note are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, C:plan, C:cli-and-exit-codes.
 
 **M12 Run.** Everything under the run folder. Check `.commit-plan` (Run-folder directory
 check above); add the exclude line once (path from `gitPath`, `info/exclude`, which git

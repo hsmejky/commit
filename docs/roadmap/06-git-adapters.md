@@ -162,6 +162,9 @@ pins, and keeps every other variable for the user's hooks.
       finding 3).
 - [ ] An M11 `probeSigning` `git config` read that times out ends as `ready: "unknown"`
       (per M11), not a `plan` `timeout` refusal (review-GIT-10 finding 2).
+- [ ] Replace GIT-12's child-only `SIGKILL` path in `run` with the tree kill; M11's
+      `ssh-add` takes the smaller of its fixed 5 s and `deadline - now()`; an M11
+      `git --exec-path` timeout means the check was not run (review-GIT-12 finding 2).
 
 
 ## GIT-08: Signal handler: Esc or session end kills the active git tree
