@@ -714,10 +714,12 @@ async function commitGroups(ctx) {
   // moved HEAD is not something a retry within this run can fix. Once RUN-27's `runEnd`
   // lands, it replaces this condition outright.
   // EXE-07's `index-changed` (CLI kind `diff-changed`) and EXE-08's `index-locked` (CLI kind
-  // `index-lock`) end the run the same way.
+  // `index-lock`) end the run the same way, and so do EXE-09's phase (b) `unmatched` (CLI
+  // kind `diff-changed`) and `git-failed` (exit 4: "exits 3-5 end the run").
   if ((!outcome.refusal && outcome.remaining.length === 0)
     || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed'
-    || outcome.refusal?.code === 'index-locked') {
+    || outcome.refusal?.code === 'index-locked' || outcome.refusal?.code === 'unmatched'
+    || outcome.refusal?.code === 'git-failed') {
     releaseOpen(run);
   }
   return outcome;
@@ -947,8 +949,10 @@ export async function commit(values, injected, { cwd }) {
     // own outcome, with real groups already committed — unlike the other subcommands'
     // pre-folder refusals, it carries `commits`/`failed`/`remaining`/`unstaged`/`notices` per
     // C:commit-release, not only the refusal's own `kind`/`message` (review-EXE-04 Medium-1).
+    // EXE-09: `gitOutput` too, git's verbatim output on a `git-failed` exit 4 (`null` on
+    // every other refusal), so that failure never reads as success.
     if (facts.refusal !== undefined) {
-      const { commits, failed, remaining, unstaged, notices } = facts;
+      const { commits, failed, remaining, gitOutput, unstaged, notices } = facts;
       return {
         failure: {
           kind: kindForDomainCode(facts.refusal.code),
@@ -956,6 +960,7 @@ export async function commit(values, injected, { cwd }) {
           commits,
           failed,
           remaining,
+          gitOutput,
           unstaged,
           notices,
         },

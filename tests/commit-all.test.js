@@ -745,3 +745,102 @@ test('an outside git add plus an index.lock → diff-changed (index-changed) win
   assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });
+
+// EXE-09: phase (b), the match on the temporary index. Both refusals below leave the real
+// index byte-identical and end the run (C:cli-and-exit-codes: `diff-changed` and exits 3-5
+// release the lock and delete the run folder).
+const UNMATCHED_TEXT = 'files changed since plan, run /commit again';
+
+test('a planned file edited after plan → exit 6 diff-changed (unmatched), nothing committed, the index untouched, the run released', async (t) => {
+  const { c, planId, runDir } = await groupedRun(t);
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('a.txt', 'one\nedited after plan\n');
+  const indexPath = path.join(c.repoDir, '.git', 'index');
+  const indexBefore = fs.readFileSync(indexPath);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, UNMATCHED_TEXT);
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [1]);
+  assert.equal(result.json.unstaged, null, 'no group reached (c), so nothing was reset');
+  assert.deepEqual(result.json.notices, []);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'nothing committed');
+  assert.deepEqual(fs.readFileSync(indexPath), indexBefore, 'the index is byte-identical to before the call');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+// A `plan --split` run whose stored lists hold one extra untracked candidate, `new.txt`,
+// besides the two modified tracked files; the stored group names only a.txt's and b.txt's
+// units, so `new.txt` is a stored candidate the rebuild adds but no group commits.
+async function runWithExtraCandidate(t) {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'one\n');
+  c.writeFile('b.txt', 'two\n');
+  c.git(['add', '--', 'a.txt', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.txt', 'two\nmore\n');
+  c.writeFile('new.txt', 'new\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.ok(JSON.stringify(state.candidates).includes('new.txt'), 'new.txt is a stored candidate');
+  state.groups = [{
+    n: 1,
+    units: state.units.filter((unit) => unit.path !== 'new.txt').map((unit) => unit.id),
+    header: HEADER,
+    body: BODY,
+    committed: false,
+  }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return { c, planId, runDir };
+}
+
+// Fixture: `plan` stored `new.txt` as a not-ignored candidate; excluding it afterwards in
+// `.git/info/exclude` (no tracked change, no index change) makes the rebuild's plain
+// `git add -N` (no `-f`, the stored flag says not ignored) exit non-zero on every platform.
+test('a stored candidate git add -N refuses on the temporary index → exit 4 git (git-failed) with gitOutput, the index untouched, the run released', async (t) => {
+  const { c, planId, runDir } = await runWithExtraCandidate(t);
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '\nnew.txt\n');
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+  const indexPath = path.join(c.repoDir, '.git', 'index');
+  const indexBefore = fs.readFileSync(indexPath);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 4, detail(result));
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.error.kind, 'git', detail(result));
+  assert.match(result.json.error.message, /git add failed/);
+  assert.equal(typeof result.json.gitOutput, 'string', detail(result));
+  assert.match(result.json.gitOutput, /new\.txt/, 'gitOutput holds git\'s own output');
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [1]);
+  assert.equal(result.json.unstaged, null);
+  assert.deepEqual(result.json.notices, []);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'nothing committed');
+  assert.deepEqual(fs.readFileSync(indexPath), indexBefore, 'the index is byte-identical to before the call');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+test('a stored candidate missing from the working tree is skipped by the rebuild → exit 0, the group committed', async (t) => {
+  const { c, planId } = await runWithExtraCandidate(t);
+  fs.unlinkSync(path.join(c.repoDir, 'new.txt'));
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.error, null);
+  const sha = c.git(['rev-parse', 'HEAD']).trim();
+  assert.deepEqual(result.json.commits, [{ n: 1, sha, header: HEADER }]);
+  assert.equal(filesOf(c, sha), 'a.txt\nb.txt\n');
+});

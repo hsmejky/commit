@@ -635,9 +635,11 @@ async function addIntentToAdd(paths, flags, { toplevel, env, now, indexPath }) {
     { cwd: toplevel, env, now, index: indexPath, input: Buffer.from(paths.map((p) => `${p}\0`).join(''), 'utf8') },
   );
   if (result.code !== 0) {
+    // EXE-09: `gitOutput` is git's stdout and stderr verbatim, for `commit`'s exit 4
+    // (C:commit-release); `plan` reports only the message.
     throw Object.assign(
       new Error(`git add failed (${result.code}): ${result.stderr}`),
-      { domainCode: 'git-failed' },
+      { domainCode: 'git-failed', gitOutput: `${result.stdout.toString('utf8')}${result.stderr}` },
     );
   }
 }
