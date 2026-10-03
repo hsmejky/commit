@@ -116,7 +116,7 @@ text.
 **What to build:** G2 for PowerShell (backtick escapes, among them the NUL escape `` `0 ``
 and `` `e `` / `` `u{…} ``, which 5.1 and 7 read differently (the blanket kind `escape`), `''` and `""`, the `&` call operator emitted as a word token `'&'`
 rather than an operator — the classifier already accepts either shape — and every unquoted
-`{`/`}` a token, a script block passed as data such as `Start-Process -ArgumentList { … }`
+`{`/`}` a token, a script block passed as data such as `Write-Output { … }`
 included, so its commands are classified like any script block's (fail closed; a denied form
 inside one is an accepted false deny); here-strings are blanket-denied), so the same denies
 hold for PowerShell commands.
@@ -133,7 +133,8 @@ stories 13, 14.
 - [x] Seam 3: `` git commit`0x -m x ``, `` git "commit`0" `` and `` git commit`0 --no-edit `` → denied: a PowerShell NUL ends the token's value and git's arguments (a `cut` token), as the native command line is cut there; `` git commit`u{00} --no-edit `` → denied by the `escape` blanket row (5.1 and 7 read `` `u{…} `` differently).
 - [x] Seam 3: `` Write-Output x`0 (git commit -m x) `` `` if ("x`0") {git commit -m x} `` and `` git commit --no-edit`0 (git commit -m x) `` → denied: the tokens after a NUL stay in the segment, as a nested command still runs.
 - [x] Seam 3: PowerShell spellings of a possible wrapper (C:guard step 3) → the wrapper row: `'-n' | xargs git commit --no-edit`, `` xar`gs git commit --no-edit `` and `& 'xargs' git commit --no-edit` naming `xargs` (review-GRD-04 round 2, finding 3), `& ('xargs') git commit --no-edit` naming `(`, and `. git commit --no-edit` naming `.` (documented false positive); `if ($ok) { git commit --no-edit }`, `if (Test-Path a) { git commit --no-edit }` and `& git commit --no-edit` → no output (the bracket reset and the `&` call operator, emitted as the word token `'&'`, of the prefix allowlist, review-GRD-04 round 4).
-- [x] `Start-Process -ArgumentList { git commit --amend --no-edit }` → no output (the `{` token starts a command, so `git commit --amend --no-edit` is classified as an allowed form; review-GRD-04 round 5, nit 2).
+- [x] `Write-Output { git commit --amend --no-edit }` → no output (the `{` token starts a command, so `git commit --amend --no-edit` is classified as an allowed form; review-GRD-04 round 5, nit 2).
+- [x] A Start-Process word (`Start-Process`, `saps`, `start`, module-qualified, alone or after `=` in its token) anywhere in a command mentioning `commit` → the wrapper row naming it (C:guard step 3, KD-S81; review GRD-06 round 2): `$p = Start-Process -Wait -NoNewWindow git 'commit --no-verify -m x' -PassThru`, `return Start-Process …`, `. saps …`, `if ($true) { $p = saps … }`, `Start-Process -FilePath:git …`, `-f:git`, `'git '`, `git.exe.`, `-FilePath ('git')`, `$a='git'; Start-Process $a …`, `& ('Start-Process') git …`, and the accepted false denies `start https://github.com/o/r/commit/abc` and `Start-Process -ArgumentList { git commit --amend --no-edit }`; `saps git commit --no-verify` keeps the `--no-verify` row.
 - [x] Seam 2: one PowerShell deny case end to end.
 - [x] G2 golden fixtures for PowerShell are cross-checked in CI against the PowerShell parser API under both `powershell.exe` and `pwsh`, deliberate classes oracle-skipped.
 
@@ -253,6 +254,7 @@ options (with GRD-11), and the PowerShell forms (with GRD-06).
 - [ ] Denied with `Write the git subcommand literally. <route>`: Bash `git @(commit) -m x` and `git !(x) commit -m x` (an extglob pattern in an argument is one word, GRD-04), `git $c -m x`, PowerShell `git @a`, `git {commit,-m,x}`, PowerShell `git (…)`, Bash `git ( -m x`, and `git c*t -m x`, `git c?t -m x`, `git [c]ommit -m x`, Bash `c=commit; git "$c" -m x`, each in a command mentioning `commit`.
 - [ ] Denied with `Write git's arguments literally. <route>`: PowerShell `git -C (Get-Location) commit -m x`, `git commit -m ("-q") --no-verify`, `git commit --fixup ("HEAD","--no-verify")` and `git commit --fixup {HEAD --no-verify}`; Bash `git -C {.,commit} status` and `git commit --fixup {HEAD,--no-verify}`.
 - [ ] Denied with `Write git's arguments literally. <route>`: Bash `git commit --fixup $s` and `git -C "$dir" commit --no-edit` (documented false positive); PowerShell `git -C . ,commit -m x`, `git -C . , commit -m x`, `git -C .,commit status`, `git --% -c x.y=; commit -m x`, `git '--%' commit -m x` and `git commit --fixup @s`; `git commit, -m x` with the literal-subcommand text.
+- [ ] Denied (review GRD-06 round 2; each runs `git commit --no-verify -m x` under PowerShell 5.1 and 7): PowerShell `git $null commit --no-verify -m x` (PowerShell drops `$null`), `git --% commit --no-verify -m x` and `git '--%' commit --no-verify -m x`.
 - [ ] `git COMMIT -m x` → denied as a commit.
 - [ ] The documented gap: `git $(echo com)mit` → no output.
 - [ ] The documented gap's PowerShell form: `git ('com'+'mit')` → no output.
