@@ -160,6 +160,8 @@ pins, and keeps every other variable for the user's hooks.
 - [ ] `callStarted` (RUN-03) is read once at dispatch (`cli.mjs`'s `main`) and threaded through
       `injected`/`ctx`, rather than each M18 workflow reading it itself (review-RUN-03
       finding 3).
+- [ ] An M11 `probeSigning` `git config` read that times out ends as `ready: "unknown"`
+      (per M11), not a `plan` `timeout` refusal (review-GIT-10 finding 2).
 
 
 ## GIT-08: Signal handler: Esc or session end kills the active git tree
@@ -209,16 +211,16 @@ place in the order.
 
 **Blocked by:** GIT-05, RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:plan (`signing`, notices), stories 169, 171, M11, testing-modules row M11.
 
-- [ ] Seam 1: `commit.gpgsign` unset or `false` → `plan.json` `signing: { enabled: false }`.
-- [ ] Seam 1: openpgp enabled → `ready: "prompt"` and the note in the stored notices and in the `plan` reply's notices (story 171); the run goes ahead.
-- [ ] Seam 1: `gpg.format=x509`, and separately a custom `gpg.program` → `ready: "unknown"`, run goes ahead.
-- [ ] Seam 1: `gpg.format=ssh` with a custom `gpg.ssh.program` → `"prompt"` with the note.
-- [ ] Seam 1: `commit.gpgsign=true` set only through an exported `GIT_CONFIG_SYSTEM` file is seen by the probe.
-- [ ] The probe spawns only git (and, from GIT-12, `ssh-add`), never shows a prompt.
+- [x] Seam 1: `commit.gpgsign` unset or `false` → `plan.json` `signing: { enabled: false }`.
+- [x] Seam 1: openpgp enabled → `ready: "prompt"` and the note in the stored notices and in the `plan` reply's notices (story 171); the run goes ahead.
+- [x] Seam 1: `gpg.format=x509`, and separately a custom `gpg.program` → `ready: "unknown"`, run goes ahead.
+- [x] Seam 1: `gpg.format=ssh` with a custom `gpg.ssh.program` → `"prompt"` with the note.
+- [x] Seam 1: `commit.gpgsign=true` set only through an exported `GIT_CONFIG_SYSTEM` file is seen by the probe.
+- [x] The probe spawns only git (and, from GIT-12, `ssh-add`), never shows a prompt.
 
 
 ## GIT-11: SSH readiness from the key file

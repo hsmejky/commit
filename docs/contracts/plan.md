@@ -296,7 +296,15 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   is the same as the main diff, and the file list that picks out which sections to keep is
   never passed to git on argv.
 - `signing`: `{ "enabled": false }` when `commit.gpgsign` is not true (read with
-  `--type=bool`). `format`: `openpgp`, `ssh`, `x509`. `ready` (Q18):
+  `--type=bool`). `format`: `openpgp`, `ssh`, `x509`; `format` is left out for a `gpg.format`
+  git does not know (`ready: "unknown"`, and git refuses to sign with that value itself). A
+  `commit.gpgsign` value that is not a boolean is also a case the probe cannot decide:
+  `{ "enabled": true, "ready": "unknown" }` (`git commit` reports git's own error).
+  `ready` (Q18). A configured program
+  counts as custom when it is not git's default: for openpgp (`gpg.program` or
+  `gpg.openpgp.program`), by basename, case-insensitive, with any `.exe` suffix stripped,
+  compared against `gpg` or `gpg2`; for ssh (`gpg.ssh.program`), by a literal compare
+  against `ssh-keygen`.
   - `ssh`: `true` when the key is listed by `ssh-add -L`, or when the private key file (from
     `user.signingKey`, minus a `.pub` suffix) has no passphrase, decided from its header
     (OpenSSH `openssh-key-v1` with cipher `none`; PEM without `ENCRYPTED`); a key with a

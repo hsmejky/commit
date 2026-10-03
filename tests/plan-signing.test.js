@@ -48,8 +48,8 @@ function changedRepo(t, config = []) {
   return c;
 }
 
-async function storedSigning(c, options) {
-  const result = await runCommit(c, ['plan'], options);
+async function storedSigning(c, options, argv = ['plan']) {
+  const result = await runCommit(c, argv, options);
   assert.equal(result.exitCode, 0, detail(result));
   const planJson = path.join(c.repoDir, '.commit-plan', result.json.planId, 'plan.json');
   return JSON.parse(fs.readFileSync(planJson, 'utf8')).signing;
@@ -95,6 +95,60 @@ test('plan with gpg.format=ssh and a custom gpg.ssh.program stores ready "prompt
   assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'prompt' });
 });
 
+// "Custom" boundary (C:plan `signing`, Q18): explicitly naming the default program is still
+// the default, for both formats.
+test('plan with gpg.program=gpg explicitly set still counts as the default (ready "prompt")', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.program', 'gpg']]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+test('plan with gpg.format=ssh and gpg.ssh.program=ssh-keygen explicitly set still counts as the default', async (t) => {
+  const c = changedRepo(t, [
+    ['commit.gpgsign', 'true'], ['gpg.format', 'ssh'], ['gpg.ssh.program', 'ssh-keygen'],
+  ]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'ssh', ready: 'unknown' });
+});
+
+// openpgp compares the basename, case-insensitive with `.exe` stripped (ssh keeps a literal
+// compare, so a non-literal `ssh-keygen` path is not tested here as "default").
+test('plan with gpg.program=gpg2 counts as the default (ready "prompt")', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.program', 'gpg2']]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+test('plan with an absolute path to the default gpg counts as the default (ready "prompt")', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.program', '/usr/local/bin/gpg']]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+test('plan with gpg.program=GPG.EXE (case-insensitive, .exe stripped) counts as the default', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true'], ['gpg.program', 'GPG.EXE']]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+// `gpg.program` and `gpg.openpgp.program` are one setting to git: whichever comes last in
+// config order wins, not an OR of both keys' custom-ness.
+test('plan with gpg.openpgp.program custom then gpg.program=gpg later uses the default (last key wins)', async (t) => {
+  const c = changedRepo(t, [
+    ['commit.gpgsign', 'true'], ['gpg.openpgp.program', 'custom-gpg'], ['gpg.program', 'gpg'],
+  ]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+test('plan with gpg.format=ssh set globally and gpg.format=openpgp set in the repo uses the repo value (last wins across scopes)', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'true']]);
+  c.git(['config', '--global', 'gpg.format', 'ssh']);
+  c.git(['config', 'gpg.format', 'openpgp']);
+  assert.deepEqual(await storedSigning(c), { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+// M11 "cannot decide -> unknown": a non-boolean commit.gpgsign is git's own config error,
+// which `git commit` will report; the probe does not throw (review-GIT-10 finding 4).
+test('plan with a non-boolean commit.gpgsign stores { enabled: true, ready: "unknown" } and goes ahead', async (t) => {
+  const c = changedRepo(t, [['commit.gpgsign', 'maybe']]);
+  assert.deepEqual(await storedSigning(c), { enabled: true, ready: 'unknown' });
+});
+
 // Until GIT-11, the default `gpg.ssh.program` is never decided; with `user.signingKey` unset
 // this stays `"unknown"` after GIT-11 too (C:plan SSH readiness table, first rows).
 test('plan with gpg.format=ssh, the default program and no signing key stores ready "unknown"', async (t) => {
@@ -114,6 +168,19 @@ test('plan sees commit.gpgsign=true set only through an exported GIT_CONFIG_SYST
   });
 
   assert.deepEqual(signing, { enabled: true, format: 'openpgp', ready: 'prompt' });
+});
+
+// `--reword` takes the lock on a clean tree too (Q9, Q20), reaching the probe the same way.
+test('plan --reword on a clean tree also stores signing', async (t) => {
+  const c = createCase(t);
+  c.writeFile('README.md', 'hello\n');
+  c.git(['add', 'README.md']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.git(['config', 'commit.gpgsign', 'true']);
+  c.git(['config', 'gpg.format', 'x509']);
+
+  const signing = await storedSigning(c, undefined, ['plan', '--reword']);
+  assert.deepEqual(signing, { enabled: true, format: 'x509', ready: 'unknown' });
 });
 
 test('plan with signing enabled spawns only git, never a signing program', async (t) => {

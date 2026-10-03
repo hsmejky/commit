@@ -102,7 +102,11 @@
     - A custom signing program is outside the probe's view and never maps to `false`: a
       `gpg.ssh.program` other than the default (1Password's `op-ssh-sign` asks with Touch ID
       or a window, and its key is usually not in the default agent's `ssh-add -L`) →
-      `"prompt"`; a custom `gpg.program` → `"unknown"`.
+      `"prompt"`; a custom `gpg.program` → `"unknown"`. "Custom" is a basename compare,
+      case-insensitive with any `.exe` suffix stripped, against `gpg` or `gpg2` for openpgp
+      (so `gpg2`, an absolute path, or `gpg.exe` all still count as the default); ssh keeps a
+      literal compare against `ssh-keygen`, since a different path there likely talks to a
+      different signing agent and must not be waved through as default.
     - The probe runs only git and `ssh-add` (Q15), each under a fixed timeout; a timeout
       yields `"unknown"`, so a wedged agent cannot stall `plan`, and a probe that could not
       finish never maps to `false`.

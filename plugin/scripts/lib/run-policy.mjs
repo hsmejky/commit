@@ -78,10 +78,9 @@ function isUtf8Encoding(value) {
 // pushed texts only name their state.
 const UNBORN_REWORD_MESSAGE = 'HEAD is unborn (no commit yet): there is no commit to reword';
 const MERGE_REWORD_MESSAGE = 'HEAD is a merge commit; reword it by hand';
+const PUSHED_MESSAGE = 'HEAD is already on a remote-tracking ref (pushed): rewording it would rewrite shared history';
 // Q18, C:cli-and-exit-codes recorded texts: verbatim.
 const SIGNING_LOCKED_MESSAGE = 'signing key locked — unlock it (e.g. sign once in a terminal), then `/commit`';
-
-const PUSHED_MESSAGE = 'HEAD is already on a remote-tracking ref (pushed): rewording it would rewrite shared history';
 
 function rewordRefusal(reword) {
   if (reword == null) return null;
