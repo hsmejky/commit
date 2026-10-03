@@ -353,7 +353,7 @@ function writeManagedSettings(managedDir, value) {
   fs.writeFileSync(path.join(managedDir, 'managed-settings.json'), JSON.stringify(value));
 }
 
-test('managed attribution.commit beats project-local, project and user layers, source managed', (t) => {
+test('managed attribution.commit beats project-local and user layers, source managed', (t) => {
   const claudeHome = tempClaudeHome(t);
   const projectDir = tempProjectDir(t);
   const managedDir = tempManagedDir(t);
@@ -368,7 +368,7 @@ test('managed attribution.commit beats project-local, project and user layers, s
   });
 });
 
-test('managed includeCoAuthoredBy: false wins over a lower layer when no layer sets attribution.commit', (t) => {
+test('a lower layer\'s attribution.commit beats managed includeCoAuthoredBy: false (pass 1 before pass 2)', (t) => {
   const claudeHome = tempClaudeHome(t);
   const managedDir = tempManagedDir(t);
   writeSettings(claudeHome, { attribution: { commit: 'Co-Authored-By: User <u@x>' } });

@@ -398,6 +398,30 @@ function hostHasManagedSettings() {
   return fs.existsSync(managedSettingsPath());
 }
 
+/**
+ * The real, platform-fixed `managed-settings.d` drop-in directory beside `managedSettingsPath()`
+ * (Out of Scope for the resolver, but still a real host-owned path Seam 1 cases must never
+ * create, overwrite or delete unless they are certain it did not already exist).
+ *
+ * @returns {string}
+ */
+function managedDropInDir() {
+  return path.join(path.dirname(managedSettingsPath()), 'managed-settings.d');
+}
+
+/**
+ * True when the host already has its own `managed-settings.d` drop-in directory at the real
+ * path. A case that writes and later recursively removes this directory must skip (not touch
+ * it at all) when this is true, the same way it skips on an existing `managed-settings.json`
+ * (CFG-11 review finding 3): otherwise a host directory with real policy drop-ins, but no main
+ * `managed-settings.json`, could be deleted.
+ *
+ * @returns {boolean}
+ */
+function hostHasManagedDropIn() {
+  return fs.existsSync(managedDropInDir());
+}
+
 module.exports = {
   COMMIT_ENTRY,
   GUARD_ENTRY,
@@ -409,4 +433,6 @@ module.exports = {
   pathOverride,
   managedSettingsPath,
   hostHasManagedSettings,
+  managedDropInDir,
+  hostHasManagedDropIn,
 };

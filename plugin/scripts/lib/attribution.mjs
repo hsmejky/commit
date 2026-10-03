@@ -9,10 +9,10 @@
 // settings.json`) layers, ahead of the user layer, and dropped the `toplevel` param CFG-09
 // accepted and ignored. CFG-11 adds the managed layer (`<managedDir>/managed-settings.json`,
 // PRE-16), ahead of every other layer: `managedDir` is the already-resolved, platform-derived
-// managed directory the entry point injects, the same way `claudeHome` and `projectDir` are
-// (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`; no walk-up to a git
-// toplevel — PRE-11, Q5 Amended). This resolver never reads `env` or the cwd itself to find
-// any of them, and never reads the managed layer's drop-in directory (Out of Scope). The
+// managed directory the entry point injects, the same way it already injects `claudeHome` and
+// `projectDir` (`CLAUDE_PROJECT_DIR` when it sees it, else its own `process.cwd()`; no walk-up
+// to a git toplevel — PRE-11, Q5 Amended). This resolver never reads `env` or the cwd itself to
+// find any of them, and never reads the managed layer's drop-in directory (Out of Scope). The
 // two-pass key lookup (`attribution.commit` across every layer, highest first, then the
 // deprecated `includeCoAuthoredBy` across every layer) and the trailer-line filtering are
 // unchanged: each line of a winning `attribution.commit` value is tested on its own against

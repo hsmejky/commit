@@ -14,9 +14,10 @@
 // Every case:
 //  - skips, not fakes, outside CI (`CI` unset): it must never write to the real system path
 //    on a contributor's own machine.
-//  - skips, not fakes, when the host already has its own `managed-settings.json`: this run
-//    cannot tell that file apart from one it would write itself, so it is not this suite's
-//    to touch or overwrite.
+//  - skips, not fakes, when the host already has its own `managed-settings.json` or
+//    `managed-settings.d`: this run cannot tell either apart from one it would write itself,
+//    so neither is this suite's to touch, overwrite or (for the drop-in directory) recursively
+//    delete.
 //  - writes the file itself and removes it in `t.after`, pass or fail.
 // The resolver's own precedence, warnings and two-pass logic are pinned at the unit level
 // (tests/attribution.test.js) with an injected `managedDir`, never a real path; this file
@@ -29,6 +30,7 @@ const assert = require('node:assert/strict');
 
 const {
   createCase, runCommit, managedSettingsPath, hostHasManagedSettings,
+  managedDropInDir, hostHasManagedDropIn,
 } = require('../helpers/process-seam.js');
 
 function seed(c, files) {
@@ -58,11 +60,13 @@ function readJson(file) {
  */
 function writeManagedSettings(t, value) {
   const filePath = managedSettingsPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(value));
+  // Registered before any write, so a throw mid-setup (e.g. `mkdirSync` on a read-only host)
+  // still cleans up whatever got created (CFG-11 review finding 3).
   t.after(() => {
     fs.rmSync(filePath, { force: true });
   });
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value));
 }
 
 function skipUnlessRunnable(t) {
@@ -72,6 +76,10 @@ function skipUnlessRunnable(t) {
   }
   if (hostHasManagedSettings()) {
     t.skip('the host already has its own managed-settings.json; not this suite\'s to touch');
+    return true;
+  }
+  if (hostHasManagedDropIn()) {
+    t.skip('the host already has its own managed-settings.d; not this suite\'s to touch');
     return true;
   }
   return false;
@@ -104,12 +112,16 @@ test('on CI, a managed-settings.d drop-in file beside the real managed-settings.
   if (skipUnlessRunnable(t)) return;
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
+  const dropInDir = managedDropInDir();
+  // Registered before any write (this directory or the managed file below), so a throw
+  // mid-setup still cleans up (CFG-11 review finding 3). `skipUnlessRunnable` already
+  // guarantees `dropInDir` does not exist yet, so a recursive removal here only ever
+  // deletes what this case itself created.
+  t.after(() => fs.rmSync(dropInDir, { recursive: true, force: true }));
   writeManagedSettings(t, { attribution: { commit: 'Co-Authored-By: Managed <m@x>' } });
-  const dropInDir = path.join(path.dirname(managedSettingsPath()), 'managed-settings.d');
   fs.mkdirSync(dropInDir, { recursive: true });
   fs.writeFileSync(path.join(dropInDir, '10-override.json'),
     JSON.stringify({ attribution: { commit: 'Co-Authored-By: DropIn <d@x>' } }));
-  t.after(() => fs.rmSync(dropInDir, { recursive: true, force: true }));
   c.writeFile('a.txt', 'one\nmore\n');
 
   const result = await runCommit(c, ['plan']);

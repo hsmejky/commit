@@ -10,7 +10,9 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { COMMIT_ENTRY, createCase, runCommit } = require('./helpers/process-seam.js');
+const {
+  COMMIT_ENTRY, createCase, runCommit, managedSettingsPath,
+} = require('./helpers/process-seam.js');
 
 // A `--require` preload that makes the spawned node report an old version, the only way to
 // reach the Node check on a supported Node.
@@ -226,12 +228,9 @@ test('the injected managed directory is the fixed, platform-derived one, and no 
 
   assert.equal(result.exitCode, 0);
   assert.notEqual(result.json.managedDir, fakeManagedDir);
-  const expected = process.platform === 'darwin'
-    ? path.join('/Library', 'Application Support', 'ClaudeCode')
-    : process.platform === 'win32'
-      ? path.join('C:\\', 'Program Files', 'ClaudeCode')
-      : path.join('/etc', 'claude-code');
-  assert.equal(result.json.managedDir, expected);
+  // `managedSettingsPath()` mirrors commit.cjs's own platform map (process-seam.js); the
+  // managed directory is its dirname (CFG-11 review finding 5).
+  assert.equal(result.json.managedDir, path.dirname(managedSettingsPath()));
 });
 
 test('without CLAUDE_PROJECT_DIR the injected project directory is the spawn cwd, not the repo', async (t) => {
