@@ -41,7 +41,7 @@
    between them for a PATH shim to intercept; the injected error carries the errno code the
    test names (default `EIO`) as its `code`, with `syscall` and `path` set as Node's own fs
    errors carry them, because the code maps codes differently (`EEXIST` on the lock link →
-   `held`, a Windows `EPERM` that outlasts the retries → the hard-link probe and `busy`,
+   `held`, a Windows `EPERM` that outlasts the retries → the hard-link probe and `busy`, or `run-folder` when the probe link `hardlink-probe.link` fails too, `ENOTSUP` → `run-folder` with no retry,
    `EIO` → `internal`; a `state.json` rename failing with `EIO` after `git commit` is the
    Seam 1 trigger of M16's `internal` path, reported with `sha`, EXE-01); and (c) optionally log the order
    of those calls to a file in the test's temp directory, so a case can assert write order

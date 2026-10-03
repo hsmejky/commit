@@ -99,7 +99,8 @@ the new holder, the private copy adopted by that holder as an orphan, the moved 
 cannot be produced deterministically from outside the process, so no Seam 1 fixture claims
 it. The `ENOTSUP`/`ENOSYS` → `run-folder` case (a filesystem without hard links, story 220)
 is likewise a manual check only, run by hand against such a filesystem when available; no
-fixture or CI runner exercises it. CI size tests hold the budgets (Q24, story 228): the worker, `/commit` and
+fixture or CI runner has such a filesystem (the errno mapping itself is a Seam 1 case with the
+code injected by the fault preload, RUN-09). CI size tests hold the budgets (Q24, story 228): the worker, `/commit` and
 `/commit-config` descriptions ≤ 200 characters each, skill texts and worker prompt as files; a static check that `package.json` lists no dependencies
 (story 203) and that the worker frontmatter matches its stated values (story 42:
 `maxTurns: 25`, tools, `omitClaudeMd`); on

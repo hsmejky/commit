@@ -264,19 +264,32 @@ hard-link probe decides: `busy` when the probe succeeds, `run-folder` when it fa
 - [ ] Seam 1 (windows runner): the same helper holds `state.json` with `FileShare.None`
       and releases it on its own observable event before the retry window elapses → the
       call succeeds.
-- [ ] Seam 1 (windows runner): the helper keeps holding the lock past the retry window →
-      the hard-link probe decides: the probe still succeeds (another process genuinely has
-      the file) → `busy`; a stubbed probe failure → `run-folder`.
+- [ ] Seam 1 (fault preload, every runner): the lock link fails `EPERM` (and, separately,
+      `EBUSY`) on every try → six `lock` link attempts over about a second, then the
+      hard-link probe (`<planId>/hardlink-probe.link`) decides: the probe succeeds → exit 6
+      `lock` (`busy`); the probe link also fails (`hardlink-probe.link=ENOTSUP`) → exit 6
+      `state` (`run-folder`). Nothing is left in `.commit-plan/`. A real holder cannot reach
+      this path: while `lock` exists, held or not, the link fails `EEXIST` (`held`); a
+      persisting `EPERM`/`EBUSY` comes from a delete-pending `lock` or a held link source,
+      which no fixture can create on demand (review-RUN-09 finding 4).
 - [ ] Seam 1 (windows runner): a stubbed `ENOTSUP`/`ENOSYS` on the lock link → `run-folder`
       at once, without a probe (to RUN-10's manual check, or an accepted gap where it
       cannot be forced).
+
+Tests: `tests/run-file-in-use.test.js` (Seam 1: the preload cases on every runner, the
+`FileShare.None` lock holder on Windows only); the retry that clears partway is M12's
+in-process case in `tests/run.test.js` (KD-R23).
 
 
 ## RUN-10: manual check: a filesystem without hard links
 
 **What to build:** a manual check, run by hand against such a filesystem when one is
 available. On it, `plan` refuses with `run-folder` ("the run folder's filesystem does not
-support hard links"). No fixture or CI runner claims this case.
+support hard links"). No fixture or CI runner claims this case. Watch the errno: on a FAT
+volume `CreateHardLink` fails `ERROR_INVALID_FUNCTION`, which libuv may map to `EISDIR`
+rather than `ENOTSUP`; M12 maps only `ENOTSUP`/`ENOSYS` (and a failed probe) to
+`run-folder`, so any other code reaches `internal`. If the check sees one, add it to
+C:run-folder's `lock` row and M12 (review-RUN-09 finding 8).
 
 **Blocked by:** RUN-09.
 

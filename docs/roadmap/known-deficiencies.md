@@ -60,13 +60,14 @@ fixed, delete it here; IDs are never reused.
 - **KD-R22.** RUN-12's first clock step fires before the provisional folder exists, so the
   discard is never exercised; its `plan --hunks` deadline case has no clock setup or
   observable. Tie the step to "folder exists, no lock"; add setup and exit code.
-- **KD-R23.** RUN-09's Windows retry-window holder releases on an unnamed event (timing
-  dependent). Name a marker file.
-- **KD-R24.** RUN-09's stubbed probe failure and `busy` cases have no mechanism and end in a
-  hedge. FND-10 now accepts a list of `name[=code]` entries, so the lock link can fail
-  `EPERM` while the probe link fails `ENOTSUP` in the same run; RUN-09 still needs a fixed
-  probe basename to use it (or a prefix match added to FND-10, if the probe name is
-  inherently random).
+- **KD-R23.** RUN-09 AC2 (a real `FileShare.None` holder on `state.json`, released inside the
+  retry window → success) has no deterministic Seam 1 case: no call renames over an existing
+  `state.json` at a moment a test can hold it (`commit` is still a stub, and `plan` writes it
+  once, into a `<planId>/` folder minted during the call), and the fault preload's faults persist for the whole call. Covered
+  instead by M12's in-process clears-partway case (`tests/run.test.js`) and a Seam 1
+  persisting-`EPERM` case (six attempts, then `internal`). Fix: once EXE-02 writes
+  `state.json` per group, use a holder that releases once the fault log shows the second
+  rename attempt, or add a "fail the first N calls" option to the preload.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R28.** CFG-07's direct `validateLayer` call is an in-process test Seam 3 does not
@@ -179,7 +180,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 1. KD-R1 (on both critical paths).
 2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35, KD-R33 and KD-R64.
 3. KD-R28, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
-4. The CHG-03b area: KD-R24, KD-R60, KD-R67.
+4. The CHG-03b area: KD-R60, KD-R67.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R46; KD-R47;
    KD-R49, KD-R50, KD-R45.
