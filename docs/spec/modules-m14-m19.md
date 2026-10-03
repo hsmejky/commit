@@ -161,10 +161,11 @@ with every scan-hit span replaced by `[<pattern-id>]`, so no secret reaches the 
 hit gets the two manual lines per C:reply-and-handback (`!git --literal-pathspecs add --
 <path>`, then `!git commit -m "<message>"`), with `<message>` left as a placeholder the
 user fills in (Q10); a path it cannot quote safely (`'`, U+2018–U+201B, a control
-character) gets only "commit by hand". Every `ReplyFacts` variant carries the M10 `treeState`, except `release`'s past its
-45 s budget (M15 `releaseDeadline`), which omits it since the release already completed,
-and a `not-a-repo` refusal, which has no tree to read; rendered as "working tree clean" or
-"N files left: …" with up to 10 paths plus "+N more".
+character) gets only "commit by hand". Every `ReplyFacts` variant carries the M10
+`treeState`, except `release`'s past its 45 s budget (M15 `releaseDeadline`), which omits
+it since the release already completed, and a `not-a-repo` refusal, which has no tree to
+read; rendered as "working tree clean", or "N files left: …" (singular "1 file left"),
+the paths joined by ", ", with up to 10 paths plus "+N more".
 Every path M17 renders anywhere in `text` has its control characters escaped per
 C:reply-and-handback, so a crafted name can neither forge a reply line nor send a terminal
 escape. Git and hook output (a failed commit, a hook's message) goes into `text` escaped the
@@ -206,10 +207,10 @@ the reply with M17.
      M17 puts them in the reply's notices of every output `plan` ends with, whatever step
      it ends at (clean, `modeChoice`, a refusal, `timeout`, `internal`), since
      `finishTakeover` has already deleted the evidence (story 210).
-  4. M10 `indexFingerprint`, read first, then M10 `inventory`; M9 `hideFilter`; M15 `resolveMode` (passed
-     `killedLeftover` from the takeover repair at step 3) (`modeChoice`, `staged-empty` or
-     `killed-leftover` → discard; a `reword` run with `killedLeftover` goes on with its
-     notice).
+  4. M10 `indexFingerprint`, read first, then M10 `inventory`; M9 `hideFilter`; M15
+     `resolveMode` (passed `killedLeftover` from the takeover repair at step 3)
+     (`modeChoice`, `staged-empty` or `killed-leftover` → discard; a `reword` run with
+     `killedLeftover` goes on with its notice).
   5. M9 `applyCaps` (`split` only); M10 `snapshot` (a failed `git add` → `git-failed`,
      discard) and `assignIds`; when a unit's path or old path is the repo config (M4
      `isRepoConfigPath`), M4 `scanIgnoreChanged` compares step 1's HEAD patterns (`[]` when

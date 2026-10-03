@@ -54,10 +54,11 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    that appears only after the `peek` is adopted by step 7's `acquire` (below).
 4. The index fingerprint (a hash of `git ls-files --stage -z`: read-only, takes no index
    lock), read first, so step 7's re-read also sees an index change made while the
-   inventory's own git calls run; then the inventory; hidden rule; mode (`modeChoice`, `staged-empty` for `--staged` with an
-   empty index, or after a takeover `killed-leftover` ([run folder](run-folder.md)) → delete
-   the folder, after a takeover releasing the lock too). Candidates for the
-   mode decision are counted after the hidden rule and before the caps.
+   inventory's own git calls run; then the inventory; hidden rule; mode (`modeChoice`,
+   `staged-empty` for `--staged` with an empty index, or after a takeover `killed-leftover`
+   ([run folder](run-folder.md)) → delete the folder, after a takeover releasing the lock
+   too). Candidates for the mode decision are counted after the hidden rule and before the
+   caps.
 5. Caps (`split` only), snapshot (a failed `git add` → exit 4 `git`, code `git-failed`, delete the
    folder), unit IDs, scan.
 6. Post-scan refusals: `staged-hit`; a clean tree → `nothing`, except with `--reword`, which

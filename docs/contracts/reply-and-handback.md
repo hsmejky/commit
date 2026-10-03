@@ -173,9 +173,10 @@ handles it the same way.
 - When `commits` is non-empty, `text` names the trailer the script appended (or "no
   trailer", with the attribution source); a reply with no commits has no trailer line.
   Every script-built reply ends with the tree state ("working tree clean", or "N files
-  left: …" with at most 10 paths, then "+N more"), whatever its status and handbacks
-  included, read after the subcommand's last git call, so the caller needs no `git log` /
-  `git status` call and does not add a trailer by hand (Q25).
+  left: …" with at most 10 paths, then "+N more"; singular "1 file left", the paths joined
+  by ", "), whatever its status and handbacks included, read after the subcommand's last
+  git call, so the caller needs no `git log` / `git status` call and does not add a trailer
+  by hand (Q25).
   In `release`, this read is bounded by the 45 s budget above; a reply that misses it omits
   the tree state. A `state` refusal for `not-a-repo` or a bare repository omits it too:
   there is no working tree to read. The worker-built fallback reply ([worker
