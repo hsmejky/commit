@@ -3,9 +3,9 @@
 //
 // INF-01 (tracer) built the `too-few-commits` outcome only. INF-02 adds the Conventional
 // Commits share split: `not-conventional` under 50%, else `proposal`. INF-03 fills in the
-// proposal's `scope` and `body` fields. The remaining fields (`types`, `subjectCase`,
-// `maxSubjectLength`) and `wouldFail` are built by INF-04 through INF-06; until then a met
-// threshold is marked by a placeholder object, not by the fields themselves.
+// proposal's `scope` and `body` fields. The proposal carries only `scope` and `body` until
+// INF-04 and INF-05 add its remaining fields (`types`, `subjectCase`, `maxSubjectLength`);
+// `wouldFail` stays `null` until INF-06 computes it.
 
 import { parse } from './message-grammar.mjs';
 

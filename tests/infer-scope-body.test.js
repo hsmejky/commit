@@ -57,6 +57,17 @@ test('Seam 1: a 10% scope share gives scope: optional', async (t) => {
   assert.deepEqual(result.json.proposal.scope, { value: 'optional', evidence: { withScope: 0.1 } }, detail(result));
 });
 
+test('Seam 1: an 89% scope share gives scope: optional', async (t) => {
+  const c = createCase(t);
+  scopeHistory(c, 89, 11);
+
+  const result = await runCommit(c, ['infer']);
+
+  assertOk(result);
+  assert.equal(result.json.commitCount, 100, detail(result));
+  assert.deepEqual(result.json.proposal.scope, { value: 'optional', evidence: { withScope: 0.89 } }, detail(result));
+});
+
 test('Seam 1: a 9% scope share gives scope: forbidden', async (t) => {
   const c = createCase(t);
   scopeHistory(c, 9, 91);
@@ -108,9 +119,14 @@ test('Seam 1: scope and body shares are computed over the Conventional Commits o
 
 test('Seam 1: an exactly 10% with-body share gives body: optional', async (t) => {
   const c = createCase(t);
-  fastImportLinear(c, 100, (i) => (i <= 10
-    ? `feat: change ${i}\n\nbody line ${i}\n`
-    : `feat: change ${i}\n`));
+  // Of the 10 with-body commits, half also carry a trailing Closes #n footer after the body
+  // paragraph: that footer must not strip the body (C:message-grammar). A regression that
+  // treats any message with a footer as body-less would drop withBody to 0.05 (forbidden).
+  fastImportLinear(c, 100, (i) => {
+    if (i <= 5) return `feat: change ${i}\n\nbody line ${i}\n`;
+    if (i <= 10) return `feat: change ${i}\n\nbody line ${i}\n\nCloses #${i}\n`;
+    return `feat: change ${i}\n`;
+  });
 
   const result = await runCommit(c, ['infer']);
 
