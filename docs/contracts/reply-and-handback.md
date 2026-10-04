@@ -138,11 +138,11 @@ handles it the same way.
   `commit.cjs`, fails the check.
   `timeoutMs`: 600000 for `commit`, 60000 otherwise; the caller passes it as the tool
   timeout. `release`'s own status read (the tree state below) is given a 45 s budget, below
-  its 60 s `timeoutMs`, since the release itself (lock released, folder deleted) is already
-  complete by the time that budget could run out; when it does, the reply omits the tree
-  state (Q25 pass 5 amendment). `release`'s own steps run under the same 45 s budget: spent
-  before the release itself, `release` exits 5 `timeout` and keeps the run folder and the
-  lock for the next `plan`'s takeover ([commit, release](commit-release.md)). Only the `yes` answer of a `confirm` carries `--confirmed`;
+  its 60 s `timeoutMs`; when that budget runs out after the release itself (lock released,
+  folder deleted) has already completed, the reply omits the tree state (Q25 pass 5
+  amendment). `release`'s own steps run under the same 45 s budget: spent before the release
+  itself, `release` exits 5 `timeout` and keeps
+  the run folder and the lock for the next `plan`'s takeover ([commit, release](commit-release.md)). Only the `yes` answer of a `confirm` carries `--confirmed`;
   no other `run` does,
   `continue` included. The script builds `run` without escaping anything: the
   commit entry point refuses with exit 1 `env` an install path that contains `$`, a

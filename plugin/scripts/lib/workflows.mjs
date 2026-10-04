@@ -1310,7 +1310,12 @@ export async function commit(values, injected, { cwd }) {
  * `deadline` the same way `plan` does, so a step past it ends as `timed-out` (review-GIT-07
  * finding Medium-2) instead of running unbounded; today none of `check`'s own steps make an
  * M2 call past the exempt `probe()` (`validateWorkerPlan` is pure file/state work), so this
- * only guards future steps (M16 routing, M10 `treeState`) that will.
+ * only guards future steps (M16 routing, M10 `treeState`) that will. A `timed-out` outcome
+ * reached after `openRun` (`ctx.opened`) ends the run the same way every other exit 3-5
+ * refusal does (C:cli-and-exit-codes "exits 3-5 end the run"; review-GIT-07 r2 finding
+ * Low-2): `releaseOpen` runs before the reply, so the lock and the run folder go with it, and
+ * the `finally`'s `close` below finds nothing of this call's own left to close, the same
+ * pattern `commitGroups`' run-ending refusals and `plan --hunks`' `PLAN_HUNKS_RUN_ENDING` use.
  *
  * @param {{ plan: string }} values the parsed and validated `check` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.
@@ -1324,7 +1329,15 @@ export async function check(values, injected, { cwd }) {
   const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
   try {
     const facts = await runStepsWithin(CHECK_STEPS, ctx);
-    if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+    if (facts.refusal !== undefined) {
+      // review-GIT-07 r2 finding Low-2: a `timed-out` outcome reached after `openRun` ends
+      // the run (lock and folder released) like every other exit 3-5 refusal; one before
+      // `openRun` ever ran has no run to release.
+      if (ctx.opened && facts.refusal.code === 'timed-out') {
+        releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
+      }
+      return refusalFailure(facts.refusal);
+    }
     if (facts.lint !== undefined) return await lintFailureOf(facts, ctx);
     return { output: facts };
   } finally {

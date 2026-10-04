@@ -173,8 +173,10 @@ hit gets the two manual lines per C:reply-and-handback (`!git --literal-pathspec
 <path>`, then `!git commit -m "<message>"`), with `<message>` left as a placeholder the
 user fills in (Q10); a path it cannot quote safely (`'`, U+2018–U+201B, a control
 character) gets only "commit by hand". Every `ReplyFacts` variant carries the M10
-`treeState`, except `release`'s past its 45 s budget (M15 `releaseDeadline`), which omits
-it since the release already completed, and a `not-a-repo`/bare refusal or one with no git
+`treeState`, except `release`'s own status read, once it runs, past its 45 s budget (M15
+`releaseDeadline`), which omits it; a budget spent before `releaseById` itself instead ends
+`release` as `timed-out`, with no reply to carry `treeState` at all. A
+`not-a-repo`/bare refusal or one with no git
 to read at start-up (no git found, or `git --version` timed out), which has no tree to
 read; rendered as "working tree clean", or "N files left: …" (singular "1 file left"),
 the paths joined by ", ", with up to 10 paths plus "+N more".
@@ -276,11 +278,13 @@ the reply with M17.
   When `confirm` is null, the output is `commit --all`'s with `groups`, `notIncluded` and
   `notices` merged in, the merged notices landing in `reply.notices` (C:check).
 - **`commit`.** M16 `commitAll(run, { now, osUser })` (`check` calls it the same way); M10
-  `treeState` for the reply; M15 `runEnd`. **`release`.** M12
+  `treeState` for the reply; M15 `runEnd`. **`release`.** `probeRepo`, then M12
   `releaseById` (no-op on mismatch, before any `call.lock`; on a match it takes the
-  `call.lock`, so a call still running on the run → `busy` and the run is kept); M10
-  `treeState` for the reply (within the 45 s budget below the 60 s tool timeout, M15
-  `releaseDeadline`; past it the reply omits `treeState`).
+  `call.lock`, so a call still running on the run → `busy` and the run is kept), both under
+  the same 45 s `releaseDeadline` as the status read below: spent before `releaseById`,
+  `release` ends `timed-out` (exit 5 `timeout`) with the run folder and the lock kept for
+  the next `plan`'s takeover. Past `releaseById`, M10 `treeState` for the reply (within the
+  same 45 s budget, below the 60 s tool timeout; past it the reply omits `treeState`).
 - **`infer`.** M3 history read; M19 `infer`; M4 `readLayers`; M19 `configFor`.
 Sources: Q7, Q9, Q10, Q16-Q18, Q20-Q23, C:plan, C:check, C:commit-release.
 

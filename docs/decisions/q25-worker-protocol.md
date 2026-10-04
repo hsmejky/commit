@@ -215,8 +215,12 @@
 - **Amended.** By spec pass 7 (2026-09-27): the `release` reply keeps `treeState` (Q25's own
   rule that every reply carries the tree state), paired with the 60 s `release` timeout
   (pass 5): its status read (M10) gets its own 45 s budget, below that 60 s ceiling. When the
-  budget runs out the reply omits `treeState`; the release itself has already completed by
-  then, so only the reply's completeness is affected, not the outcome.
+  status read's budget runs out the reply omits `treeState`.
+- **Amended.** By review-GIT-07 r2 (2026-10-04, KD-R78): `release`'s own steps (probe,
+  M12 `releaseById`) run under the same 45 s budget as the status read, not only the status
+  read itself. A budget spent before `releaseById` ends `release` as `timed-out` (exit 5
+  `timeout`) with the run folder and the lock kept for the next `plan`'s takeover, instead of
+  only omitting `treeState` from an otherwise-completed release.
 - **Amended.** By spec pass 9 (2026-09-27):
   - Output that is not JSON. When a worker's script call prints output that is not JSON,
     the fallback reply's `text` quotes it with the escaping and the 2000-character cap of

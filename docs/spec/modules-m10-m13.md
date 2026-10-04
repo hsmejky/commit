@@ -173,7 +173,7 @@ deadline scope (`withDeadline`, set by `plan`), not as an argument: each probe p
 (git read or `ssh-add`) takes the smaller of its fixed 5 s and the time left at its own
 start; a timed-out git read gives `"unknown"` (on `commit.gpgsign` or `gpg.*`,
 `{ enabled: true, ready: "unknown" }`), and a timed-out `git --exec-path` means the
-`ssh-add -L` check was not run. Only a call the deadline itself ended (less than 5 s left)
+`ssh-add -L` check was not run. Only a call the deadline itself ended (at most 5 s left)
 ends `plan` as `timeout` (C:plan); one the fixed 5 s ended leaves `plan` going on. The `signing-locked` refusal text and the openpgp note are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, C:plan, C:cli-and-exit-codes.
 
 **M12 Run.** Everything under the run folder. Check `.commit-plan` (Run-folder directory
