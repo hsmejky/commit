@@ -169,13 +169,13 @@ points to the opt-out below 50%. Its description size test reuses the shared ≤
 
 **Blocked by:** INF-07, FND-02, WRK-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** prompt-only blocks (`/commit-config`), Q7, Q14, Q24, stories 130-134.
 
-- [ ] A static test reads the skill frontmatter: `disable-model-invocation: true` (Q7)
-- [ ] CI size test: description ≤ 200 characters.
-- [ ] A static test: the skill text names the script by the plugin-root path.
+- [x] A static test reads the skill frontmatter: `disable-model-invocation: true` (Q7)
+- [x] CI size test: description ≤ 200 characters.
+- [x] A static test: the skill text names the script by the plugin-root path.
 
 
 ## INF-09: `/commit-config` hand-test
