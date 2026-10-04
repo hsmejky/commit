@@ -465,7 +465,7 @@ With `--no-user`, the ending failure releases the lock and deletes the folder.
 
 **Blocked by:** RUN-06, PLN-01, PLN-02, PLN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, Q20, M15 `onLintFailure`/`runEnd`, C:check, story 214.
 
@@ -476,14 +476,14 @@ above needs to tell them apart, so `onLintFailure` needs a marker on the lint re
 example `kind: 'shape'` per error, or on the overall failure) added here, not retrofitted
 onto PLN-01.
 
-- [ ] Seam 1: two bad `check` calls in a row → exit 2 and then `lintFailed`. `plan --hunks`
+- [x] Seam 1: two bad `check` calls in a row → exit 2 and then `lintFailed`. `plan --hunks`
       resets the counter, so a bad `check` after it is a fresh exit 2, not `lintFailed`; the
       separate `plan --hunks` call is asserted by INT-12 instead of here, as RUN-17 does for
       its `resumed` row.
-- [ ] Seam 1: a `source: user` plan with a lint error → `lintFailed` on the first failure.
-- [ ] Seam 1: a worker plan that is not valid JSON, twice → a `lintFailed` ending (the
+- [x] Seam 1: a `source: user` plan with a lint error → `lintFailed` on the first failure.
+- [x] Seam 1: a worker plan that is not valid JSON, twice → a `lintFailed` ending (the
       handback's `retry`/`no`-only shape, with no `edit` answer, is RPL's).
-- [ ] Seam 1: `--no-user` and a second failure → the lock and the folder are gone, and the
+- [x] Seam 1: `--no-user` and a second failure → the lock and the folder are gone, and the
       next `plan` starts fresh.
 
 

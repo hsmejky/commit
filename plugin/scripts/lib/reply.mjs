@@ -85,7 +85,7 @@ function modeChoiceQuestion({ staged, other }) {
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'handback', kind: 'modeChoice', staged: number,
  *   other: number, treeState, notices?: string[] } | { status: 'handback', kind: 'lintFailed',
- *   planId: string, errors: object[], treeState, notices?: string[] }} facts
+ *   planId: string, errors: object[], shapeOnly?: boolean, treeState, notices?: string[] }} facts
  *   `errors` (a `lintFailed`, or a `failed` lint failure with `--no-user`): C:check's lint
  *   errors, listed in `text` after the first line. `planId`: the kept run's (default `null`).
  *   `notices`: the call's notices (RUN-05: a provisional run
