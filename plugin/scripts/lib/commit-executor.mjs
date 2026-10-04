@@ -376,19 +376,30 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
             storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
             tracked: state.units.map((unit) => unit.path),
             indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
-            unborn: state.head === null,
+            // HEAD always exists once this group's own `git commit` has landed (a few lines
+            // above), even when `state.head` (the SHA expected *before* this commit, `null`
+            // on a run that started unborn) has not been advanced yet — that only happens
+            // later, past this block. Passing `state.head === null` here (review-EXE-15
+            // finding H1) would make the temporary index start empty on such a run, so every
+            // candidate re-adds as a new-file unit and `after` can never equal `current`
+            // minus this group's own hashes: `treeChangedDuringCommit` would be set on every
+            // unborn multi-group run, hook or not.
+            unborn: false,
             ...git,
           });
-        } catch (err) {
-          // EXE-09: the same rebuild failure (a stored candidate turned ignored, for
-          // example) surfaces properly as the next group's own phase-(b) `git-failed`
-          // refusal; this group already committed, so skip the diagnosis instead of
-          // turning its success into a throw, and leave `treeChangedDuringCommit` as it was
-          // (unknown, not asserted clean).
-          if (err.domainCode !== 'git-failed') throw err;
+        } catch {
+          // A pure diagnostic must never turn an already-landed commit into a throw
+          // (review-EXE-15 finding L1): whatever fails here — the same EXE-09 rebuild
+          // failure the next group's own phase-(b) would otherwise raise as `git-failed`,
+          // a `check-attr` failure, a git timeout, anything — this group already committed,
+          // so skip the diagnosis and leave `treeChangedDuringCommit` as it was (unknown,
+          // not asserted clean).
           afterUnits = null;
         }
         if (afterUnits !== null) {
+          // `units` (this group's own, EXE-02's `wholeFileUnits`) is correct only while a
+          // group always stages whole files; once hunk-level staging lands, a file split
+          // across groups needs that group's own *unit* hashes here instead (KD-S84).
           const ownHashes = new Set(units.map((unit) => unit.hash));
           const expected = current.map((unit) => unit.hash).filter((hash) => !ownHashes.has(hash));
           if (sameHashSet(afterUnits, expected)) {

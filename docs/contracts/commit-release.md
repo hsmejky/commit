@@ -120,7 +120,9 @@ created between groups are both caught:
   (temporary index, as above) is computed right before (`before`) and right after
   (`after`) the `git commit` call. If `after` differs from `before` minus group n's own
   hashes, the state file records `treeChangedDuringCommit: n` (Q18). Comparing `before`
-  and `after` directly would always differ: the committed units leave the diff.
+  and `after` directly would always differ: the committed units leave the diff. `before`
+  is not a second snapshot: it reuses the (b) match snapshot taken moments earlier, since
+  nothing between (b) and this `git commit` call touches the worktree.
 - After exit 4 or 5, and before an `internal` reply: `commit` reads HEAD, timed against
   `cleanupDeadline`. If it moved from the expected SHA, git made the commit anyway (a
   hanging `post-commit` hook, a signing prompt answered late, a throw after `git commit`

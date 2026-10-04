@@ -10,10 +10,17 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+
+const SPAWN_RECORD_PRELOAD = pathToFileURL(
+  path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
+).href;
+const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -50,12 +57,47 @@ async function twoGroupRun(t) {
   return { c, planId, runDir, seed };
 }
 
+function readState(runDir) {
+  return JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+}
+
+// `treeChangedDuringCommit` is a `state.json` field only: a `diff-changed` refusal, and a
+// clean run that finishes its last group, both end the run and delete the run folder
+// (docs/contracts/run-folder.md), so no CLI call that ends that way leaves anything for a
+// later `readState` to find. Only a kept run (EXE-16's budget stop) can be read afterward —
+// so `scheduleAfterCommits`/`runCommitAfterCommits` force one right after the `n`th group
+// this call commits, before the next group's own phase (a)/(b) ever runs, purely to observe
+// the field directly (review-EXE-15 M1/H1); tolerant of an unborn repo's reflog (none yet).
+function reflogCount(c) {
+  const result = spawnSync('git', ['reflog', 'show', '--no-color', '--format=%H', 'HEAD'], {
+    cwd: c.repoDir, env: c.env, encoding: 'utf8',
+  });
+  if (result.status !== 0 || !result.stdout) return 0;
+  return result.stdout.split('\n').filter(Boolean).length;
+}
+
+function scheduleAfterCommits(c, n, elapsedMs) {
+  const schedulePath = path.join(c.root, 'schedule.json');
+  const atLeast = reflogCount(c) + n;
+  fs.writeFileSync(schedulePath, JSON.stringify([
+    { event: { type: 'reflogCount', repo: c.repoDir, atLeast }, elapsedMs },
+  ]));
+  return schedulePath;
+}
+
+function runCommitAfterCommits(c, planId, n, elapsedMs) {
+  return runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: scheduleAfterCommits(c, n, elapsedMs) },
+  });
+}
+
 // A fixture `pre-commit` hook (runs during every `git commit` in the repo) that, only on its
-// first invocation, rewrites `b.txt`'s tracked content in the worktree. A marker file stops
-// it from acting again during group 2's own commit.
-function installRewriteHook(c) {
+// first invocation, rewrites `target`'s (default `b.txt`) tracked content in the worktree. A
+// marker file stops it from acting again during a later commit.
+function installRewriteHook(c, target = 'b.txt') {
   const marker = path.join(c.root, 'rewrite-done');
-  const bPath = path.join(c.repoDir, 'b.txt');
+  const bPath = path.join(c.repoDir, target);
   const scriptPath = path.join(c.root, 'pre-commit-hook.js');
   fs.writeFileSync(scriptPath, [
     "const fs = require('node:fs');",
@@ -74,8 +116,20 @@ function installRewriteHook(c) {
 }
 
 test('a pre-commit hook rewrites group 2\'s file during group 1\'s commit → group 2 refused diff-changed naming group 1 as the likely hook-rewrite cause', async (t) => {
-  const { c, planId, seed } = await twoGroupRun(t);
+  const { c, planId, runDir, seed } = await twoGroupRun(t);
   installRewriteHook(c);
+
+  // M1/H1: a `diff-changed` refusal ends the run and deletes the run folder
+  // (docs/contracts/run-folder.md), so the state field can only be read directly while the
+  // run is kept — stop the call on an EXE-16 budget right after group 1 lands, before group
+  // 2's own phase (b) ever runs.
+  const stopped = await runCommitAfterCommits(c, planId, 1, 61_000);
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.equal(stopped.json.refusal, undefined, detail(stopped));
+  assert.deepEqual(stopped.json.remaining, [2]);
+  assert.equal(fs.existsSync(runDir), true, 'a budget stop keeps the run');
+  // M1: the state field itself, not just the message text it drives.
+  assert.equal(readState(runDir).treeChangedDuringCommit, 1);
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
@@ -84,7 +138,7 @@ test('a pre-commit hook rewrites group 2\'s file during group 1\'s commit → gr
   assert.equal(result.json.error.message, hookRewriteText(1), detail(result));
   const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
   assert.equal(shas.length, 1, 'only group 1 was committed');
-  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: 'feat: change a' }]);
+  assert.deepEqual(result.json.commits, [], 'group 1 already landed on the budget-stop call');
   assert.equal(result.json.failed, 2);
   assert.deepEqual(result.json.remaining, [2]);
   assert.equal(
@@ -95,8 +149,17 @@ test('a pre-commit hook rewrites group 2\'s file during group 1\'s commit → gr
 });
 
 test('two groups and no hook, group 2 edited after plan → the generic text, not the hook-rewrite variant (treeChangedDuringCommit never set)', async (t) => {
-  const { c, planId, seed } = await twoGroupRun(t);
+  const { c, planId, runDir, seed } = await twoGroupRun(t);
   c.writeFile('b.txt', 'b\nedited after plan\n');
+
+  // M1: observed while the run is kept (a budget stop after group 1, EXE-16) — the
+  // `diff-changed` refusal below would otherwise delete the run folder first.
+  const stopped = await runCommitAfterCommits(c, planId, 1, 61_000);
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.deepEqual(stopped.json.remaining, [2]);
+  assert.equal(fs.existsSync(runDir), true, 'a budget stop keeps the run');
+  // M1: assert the state field directly, not only the generic message text.
+  assert.equal('treeChangedDuringCommit' in readState(runDir), false);
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
@@ -107,4 +170,132 @@ test('two groups and no hook, group 2 edited after plan → the generic text, no
   assert.equal(shas.length, 1, 'only group 1 was committed');
   assert.equal(result.json.failed, 2);
   assert.deepEqual(result.json.remaining, [2]);
+});
+
+// M1: the branch that clears `treeChangedDuringCommit` once a later group's own commit
+// causes no further change (commit-executor.mjs, right after the hook-rewrite `if` block).
+// Four tracked files: group 1 = a, group 2 = c, group 3 = b; d is a leftover tracked change
+// claimed by no group. The hook rewrites d (never b) during group 1's own commit, which
+// sets `treeChangedDuringCommit: 1`; group 2 (c) then commits with nothing else changing,
+// which must clear it; b is edited again, independently of any hook, right after `plan`. If
+// the flag were not cleared, group 3's `unmatched` refusal over b would wrongly use the
+// hook-rewrite text and blame group 1, although b's change has nothing to do with the hook.
+test('a later group\'s own clean commit clears treeChangedDuringCommit, so a later, unrelated mismatch gets the generic text', async (t) => {
+  const c = createCase(t);
+  for (const name of ['a', 'b', 'c', 'd']) c.writeFile(`${name}.txt`, `${name}\n`);
+  c.git(['add', '--', 'a.txt', 'b.txt', 'c.txt', 'd.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  for (const name of ['a', 'b', 'c', 'd']) c.writeFile(`${name}.txt`, `${name}\nmore\n`);
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  const unitsOf = (name) => state.units.filter((unit) => unit.path === `${name}.txt`).map((unit) => unit.id);
+  state.groups = [
+    { n: 1, units: unitsOf('a'), header: 'feat: change a', body: null, committed: false },
+    { n: 2, units: unitsOf('c'), header: 'feat: change c', body: null, committed: false },
+    { n: 3, units: unitsOf('b'), header: 'feat: change b', body: null, committed: false },
+  ];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  installRewriteHook(c, 'd.txt'); // rewrites d.txt, never claimed by any group
+  c.writeFile('b.txt', 'b\nedited after plan\n'); // independent of the hook
+
+  // M1: observed while the run is kept (a budget stop after group 2, EXE-16) — right before
+  // group 3's own phase (b) would otherwise run and, via an `unmatched` refusal, delete the
+  // run folder.
+  const stopped = await runCommitAfterCommits(c, planId, 2, 61_000);
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.deepEqual(stopped.json.remaining, [3]);
+  assert.equal(fs.existsSync(runDir), true, 'a budget stop keeps the run');
+  assert.equal('treeChangedDuringCommit' in readState(runDir), false);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, UNMATCHED_TEXT, detail(result));
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 2, 'groups 1 and 2 were committed, group 3 refused');
+  assert.equal(result.json.failed, 3);
+  assert.deepEqual(result.json.remaining, [3]);
+});
+
+// H1 (review-EXE-15): the after-commit diagnosis snapshot must pass `unborn: false` (HEAD
+// always exists once this group's own `git commit` has landed), never `state.head === null`
+// (the SHA expected *before* the commit, still `null` on a run that started unborn). Passing
+// the latter made the temporary index start empty on an unborn multi-group run, so every
+// candidate re-added as a new-file unit and the diagnosis could never match, false-flagging
+// `treeChangedDuringCommit` on every such run, hook or not. Repro: an unborn repo, two
+// untracked files, one group per file, group 2's file edited after `plan`, no hook at all.
+test('an unborn multi-group run with no hook still gets the generic text, not a false hook-rewrite flag', async (t) => {
+  const c = createCase(t);
+  for (const name of ['a', 'b']) c.writeFile(`${name}.txt`, `${name}\n`);
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = ['a', 'b'].map((name, i) => ({
+    n: i + 1,
+    units: state.units.filter((unit) => unit.path === `${name}.txt`).map((unit) => unit.id),
+    header: `feat: add ${name}`,
+    body: null,
+    committed: false,
+  }));
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  c.writeFile('b.txt', 'b\nedited after plan\n');
+
+  // H1/M1: observed while the run is kept (a budget stop after group 1, EXE-16) — the
+  // `diff-changed` refusal below would otherwise delete the run folder first. This is the
+  // direct check that the unborn repo's first commit never false-flags the field.
+  const stopped = await runCommitAfterCommits(c, planId, 1, 61_000);
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.deepEqual(stopped.json.remaining, [2]);
+  assert.equal(fs.existsSync(runDir), true, 'a budget stop keeps the run');
+  assert.equal('treeChangedDuringCommit' in readState(runDir), false);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, UNMATCHED_TEXT, detail(result));
+  const shas = c.git(['rev-list', '--reverse', 'HEAD']).trim().split('\n');
+  assert.equal(shas.length, 1, "only group 1 (the repo's first-ever commit) landed");
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2]);
+});
+
+// H2 (review-EXE-15): roadmap AC3 ("the last group → the worktree-hash git calls are not
+// spawned before or after `git commit`") had no test. A regression that ran the after-commit
+// diagnosis for the last group too (an extra full rebuild + diff per run) would pass every
+// other EXE-15 case silently. Observed through the PATH-independent spawn-record preload:
+// every git call against the run's own temporary index (`GIT_INDEX_FILE` holding `git-index`)
+// is logged with its position relative to each `git commit` spawn.
+test('AC3: no snapshot git calls on the temporary index follow the last group\'s own commit (a non-last group still gets them)', async (t) => {
+  const { c, planId } = await twoGroupRun(t);
+  const log = path.join(c.root, 'spawns.jsonl');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
+    env: { COMMIT_TEST_SPAWN_LOG: log },
+  });
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const gitCalls = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((e) => e.file === 'git');
+  const commitIndexes = gitCalls
+    .map((e, i) => (e.args[0] === 'commit' ? i : -1))
+    .filter((i) => i !== -1);
+  assert.equal(commitIndexes.length, 2, JSON.stringify(gitCalls));
+  const [afterGroup1, afterGroup2] = commitIndexes;
+  const onTempIndex = (e) => Boolean(
+    e.gitEnv && e.gitEnv.GIT_INDEX_FILE && e.gitEnv.GIT_INDEX_FILE.includes('git-index'),
+  );
+  const betweenGroups = gitCalls.slice(afterGroup1 + 1, afterGroup2).filter(onTempIndex);
+  const afterLastGroup = gitCalls.slice(afterGroup2 + 1).filter(onTempIndex);
+  assert.ok(betweenGroups.length > 0, "group 1 (not the last group) still gets its after-commit diagnosis snapshot");
+  assert.deepEqual(afterLastGroup, [], 'the last group spawns no snapshot git calls after its own commit');
 });

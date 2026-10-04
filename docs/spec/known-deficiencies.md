@@ -89,6 +89,16 @@ delete it here; IDs are never reused.
   with a `post-commit` hook of group 1 that stages `other.txt` → group 1 kept, group 2
   refused `index-changed`, `other.txt` still staged. Disposition: accepted for 0.1.0
   (review-EXE-07 findings 1, 5, 6).
+- **KD-S84. EXE-15's hook-rewrite detection assumes whole-file groups.** Its "this group's
+  own hashes" set is built from `wholeFileUnits`, correct today because `split` mode only
+  ever stages whole files (EXE-02). Once hunk-level staging lands, a file split across two
+  groups would always flag `treeChangedDuringCommit` for the group committed first: that
+  group's own hashes would no longer cover its hunks, only its whole-file units (of which
+  it may have none). Where: `plugin/scripts/lib/commit-executor.mjs` (the `ownHashes` set
+  built right after `git commit`, C:commit-release "Hook rewrite detection"), review-EXE-15
+  finding L3. Fix: derive `ownHashes` from what phase (c) actually staged for this group
+  (its own unit IDs, not `wholeFileUnits`), once a group's units can be hunks. Slice: the
+  hunk-level staging slice (not yet scheduled in 0.1.0).
 
 ## Error tables and API contract
 
