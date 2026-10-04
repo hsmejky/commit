@@ -201,8 +201,10 @@ Plan text that depends on a design fix; fix the design and the slice together.
   (worktree, candidates included, uncapped — `collapseCandidates` and the case-rename check
   skip modes other than `split`) until CHG-14 builds the index-only snapshot (review-RUN-13
   finding 3; the per-file mode-count gap this row used to cover was fixed in RUN-13 itself,
-  `indexState` now reads the worktree column too). No commit can come of the interim
-  snapshot: `check` and `commit` both refuse any mode other than `split`. Where:
+  `indexState` now reads the worktree column too, for a tracked change and for a staged-new
+  path edited again — `AM`, a force-added hidden file included — alike). No commit can come
+  of the interim snapshot: `check` and `commit` both refuse any mode other than `split`.
+  Where:
   `plugin/scripts/lib/workflows.mjs` `collapseCandidates`, `refuseCaseRenames` and
   `snapshotUnits`. Fix: CHG-14 (blocked by RUN-13) builds the index-only snapshot for
   `staged` mode, removing untracked candidates from it instead of capping them.

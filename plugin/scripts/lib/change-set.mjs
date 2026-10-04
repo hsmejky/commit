@@ -115,10 +115,13 @@ export async function indexLockExists({ toplevel, env, now }) {
  *   entries that are not staged-new (a rename's old path is its own deletion). The pin
  *   matches the pinned diff, so a submodule's `ignore=all` setting hides no pointer change
  *   and dirt alone is no entry.
- * - unstagedTracked (RUN-13, KD-R75): the `tracked` paths whose status entry's worktree
- *   column (`xy[1]`) is not blank, i.e. a tracked change outside the index. A `git add -p`
- *   style `MM` file is both staged (in `preStaged`) and here, so M15's mode decision counts
- *   it as staged and as another change.
+ * - unstagedTracked (RUN-13, KD-R75): every status entry with a path and a non-blank
+ *   worktree column (`xy[1]`), intent-to-add excluded (its worktree content is already
+ *   counted once in `other`, through `stagedNew`). This is wider than `tracked`: a
+ *   staged-new path edited again (`AM`, a force-added `.env` included) belongs here too,
+ *   not only a tracked change outside the index. A `git add -p` style `MM` file, or such an
+ *   `AM` one, is both staged (in `preStaged`) and here, so M15's mode decision counts it as
+ *   staged and as another change.
  * - dirtySubmodules (CHG-09): the submodules with dirt inside but no pointer change, in byte
  *   order (`dirtySubmodulePaths`); not units, and dirt alone leaves the tree `clean`.
  * - caps (CHG-13): not this function's job. `collapsed` is always `[]` and `stagedExcluded`
@@ -130,7 +133,8 @@ export async function indexLockExists({ toplevel, env, now }) {
  * `A`, as C:untracked-files asks.
  *
  * @param {{ toplevel: string, env: object, now?: () => number }} options
- * @returns {Promise<{ clean: boolean, tracked: string[], unstagedTracked: string[], preStaged: string[],
+ * @returns {Promise<{ clean: boolean, tracked: string[], unstagedTracked: string[],
+ *   preStaged: string[],
  *   candidates: Array<{ path: string, size: number, binary: boolean }>,
  *   collapsed: Array<{ dir: string, count: number, bytes: number }>,
  *   hidden: { count: number, sample: string[] },
@@ -200,10 +204,14 @@ export async function inventory({ toplevel, env, now }) {
     toplevel, env, now, untracked: 'no', renames: false, ignoreSubmodules: 'dirty', notUtf8,
   });
   // An intent-to-add entry (` A`: nothing in the index column) stages no content, so it is
-  // staged-new but not pre-staged (C:plan).
+  // staged-new but not pre-staged (C:plan). The full ` A` pair, not only a blank index
+  // column, since a tracked-but-unstaged deletion (` D`) or edit (` M`) is blank there too
+  // and is not intent-to-add (review-RUN-13-r2 finding 1).
   // Keyed by the path's bytes (`latin1` maps each byte to one character), so a non-UTF-8
   // intent-to-add entry is known too.
-  const intentToAdd = new Set(status.filter((entry) => entry.xy[0] === ' ').map((entry) => entry.bytes.toString('latin1')));
+  const intentToAdd = new Set(
+    status.filter((entry) => entry.xy[0] === ' ' && entry.xy[1] === 'A').map((entry) => entry.bytes.toString('latin1')),
+  );
   const cached = nulFields(await gitOk(
     ['diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z'], opts,
   ));
@@ -232,11 +240,14 @@ export async function inventory({ toplevel, env, now }) {
   const tracked = status
     .filter((entry) => entry.path !== null && !notTracked.has(entry.path))
     .map((entry) => entry.path);
-  // `tracked` paths with a worktree (unstaged) change too, read from the same status entries'
+  // Every status entry with a worktree (unstaged) change, read from the same status entries'
   // `xy[1]` (RUN-13, KD-R75): a `git add -p`-style `MM` file is both staged and unstaged at
   // once, so the mode decision's `indexState` must count it in `other` as well as `staged`.
+  // This is wider than `tracked`/`notTracked`: a staged-new path edited again (`AM`) still
+  // has a worktree change and belongs here too, filtered only by `intentToAdd` (its content
+  // is never staged, so it is already counted once in `other`, through `stagedNew`).
   const unstagedTracked = status
-    .filter((entry) => entry.path !== null && !notTracked.has(entry.path) && entry.xy[1] !== ' ')
+    .filter((entry) => entry.path !== null && entry.xy[1] !== ' ' && !intentToAdd.has(entry.bytes.toString('latin1')))
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,

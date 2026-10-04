@@ -162,6 +162,42 @@ test('inventory: a tree with hidden files only, untracked or staged, is clean', 
   });
 });
 
+// review-RUN-13-r2 finding 1: a staged-new path (`AM`) still has a worktree change and must
+// land in `unstagedTracked`, not only in `preStaged`/`stagedNew`, even though it is excluded
+// from `tracked`.
+test('inventory: a staged-new file edited again (AM) is in unstagedTracked, not tracked', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', 'new.txt']);
+  c.writeFile('new.txt', 'n2\n');
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    clean: false,
+    unstagedTracked: ['new.txt'],
+    preStaged: ['new.txt'],
+    stagedNew: [{ path: 'new.txt', ignored: false }],
+  });
+});
+
+// Same defect class, with a hidden force-added path whose staged-new entry goes to
+// `stagedExcluded` instead of `stagedNew`.
+test('inventory: a force-added hidden file edited again (AM) is in unstagedTracked', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('.env', 'X=1\n');
+  c.git(['add', '-f', '.env']);
+  c.writeFile('.env', 'X=2\n');
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    unstagedTracked: ['.env'],
+    preStaged: ['.env'],
+    stagedExcluded: [{ path: '.env', reason: 'hidden' }],
+  });
+});
+
 test('inventory: a staged-new file on an unborn HEAD', async (t) => {
   const c = createCase(t);
   c.writeFile('new.txt', 'n\n');

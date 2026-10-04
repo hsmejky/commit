@@ -282,13 +282,15 @@ async function resolveRunMode(ctx) {
 // M15 `resolveMode`'s `indexState` from M10's pre-cap inventory (C:plan step 4: candidates
 // counted after the hidden rule and before the caps). `staged`: every path the index changes
 // against HEAD (`preStaged`, a hidden staged-new path included: its content is staged).
-// `other`: the tracked changes not in `preStaged`, plus the ones that are (a `git add -p`
-// style `MM` file, read from `unstagedTracked`, RUN-13, KD-R75), the candidates, and the
-// intent-to-add staged-new paths (`git add -N` stages no content).
+// `other`: `unstagedTracked`'s length (RUN-13, KD-R75) — every path with a worktree change,
+// a `git add -p` style `MM` file and a staged-new one edited again (`AM`, a force-added
+// `.env` included) alike, since `unstagedTracked` is read straight off the status entries
+// and is not narrowed by the hidden rule the way `stagedNew`/`stagedExcluded` are — plus the
+// candidates, plus the staged-new paths not in `preStaged` (intent-to-add, `git add -N`
+// stages no content; never also in `unstagedTracked`, so never double-counted).
 function indexState(inv) {
   const staged = new Set(inv.preStaged);
-  const unstaged = new Set(inv.unstagedTracked);
-  const other = inv.tracked.filter((p) => !staged.has(p) || unstaged.has(p)).length
+  const other = inv.unstagedTracked.length
     + inv.candidates.length
     + inv.stagedNew.filter((entry) => !staged.has(entry.path)).length;
   return { staged: staged.size, other };

@@ -137,6 +137,28 @@ test('a file staged then edited again (git add -p style MM) alone is a modeChoic
   await assertModeChoice(c, `1 file is staged, 1 other change${QUESTION_TAIL}`);
 });
 
+// review-RUN-13-r2 finding 1: a staged-new file (`AM`) still has a worktree change and must
+// count as another change too, not only as staged.
+test('a staged-new file edited again (AM) alone is a modeChoice', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', '--', 'new.txt']);
+  c.writeFile('new.txt', 'n2\n');
+
+  await assertModeChoice(c, `1 file is staged, 1 other change${QUESTION_TAIL}`);
+});
+
+test('a force-added hidden file edited again (AM) alone is a modeChoice', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('.env', 'SECRET=1\n');
+  c.git(['add', '-f', '.env']);
+  c.writeFile('.env', 'SECRET=2\n');
+
+  await assertModeChoice(c, `1 file is staged, 1 other change${QUESTION_TAIL}`);
+});
+
 test('the modeChoice question uses the plural for counts above one', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n', 'b.txt': 'b\n', 'c.txt': 'c\n' });
