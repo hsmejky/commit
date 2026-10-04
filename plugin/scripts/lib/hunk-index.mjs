@@ -44,12 +44,13 @@ export function renderHunks(runState, units) {
     // "none"`, C:plan-hunks); a file↔submodule `T` with file lines has one. CHG-10: a
     // `filtered` unit whose cleaned form is binary has no block either (its own `binary`
     // flag, not an empty body: an empty filtered new file still gets one, review-CHG-10
-    // finding 9). CHG-16: a unit with a pattern hit (`scanEntry` an array) loses its whole
+    // finding 9). CHG-11: an attribute-hidden text file (`kind: "text"`, git's raw
+    // `binary: true` kept) has none either (C:plan-hunks). CHG-16: a unit with a pattern hit (`scanEntry` an array) loses its whole
     // body too, whichever kind it is; an over-limit skip (`scanEntry === "skipped"`) keeps
     // its block (only the scan is skipped, not the body).
     if (
       unit.kind === 'binary'
-      || (unit.kind === 'filtered' && unit.binary === true)
+      || ((unit.kind === 'filtered' || unit.kind === 'text') && unit.binary === true)
       || (unit.kind === 'submodule' && unit.body.length === 0)
       || Array.isArray(scanEntry)
     ) {

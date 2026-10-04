@@ -10,8 +10,9 @@
     `local-path`"), which the retry or an `edit` fixes, so a token or path quoted from the
     diff, or pasted into a reword, does not reach history either. Only added lines; binary
     files skipped. A tracked file whose added lines exceed 1 MB, or an untracked file over
-    1 MB, is not scanned and is reported as skipped (Q19), checked before any content
-    decision below. Binary is decided by content only for a file `git check-attr` confirms
+    1 MB, is not scanned and is reported as skipped (Q19); for an attribute-hidden file
+    (below) the measure is the new content's file size, since its added lines are unknown
+    until the `--text` pass, and it is checked before any content decision below. Binary is decided by content only for a file `git check-attr` confirms
     is hidden by an attribute (`diff`, `binary`, or a custom `diff` driver): a NUL byte in
     the first 8000 bytes of the new content (git's own heuristic) means it is genuinely
     binary; otherwise it is a text file the attribute hides, still scanned through a

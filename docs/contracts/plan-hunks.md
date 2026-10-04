@@ -114,7 +114,10 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   does not run: the conservative choice, since the unit is whole-file and `git add`
   either way. The kind's precedence is `submodule`, then `symlink`, then `filtered`, then
   `binary` or `mode`: a filtered file with a mode change or a binary cleaned form stays
-  `kind: "filtered"`. An attribute-binary text file (git reports it as binary
+  `kind: "filtered"`, and an attribute-binary text file (below) is `kind: "text"` also with
+  a mode change (the mode stays in its whole-file hash). A deleted file is never one: it
+  has no new content, so a deleted attribute-hidden file stays `binary`. An
+  attribute-binary text file (git reports it as binary
   through a `-diff` or `binary` attribute or a custom `diff` driver, but its new content has no NUL byte in the first
   8000 bytes, [plan](plan.md)) has `kind: "text"`: one whole-file unit staged with `git add`,
   `body: "none"` like a summary-only file (no block), its added lines still scanned, read

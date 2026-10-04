@@ -599,7 +599,8 @@ export async function snapshot({
     const attrs = await checkAttrs(names, opts);
     const units = await diffUnits([from, head], opts, attrs);
     const ctx = { mode: 'reword', toplevel, env, now, head };
-    const runTextPass = () => diffUnits([from, head, '--text'], opts, attrs, { allowRediff: false });
+    // review-CHG-11 finding 5: the text pass keeps `diffUnits`' own rediff step.
+    const runTextPass = (keep) => diffUnits([from, head, '--text'], opts, attrs, { keep });
     return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
   }
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14)`);
@@ -631,7 +632,13 @@ export async function snapshot({
     all = [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
   }
   const ctx = { mode: 'split', toplevel, env, now };
-  const runTextPass = async () => (await pinnedDiff(['--text'], opts, attrs)).end();
+  const runTextPass = async (keep) => {
+    const textReader = await pinnedDiff(['--text'], opts, attrs, keep);
+    const textUnits = textReader.end();
+    if (textReader.rediff.length === 0) return textUnits;
+    // review-CHG-11 finding 5: the same `--no-renames` rediff as the main pass above.
+    return [...textUnits, ...(await pinnedDiff(['--text', '--no-renames'], opts, attrs, new Set(textReader.rediff))).end()];
+  };
   return resolveHiddenBinaries(all, attrs, runTextPass, ctx);
 }
 
@@ -708,7 +715,8 @@ async function checkAttrs(paths, { toplevel, env, now, indexPath }) {
 // content is the worktree file (what the pinned diff actually compares against the temporary
 // index), read straight off disk like `fileFacts`; in `reword` there is no worktree side, so
 // the same content is read from `head`'s own tree with `git cat-file` (read-only, no object
-// is written).
+// is written). A `split` path that is no longer a regular file has no content to sniff and
+// stays binary (`binary: true`, git's own call).
 async function hiddenBinaryFacts(path, { mode, toplevel, env, now, head }) {
   if (mode === 'split') {
     const full = join(toplevel, path);
@@ -716,9 +724,9 @@ async function hiddenBinaryFacts(path, { mode, toplevel, env, now, head }) {
     try {
       stat = lstatSync(full);
     } catch {
-      return { overLimit: false, binary: false };
+      return { overLimit: false, binary: true };
     }
-    if (!stat.isFile()) return { overLimit: false, binary: false };
+    if (!stat.isFile()) return { overLimit: false, binary: true };
     if (stat.size > SCAN_LIMIT) return { overLimit: true, binary: null };
     const buf = Buffer.alloc(Math.min(BINARY_SNIFF_BYTES, stat.size));
     const fd = openSync(full, 'r');
@@ -739,17 +747,23 @@ async function hiddenBinaryFacts(path, { mode, toplevel, env, now, head }) {
 }
 
 // CHG-11: resolves every `kind: "binary"` unit whose path `attrs` marks `hidden` (Q10, Q11,
-// C:plan). A unit over the 1 MB scan limit is flagged `overScanLimit: true` and stays
+// C:plan), except a deletion (`D`): it has no new content, so it stays binary (review-CHG-11
+// findings 1 and 3: `reword` would find no such path in `head`, `split` none on disk). A unit over the 1 MB scan limit is flagged `overScanLimit: true` and stays
 // `kind: "binary"` (its hash, body and range are unaffected: scanner.mjs already reports it
 // skipped by the flag alone, ahead of the binary kind). A unit under the limit with no NUL in
 // its first 8000 bytes is attribute-hidden text: it keeps its whole-file hash, body (empty,
-// "no block" like a summary-only unit, C:plan-hunks) and range from the main pass — only its
-// `kind`, `binary` and added-lines fields change — with `added`/`deleted`/`addedLines` read
-// from `runTextPass`'s matching section, the one streamed `git diff -z --raw -p --text` pass
-// run only when at least one such file exists (Q11 pass 5). A unit under the limit with a NUL
-// stays genuinely binary, untouched.
+// "no block" like a summary-only unit, C:plan-hunks), range and git's raw `binary: true` from
+// the main pass (review-CHG-11 finding 4: hunk-index renders a binary `text` unit with no
+// block) — only its `kind` and added-lines fields change — with `added`/`deleted`/`addedLines`
+// read from `runTextPass(keep)`'s matching section, the one streamed
+// `git diff -z --raw -p --text` pass run only when at least one such file exists (Q11 pass 5),
+// whose reader builds units for the `keep` paths alone and discards every other section as
+// it arrives (C:plan; review-CHG-11 finding 2: `--text` turns every real binary in the change
+// set into text lines). A unit under the limit with a NUL stays genuinely binary, untouched.
 async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
-  const candidates = units.filter((unit) => unit.kind === 'binary' && attrs.get(unit.path)?.hidden === true);
+  const candidates = units.filter((unit) => (
+    unit.kind === 'binary' && unit.status !== 'D' && attrs.get(unit.path)?.hidden === true
+  ));
   if (candidates.length === 0) return units;
   const facts = new Map();
   for (const unit of candidates) facts.set(unit.path, await hiddenBinaryFacts(unit.path, ctx));
@@ -757,7 +771,7 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
   const hiddenTextPaths = new Set([...facts].filter(([, f]) => !f.overLimit && f.binary === false).map(([p]) => p));
   const textUnits = new Map();
   if (hiddenTextPaths.size > 0) {
-    for (const unit of await runTextPass()) {
+    for (const unit of await runTextPass(hiddenTextPaths)) {
       if (hiddenTextPaths.has(unit.path)) textUnits.set(unit.path, unit);
     }
   }
@@ -766,16 +780,17 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
     const textUnit = textUnits.get(unit.path);
     if (textUnit === undefined) return unit;
     return {
-      ...unit, kind: 'text', binary: false, added: textUnit.added, deleted: textUnit.deleted, addedLines: textUnit.addedLines,
+      ...unit, kind: 'text', added: textUnit.added, deleted: textUnit.deleted, addedLines: textUnit.addedLines,
     };
   });
 }
 
 // One pinned `git diff -z --raw -p` call against the temporary index, `extra` appended,
 // streamed into a diff reader. `attrs`: the `check-attr` results (CHG-10), threaded to
-// `openSection` so a `filter`-attributed path's section opens as `kind: "filtered"`.
-async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map()) {
-  const reader = createDiffReader(attrs);
+// `openSection` so a `filter`-attributed path's section opens as `kind: "filtered"`. `keep`:
+// the reader's keep-set (`createDiffReader`), null for every path.
+async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map(), keep = null) {
+  const reader = createDiffReader(attrs, { keep });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...extra],
@@ -860,13 +875,17 @@ function existsInWorktree(toplevel, path) {
  * @param {Map<string, { filtered: boolean, generated: boolean }>} [attrs] the `check-attr`
  *   results (CHG-10), keyed by path: a `filtered` path's section opens with
  *   `entryKind: "filtered"` and every unit carries `generated`.
+ * @param {{ keep?: Set<string> | null }} [options] `keep` (CHG-11's `--text` pass): only
+ *   these paths make units; every other section is still paired with its record, but its
+ *   lines are discarded as they arrive, like a non-UTF-8 one's, and a rename from a non-UTF-8
+ *   path goes to `rediff` only when its new path is kept. Null (the default): every path.
  * @returns {{ rediff: string[], push: (chunk: Buffer) => void, end: () => object[] }}
  *   `push` throws on the first pairing error and is not called again; `end` flushes the
  *   last line, checks the section count and returns the units in `snapshot`'s shape and
  *   order. `rediff`: the new paths of the renames whose old path is not UTF-8, in diff
  *   order (complete once `end` returns), which made no unit here.
  */
-export function createDiffReader(attrs = new Map()) {
+export function createDiffReader(attrs = new Map(), { keep = null } = {}) {
   const records = [];
   const units = [];
   const rediff = [];
@@ -904,6 +923,7 @@ export function createDiffReader(attrs = new Map()) {
         throw new Error(`patch section ${sections} does not match raw record ${sections} (${escapeNonUtf8(record.pathBytes)})`);
       }
       section = openSection(record, attrs);
+      if (keep !== null && !keep.has(section.notUtf8 === true ? section.rediff : section.path)) section = NOT_UTF8_SECTION;
       if (section.notUtf8 === true && section.rediff !== null) rediff.push(section.rediff);
       if (record.status === 'T') typeChange = { header: Buffer.from(line), path: escapeNonUtf8(record.pathBytes) };
       return;
@@ -1006,9 +1026,10 @@ export function matchIds(idMap, units, { exact = false } = {}) {
 // finding 5: shares `pinnedDiff`'s rediff step (a rename from a non-UTF-8 old path to a
 // UTF-8 new path is dropped by `-M` and needs a `--no-renames` re-diff) with every caller,
 // not only `split`'s own `pinnedDiff`; `allowRediff: false` stops the one re-diff pass from
-// re-triggering itself.
-async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true } = {}) {
-  const reader = createDiffReader(attrs);
+// re-triggering itself. `keep`: the reader's keep-set (`createDiffReader`), null for every
+// path; the re-diff keeps only the rediff paths.
+async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null } = {}) {
+  const reader = createDiffReader(attrs, { keep });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...args],
@@ -1018,7 +1039,7 @@ async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allo
   const units = reader.end();
   if (!allowRediff || reader.rediff.length === 0) return units;
   const rediff = new Set(reader.rediff);
-  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false }))
+  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff }))
     .filter((unit) => rediff.has(unit.path));
   return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
 }
@@ -1236,7 +1257,8 @@ function startsWith(buf, prefix) {
 // inventory reports such a path for `notIncluded` (its `notUtf8`). A rename from a
 // non-UTF-8 path to a UTF-8 one carries its new path in `rediff`: `snapshot` diffs that
 // path again without rename detection, so it becomes an `A` unit and is not lost
-// (review-CHG-12 finding 1).
+// (review-CHG-12 finding 1). A section outside a reader's keep-set reuses this same
+// no-unit shape (CHG-11).
 const NOT_UTF8_SECTION = Object.freeze({ notUtf8: true, rediff: null });
 
 // Opens a section for its raw record. `M` (content edit), `A` (a new file from the

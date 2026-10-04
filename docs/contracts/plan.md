@@ -325,8 +325,10 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   attribute-hidden text file exists, a second whole-diff pass, `git diff -z --raw -p
   --text`, supplies their added lines; it is not run otherwise. The pass is streamed and
   read for these files' sections only, discarding the rest as it arrives; rename detection
-  is the same as the main diff, and the file list that picks out which sections to keep is
-  never passed to git on argv.
+  is the same as the main diff (including its `--no-renames` re-diff for a rename from a
+  non-UTF-8 path), and the file list that picks out which sections to keep is never passed
+  to git on argv. A deleted path gets no content check (it has no new content) and stays
+  binary.
 - `signing`: `{ "enabled": false }` when `commit.gpgsign` is not true (read with
   `--type=bool`). `format`: `openpgp`, `ssh`, `x509`; `format` is left out for a `gpg.format`
   git does not know (`ready: "unknown"`, and git refuses to sign with that value itself). A
