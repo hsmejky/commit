@@ -12,7 +12,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const childProcess = require('node:child_process');
+const { spawnSync } = childProcess;
+const nodeModule = require('node:module');
 const { pathToFileURL } = require('node:url');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -323,6 +325,80 @@ test('a diff reader keep-set drops the other section at the reader; without one 
   assert.deepEqual(unfiltered.end().map((u) => u.path).sort(), ['big.dat', 'x.bin']);
 });
 
+// Runs `fn`, recording the argv of every `node:child_process` spawn made while it runs (by
+// any module in this process, including the ESM library under `import()`), then restores the
+// originals whatever `fn` does. `module.syncBuiltinESMExports` is needed both ways: the
+// library's `import { spawn } from 'node:child_process'` binds at load time, so a plain
+// CommonJS-side patch is otherwise invisible to it.
+async function withSpawnArgs(fn) {
+  const originalSpawn = childProcess.spawn;
+  const originalSpawnSync = childProcess.spawnSync;
+  const calls = [];
+  const record = (args) => calls.push(Array.isArray(args) ? args.map(String) : []);
+  childProcess.spawn = function patchedSpawn(file, args, ...rest) {
+    record(args);
+    return originalSpawn.call(this, file, args, ...rest);
+  };
+  childProcess.spawnSync = function patchedSpawnSync(file, args, ...rest) {
+    record(args);
+    return originalSpawnSync.call(this, file, args, ...rest);
+  };
+  nodeModule.syncBuiltinESMExports();
+  try {
+    const result = await fn();
+    return { result, calls };
+  } finally {
+    childProcess.spawn = originalSpawn;
+    childProcess.spawnSync = originalSpawnSync;
+    nodeModule.syncBuiltinESMExports();
+  }
+}
+
+// review-CHG-11-r3 Low finding 1: r2's new keep-set test (just above) only exercises
+// `createDiffReader` directly, so it never proves `keep` actually reaches the split
+// (change-set.mjs ~636) or reword (~603) call sites that build it; dropping the argument
+// there still passes every test in this file, because `resolveHiddenBinaries` already
+// filters the `--text` pass's result by path regardless (harmless but wasteful: the pass
+// then fully builds a unit for every file in the diff, not only the kept ones).
+//
+// The one place dropping `keep` is actually observable: a file renamed from a non-UTF-8 old
+// path outside the keep-set. `openSection` always marks such a section `{ notUtf8: true,
+// rediff: <new path> }` before the keep-set override runs; with `keep` wired, a non-kept
+// path's section is then replaced by the generic `NOT_UTF8_SECTION` (`rediff: null`), so it
+// never reaches the `rediff.push` below it, and the `--text` pass queues no extra
+// `--no-renames` rediff for it. Drop `keep` (its default becomes `null`, "keep everything")
+// and the override never runs, so this unrelated rename queues one.
+test('reword: an unrelated non-UTF-8-path rename outside the keep-set queues no extra --text rediff', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.gitattributes', 'x.bin -diff\n');
+  const plumb = (args, input) => {
+    const r = spawnSync('git', args, { cwd: c.repoDir, env: c.env, input });
+    assert.equal(r.status, 0, r.stderr && r.stderr.toString());
+    return r.stdout.toString('utf8').trim();
+  };
+  const oldX = plumb(['hash-object', '-w', '--stdin'], 'one\n');
+  const newX = plumb(['hash-object', '-w', '--stdin'], 'one\ntwo\n');
+  const renamed = `${Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')}\n`;
+  const renameBlob = plumb(['hash-object', '-w', '--stdin'], renamed);
+  const tree1 = plumb(['mktree'], Buffer.from(
+    `100644 blob ${oldX}\tx.bin\n100644 blob ${renameBlob}\tt\xe9.other\n`, 'latin1',
+  ));
+  const tree2 = plumb(['mktree'], Buffer.from(
+    `100644 blob ${newX}\tx.bin\n100644 blob ${renameBlob}\tte.other\n`, 'latin1',
+  ));
+  const parent = plumb(['commit-tree', tree1, '-m', 'seed']);
+  const head = plumb(['commit-tree', tree2, '-p', parent, '-m', 'edit']);
+
+  const { result: units, calls } = await withSpawnArgs(() => reword(c, head));
+
+  assert.deepEqual(
+    units.map((u) => [u.path, u.status, u.kind]).sort(),
+    [['te.other', 'A', 'text'], ['x.bin', 'M', 'text']],
+  );
+  const textRediffs = calls.filter((args) => args.includes('--text') && args.includes('--no-renames'));
+  assert.deepEqual(textRediffs, [], JSON.stringify(textRediffs));
+});
+
 // A file name given as raw bytes, relative to the repo (review-CHG-12's pattern,
 // tests/change-set-raw-bytes.test.js).
 function writeRaw(c, nameBytes, content) {
@@ -414,17 +490,30 @@ test('plan: a secret added to a -diff hidden text file is found by the scan', as
 // whole of `reword` mode, over-limit or not, so the batch path's own `overScanLimit` flag
 // (verified separately: it still keeps `kind: "binary"` and empties `addedLines`) never
 // reaches a scan tag there; only `split` mode's over-limit file is reported `scan: "skipped"`.
+//
+// review-CHG-11-r3 Low finding 2: `a.bin` and `b.bin` alone were both `text`, so a
+// misassigned `streamCatFileBatch` result (e.g. `units[units.length - 1 - index]`, pairing a
+// path with the wrong object's classification) passed unnoticed. `b.bin` now carries a NUL in
+// its new content, so it must stay `kind: "binary"` while `a.bin` stays `text`; any swap
+// between the two is now observable. `m.bin` pins the 8000-byte sniff cap itself: its new
+// content is 9000 bytes with a NUL only at byte 8500, past the sniff window, so it must still
+// come back `text` (a sniff that reads the whole object, not just the first 8000 bytes, would
+// wrongly call it binary).
 test('plan --reword: three attribute-hidden files cost two cat-file calls in all', async (t) => {
   const c = createCase(t);
   c.writeFile('a.bin', 'one\n');
   c.writeFile('b.bin', 'one\n');
   c.writeFile('big.bin', 'one\n');
+  c.writeFile('m.bin', 'one\n');
   c.writeFile('.gitattributes', '*.bin -diff\n');
   c.git(['add', '.']);
   c.git(['commit', '-q', '-m', 'seed']);
   c.writeFile('a.bin', 'one\na\n');
-  c.writeFile('b.bin', 'one\nb\n');
+  c.writeFile('b.bin', Buffer.from('one\n\0b\n'));
   c.writeFile('big.bin', 'x'.repeat(1048577));
+  const mContent = Buffer.alloc(9000, 0x78);
+  mContent[8500] = 0;
+  c.writeFile('m.bin', mContent);
   c.git(['add', '.']);
   c.git(['commit', '-q', '-m', 'edit']);
 
@@ -434,8 +523,9 @@ test('plan --reword: three attribute-hidden files cost two cat-file calls in all
   const hunks = result.json.hunks.hunks.map(({ path: p, kind, body, scan }) => ({ path: p, kind, body, scan }));
   assert.deepEqual(hunks, [
     { path: 'a.bin', kind: 'text', body: 'none', scan: undefined },
-    { path: 'b.bin', kind: 'text', body: 'none', scan: undefined },
+    { path: 'b.bin', kind: 'binary', body: 'none', scan: undefined },
     { path: 'big.bin', kind: 'binary', body: 'none', scan: undefined },
+    { path: 'm.bin', kind: 'text', body: 'none', scan: undefined },
   ], detail);
   const catFiles = entries.filter((e) => Array.isArray(e.args) && e.args.includes('cat-file'));
   assert.equal(catFiles.length, 2, JSON.stringify(catFiles));
