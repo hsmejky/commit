@@ -181,10 +181,17 @@ Plan text that depends on a design fix; fix the design and the slice together.
   C:plan-hunks and the Q10 table (review-CHG-16 finding 3). Fix: none needed beyond CHG-17
   landing as scheduled. Slice: CHG-17.
 
-- **KD-R80.** CHG-16 hard-codes `scan.scanIgnoreChanged: false`: no unit is flagged for a
-  `scanIgnore` edit itself, until SCN-14 adds `scanIgnoreUnits` (review-CHG-16 finding 3). The
-  slice text hands this to SCN-14 directly. Fix: none needed beyond SCN-14 landing as
-  scheduled. Slice: SCN-14.
+- **KD-R82.** SCN-14's Seam-1 AC "snapshot content that is not valid JSON, or a non-array
+  `scanIgnore`, counts as changed" cannot fire through `plan` in `split` mode
+  (review-SCN-14 claim 1): `loadConfig`'s repo layer validates the exact same on-disk file
+  `snapshotBlob(REPO_CONFIG_PATH)` reads, and refuses with a `config` error before `scanDiff`
+  ever runs whenever that file is unparseable JSON or has a non-array `scanIgnore` — so the
+  invalid content never reaches `scanIgnoreChanged`. Covered instead at Seam 3
+  (tests/config.test.js's `scanIgnoreChanged` rows). Fix: add to CHG-14 (`staged` mode, where
+  `snapshotBlob` reads the index entry instead of the worktree file) an AC: an invalid staged
+  repo config with a valid worktree copy → `scan.scanIgnoreChanged: true` and its units
+  flagged (Seam 1, reachable there since `loadConfig` validates the worktree copy, not the
+  staged one). Not a seam stretch; no change to testing-seams.md. Slice: CHG-14.
 
 - **KD-R71.** A worker-plan parse failure echoes V8's raw `JSON.parse` message, which can
   quote a snippet of the invalid JSON text verbatim (e.g. a secret-shaped fragment next to the

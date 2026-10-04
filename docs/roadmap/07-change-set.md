@@ -343,6 +343,11 @@ misses, [known deficiencies](../spec/known-deficiencies.md)).
 - [ ] Seam 1: `git add x && rm x`, a staged edit reverted in the worktree, and `git add -p` plus more edits under `--split` → `indexOnly` stored with the blob ID, no unit, no `diff-changed`.
 - [ ] Seam 1: a force-added hidden file under `--staged` → `staged-hit` (exit 6); a staged 60-file new directory under `--staged` → scanned units, no collapse.
 - [ ] Seam 1: with `core.ignorecase=true`, `plan --staged` on a staged case-only `git mv` → not refused (`case-rename` is `split`-only, C:plan step 4; review-CHG-07 finding 1).
+- [ ] Seam 1 (KD-R82, review-SCN-14 claim 1): `staged` mode's `snapshotBlob` reads the index
+      entry, not the worktree file; an invalid staged repo config (unparseable JSON or a
+      non-array `scanIgnore`) with a valid worktree copy → `loadConfig` still validates the
+      worktree copy and succeeds, so `scan.scanIgnoreChanged: true` and the repo-config
+      unit(s) are flagged (SCN-14's M4 `scanIgnoreChanged`, unreachable in `split`).
 
 **Note (review-CHG-12 finding 9):** a staged non-UTF-8 path is in `preStaged` (its `\xNN`
 form) and in the stored non-UTF-8 list that `check` reports in `notIncluded` ("path is not

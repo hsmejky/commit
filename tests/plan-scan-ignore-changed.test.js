@@ -99,9 +99,25 @@ test('a missing repo config file, with HEAD holding patterns, counts as changed'
   fs.rmSync(path.join(c.repoDir, '.claude', 'commit.json'));
   c.writeFile('a.txt', 'one\nmore\n');
 
-  const { planJson } = await plan(c);
+  const { hunks, state, planJson } = await plan(c);
 
   assert.equal(planJson.scan.scanIgnoreChanged, true, detail(planJson));
+  assert.deepEqual([...state.scanIgnoreUnits].sort(), configUnitIds(hunks));
+});
+
+test('an untracked, gitignored repo config with its own scanIgnore leaves scanIgnoreChanged false: no unit is the repo config', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.gitignore', '.claude/\n');
+  c.writeFile('a.txt', 'one\n');
+  commitAll(c, 'seed');
+  writeRepoConfig(c, JSON.stringify({ scanIgnore: ['dist/**'] }));
+  c.writeFile('a.txt', 'one\nmore\n');
+
+  const { hunks, state, planJson } = await plan(c);
+
+  assert.equal(configUnitIds(hunks).length, 0, 'the repo config has no unit here');
+  assert.equal(planJson.scan.scanIgnoreChanged, false, detail(planJson));
+  assert.deepEqual(state.scanIgnoreUnits, []);
 });
 
 test('no repo config file at all, on either side, is no patterns and no change', async (t) => {
@@ -117,11 +133,15 @@ test('no repo config file at all, on either side, is no patterns and no change',
 });
 
 // Moved to a destination outside `.claude/`: a rename whose new path lands back inside
-// `.claude/` is not resolved as a rename by M10's own snapshot pipeline at all (the add side
-// is dropped from the unit list entirely, independently of SCN-14 and of `commit.json`
-// specifically — reproduced with two unrelated `.claude/`-to-`.claude/` filenames holding no
-// `scanIgnore` key; out of scope here). Padded with filler lines so the single-line edit
-// keeps enough byte similarity for git's default `-M` rename threshold.
+// `.claude/` drops the add side from the unit list entirely (only the `D` of the old path
+// survives; the new path goes to `plan.stagedExcluded` instead) — the M9 hidden rule
+// (`.claude/` is a dot-segment; only `.claude/commit.json`, `settings.json`, `CLAUDE.md` and
+// four dirs are excepted) applied to a staged-new path, documented in C:untracked-files
+// (lines 9-10) and explicitly in C:plan ("a tracked file renamed ... to a hidden path in
+// `stagedExcluded` still leaves the tree dirty"), independently of SCN-14 and of
+// `commit.json` specifically — reproduced with two unrelated `.claude/`-to-`.claude/`
+// filenames holding no `scanIgnore` key; out of scope here. Padded with filler lines so the
+// single-line edit keeps enough byte similarity for git's default `-M` rename threshold.
 const PAD = Array.from({ length: 8 }, (_, i) => `  "pad${i + 1}": ${i + 1},\n`).join('');
 
 test('renaming the repo config while also editing scanIgnore flags the unit by its old path', async (t) => {

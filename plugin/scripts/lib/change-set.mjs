@@ -652,7 +652,7 @@ export async function snapshot({
  * @returns {Buffer | null} the file's raw bytes, or `null` when it is absent on the snapshot
  *   side.
  * @throws {Error} when called before any `snapshot()` call this process, or in a mode other
- *   than `split`/`reword` (`staged`, CHG-14, is not built yet).
+ *   than `split` (`reword` and `staged`, CHG-14, are not built yet).
  */
 export function snapshotBlob(repoRelativePath) {
   if (lastSnapshotContext === null) {

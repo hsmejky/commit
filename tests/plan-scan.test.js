@@ -158,6 +158,27 @@ test('a scanIgnore\'d path keeps its body and its unit: no hit, no scanned entry
   assert.equal(stdout.includes(token), false, 'stdout holds the token');
 });
 
+// AC (macOS/Windows runner, case-insensitive FS, but runs and holds on every OS): matching is
+// case-sensitive at the pattern level (M7 `matches`, tests/glob-matcher.test.js:27), not a
+// property of the filesystem, so a case-insensitive FS finding the same file under either
+// spelling does not make `DIST/**` exempt `dist/k.txt`.
+test('a scanIgnore pattern differing in case from the path does not exempt a hit', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'README.md': 'readme\n' });
+  c.writeFile('.claude/commit.json', JSON.stringify({ scanIgnore: ['DIST/**'] }));
+  c.git(['add', '--', '.claude/commit.json']);
+  c.git(['commit', '-q', '-m', 'config']);
+  c.writeFile('dist/k.txt', tokenLine('k'));
+
+  const { planJson } = await plan(c);
+
+  assert.deepEqual(planJson.scan, {
+    hits: [{ path: 'dist/k.txt', line: 1, pattern: 'github-token' }],
+    skipped: [],
+    scanIgnoreChanged: false,
+  });
+});
+
 test('a new file with a hit loses its whole body', async (t) => {
   const c = createCase(t);
   seed(c, { 'README.md': 'readme\n' });

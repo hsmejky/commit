@@ -184,10 +184,8 @@ Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](te
   for the M11 probe, skipped cases. Disposition: accepted for 0.1.0.
 - **KD-S41. Kill-timeout cases leave about 5 s of real time** (clock stepped to 535 s);
   flaky on cold Windows runners. Fix: step to 530 s for hook-recording cases.
-- **KD-S42. No test rows for `scanIgnoreChanged` and the backstop `--text` pass**: another
-  key edited → false, invalid JSON → true, multi-hunk config, config renamed away,
-  attribute-hidden `--text`. Fix: add them to the M4 and M6-M9 rows. Disposition: accepted
-  for 0.1.0.
+- **KD-S42. No test row for the backstop `--text` pass**: attribute-hidden `--text`. Fix:
+  add it to the M6-M9 rows. Disposition: accepted for 0.1.0.
 - **KD-S87. The `pastDeadline` scope-expired clause is untested.** `workflows.mjs`'s
   `pastDeadline` also checks `ctx.scope?.expired !== true`, alongside the clock; no scoped
   M2 git call precedes `releaseById` or `openRun` in a working tree today, so no test can

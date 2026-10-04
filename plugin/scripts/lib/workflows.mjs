@@ -202,7 +202,7 @@ async function loadConfigLayers(ctx) {
     // CHG-16: the compiled M7 matchers, kept off `ctx.config` (which stays exactly
     // `{ values, sources }`, C:plan `config`) so `scanDiff` (step 5) can exempt a matched
     // unit's path from the scan (Q10). `scanIgnoreChanged`/`scanIgnoreUnits` (a `scanIgnore`
-    // edit itself flagging the repo config's own units) move to SCN-14.
+    // edit itself flagging the repo config's own units) are SCN-14's, set in `scanDiff`.
     ctx.scanIgnoreMatchers = scanIgnore;
     for (const warning of configWarnings) {
       ctx.notices.push(warning);
@@ -482,9 +482,9 @@ async function snapshotUnits(ctx) {
  * `{ h4: ["github-token"], h9: "skipped" }`. A hit's `(path, line)` belongs to exactly one
  * unit of that path (hunk-level units never share a line; a whole-file unit's one unit
  * holds every line of the file); a path appears in `skipped` once however many of its units
- * are over the limit, so every one of them is flagged. `scanIgnoreUnits` (a `scanIgnore`
- * edit itself flagging the repo config's own units) is SCN-14's; this slice flags hits and
- * skips only.
+ * are over the limit, so every one of them is flagged. `scanIgnoreUnits` (SCN-14: a
+ * `scanIgnore` edit itself flagging the repo config's own units) is computed by M8
+ * `scanUnits` straight onto `ctx.scanIgnoreUnits`; this map covers hits and skips only.
  *
  * @throws {Error} when a hit's `(path, line)` matches no unit's `addedLines` (review-CHG-16
  *   finding 2): this cannot happen today (no two units with added lines share a path), so a
@@ -528,6 +528,9 @@ function buildScanMap(units, { hits, skipped }) {
  * "headPatterns") with M4's pure `scanIgnoreChanged`. The flag and the repo-config units it
  * marks (M8's `scanIgnoreUnits`, by `isRepoConfigPath`) are stored as `ctx.scanIgnoreChanged`
  * and `ctx.scanIgnoreUnits`, both `false`/`[]` in the clean/`reword` short-circuit above.
+ * M18 step 5 gates the comparison on there being a unit to flag: when no unit's path or old
+ * path is the repo config, `ctx.scanIgnoreChanged` is `false` without reading `snapshotBlob`
+ * at all (the repo config may not even be in the snapshot, e.g. gitignored and untracked).
  */
 async function scanDiff(ctx) {
   if (ctx.units === undefined || ctx.mode === 'reword') {
@@ -537,7 +540,10 @@ async function scanDiff(ctx) {
     ctx.scanIgnoreUnits = [];
     return undefined;
   }
-  ctx.scanIgnoreChanged = scanIgnoreChanged(ctx.config.values.scanIgnore, snapshotBlob(REPO_CONFIG_PATH));
+  const hasConfigUnit = ctx.units.some((unit) => isRepoConfigPath(unit.path)
+    || (unit.oldPath != null && isRepoConfigPath(unit.oldPath)));
+  ctx.scanIgnoreChanged = hasConfigUnit
+    && scanIgnoreChanged(ctx.config.values.scanIgnore, snapshotBlob(REPO_CONFIG_PATH));
   const { hits, skipped, scanIgnoreUnits } = scanUnits(ctx.units, {
     scanIgnore: ctx.scanIgnoreMatchers,
     osUser: ctx.injected.osUser,
