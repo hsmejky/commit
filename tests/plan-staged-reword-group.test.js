@@ -176,4 +176,32 @@ for (const mode of ['staged', 'reword']) {
       assert.deepEqual(result.errors, [{ group: null, reason: `\`${mode}\` needs exactly one group; got ${groups.length}` }]);
     });
   }
+
+  // KD-R89 AC3 regression (docs/roadmap/known-deficiencies.md): before PLN-04, `split` had
+  // no extras either, so this assertion could not fail. Now that PLN-04 gives `split` its
+  // own `notIncluded` extras and notices, populate every extra `state.json` field
+  // `validateSingleGroupPlan` must ignore and confirm it still reports none of them.
+  test(`validatePlan: ${mode} gives none of split's notIncluded extras even when the extras are populated`, () => {
+    const bytes = Buffer.from(JSON.stringify({
+      groups: [{ header: 'feat: x', body: null, files: [], hunks: [] }],
+      notIncluded: [],
+    }));
+    const extras = {
+      ...runState(mode),
+      collapsed: [{ dir: 'dist', count: 3, bytes: 10 }],
+      stagedExcluded: [{ path: '.env', reason: 'hidden' }],
+      dirtySubmodules: ['libs/x'],
+      embeddedRepos: ['nested'],
+      notUtf8: ['bad.js'],
+      indexOnly: [{ path: 'x', blob: 'abc', ignored: false }],
+      scanned: { h1: ['github-token'] },
+      stagedNew: [{ path: 'docs/new.md', ignored: true }],
+    };
+
+    const result = validatePlan(bytes, extras);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.notIncluded, []);
+    assert.deepEqual(result.notices, []);
+  });
 }

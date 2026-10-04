@@ -193,6 +193,11 @@ export function validatePlan(planBytes, runState, options = {}) {
   const stored = [];
   const messageValues = runState.config.values;
   const osUser = options.osUser ?? null;
+  // PLN-04 (C:check "no unit with a scan hit... is in a group"): the stored scan map
+  // (`state.json` `scanned`, C:plan-hunks). A collapsed directory or a `dirtySubmodules`
+  // path is never a unit, so resolvePath already refuses it as "not a change" (PLN-02); only
+  // a scan-hit unit is a real, resolvable unit and needs its own ban here.
+  const scanned = runState.scanned ?? {};
   if (mixesFilesAndHunks(workerPlan)) {
     errors.push({ group: null, reason: '`files` and `hunks` are mixed; use hunk IDs everywhere or paths everywhere' });
   }
@@ -205,6 +210,7 @@ export function validatePlan(planBytes, runState, options = {}) {
       const pathUnits = resolvePath(path, table, n, errors);
       if (pathUnits === null) continue;
       placement.place(pathUnits, { group: n }, path, errors);
+      banScanHits(pathUnits, n, scanned, errors);
       const { status } = pathUnits[0];
       files.push({ path, status, new: status === 'A', hunks: null });
       units.push(...pathUnits.map((unit) => unit.id));
@@ -219,6 +225,7 @@ export function validatePlan(planBytes, runState, options = {}) {
         continue;
       }
       placement.place([unit], { group: n }, `${id} (${unit.path})`, errors);
+      banScanHits([unit], n, scanned, errors);
       units.push(id);
       const file = filesByPath.get(unit.path);
       if (file !== undefined) {
@@ -270,7 +277,89 @@ export function validatePlan(planBytes, runState, options = {}) {
     if (places.size > 1) errors.push({ group: null, reason: `${listOf(ids)} are identical; place them together` });
   }
   if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source);
-  return { ok: true, groups, notIncluded: [...workerPlan.notIncluded], notices: [], stored };
+  const { notIncluded, notices } = notIncludedResult(runState, workerPlan, placement, workerPlan.groups.length > 0);
+  return { ok: true, groups, notIncluded, notices, stored };
+}
+
+// PLN-04 (C:check "no unit with a scan hit... is in a group"): one error per unit a group
+// places that the stored scan map (`scanned`) flags with a hit; `"skipped"` (CHG-16, a
+// unit's added content over the 1 MB scan limit) is never a hit and never banned.
+function banScanHits(units, n, scanned, errors) {
+  for (const unit of units) {
+    const hit = scanned[unit.id];
+    if (Array.isArray(hit) && hit.length > 0) {
+      errors.push({ group: n, reason: `${unit.id} has scan hit \`${hit[0]}\`; move it to notIncluded` });
+    }
+  }
+}
+
+// PLN-04 (C:check `notIncluded`/`notices`): the worker's own entries, with the unstaging
+// note appended to one naming a staged-new unit (`stagedNew`), plus every automatic
+// exclusion `state.json` already recorded (`collapsed`, `stagedExcluded`, `dirtySubmodules`,
+// `embeddedRepos`, `notUtf8`), and the notices describing a left-out scan hit or an
+// `indexOnly` path. `hasGroups`: whether this plan has at least one group (C:check
+// "Unstaging note", "one line per indexOnly path"); with zero groups nothing will be reset
+// or discarded by `commit`, so neither note applies.
+//
+// KD-R90: the left-out-hit notice omits the line number C:check's own example pins
+// ("src/b.js:14 github-token left out"): `state.json`'s `scanned` map (CHG-16
+// `buildScanMap`) keeps only the pattern IDs a unit's hit, never the `(path, line)` pair
+// that produced them, and a unit's own stored fields (`unitTable`, C:run-folder) carry no
+// `addedLines` either. Reproducing the line here would mean widening `scanned`'s stored
+// shape, which M13 `renderHunkIndex` also reads as `string[] | "skipped"` for the public
+// `hunks.json`/`hunks.txt` `"scan"` field (C:plan-hunks) — out of this slice's scope.
+function notIncludedResult(runState, workerPlan, placement, hasGroups) {
+  const stagedNewIgnored = new Map((runState.stagedNew ?? []).map((entry) => [entry.path, entry.ignored]));
+  const notIncluded = workerPlan.notIncluded.map((entry) => {
+    if (!hasGroups || !stagedNewIgnored.has(entry.path)) return entry;
+    return { ...entry, reason: `${entry.reason}${unstagingNote(stagedNewIgnored.get(entry.path))}` };
+  });
+  for (const { dir, count } of runState.collapsed ?? []) {
+    notIncluded.push({ path: dir, hunks: null, reason: `${count} untracked files in ${dir}/ — add to .gitignore or commit by hand` });
+  }
+  for (const entry of runState.stagedExcluded ?? []) {
+    const hidden = entry.reason === 'hidden';
+    const base = hidden
+      ? `${entry.path} was staged but is hidden — commit by hand`
+      : `${entry.count} staged files in ${entry.dir}/ — add to .gitignore or commit by hand`;
+    notIncluded.push({
+      path: hidden ? entry.path : entry.dir,
+      hunks: null,
+      reason: hasGroups ? `${base}${unstagingNote(false)}` : base,
+    });
+  }
+  for (const path of runState.dirtySubmodules ?? []) {
+    notIncluded.push({ path, hunks: null, reason: `${path} has uncommitted changes inside — commit inside the submodule first` });
+  }
+  for (const path of runState.embeddedRepos ?? []) {
+    notIncluded.push({ path, hunks: null, reason: `${path} is an embedded git repository — add it as a submodule by hand` });
+  }
+  for (const path of runState.notUtf8 ?? []) {
+    notIncluded.push({ path, hunks: null, reason: 'path is not UTF-8 — commit by hand' });
+  }
+
+  const notices = [];
+  const scanned = runState.scanned ?? {};
+  for (const unit of runState.units) {
+    const hit = scanned[unit.id];
+    if (Array.isArray(hit) && placement.of(unit.id) === null) {
+      for (const patternId of hit) notices.push(`${unit.path} ${patternId} left out`);
+    }
+  }
+  if (hasGroups) {
+    for (const { path, blob } of runState.indexOnly ?? []) {
+      notices.push(`${path}: the staged version differs from your working tree; committing this plan discards it — recover with \`git cat-file -p ${blob}\``);
+    }
+  }
+  return { notIncluded, notices };
+}
+
+// "; committing this plan unstages it" (C:check), plus the `.gitignore` clause when the
+// stored staged-new list marks the path `ignored`.
+function unstagingNote(ignored) {
+  return ignored
+    ? '; committing this plan unstages it and .gitignore then hides it from `git status`'
+    : '; committing this plan unstages it';
 }
 
 // C:check: a plan is file-level (`files`) or hunk-level (`hunks`), never both. A

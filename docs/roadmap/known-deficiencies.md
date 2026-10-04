@@ -51,6 +51,18 @@ fixed, delete it here; IDs are never reused.
   lint/scan failures, still go through the plain `refusalFailure` with no `reply` at all. No
   roadmap criterion currently names this gap. Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
+- **KD-R90.** PLN-04's pinned example for a left-out scan hit ("src/b.js:14 github-token
+  left out") names a line number; the built notice omits it
+  (`plugin/scripts/lib/plan-validator.mjs` `notIncludedResult`, which emits
+  `` `${path} ${patternId} left out` ``). `state.json`'s `scanned` map (`buildScanMap`,
+  `plugin/scripts/lib/workflows.mjs`) stores only the pattern IDs a unit hit, never the
+  `(path, line)` pair that produced them; the stored unit table carries no `addedLines`
+  either. Widening `scanned`'s stored shape to carry a line would also reach
+  `plugin/scripts/lib/hunk-index.mjs` (`renderHunkIndex`), which reads `scanMap[id]` as
+  `string[] | "skipped"` for the public `hunks.json`/`hunks.txt` `"scan"` field
+  (C:plan-hunks) — out of PLN-04's scope to touch. Fix: store the line per hit alongside its
+  pattern ID in `buildScanMap`/`state.json`, and widen `hunk-index.mjs`'s read of it to
+  match. Slice: PLN-04 (criterion as pinned), M13.
 
 ## Test mechanisms
 
@@ -82,14 +94,10 @@ fixed, delete it here; IDs are never reused.
   `staged`/`reword` is not built yet (EXE-19, EXE-20). INT-14 covers a staged commit
   end-to-end but no criterion checks that a plan naming only some files still commits every
   staged unit, or `newFiles` in `check`'s output; INT-24 covers reword but not
-  `newFiles: []`. AC3 ("`split`-only extras absent in `staged`") is asserted
-  (`notIncluded: []`, `notices: []`) but cannot fail today: PLN-04, which gives `split` its
-  own extras, is not built, so `split` emits none either. Fix: once EXE-19/EXE-20 land, add
-  subprocess `check --plan` success cases to `tests/plan-staged-reword-group.test.js`:
-  staged with a partial `files` list still commits every unit and reports `newFiles` from
-  the index diff; reword output has `newFiles: []`. Once PLN-04 lands, add a staged case
-  with a `stagedExcluded`/`indexOnly`/collapsed path and assert it still gives no
-  `notIncluded` extras or notices. Slice: PLN-05, EXE-19, EXE-20, PLN-04.
+  `newFiles: []`. Fix: once EXE-19/EXE-20 land, add subprocess `check --plan` success cases
+  to `tests/plan-staged-reword-group.test.js`: staged with a partial `files` list still
+  commits every unit and reports `newFiles` from the index diff; reword output has
+  `newFiles: []`. Slice: PLN-05, EXE-19, EXE-20.
 - **KD-R77.** GIT-07's M2 and M11 cases (`tests/git-timeout-tree-kill.test.js`,
   `tests/signing-probe-deadline.test.js`), like GIT-05's and GIT-12's own M2 cases, call
   `run`/`withDeadline`/`probeSigning` in-process, outside testing-seams.md's user-confirmed
