@@ -143,18 +143,18 @@ checked by M4 `validateLayer`, as `{ text }`; a layer that already fails validat
 
 **Blocked by:** INF-06, CFG-03, CFG-04, CFG-07.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:infer (`configJson`), Q6, Q7, M19, stories 132, 133.
 
-- [ ] Seam 1: a repo layer with `scanIgnore` and a `scope` → `repo.text` keeps `scanIgnore`,
+- [x] Seam 1: a repo layer with `scanIgnore` and a `scope` → `repo.text` keeps `scanIgnore`,
       has the proposed `scope`, and passes `validateLayer`.
-- [ ] Seam 1: no user layer → `user.text` holds the proposal's keys only.
-- [ ] Seam 1: a user layer with `maxSubjectLength: 300` → `user.errors` names it; `infer`
+- [x] Seam 1: no user layer → `user.text` holds the proposal's keys only.
+- [x] Seam 1: a user layer with `maxSubjectLength: 300` → `user.errors` names it; `infer`
       still exits 0 (no `config` refusal).
-- [ ] Seam 1: a repo layer with `scanIgnore: ["**"]` → `repo.errors` naming the pattern (a
+- [x] Seam 1: a repo layer with `scanIgnore: ["**"]` → `repo.errors` naming the pattern (a
       glob with no literal character), not `repo.text`.
-- [ ] A static test asserts M19 imports `validateLayer` from M4 (no duplicate
+- [x] A static test asserts M19 imports `validateLayer` from M4 (no duplicate
       implementation).
 
 

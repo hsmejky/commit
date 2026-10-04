@@ -279,10 +279,8 @@ function decodeLayerBytes(buffer, label) {
  */
 function readLayer(filePath, layer, kind) {
   // The stat / non-regular / size cap / read / decode pipeline is `readRawLayer`'s own
-  // (review-INF-07 finding 3): a missing file's `{ value: {} }` behaves exactly like this
-  // function's own "no layer at all" case below, since neither `validateLayer` nor
-  // `collectConfigWarnings` ever finds anything to flag on an empty object, and
-  // `effectiveConfig`'s `Object.hasOwn` check treats `{}` and `null` alike.
+  // (review-INF-07 finding 3); see this function's own JSDoc for why its absent-file
+  // `{ value: {} }` needs no special case below.
   const raw = readRawLayer(filePath, layer);
   if (raw.error !== undefined) return { error: raw.error };
   const parsed = raw.value;
@@ -424,11 +422,21 @@ export async function loadConfig({ toplevel, claudeHome, unborn = false, env, no
 function readRawLayer(filePath, layer) {
   let stats;
   try {
+    // Follows a link (read only, never write), so a link to a huge file or a FIFO is caught
+    // the same as one in place directly (review-CFG-02 finding 10).
     stats = fs.statSync(filePath);
   } catch (err) {
+    // No layer at all: no config, no error (Q6, CFG-02 seam "a repo with no config file gets
+    // no `config` refusal"). ENOTDIR: a path component (e.g. the repo layer's `.claude`, or
+    // the user layer's Claude home) is a file, which is just as absent a layer as ENOENT.
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: {} };
+    // EACCES, EPERM, ELOOP and the like: the layer exists but cannot be inspected. A `config`
+    // refusal naming the layer, not an uncaught throw ending as `internal`
+    // (review-CFG-02 finding 1).
     return { error: `the ${layer} cannot be read (${err.code})` };
   }
+  // A directory (e.g. `mkdir .claude/commit.json`), a device, socket or FIFO: never a valid
+  // config file, and never opened (review-CFG-02 finding 1's EISDIR case, finding 10).
   if (!stats.isFile()) {
     return { error: `the ${layer} is not a regular file` };
   }
@@ -440,6 +448,7 @@ function readRawLayer(filePath, layer) {
   try {
     buffer = fs.readFileSync(filePath);
   } catch (err) {
+    // The layer vanished, or turned unreadable, between the stat and the read.
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: {} };
     return { error: `the ${layer} cannot be read (${err.code})` };
   }

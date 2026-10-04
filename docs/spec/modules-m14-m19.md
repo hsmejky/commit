@@ -68,10 +68,13 @@ Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
   group), so the next run's takeover repair resets the index (C:run-folder); `unstaged` is
   `null` and a notice says "group <n> staging may remain, the next /commit repairs it" (Q18
   as amended by EXE-01).
-- `releaseDeadline(callStarted)` = the call's start plus 45 s: `release`'s M10 `treeState`
-  read for the reply takes this deadline, kept below the 60 s `release` tool timeout (M17);
-  when the budget runs out, the reply omits `treeState` (the release itself is already
-  complete).
+- `releaseDeadline(callStarted)` = the call's start plus 45 s, kept below the 60 s `release`
+  tool timeout (M17): `release`'s own steps (probe, M12 `releaseById`) run under it, and
+  past it (or after a git call it ended) `release` ends `timed-out` (exit 5 `timeout`)
+  before `releaseById`, the run folder and the lock kept for the next `plan`'s takeover
+  (user decision on KD-R78). Its M10 `treeState` read for the reply takes the same
+  deadline; when the budget runs out there, the reply omits `treeState` (the release itself
+  is already complete).
 Sources: Q9, Q10, Q16-Q18, Q20-Q22, C:plan, C:check, C:confirmation-triggers,
 C:commit-release.
 
@@ -290,5 +293,6 @@ case via M6 `passesLowerCase`, p95 length with the rounding and clamp of C:infer
 `not-conventional`, which still carry `ccShare` (over all commits read, `null` only when
 `commitCount` is 0), `nonConventional` and `commitCount`, with
 `wouldFail: null` and no proposal. `configFor(proposal, layers) → { repo, user }`: per layer the current raw
-layer with the proposal's keys replaced and other keys kept, checked by M4 `validateLayer`,
+layer with the proposal's keys replaced and other keys kept, checked by M4 `validateLayer`
+(the user layer's `scanIgnore` excluded from that check, same as M4 `loadConfig`, CFG-07),
 each `{ text } | { errors }`. Sources: Q6, Q7, C:infer.

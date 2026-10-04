@@ -83,7 +83,8 @@ and ranges (`types`: non-empty array of `^[a-z][a-z0-9-]*$`; `scope`: `forbidden
 defaults; `sources` per key. Every `scanIgnore` pattern is compiled by M7 `compileGlob`
 inside `validateLayer` itself (not only via `loadConfig`), whose `config` errors (including a
 pattern with no literal character) M4 reports as layer errors, so a caller that validates a
-layer's text directly (M19 `configFor`) also catches a bad glob. The repo layer at HEAD is
+layer's text directly (M19 `configFor`) also catches a bad glob (repo layer; the user
+layer's `scanIgnore` is excluded, CFG-07). The repo layer at HEAD is
 not validated as a layer: only its `scanIgnore` is read (`git ls-tree` for the entry's type
 and size, then `git cat-file blob` only for a regular file within the size cap), and when it
 is invalid (the path at HEAD is not a regular file, is oversized or unreadable, is not valid
@@ -109,7 +110,9 @@ copy that carries patterns counts as changed, so its units are flagged (`humanOn
 async `loadConfig({ claudeHome, toplevel, unborn, env, now })` (returns `{ values, sources,
 warnings, scanIgnore } | { error }`, CFG-05; `scanIgnore`: the compiled matchers, CFG-07),
 `readLayers({ toplevel, claudeHome }) → { repo, user }` (INF-07, each `{ value } | { error }`,
-an absent file `{ value: {} }`), pure `validateLayer(obj, layer)`, pure `effectiveConfig({ user,
+an absent file `{ value: {} }`), pure `validateLayer(obj, layer)`, pure `withoutRepoOnlyKeys(obj)`
+(CFG-07; strips `scanIgnore` before a non-repo-layer `validateLayer` check, shared by
+`loadConfig` and M19 `configFor`), pure `effectiveConfig({ user,
 repo })` and its `DEFAULT_VALUES` (CFG-05), all typed. Sources: Q6, Q10, C:plan,
 C:plan-hunks.
 

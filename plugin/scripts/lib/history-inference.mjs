@@ -301,12 +301,15 @@ export function infer(messages) {
  * @param {{ value: unknown } | { error: string }} raw one of M4 `readLayers`'s two results.
  * @param {string} label the layer's M4 display label (`REPO_LAYER` or `USER_LAYER`), passed
  *   to `validateLayer` so an error names the same layer `plan`'s own config errors would.
+ * @param {'repo' | 'user'} kind the layer's identity (CFG-06/CFG-07), independent of
+ *   `label`'s wording: `label` names the layer for messages only, never its identity
+ *   (CFG-06), same as M4 `readLayer`'s own `kind` parameter (review-INF-07 finding 2).
  * @returns {{ text: string } | { errors: string[] }}
  */
-function configForLayer(proposal, raw, label) {
+function configForLayer(proposal, raw, label, kind) {
   if (raw.error !== undefined) return { errors: [raw.error] };
 
-  const validate = (obj) => validateLayer(label === USER_LAYER ? withoutRepoOnlyKeys(obj) : obj, label);
+  const validate = (obj) => validateLayer(kind === 'user' ? withoutRepoOnlyKeys(obj) : obj, label);
 
   const currentInvalid = validate(raw.value);
   if (currentInvalid !== null) return currentInvalid;
@@ -343,7 +346,7 @@ function configForLayer(proposal, raw, label) {
 export function configFor(proposal, layers) {
   if (proposal === null) return null;
   return {
-    repo: configForLayer(proposal, layers.repo, REPO_LAYER),
-    user: configForLayer(proposal, layers.user, USER_LAYER),
+    repo: configForLayer(proposal, layers.repo, REPO_LAYER, 'repo'),
+    user: configForLayer(proposal, layers.user, USER_LAYER, 'user'),
   };
 }
