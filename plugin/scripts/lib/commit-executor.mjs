@@ -17,7 +17,10 @@
 // HEAD to the new SHA, as before; a mismatch (a hook or another process committed as well)
 // still reports the group committed, with the SHA HEAD holds, and pushes a notice naming the
 // group, but leaves the expected HEAD stale, so the next group's own `head()` check catches
-// it and refuses `head-moved`.
+// it and refuses `head-moved`. EXE-20 adds the `reword` exception (KD-R43): there the new
+// HEAD is `--amend --only` of the old one, so it always keeps the old commit's own parent;
+// the check there compares the amended HEAD's first parent against the *expected* HEAD's own
+// first parent (both `null` on a root commit), not against the expected HEAD itself.
 // EXE-07 adds `index-changed`: M10 `indexFingerprint` against the run state's fingerprint
 // before each group (right after `head-moved`), so staging made outside the run between `plan`
 // and `commit`, or between two groups, is refused before (b) rather than folded into a group
@@ -43,11 +46,18 @@
 // it: when set, its text names that group as the likely cause of a repo hook (lint-staged, a
 // formatter) rewriting files during its commit, instead of "files changed since plan".
 // MSG-07 adds the trailers: `messageOf` runs M6 `appendTrailers` over the approved message
-// with the run's stored attribution trailer, always applied in `split`/`staged` (the only
-// modes reached so far). The failure paths (EXE-10 to
-// EXE-13), the parent and tree check (EXE-14)
-// and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
-// yet: reaching one throws.
+// with the run's stored attribution trailer, always applied in `split`/`staged`.
+// EXE-20 adds `reword`: no match, no reset, no staging, no verify, no scan — `index-changed`
+// is skipped too (Q20's spec-pass-6 amendment), but `head-moved` still runs. `rewordMessageOf`
+// carries every foreign trailer of the old message (`state.oldMessage`, GIT-09) verbatim, in
+// order, dropping the allowed footer tokens (the new message owns them) and any old
+// `Co-Authored-By: … <noreply@anthropic.com>` (Q20); this is a narrow EXE-20-only version of
+// the carry-over, kept local to this module — MSG-08 generalises it into M6's own `carryOver`
+// (dictated-text/conditional-attribution edge cases) and this module then calls that instead.
+// The current attribution trailer is always appended here too, same as `split`/`staged`; Q20's
+// conditional append (only when the worker wrote the text, or the old message already carried
+// one) is also MSG-08's. The failure paths (EXE-10 to EXE-13) and the tree check (EXE-14) are
+// not built yet: reaching one throws. `staged` (EXE-19) is not built yet either.
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
@@ -55,7 +65,7 @@ import {
   writeTree,
 } from './change-set.mjs';
 import { run } from './process-adapter.mjs';
-import { appendTrailers, normaliseText } from './message-grammar.mjs';
+import { appendTrailers, normaliseText, parse } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
@@ -160,6 +170,40 @@ function messageOf({ header, body }, state) {
   const raw = body === null ? header : `${header}\n\n${body}`;
   const approved = normaliseText(raw).text;
   return appendTrailers(approved, { attribution: state.attribution.trailer });
+}
+
+// EXE-20, Q20: the footer tokens the *new* message owns; never carried over from the old one.
+const REWORD_CARRY_DROPPED_TOKENS = new Set(['BREAKING CHANGE', 'BREAKING-CHANGE', 'Refs', 'Closes', 'Fixes']);
+
+// EXE-20, Q20: an old `Co-Authored-By` trailer naming the plugin's own attribution address,
+// whatever the model name in its value — dropped so the current attribution is never doubled.
+function isOldAnthropicCoAuthor(entry) {
+  return entry.token === 'Co-Authored-By' && /<noreply@anthropic\.com>$/i.test(entry.value);
+}
+
+// EXE-20, Q20: the old message's foreign trailers (`Signed-off-by`, a human `Co-Authored-By`,
+// `Change-Id`, …), verbatim and in their original order — everything in its footer paragraph
+// except the dropped tokens above. `null` (the old message's last paragraph was not a footer
+// paragraph) carries nothing. A narrow, EXE-20-only stand-in for M6's own `carryOver`
+// (MSG-08); see the module header note.
+function rewordCarriedTrailers(oldMessage) {
+  const { footer } = parse(oldMessage);
+  if (footer === null) return [];
+  return footer
+    .filter((entry) => !REWORD_CARRY_DROPPED_TOKENS.has(entry.token) && !isOldAnthropicCoAuthor(entry))
+    .map((entry) => entry.raw);
+}
+
+// EXE-20: `reword`'s own message composition — the approved new text, M6 `appendTrailers`
+// with the old message's carried trailers ahead of the current attribution (C:message-grammar
+// footer order: new footers, carried trailers, attribution). Conditional attribution (Q20: only
+// when the worker wrote the text, or the old message already carried one) is MSG-08's; here
+// the attribution always applies, like `messageOf` above.
+function rewordMessageOf({ header, body }, state) {
+  const raw = body === null ? header : `${header}\n\n${body}`;
+  const approved = normaliseText(raw).text;
+  const carried = rewordCarriedTrailers(state.oldMessage);
+  return appendTrailers(approved, { carried, attribution: state.attribution.trailer });
 }
 
 // Every stored unit of each file the group names (whole-file staging, EXE-02).
@@ -272,12 +316,16 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
       refusal: { code: 'no-groups', message: NO_GROUPS_TEXT },
     };
   }
-  // (b)/(c) mode dispatch: only `split` is built.
-  if (state.mode !== 'split') throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19, EXE-20');
+  // (b)/(c) mode dispatch: `split` and `reword` (EXE-20) are built; `staged` (EXE-19) is not.
+  if (state.mode !== 'split' && state.mode !== 'reword') {
+    throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19');
+  }
   // Medium (review-EXE-02): checked before any group's (c) reset, not after the loop, so a
   // run with pre-staged paths is refused with the real index untouched and nothing committed
-  // — EXE-11 (the `unstaged` report those paths would need) is not built yet.
-  if (state.preStaged.length > 0) {
+  // — EXE-11 (the `unstaged` report those paths would need) is not built yet. `reword` never
+  // resets or stages (EXE-20), so its `unstaged` is always `null` regardless of `preStaged`;
+  // this restriction is `split`'s own.
+  if (state.mode === 'split' && state.preStaged.length > 0) {
     throw notBuilt('the unstaged report for pre-staged paths', 'EXE-11');
   }
   const commits = [];
@@ -302,8 +350,10 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
 
     // (a) EXE-07: the index must still be the one this run left (`plan`'s, then the one read
     // after each of this run's own commits) — any outside `git add`/`reset` shows up here,
-    // with the real index untouched and that staging left in place.
-    if (await indexFingerprint(git) !== state.indexFingerprint) {
+    // with the real index untouched and that staging left in place. EXE-20, Q20 (spec-pass-6
+    // amendment): skipped in `reword` — `--amend --only` never reads or changes the index, so
+    // staging a file during a reword must not end the run with `index-changed`.
+    if (state.mode !== 'reword' && await indexFingerprint(git) !== state.indexFingerprint) {
       return refused(state, group, commits, { code: 'index-changed', message: INDEX_CHANGED_TEXT }, notices);
     }
 
@@ -322,124 +372,144 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
       return budgetStop(state, commits, notices, scriptPath, run.planId);
     }
 
-    // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`
-    // that fails while rebuilding it (a stored not-ignored candidate now ignored, for
-    // example) is a `git-failed` refusal carrying git's output, not a throw: the real index
-    // was never touched (the rebuild runs entirely on the temporary one), so this group's
-    // failure still reports the groups committed so far, like any other mid-run failure.
-    const units = wholeFileUnits(state, group);
-    let current;
-    try {
-      current = await snapshot({
-        mode: 'split',
-        storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
-        // CHG-10: the stored units' paths, so a filtered file is classified as `plan` did.
-        tracked: state.units.map((unit) => unit.path),
-        indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
-        unborn: state.head === null,
+    let sha;
+    if (state.mode === 'reword') {
+      // EXE-20, Q20: no match, no reset, no staging, no verify, no scan — `--amend --only`
+      // changes the message only; whatever is staged stays staged and untouched. On failure
+      // the real index is never touched either, so there is nothing to reset (unlike `split`).
+      const committed = await commitGuarded({
+        args: ['commit', '--amend', '--only', '--cleanup=verbatim', '-F', '-'],
+        input: rewordMessageOf(group, state),
         ...git,
       });
-    } catch (err) {
-      if (err.domainCode !== 'git-failed') throw err;
-      // Short, like the contract's other exit-4 example ("git commit failed for group 2"):
-      // `err.message` carries git's full raw output too, which would duplicate `gitOutput`
-      // uncut in the reply's capped, escaped `text` (C:reply-and-handback).
-      const message = `git add -N failed rebuilding the temporary index for group ${group.n}`;
-      return refused(state, group, commits, { code: 'git-failed', message }, notices, err.gitOutput);
-    }
-    // EXE-09: a stored unit's hash missing from this fresh snapshot — the file changed since
-    // `plan` (or during an earlier group's own `git commit`, EXE-15's hook-rewrite variant) —
-    // is `unmatched`, CLI kind `diff-changed`; the real index was never touched by (b).
-    const matched = matchIds(Object.fromEntries(units.map((unit) => [unit.id, unit.hash])), current);
-    if (!matched.ok) {
-      // EXE-15: the previous group's own commit may have left this behind (the hook-rewrite
-      // notice), which explains an otherwise-generic "files changed since plan".
-      const message = typeof state.treeChangedDuringCommit === 'number'
-        ? hookRewriteText(state.treeChangedDuringCommit)
-        : UNMATCHED_TEXT;
-      return refused(state, group, commits, { code: 'unmatched', message }, notices);
-    }
-
-    // (c) Apply on the real index.
-    state.indexReset = true;
-    writeState(run, state);
-    const ignoredPaths = state.stagedNew.filter((entry) => entry.ignored).map((entry) => entry.path);
-    try {
-      const staged = await stage({ units, ignoredPaths, ...git });
-      if (!staged.ok) throw notBuilt(`the ${staged.code} failure`, 'EXE-10');
-
-      // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
-      const tree = await writeTree(git);
-      const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), { scanIgnore: [], osUser });
-      if (hits.length > 0) throw notBuilt('the backstop refusal', 'EXE-13');
-
-      // EXE-23 (Q18): the repo's signing config stays untouched — never `--no-gpg-sign` or
-      // `-c commit.gpgsign=false`; M2's scrub keeps an exported `GIT_CONFIG_SYSTEM`.
-      const committed = await commitGuarded({
-        args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group, state), ...git,
-      });
       if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+      sha = await head({ cwd: toplevel, env, now });
+    } else {
+      // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`
+      // that fails while rebuilding it (a stored not-ignored candidate now ignored, for
+      // example) is a `git-failed` refusal carrying git's output, not a throw: the real index
+      // was never touched (the rebuild runs entirely on the temporary one), so this group's
+      // failure still reports the groups committed so far, like any other mid-run failure.
+      const units = wholeFileUnits(state, group);
+      let current;
+      try {
+        current = await snapshot({
+          mode: 'split',
+          storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
+          // CHG-10: the stored units' paths, so a filtered file is classified as `plan` did.
+          tracked: state.units.map((unit) => unit.path),
+          indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
+          unborn: state.head === null,
+          ...git,
+        });
+      } catch (err) {
+        if (err.domainCode !== 'git-failed') throw err;
+        // Short, like the contract's other exit-4 example ("git commit failed for group 2"):
+        // `err.message` carries git's full raw output too, which would duplicate `gitOutput`
+        // uncut in the reply's capped, escaped `text` (C:reply-and-handback).
+        const message = `git add -N failed rebuilding the temporary index for group ${group.n}`;
+        return refused(state, group, commits, { code: 'git-failed', message }, notices, err.gitOutput);
+      }
+      // EXE-09: a stored unit's hash missing from this fresh snapshot — the file changed since
+      // `plan` (or during an earlier group's own `git commit`, EXE-15's hook-rewrite variant) —
+      // is `unmatched`, CLI kind `diff-changed`; the real index was never touched by (b).
+      const matched = matchIds(Object.fromEntries(units.map((unit) => [unit.id, unit.hash])), current);
+      if (!matched.ok) {
+        // EXE-15: the previous group's own commit may have left this behind (the hook-rewrite
+        // notice), which explains an otherwise-generic "files changed since plan".
+        const message = typeof state.treeChangedDuringCommit === 'number'
+          ? hookRewriteText(state.treeChangedDuringCommit)
+          : UNMATCHED_TEXT;
+        return refused(state, group, commits, { code: 'unmatched', message }, notices);
+      }
 
-      // EXE-15: only while a later group is still pending — nothing after this one would
-      // ever read the diagnosis. `current` (phase (b), moments earlier) already is the
-      // worktree diff's hash set right before this `git commit` call; a fresh snapshot right
-      // after is compared against it, this group's own hashes taken out first.
-      if (groupIndex < pending.length - 1) {
-        let afterUnits;
-        try {
-          afterUnits = await snapshot({
-            mode: 'split',
-            storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
-            tracked: state.units.map((unit) => unit.path),
-            indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
-            // HEAD always exists once this group's own `git commit` has landed (a few lines
-            // above), even when `state.head` (the SHA expected *before* this commit, `null`
-            // on a run that started unborn) has not been advanced yet — that only happens
-            // later, past this block. Passing `state.head === null` here (review-EXE-15
-            // finding H1) would make the temporary index start empty on such a run, so every
-            // candidate re-adds as a new-file unit and `after` can never equal `current`
-            // minus this group's own hashes: `treeChangedDuringCommit` would be set on every
-            // unborn multi-group run, hook or not.
-            unborn: false,
-            ...git,
-          });
-        } catch {
-          // A pure diagnostic must never turn an already-landed commit into a throw
-          // (review-EXE-15 finding L1): whatever fails here — the same EXE-09 rebuild
-          // failure the next group's own phase-(b) would otherwise raise as `git-failed`,
-          // a `check-attr` failure, a git timeout, anything — this group already committed,
-          // so skip the diagnosis and leave `treeChangedDuringCommit` as it was (unknown,
-          // not asserted clean).
-          afterUnits = null;
-        }
-        if (afterUnits !== null) {
-          // `units` (this group's own, EXE-02's `wholeFileUnits`) is correct only while a
-          // group always stages whole files; once hunk-level staging lands, a file split
-          // across groups needs that group's own *unit* hashes here instead (KD-S84).
-          const ownHashes = new Set(units.map((unit) => unit.hash));
-          const expected = current.map((unit) => unit.hash).filter((hash) => !ownHashes.has(hash));
-          if (sameHashSet(afterUnits, expected)) {
-            delete state.treeChangedDuringCommit;
-          } else {
-            state.treeChangedDuringCommit = group.n;
+      // (c) Apply on the real index.
+      state.indexReset = true;
+      writeState(run, state);
+      const ignoredPaths = state.stagedNew.filter((entry) => entry.ignored).map((entry) => entry.path);
+      try {
+        const staged = await stage({ units, ignoredPaths, ...git });
+        if (!staged.ok) throw notBuilt(`the ${staged.code} failure`, 'EXE-10');
+
+        // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
+        const tree = await writeTree(git);
+        const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), { scanIgnore: [], osUser });
+        if (hits.length > 0) throw notBuilt('the backstop refusal', 'EXE-13');
+
+        // EXE-23 (Q18): the repo's signing config stays untouched — never `--no-gpg-sign` or
+        // `-c commit.gpgsign=false`; M2's scrub keeps an exported `GIT_CONFIG_SYSTEM`.
+        const committed = await commitGuarded({
+          args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group, state), ...git,
+        });
+        if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+
+        // EXE-15: only while a later group is still pending — nothing after this one would
+        // ever read the diagnosis. `current` (phase (b), moments earlier) already is the
+        // worktree diff's hash set right before this `git commit` call; a fresh snapshot right
+        // after is compared against it, this group's own hashes taken out first.
+        if (groupIndex < pending.length - 1) {
+          let afterUnits;
+          try {
+            afterUnits = await snapshot({
+              mode: 'split',
+              storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
+              tracked: state.units.map((unit) => unit.path),
+              indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
+              // HEAD always exists once this group's own `git commit` has landed (a few lines
+              // above), even when `state.head` (the SHA expected *before* this commit, `null`
+              // on a run that started unborn) has not been advanced yet — that only happens
+              // later, past this block. Passing `state.head === null` here (review-EXE-15
+              // finding H1) would make the temporary index start empty on such a run, so every
+              // candidate re-adds as a new-file unit and `after` can never equal `current`
+              // minus this group's own hashes: `treeChangedDuringCommit` would be set on every
+              // unborn multi-group run, hook or not.
+              unborn: false,
+              ...git,
+            });
+          } catch {
+            // A pure diagnostic must never turn an already-landed commit into a throw
+            // (review-EXE-15 finding L1): whatever fails here — the same EXE-09 rebuild
+            // failure the next group's own phase-(b) would otherwise raise as `git-failed`,
+            // a `check-attr` failure, a git timeout, anything — this group already committed,
+            // so skip the diagnosis and leave `treeChangedDuringCommit` as it was (unknown,
+            // not asserted clean).
+            afterUnits = null;
+          }
+          if (afterUnits !== null) {
+            // `units` (this group's own, EXE-02's `wholeFileUnits`) is correct only while a
+            // group always stages whole files; once hunk-level staging lands, a file split
+            // across groups needs that group's own *unit* hashes here instead (KD-S84).
+            const ownHashes = new Set(units.map((unit) => unit.hash));
+            const expected = current.map((unit) => unit.hash).filter((hash) => !ownHashes.has(hash));
+            if (sameHashSet(afterUnits, expected)) {
+              delete state.treeChangedDuringCommit;
+            } else {
+              state.treeChangedDuringCommit = group.n;
+            }
           }
         }
+      } catch (err) {
+        await resetIndex(git);
+        throw err;
       }
-    } catch (err) {
-      await resetIndex(git);
-      throw err;
+      sha = await head({ cwd: toplevel, env, now });
     }
-    const sha = await head({ cwd: toplevel, env, now });
 
     // EXE-06: HEAD's first parent must be the SHA expected before this commit (`null` on an
     // unborn branch, matching `state.head` there too). A match means HEAD is this group's
     // own commit; a mismatch means a hook or another process committed as well — the group
-    // is still reported committed, with the SHA HEAD now holds, but the expected HEAD is
-    // left stale so the next group's check above catches it and refuses `head-moved`.
+    // is still reported committed, with the SHA HEAD holds, but the expected HEAD is left
+    // stale so the next group's check above catches it and refuses `head-moved`. EXE-20:
+    // `reword`'s `--amend --only` always keeps the old commit's own parent, so there the
+    // check instead compares the amended HEAD's first parent against the *expected* HEAD's
+    // own first parent (both `null` on a root commit), never against the expected HEAD itself.
     const parentBefore = await firstParent({ cwd: toplevel, env, now, sha });
+    const expectedParent = state.mode === 'reword'
+      ? await firstParent({ cwd: toplevel, env, now, sha: state.head })
+      : state.head;
     group.committed = true;
-    state.indexFingerprint = await indexFingerprint(git);
-    if (parentBefore === state.head) {
+    if (state.mode !== 'reword') state.indexFingerprint = await indexFingerprint(git);
+    if (parentBefore === expectedParent) {
       state.head = sha;
     } else {
       notices.push(anotherCommitNotice(group.n));
