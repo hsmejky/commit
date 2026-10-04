@@ -11,9 +11,11 @@
 // SCN-15 (docs/roadmap/05-scanner.md): the Seam 1 proof that `plan` wires this end to end —
 // an untracked candidate over the 1 MB limit is reported `skipped` (not scanned) the same
 // way a tracked file is, and the entry point's `osUser` derivation (FND-10's fault preload
-// making `os.userInfo()` throw, with neither `USER` nor `USERNAME` set) still lets `plan`
+// making `os.userInfo()` throw, with `USER` and `USERNAME` cleared) still lets `plan`
 // complete with `osUser: null`: the OS-user segment check then finds nothing, while
-// `local-path`'s fixed shapes (Q10) still fire.
+// `local-path`'s fixed shapes (Q10) still fire. "Cleared" means set to the empty string, not
+// left unset: on Windows, libuv re-inserts `USERNAME` into every spawned child regardless
+// (tests/process-seam.test.js), and commit.cjs:38-44 treats an empty value the same as unset.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -85,6 +87,7 @@ async function plan(c, options = {}) {
     state: JSON.parse(read('state.json')),
     planJson: JSON.parse(read('plan.json')),
     hunksTxt: read('hunks.txt'),
+    runDir,
   };
 }
 
@@ -106,7 +109,7 @@ test('a hunk with a github-token loses its body; the file\'s other hunk keeps it
   c.writeFile('src/config.js', edited.join('\n'));
   const token = githubToken('a');
 
-  const { stdout, hunks, state, planJson, hunksTxt } = await plan(c);
+  const { stdout, hunks, state, planJson, hunksTxt, runDir } = await plan(c);
 
   assert.equal(hunks.length, 2);
   const [clean, hit] = hunks;
@@ -125,10 +128,14 @@ test('a hunk with a github-token loses its body; the file\'s other hunk keeps it
   });
   assert.match(hunksTxt, /changed two/);
   assert.equal(hunksTxt.includes(`### ${hit.id} `), false);
-  assert.equal(hunksTxt.includes(token), false, 'hunks.txt holds the token');
   assert.equal(stdout.includes(token), false, 'stdout holds the token');
-  assert.equal(JSON.stringify(planJson).includes(token), false, 'plan.json holds the token');
-  assert.equal(JSON.stringify(state).includes(token), false, 'state.json holds the token');
+  // AC1: the token is absent from every file the run folder holds, not just the fixed set
+  // (hunks.txt, plan.json, state.json) — a future file such as hunks.json on budget overflow
+  // is covered too. Read as bytes, not text: `git-index` is binary.
+  for (const name of fs.readdirSync(runDir)) {
+    const bytes = fs.readFileSync(path.join(runDir, name));
+    assert.equal(bytes.includes(token), false, `${name} holds the token`);
+  }
 });
 
 test('a scanIgnore\'d path keeps its body and its unit: no hit, no scanned entry', async (t) => {
@@ -253,31 +260,47 @@ test('a 2 MB untracked candidate is reported skipped, not scanned', async (t) =>
   assert.equal(state.scanned[entry.id], 'skipped');
 });
 
-// SCN-15 AC3: the fault preload (FND-10) makes `os.userInfo()` throw; the harness's spawned
-// env never carries the host's `USER`/`USERNAME` (process-seam.js), so this reaches the
-// entry point's fallback chain with neither set either, landing on `osUser: null`. `plan`
-// still completes (it does not throw or refuse `internal`), `local-path`'s fixed shapes
-// (independent of `osUser`) still fire, and the OS-user segment rule (which only ever fires
-// when `osUserSegment` is non-null) finds nothing for a segment that is not one of those
-// fixed shapes.
-test('SCN-15: os.userInfo() throwing with no USER/USERNAME → osUser: null; plan completes, fixed local-path shapes still hit, no OS-user-segment hit', async (t) => {
-  const c = createCase(t);
-  seed(c, { 'README.md': 'readme\n' });
+// SCN-15 AC3: the fault preload (FND-10) makes `os.userInfo()` throw. On Windows, libuv
+// re-inserts `USERNAME` into every spawned child regardless of the harness's own env
+// (tests/process-seam.test.js), so reaching the entry point's fallback chain with no usable
+// `USER`/`USERNAME` requires passing both as the empty string: commit.cjs:38-44 treats `''`
+// the same as unset (`||` falls through). With that, `plan` still completes (it does not
+// throw or refuse `internal`), `local-path`'s fixed shapes (independent of `osUser`) still
+// fire, and the OS-user segment rule (which only ever fires when `osUserSegment` is
+// non-null) finds nothing. A second, control run sets `USERNAME` to a real-looking name and
+// expects a second hit on the line whose path segment matches it, proving the segment rule
+// is live and that `osUser: null` (not some other non-matching value) is what silenced it on
+// the first run.
+test('SCN-15: osUser null (fault, USER/USERNAME cleared) skips the OS-user-segment hit; a USERNAME control proves the segment rule fires', async (t) => {
   // Built at run time, not a literal, so this file holds no fixed-shape local-path text of
   // its own (see tests/scanner.test.js's same trick) — the privacy guard scans test sources.
   const fixedPathLiteral = 'C:' + '\\Users\\charlie\\notes.txt';
-  c.writeFile('src/paths.js', [
+  const paths = [
     `const fixed = "${fixedPathLiteral}";`,
     'const other = "data/zz9plural/export.csv";',
     '',
-  ].join('\n'));
+  ].join('\n');
 
-  const { planJson } = await plan(c, {
+  const nullCase = createCase(t);
+  seed(nullCase, { 'README.md': 'readme\n' });
+  nullCase.writeFile('src/paths.js', paths);
+  const nullRun = await plan(nullCase, {
     nodeArgs: ['--import', PRELOAD],
-    env: { COMMIT_TEST_FAULT_USERINFO: '1' },
+    env: { COMMIT_TEST_FAULT_USERINFO: '1', USER: '', USERNAME: '' },
   });
-
-  assert.deepEqual(planJson.scan.hits, [
+  assert.deepEqual(nullRun.planJson.scan.hits, [
     { path: 'src/paths.js', line: 1, pattern: 'local-path' },
+  ]);
+
+  const controlCase = createCase(t);
+  seed(controlCase, { 'README.md': 'readme\n' });
+  controlCase.writeFile('src/paths.js', paths);
+  const controlRun = await plan(controlCase, {
+    nodeArgs: ['--import', PRELOAD],
+    env: { COMMIT_TEST_FAULT_USERINFO: '1', USERNAME: 'zz9plural' },
+  });
+  assert.deepEqual(controlRun.planJson.scan.hits, [
+    { path: 'src/paths.js', line: 1, pattern: 'local-path' },
+    { path: 'src/paths.js', line: 2, pattern: 'local-path' },
   ]);
 });
