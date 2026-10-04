@@ -399,6 +399,52 @@ test('reword: an unrelated non-UTF-8-path rename outside the keep-set queues no 
   assert.deepEqual(textRediffs, [], JSON.stringify(textRediffs));
 });
 
+// review-CHG-11-r3 Low finding 1 (split half): split's own call site (runTextPass, ~636)
+// needs no non-UTF-8 name on the real filesystem to prove `keep` reaches it. The old side of
+// a rename only has to exist in HEAD's tree object: built with plumbing and attached to
+// `main` with `update-ref`, `git reset -q -- .` (Q11 step 2) populates the temporary index
+// from the object database alone, never touching a file by that name on disk. The same
+// unrelated-rename-outside-the-keep-set probe as reword's test above, so this one needs no
+// `holdsNonUtf8Names` skip and runs on every platform, including Windows/NTFS.
+test('split: an unrelated non-UTF-8-path rename outside the keep-set queues no extra --text rediff', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.gitattributes', 'x.bin -diff\n');
+  const plumb = (args, input) => {
+    const r = spawnSync('git', args, { cwd: c.repoDir, env: c.env, input });
+    assert.equal(r.status, 0, r.stderr && r.stderr.toString());
+    return r.stdout.toString('utf8').trim();
+  };
+  const oldX = plumb(['hash-object', '-w', '--stdin'], 'one\n');
+  const renamed = `${Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')}\n`;
+  const renameBlob = plumb(['hash-object', '-w', '--stdin'], renamed);
+  const tree = plumb(['mktree'], Buffer.from(
+    `100644 blob ${oldX}\tx.bin\n100644 blob ${renameBlob}\tt\xe9.other\n`, 'latin1',
+  ));
+  const head = plumb(['commit-tree', tree, '-m', 'seed']);
+  c.git(['update-ref', 'refs/heads/main', head]);
+
+  c.writeFile('x.bin', 'one\ntwo\n');
+  c.writeFile('te.other', renamed);
+
+  const { result: units, calls } = await withSpawnArgs(() => changeSet.snapshot({
+    mode: 'split',
+    storedLists: { candidates: ['te.other'], stagedNew: [] },
+    tracked: ['x.bin'],
+    indexPath: path.join(c.root, 'git-index'),
+    unborn: false,
+    toplevel: c.repoDir,
+    env: c.env,
+    now: NOW,
+  }));
+
+  assert.deepEqual(
+    units.map((u) => [u.path, u.status, u.kind]).sort(),
+    [['te.other', 'A', 'text'], ['x.bin', 'M', 'text']],
+  );
+  const textRediffs = calls.filter((args) => args.includes('--text') && args.includes('--no-renames'));
+  assert.deepEqual(textRediffs, [], JSON.stringify(textRediffs));
+});
+
 // A file name given as raw bytes, relative to the repo (review-CHG-12's pattern,
 // tests/change-set-raw-bytes.test.js).
 function writeRaw(c, nameBytes, content) {
