@@ -746,7 +746,9 @@ async function openRun(ctx) {
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { env, now, osUser } = ctx.injected;
-  const outcome = await commitAll(run, { now, osUser, env, deadline: ctx.deadline });
+  const outcome = await commitAll(run, {
+    now, osUser, env, deadline: ctx.deadline, scriptPath: ctx.injected.scriptPath,
+  });
   // `remaining.length === 0` is also required for the no-refusal case (not just
   // `!outcome.refusal`): EXE-16's budget stop ends `commitAll` with no `refusal` but a
   // non-empty `remaining`, and that outcome must keep the run (EXE-16 AC1), same as a

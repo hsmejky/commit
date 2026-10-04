@@ -237,8 +237,7 @@ export const NEXT_GROUP_FLOOR_MS = 480_000;
  * a prior stop) still makes progress; a later group starts only while at least
  * `NEXT_GROUP_FLOOR_MS` of the budget remain. A stop is not a failure: the caller ends the
  * call with the groups committed so far kept, `failed: null` and a non-empty `remaining`
- * (EXE-16); the `continue` handback for the rest is built by the reply layer
- * (C:reply-and-handback), not here.
+ * (EXE-16).
  *
  * @param {{ now: number, deadline: number, groupIndex: number }} facts `now` the current
  *   instant (the injected clock's own value, read once per group by the caller); `deadline`

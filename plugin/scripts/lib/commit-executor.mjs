@@ -29,7 +29,9 @@
 // before a group's (b)/(c) work ever touches the index (after `index-changed`, before the
 // budget check). EXE-16 adds that budget check, M15 `nextStep`, as the actual last step of
 // phase (a): not a refusal, so a stop ends the call with the groups committed so far kept
-// and this group's own `n` the first of `remaining`. The failure paths (EXE-09 to
+// and this group's own `n` the first of `remaining`, plus the `continue` handback for a
+// later call to pick the rest up, S2 `build()` over the injected `scriptPath`
+// (C:reply-and-handback). The failure paths (EXE-09 to
 // EXE-13), the parent and tree checks (EXE-14, EXE-15), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
@@ -43,6 +45,7 @@ import { run } from './process-adapter.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
+import { build } from './script-call.mjs';
 
 function notBuilt(what, slice) {
   return new Error(`${what} is not built yet (${slice})`);
@@ -135,8 +138,12 @@ function refused(state, group, commits, refusal, notices, gitOutput = null) {
 // `refusal`, `failed: null`): the call ends cleanly with the groups committed so far kept,
 // and `remaining` (never empty, since this group itself was not reached) for a later
 // `continue` call to pick up. C:commit-release's output shape, same as the no-refusal return
-// at the end of `commitAll`.
-function budgetStop(state, commits, notices) {
+// at the end of `commitAll`, plus the `continue` handback (AC1, AC6): the one answer's `run`
+// is the same `commit --plan <id> --all` (no `--confirmed`), built with S2 `build()` over the
+// injected `scriptPath` so it matches the anchored allow rule; `ifNoUser` runs it unasked.
+// Interim placement on the output itself, like `notices` (C:reply-and-handback), until
+// INT-02 moves it into `reply.handback`.
+function budgetStop(state, commits, notices, scriptPath, planId) {
   return {
     commits,
     failed: null,
@@ -145,6 +152,16 @@ function budgetStop(state, commits, notices) {
     gitOutput: null,
     unstaged: state.indexReset === true ? [] : null,
     notices,
+    handback: {
+      kind: 'continue',
+      question: null,
+      answers: [{
+        label: 'continue',
+        run: build({ scriptPath, subcommand: 'commit', args: ['--plan', planId, '--all'] }),
+        timeoutMs: 600_000,
+      }],
+      ifNoUser: { answer: 'continue' },
+    },
   };
 }
 
@@ -152,14 +169,17 @@ function budgetStop(state, commits, notices) {
  * Commits the stored groups not yet committed, in order (M16 `commitAll`).
  *
  * @param {{ toplevel: string, planId: string }} run the run M12 `open` returned.
- * @param {{ now: () => number, osUser: string | null, env: object, deadline: number }}
- *   options the injected clock, the OS user for the backstop's M8 `scanUnits` (never
- *   stored), the environment, and this call's M15 `deadline()` (EXE-16's budget stop).
+ * @param {{ now: () => number, osUser: string | null, env: object, deadline: number,
+ *   scriptPath: string }} options the injected clock, the OS user for the backstop's M8
+ *   `scanUnits` (never stored), the environment, this call's M15 `deadline()` (EXE-16's
+ *   budget stop), and the injected `scriptPath` (`process.argv[1]`) a budget stop's
+ *   `continue` handback builds its `run` from.
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: string | null,
- *   unstaged: Array<object> | null, notices: string[],
+ *   unstaged: Array<object> | null, notices: string[], handback?: object,
  *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved' | 'index-changed'
- *   | 'index-locked' | 'unmatched' | 'git-failed', message: string } }>} C:commit-release's output fields; `no-groups` (no
+ *   | 'index-locked' | 'unmatched' | 'git-failed', message: string } }>} C:commit-release's output fields; `handback` is EXE-16's budget-stop `continue`
+ *   handback (present only on that outcome, interim, C:reply-and-handback); `no-groups` (no
  *   stored groups, or every one committed) refuses before any group, with `failed: null` and
  *   `remaining: []`. On a phase (a) refusal before a later group instead, `refusal` with
  *   `failed` that group and `remaining` the groups not committed (never empty); `head-moved`
@@ -177,7 +197,7 @@ function budgetStop(state, commits, notices) {
  *   (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
-export async function commitAll(run, { now, osUser, env, deadline }) {
+export async function commitAll(run, { now, osUser, env, deadline, scriptPath }) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
   const state = readState(run);
@@ -242,7 +262,7 @@ export async function commitAll(run, { now, osUser, env, deadline }) {
     // a refusal: the loop ends here with the groups committed so far kept and this group (and
     // every one after it) left in `remaining`, for a later `continue` call to pick up.
     if (!nextStep({ now: now(), deadline, groupIndex }).go) {
-      return budgetStop(state, commits, notices);
+      return budgetStop(state, commits, notices, scriptPath, run.planId);
     }
 
     // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`
