@@ -164,26 +164,26 @@ the lint-approved message plus these trailers.
 
 **Blocked by:** MSG-04, CFG-08, CFG-09, EXE-03, INT-02, PLN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (trailers), Q5, Q13, M6, M16, stories 118, 119, 125.
 
-- [ ] Seam 1: a header-only message commits as header, blank line, `Co-Authored-By:
+- [x] Seam 1: a header-only message commits as header, blank line, `Co-Authored-By:
       Claude <noreply@anthropic.com>` (the default trailer) when no settings layer defines
       attribution.
-- [ ] Seam 1: a message ending in `Closes #12` commits with the trailer appended to that
+- [x] Seam 1: a message ending in `Closes #12` commits with the trailer appended to that
       same paragraph (no blank line between them).
-- [ ] Seam 1: a message ending in a body paragraph gets the trailer as a new paragraph.
-- [ ] Seam 1: with attribution resolved to `null` (`includeCoAuthoredBy: false`), the
+- [x] Seam 1: a message ending in a body paragraph gets the trailer as a new paragraph.
+- [x] Seam 1: with attribution resolved to `null` (`includeCoAuthoredBy: false`), the
       committed message equals the lint-approved message byte for byte.
-- [ ] Seam 1: a trailer instruction inside the worker plan's message text cannot add a
+- [x] Seam 1: a trailer instruction inside the worker plan's message text cannot add a
       trailer (it fails lint per MSG-05); the only trailer is the resolved one (story 119).
-- [ ] Seam 1, once `check` commits: the committed message has LF line ends and exactly one
+- [x] Seam 1, once `check` commits: the committed message has LF line ends and exactly one
       trailing LF.
-- [ ] Seam 1: a user's `attribution.commit` changes between `plan` and `check` (edited mid-run)
+- [x] Seam 1: a user's `attribution.commit` changes between `plan` and `check` (edited mid-run)
       → the committed trailer is the one `plan` stored in `state.json`, not a re-resolved one
       (C:run-folder "never re-read ... the Claude settings"; CFG-08 AC3 read side).
-- [ ] Seam 1: the INT-02 First-slice run (`plan` → `check`) now commits the planned header
+- [x] Seam 1: the INT-02 First-slice run (`plan` → `check`) now commits the planned header
       plus the default trailer.
 
 
