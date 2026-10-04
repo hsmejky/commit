@@ -52,7 +52,7 @@ inventory take an added file. The detached-HEAD notice in the second criterion i
 
 - [x] Seam 1: on a branch → `plan.json` `state: { kind: "branch", branch, unborn: false }` and the stored expected HEAD equals `git rev-parse HEAD`.
 - [x] Seam 1: detached HEAD → `state.kind: "detached"` and the detached-HEAD notice in the stored notices (reply `notices` once RPL renders them).
-- [x] Seam 1: unborn HEAD → `unborn: true`, expected HEAD `null`, no failing `git show HEAD:` call (config at HEAD skipped, story 182).
+- [x] Seam 1: unborn HEAD → `unborn: true`, expected HEAD `null`, no `ls-tree`/`cat-file` call for the config at HEAD (skipped, story 182).
 - [x] Exactly one status call supplies branch, HEAD and (for GIT-04) the unmerged lines; `headTree()` returns `HEAD^{tree}` (consumed by EXE's backstop tree comparison).
 
 

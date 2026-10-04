@@ -73,6 +73,7 @@ test('on an unborn repo scanIgnore is [] while the other worktree repo keys appl
   assert.deepEqual(planJson.config.values.scanIgnore, []);
   assert.deepEqual(planJson.config.values.types, ['feat']);
   assert.equal(planJson.config.sources.types, 'repo');
+  assert.deepEqual(planJson.warnings, []);
 });
 
 for (const pattern of ['**/*', 'src/{a,b}.js']) {

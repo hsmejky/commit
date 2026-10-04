@@ -459,7 +459,14 @@ async function readScanIgnoreAtHead({ toplevel, env, now }) {
     matchers: Object.freeze([]),
     warning: `${problem}; its scanIgnore is ignored ([] used)`,
   });
-  const failed = (code) => invalid(`the ${HEAD_LAYER} could not be read (git exited ${code})`);
+  // `code` is `null` when the child was killed by a signal rather than exiting (`run`'s
+  // `close` handler, `process-adapter.mjs`), so that case is named instead of printed as
+  // "git exited null".
+  const failed = (code) => invalid(
+    code === null
+      ? `the ${HEAD_LAYER} could not be read (git was killed)`
+      : `the ${HEAD_LAYER} could not be read (git exited ${code})`,
+  );
 
   // `-z`: `<mode> SP <type> SP <object> SP+ <size> TAB <path> NUL`; `<size>` is `-` for a
   // non-blob, and not a number when the blob cannot be read (a corrupt object).

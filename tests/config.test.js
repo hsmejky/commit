@@ -769,3 +769,44 @@ test('loadConfig warns when the repo config at HEAD is not a regular file', asyn
     'the repo config at HEAD (.claude/commit.json) is not a regular file; its scanIgnore is ignored ([] used)',
   ]);
 });
+
+// review-CFG-07 r2 finding 4: a symlink (mode 120000) at HEAD warns too; its blob holds the
+// link target text, not JSON, even though `git ls-tree` reports it as type `blob`.
+test('loadConfig warns when the repo config at HEAD is a symlink', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.claude/commit.json', 'target');
+  const sha = c.git(['hash-object', '-w', '--', '.claude/commit.json']).trim();
+  c.git(['update-index', '--add', '--cacheinfo', `120000,${sha},.claude/commit.json`]);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.rmSync(path.join(c.repoDir, '.claude', 'commit.json'));
+
+  const result = await loadAtHead(c);
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.deepEqual(result.warnings, [
+    'the repo config at HEAD (.claude/commit.json) is not a regular file; its scanIgnore is ignored ([] used)',
+  ]);
+});
+
+// review-CFG-07 r2 finding 4: a gitlink (mode 160000, type `commit`) at HEAD warns the same
+// way as a directory, caught by the `type !== 'blob'` check alone.
+test('loadConfig warns when the repo config at HEAD is a gitlink', async (t) => {
+  const c = createCase(t);
+  c.writeFile('README.md', 'readme\n');
+  c.git(['add', '--', 'README.md']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const headSha = c.git(['rev-parse', 'HEAD']).trim();
+  c.git(['update-index', '--add', '--cacheinfo', `160000,${headSha},.claude/commit.json`]);
+  c.git(['commit', '-q', '-m', 'gitlink']);
+
+  const result = await loadAtHead(c);
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.deepEqual(result.warnings, [
+    'the repo config at HEAD (.claude/commit.json) is not a regular file; its scanIgnore is ignored ([] used)',
+  ]);
+});

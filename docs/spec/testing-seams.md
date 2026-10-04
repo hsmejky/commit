@@ -71,8 +71,7 @@
    false-positive rule reading a capture group) are checked against a test table independent
    of C:scan-patterns' rows; M9 `hideFilter`, `summaryOnly` and `bucketOf` (the hidden rules of C:untracked-files,
    C:summary-only-files); M4 `validateLayer` and `isRepoConfigPath` (C:plan, Q6), called
-   directly, and `loadConfig` over temp layer files and temp repos (its HEAD read's git
-   calls observed through a trace2 log), beside its Seam 1 coverage through `plan`; G1 `runHook` with injected `claudeHome` and `now`
+   directly; G1 `runHook` with injected `claudeHome` and `now`
    as the single in-process guard entry, plus the G2/S2 unit carve-outs below (Bash and PowerShell tokenizer fixtures, allowlist,
    global options, script calls). The guard has this second seam beside Seam 2 on purpose:
    Seam 2 proves the real hook process (stdin to its end, exit codes, fail-open, the

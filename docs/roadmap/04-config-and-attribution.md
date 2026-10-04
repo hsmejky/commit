@@ -4,8 +4,9 @@ M4, the config loader (user and repo layers, validation, warnings, defaults, sou
 `scanIgnore` at HEAD compiled through M7, `isRepoConfigPath`), and M5, the attribution
 resolver over the Claude settings layers. Both are tested at Seam 1, first through
 `plan`'s pre-folder `config` refusal, then through `plan`'s `config`, `attribution` and
-`warnings` fields; M4 also at Seam 3 (`validateLayer`, `isRepoConfigPath` and `loadConfig`
-called in-process, `docs/spec/testing-seams.md`). Main sources: M4, M5, Q5, Q6, Q10, C:plan, stories 105-119, 148, 150.
+`warnings` fields; M4 also at Seam 3 (`validateLayer` and `isRepoConfigPath` called
+in-process, `docs/spec/testing-seams.md`). Main sources: M4, M5, Q5, Q6, Q10, C:plan,
+stories 105-119, 148, 150.
 CFG-01 (a human decision) settles the `scanIgnore` open items before CFG-07 and the scan and
 commit slices that use the flag.
 
@@ -201,9 +202,9 @@ value (string, or a glob error) asserting a warning, not a `config` refusal.
 - [ ] Seam 1: each of those values (and unparseable JSON) at HEAD only, with a valid copy in
       the worktree → no refusal, `config.values.scanIgnore` is `[]` and `warnings` names the
       repo config at HEAD (CFG-01 item 5).
-- [ ] `validateLayer`, called directly (not through `loadConfig`) on a repo layer with
-      `scanIgnore: ["**"]`, returns a `config` error naming the pattern.
-- [ ] `isRepoConfigPath` is true for `.claude/commit.json` and false for
+- [ ] Seam 3: `validateLayer`, called directly (not through `loadConfig`) on a repo layer
+      with `scanIgnore: ["**"]`, returns a `config` error naming the pattern.
+- [ ] Seam 3: `isRepoConfigPath` is true for `.claude/commit.json` and false for
       `sub/.claude/commit.json` and `.claude/commit.JSON`; `REPO_CONFIG_PATH` is
       `.claude/commit.json`.
 

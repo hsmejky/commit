@@ -69,10 +69,13 @@ test('plan on an unborn repo stores unborn: true and a null expected HEAD, with 
   assert.deepEqual(state, { kind: 'branch', branch: 'main', unborn: true });
   assert.equal(head, null);
 
-  // Story 182: config at HEAD is skipped on an unborn HEAD, so no `git show` call is made.
+  // Story 182: config at HEAD is skipped on an unborn HEAD, so no `ls-tree` or `cat-file`
+  // call reads it (CFG-07; review-CFG-07 round 2 finding 1, replacing the stale `show` check).
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
-  const showCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('show'));
-  assert.deepEqual(showCalls, [], JSON.stringify(entries));
+  const headConfigCalls = entries.filter(
+    (e) => Array.isArray(e.args) && (e.args.includes('show') || e.args.includes('ls-tree') || e.args.includes('cat-file')),
+  );
+  assert.deepEqual(headConfigCalls, [], JSON.stringify(entries));
 });
 
 test('plan on a detached HEAD stores state.kind detached and adds the detached-HEAD notice', async (t) => {
