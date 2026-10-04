@@ -55,7 +55,10 @@ test('plan on modified tracked files runs one pinned diff with no pathspec and k
   assert.deepEqual(result.json.hunks.hunks.map((entry) => entry.path), ['a b/c.txt', 'src/b.js'], detail);
 
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
-  const diffCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('diff'));
+  // CHG-11: `check-attr`'s own queried attribute names now include the literal string
+  // `diff`, so a loose `args.includes('diff')` filter would also catch that call; excluded
+  // by its distinct leading `check-attr` argument.
+  const diffCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('diff') && e.args[0] !== 'check-attr');
   assert.deepEqual(
     diffCalls.map((e) => [e.file, e.args]),
     [['git', INVENTORY_DIFF_CALL], ['git', PINNED_DIFF_CALL]],

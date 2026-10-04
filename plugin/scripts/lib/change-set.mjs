@@ -597,7 +597,10 @@ export async function snapshot({
       { cwd: toplevel, env, now, readOnly: true },
     )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
     const attrs = await checkAttrs(names, opts);
-    return diffUnits([from, head], opts, attrs);
+    const units = await diffUnits([from, head], opts, attrs);
+    const ctx = { mode: 'reword', toplevel, env, now, head };
+    const runTextPass = () => diffUnits([from, head, '--text'], opts, attrs, { allowRediff: false });
+    return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
   }
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14)`);
   // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
@@ -618,13 +621,18 @@ export async function snapshot({
   const attrs = await checkAttrs(attrPaths, opts);
   const reader = await pinnedDiff([], opts, attrs);
   const units = reader.end();
-  if (reader.rediff.length === 0) return units;
-  // A rename from a non-UTF-8 path: its UTF-8 new path, as the same diff shows it without
-  // rename detection, is an `A` unit; the old path stays in `notUtf8` (review-CHG-12
-  // finding 1). No pathspec (Q11: argv length), so the other paths' units are dropped.
-  const rediff = new Set(reader.rediff);
-  const again = (await pinnedDiff(['--no-renames'], opts, attrs)).end().filter((unit) => rediff.has(unit.path));
-  return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
+  let all = units;
+  if (reader.rediff.length > 0) {
+    // A rename from a non-UTF-8 path: its UTF-8 new path, as the same diff shows it without
+    // rename detection, is an `A` unit; the old path stays in `notUtf8` (review-CHG-12
+    // finding 1). No pathspec (Q11: argv length), so the other paths' units are dropped.
+    const rediff = new Set(reader.rediff);
+    const again = (await pinnedDiff(['--no-renames'], opts, attrs)).end().filter((unit) => rediff.has(unit.path));
+    all = [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
+  }
+  const ctx = { mode: 'split', toplevel, env, now };
+  const runTextPass = async () => (await pinnedDiff(['--text'], opts, attrs)).end();
+  return resolveHiddenBinaries(all, attrs, runTextPass, ctx);
 }
 
 /**
@@ -655,16 +663,19 @@ export function snapshotBlob(repoRelativePath) {
   throw new Error(`snapshotBlob in ${mode} mode is not built yet (CHG-14)`);
 }
 
-// One `git check-attr --stdin -z filter linguist-generated` call (CHG-10, Q11): paths go on
-// stdin, NUL-separated, never argv. Runs through M2's `run`, which strips every inherited
-// `GIT_*` variable outside the keep-set (GIT-05), so a decoy `GIT_ATTR_SOURCE` cannot
-// redirect which `.gitattributes` this call reads. Returns a `Map<path, { filtered:
-// boolean, generated: boolean }>`; a path with no row (not in `paths`) is absent.
+// One `git check-attr --stdin -z filter linguist-generated diff binary` call (CHG-10,
+// CHG-11, Q11): paths go on stdin, NUL-separated, never argv. Runs through M2's `run`, which
+// strips every inherited `GIT_*` variable outside the keep-set (GIT-05), so a decoy
+// `GIT_ATTR_SOURCE` cannot redirect which `.gitattributes` this call reads. Returns a
+// `Map<path, { filtered: boolean, generated: boolean, hidden: boolean }>`; a path with no
+// row (not in `paths`) is absent. `hidden` (CHG-11, Q10): `diff` is `unset` (`-diff`) or a
+// custom driver name (anything but `unspecified`/`set`), or the `binary` macro is `set` —
+// each hides a path's diff behind a binary rendering whatever its real content is.
 async function checkAttrs(paths, { toplevel, env, now, indexPath }) {
   if (paths.length === 0) return new Map();
   const result = await run(
     'git',
-    ['check-attr', '--stdin', '-z', 'filter', 'linguist-generated'],
+    ['check-attr', '--stdin', '-z', 'filter', 'linguist-generated', 'diff', 'binary'],
     {
       cwd: toplevel, env, now, readOnly: true, index: indexPath,
       input: Buffer.from(paths.map((p) => `${p}\0`).join(''), 'utf8'),
@@ -677,13 +688,87 @@ async function checkAttrs(paths, { toplevel, env, now, indexPath }) {
     const path = fields[i].toString('utf8');
     const attr = fields[i + 1].toString('utf8');
     const value = fields[i + 2].toString('utf8');
-    const entry = out.get(path) ?? { filtered: false, generated: false };
+    const entry = out.get(path) ?? { filtered: false, generated: false, hidden: false };
     if (attr === 'filter' && value !== 'unspecified' && value !== 'unset') entry.filtered = true;
     // Linguist reads the bare form (`set`) and `=true` alike (review-CHG-10 finding 3).
     if (attr === 'linguist-generated' && (value === 'set' || value === 'true')) entry.generated = true;
+    if (attr === 'diff' && value !== 'unspecified' && value !== 'set') entry.hidden = true;
+    if (attr === 'binary' && value === 'set') entry.hidden = true;
     out.set(path, entry);
   }
   return out;
+}
+
+// CHG-11 (Q10, Q11, C:plan "Binary is decided by attributes first, then content"): for a
+// path `attrs` marks `hidden`, the new content's size against the 1 MB scan limit, checked
+// before any NUL sniff so a huge file never needs its content read at all; `overLimit: true`
+// skips the NUL check outright (the caller flags the unit `overScanLimit` and leaves it
+// `kind: "binary"`, never guessing whether it was really text). Under the limit, `binary`
+// is whether the first 8000 bytes hold a NUL (git's own heuristic, Q10). In `split` the new
+// content is the worktree file (what the pinned diff actually compares against the temporary
+// index), read straight off disk like `fileFacts`; in `reword` there is no worktree side, so
+// the same content is read from `head`'s own tree with `git cat-file` (read-only, no object
+// is written).
+async function hiddenBinaryFacts(path, { mode, toplevel, env, now, head }) {
+  if (mode === 'split') {
+    const full = join(toplevel, path);
+    let stat;
+    try {
+      stat = lstatSync(full);
+    } catch {
+      return { overLimit: false, binary: false };
+    }
+    if (!stat.isFile()) return { overLimit: false, binary: false };
+    if (stat.size > SCAN_LIMIT) return { overLimit: true, binary: null };
+    const buf = Buffer.alloc(Math.min(BINARY_SNIFF_BYTES, stat.size));
+    const fd = openSync(full, 'r');
+    let read;
+    try {
+      read = readSync(fd, buf, 0, buf.length, 0);
+    } finally {
+      closeSync(fd);
+    }
+    return { overLimit: false, binary: buf.subarray(0, read).includes(NUL) };
+  }
+  const ref = `${head}:${path}`;
+  const opts = { cwd: toplevel, env, now, readOnly: true };
+  const size = Number((await gitOk(['cat-file', '-s', ref], opts)).toString('utf8').trim());
+  if (size > SCAN_LIMIT) return { overLimit: true, binary: null };
+  const content = await gitOk(['cat-file', '-p', ref], opts);
+  return { overLimit: false, binary: content.subarray(0, BINARY_SNIFF_BYTES).includes(NUL) };
+}
+
+// CHG-11: resolves every `kind: "binary"` unit whose path `attrs` marks `hidden` (Q10, Q11,
+// C:plan). A unit over the 1 MB scan limit is flagged `overScanLimit: true` and stays
+// `kind: "binary"` (its hash, body and range are unaffected: scanner.mjs already reports it
+// skipped by the flag alone, ahead of the binary kind). A unit under the limit with no NUL in
+// its first 8000 bytes is attribute-hidden text: it keeps its whole-file hash, body (empty,
+// "no block" like a summary-only unit, C:plan-hunks) and range from the main pass — only its
+// `kind`, `binary` and added-lines fields change — with `added`/`deleted`/`addedLines` read
+// from `runTextPass`'s matching section, the one streamed `git diff -z --raw -p --text` pass
+// run only when at least one such file exists (Q11 pass 5). A unit under the limit with a NUL
+// stays genuinely binary, untouched.
+async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
+  const candidates = units.filter((unit) => unit.kind === 'binary' && attrs.get(unit.path)?.hidden === true);
+  if (candidates.length === 0) return units;
+  const facts = new Map();
+  for (const unit of candidates) facts.set(unit.path, await hiddenBinaryFacts(unit.path, ctx));
+  const overLimit = new Set([...facts].filter(([, f]) => f.overLimit).map(([p]) => p));
+  const hiddenTextPaths = new Set([...facts].filter(([, f]) => !f.overLimit && f.binary === false).map(([p]) => p));
+  const textUnits = new Map();
+  if (hiddenTextPaths.size > 0) {
+    for (const unit of await runTextPass()) {
+      if (hiddenTextPaths.has(unit.path)) textUnits.set(unit.path, unit);
+    }
+  }
+  return units.map((unit) => {
+    if (overLimit.has(unit.path)) return { ...unit, overScanLimit: true, addedLines: [] };
+    const textUnit = textUnits.get(unit.path);
+    if (textUnit === undefined) return unit;
+    return {
+      ...unit, kind: 'text', binary: false, added: textUnit.added, deleted: textUnit.deleted, addedLines: textUnit.addedLines,
+    };
+  });
 }
 
 // One pinned `git diff -z --raw -p` call against the temporary index, `extra` appended,
