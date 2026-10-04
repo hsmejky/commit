@@ -124,16 +124,14 @@ fixed, delete it here; IDs are never reused.
   add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's), or
   rebuild these cases at Seam 1. Slice: none yet (needs the user's seam decision).
 - **KD-R87.** CHG-17's fourth criterion (a summary-only file's hunk lines dropped while
-  streaming, retained memory bounded by the Q19 and Q10 caps) is neither met nor testable.
-  No seam in testing-seams.md observes retained memory. M10 also decides summary-only after
-  the patch pass (`withBodyRules` in `change-set.mjs`): the `size` rule needs a size read
-  after the stream. So a summary-only file's body is held until `snapshot` returns and is
-  dropped only then. Only the added lines stay bounded (1 MB per file, CHG-16). A capped
-  file's body is kept on purpose (Q19: the cap limits the worker's context, not the tool
-  output; CHG-20 splits a capped file by its ranges), so it is outside this row. Fix: read
-  the sizes from a `--raw` pass before the patch pass, then decide per file in the reader
-  (`finishSection`). Relaxing the criterion to "bodies dropped before M13" instead would
-  amend Q11 and M10, a user decision. Slice: CHG-17 (criterion 4).
+  streaming, retained memory bounded by the Q19 and Q10 caps) is met, but retained memory
+  itself is not measured: no seam in testing-seams.md observes it, and the seam list is
+  user-confirmed. M10 reads the `size` rule's sizes in a `git diff -z --raw` pass before the
+  patch pass, and the reader (`finishSection`) decides summary-only as each file's section
+  closes and drops its hunk lines there. `tests/plan-summary-cap.test.js` observes only that
+  order and the call count at Seam 1 (the raw pass, at most one `cat-file --batch-check`,
+  then the patch pass) and the unchanged output. Fix: none planned (a memory seam would be a
+  user decision). Slice: none.
 - **KD-R88.** CHG-17's review-Medium-2 case in `tests/plan-summary-cap.test.js` ("M10 keeps
   the body of a capped unit") calls `snapshot` in-process, outside testing-seams.md's
   user-confirmed seam list, the same gap KD-R77 names for M2/M11. Seam 1 cannot observe a
