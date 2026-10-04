@@ -6,11 +6,14 @@
 // GIT-10 builds the enabled flag and the non-SSH formats: openpgp → `"prompt"`, x509 or a
 // custom openpgp program → `"unknown"`, a custom `gpg.ssh.program` → `"prompt"`.
 //
-// GIT-07: the git calls take their timeout from the call's deadline through M2's deadline
-// scope (`withDeadline`, set by `plan`), not from an argument: a probe git call that times
-// out (`TIMED_OUT`) ends as `"unknown"` rather than a throw (M11), a timed-out
-// `git --exec-path` means the `ssh-add -L` check was not run on every platform, and `ssh-add`
-// takes the smaller of its fixed 5 s and the scope's budget (M2).
+// GIT-07: every probe process (each git read and `ssh-add`) runs under its own fixed 5 s
+// timeout (`PROBE_CALL_TIMEOUT_MS`), capped by the time left before the call's deadline
+// through M2's deadline scope (`withDeadline`, set by `plan`): a probe git call that times
+// out (`TIMED_OUT`) ends as `"unknown"` rather than a throw (M11), and a timed-out
+// `git --exec-path` means the `ssh-add -L` check was not run on every platform. A call the
+// fixed cap ended leaves the scope unexpired, so `plan` goes on; one the deadline itself
+// ended marks the scope expired and `plan` ends `timeout` (user decision on review-GIT-07
+// finding 1).
 //
 // GIT-11 resolves `user.signingKey` through the key-source table of C:plan (unset, a literal
 // key, a `.pub` path, any other path; `~/` against the injected OS home, `~user/` unknown,
@@ -34,9 +37,18 @@ const DEFAULT_PROGRAMS = Object.freeze({ openpgp: 'gpg', x509: 'gpgsm', ssh: 'ss
 // A probe git call that timed out (M2 `timedOut`, GIT-07): the probe cannot decide.
 const TIMED_OUT = Symbol('timed-out');
 
+/**
+ * The fixed timeout of each probe process (Q18, C:plan "fixed timeout"; GIT-07 user decision
+ * on review-GIT-07 finding 1): every git read and the `ssh-add -L` call alike, so a wedged
+ * git or agent gives `"unknown"` and `plan` goes on. M2 caps it by the deadline's budget.
+ */
+export const PROBE_CALL_TIMEOUT_MS = 5_000;
+
 // A `git config` read: its output, `null` when the key is unset (exit 1), or `TIMED_OUT`.
 async function gitConfig(args, { toplevel, env, now }) {
-  const result = await run('git', ['config', ...args], { cwd: toplevel, env, now, readOnly: true });
+  const result = await run('git', ['config', ...args], {
+    cwd: toplevel, env, now, readOnly: true, timeoutMs: PROBE_CALL_TIMEOUT_MS,
+  });
   if (result.timedOut) return TIMED_OUT;
   if (result.code === 1) return null;
   if (result.code !== 0) {
@@ -232,9 +244,10 @@ function keyHeaderReady(content) {
 
 /**
  * The fixed timeout of the `ssh-add -L` call (Q18, C:plan "SSH readiness"): past it the
- * check counts as not run, so a wedged agent cannot stall `plan`.
+ * check counts as not run, so a wedged agent cannot stall `plan`. The same fixed 5 s as
+ * every other probe process (`PROBE_CALL_TIMEOUT_MS`).
  */
-export const SSH_ADD_TIMEOUT_MS = 5_000;
+export const SSH_ADD_TIMEOUT_MS = PROBE_CALL_TIMEOUT_MS;
 
 function envValue(env, name) {
   const key = Object.keys(env ?? {}).find((entry) => entry.toUpperCase() === name);
@@ -305,7 +318,9 @@ async function listAgentKeys(file, { toplevel, env, now }) {
 // `git --exec-path`, trimmed, `TIMED_OUT`, or `null` when git cannot say.
 async function gitExecPath({ toplevel, env, now }) {
   try {
-    const result = await run('git', ['--exec-path'], { cwd: toplevel, env, now, readOnly: true });
+    const result = await run('git', ['--exec-path'], {
+      cwd: toplevel, env, now, readOnly: true, timeoutMs: PROBE_CALL_TIMEOUT_MS,
+    });
     if (result.timedOut) return TIMED_OUT;
     const value = result.stdout.toString('utf8').trim();
     return result.code === 0 && value !== '' ? value : null;
@@ -400,8 +415,9 @@ async function readiness(format, values, entries, context) {
  *   `{ enabled: true, ready: "unknown" }` (`git commit` reports git's own error, same as a
  *   `gpg.format` git does not know). `ready` is `false` only for an SSH key with a
  *   passphrase (or no private key file) that a trusted `ssh-add -L` does not list. A probe
- *   git call that times out (GIT-07, inside `plan`'s deadline scope) gives `"unknown"`: on
- *   `commit.gpgsign` or `gpg.*`, `{ enabled: true, ready: "unknown" }`.
+ *   git call that times out (GIT-07: its fixed `PROBE_CALL_TIMEOUT_MS`, or the smaller
+ *   budget left in `plan`'s deadline scope) gives `"unknown"`: on `commit.gpgsign` or
+ *   `gpg.*`, `{ enabled: true, ready: "unknown" }`.
  * @throws {Error} when the `gpg.*` config read exits other than 0 or 1.
  */
 export async function probeSigning({ toplevel, env, now, osHome, execPath }) {

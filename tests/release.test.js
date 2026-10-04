@@ -581,10 +581,22 @@ function clockScheduleAt(c, elapsedMs) {
   return schedulePath;
 }
 
+// KD-R78 (user decision): `release`'s own steps now run under the same 45 s
+// `releaseDeadline`, so a clock past it from the call's start ends `timeout` before the
+// release (tests/plan-timeout-kill.test.js). The tree-state cases below jump the clock only
+// once the release has removed the run's lock, after the pre-step deadline check.
+function clockScheduleAfterRelease(c, runDir, elapsedMs) {
+  const schedulePath = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedulePath, JSON.stringify([
+    { event: { type: 'pathGone', path: path.join(runDir, 'lock') }, elapsedMs },
+  ]));
+  return schedulePath;
+}
+
 test('release past the 45 s tree-state budget (46 s elapsed since the call\'s start) omits the tree state', async (t) => {
   const c = createRepo(t);
   const { runDir, planId } = matchingRun(c);
-  const schedulePath = clockScheduleAt(c, 46_000);
+  const schedulePath = clockScheduleAfterRelease(c, runDir, 46_000);
 
   const result = await runCommit(c, ['release', '--plan', planId], {
     nodeArgs: ['--import', CLOCK_PRELOAD],
@@ -621,7 +633,7 @@ test('release below the 45 s tree-state budget still carries the tree state', as
 test('release at exactly 45 000 ms elapsed since the call\'s start omits the tree state', async (t) => {
   const c = createRepo(t);
   const { runDir, planId } = matchingRun(c);
-  const schedulePath = clockScheduleAt(c, 45_000);
+  const schedulePath = clockScheduleAfterRelease(c, runDir, 45_000);
 
   const result = await runCommit(c, ['release', '--plan', planId], {
     nodeArgs: ['--import', CLOCK_PRELOAD],
@@ -641,8 +653,8 @@ test('release at exactly 45 000 ms elapsed since the call\'s start omits the tre
 // discarded read would also pass. A PATH git shim that logs every call it sees pins it down.
 test('release past the 45 s budget never spawns the tree-state git status call', { skip: SHIM_SKIP }, async (t) => {
   const c = createRepo(t);
-  const { planId } = matchingRun(c);
-  const schedulePath = clockScheduleAt(c, 46_000);
+  const { runDir, planId } = matchingRun(c);
+  const schedulePath = clockScheduleAfterRelease(c, runDir, 46_000);
   const log = path.join(c.root, 'git-calls.log');
   const shimDir = path.join(c.root, 'shim-bin');
   fs.mkdirSync(shimDir);

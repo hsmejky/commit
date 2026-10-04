@@ -10,6 +10,8 @@
 // is expected to occur in that same order while the schedule is driven. `event` is one of:
 //   { "type": "path", "path": "<absolute path>" }
 //     holds once that path exists.
+//   { "type": "pathGone", "path": "<absolute path>" }
+//     holds once that path no longer exists (a run lock `release` removed, KD-R78).
 //   { "type": "childPath", "dir": "<absolute path>", "name": "<file name>" }
 //     holds once `<dir>/<some child>/<name>` exists, for a file in a folder whose name the test
 //     cannot know in advance (a run's minted `<planId>/plan.json`, RUN-08).
@@ -49,6 +51,7 @@ for (const step of schedule) {
 /** @param {{type: string, [key: string]: unknown}} event */
 function eventHolds(event) {
   if (event.type === 'path') return existsSync(event.path);
+  if (event.type === 'pathGone') return !existsSync(event.path);
   if (event.type === 'childPath') {
     if (!existsSync(event.dir)) return false;
     return readdirSync(event.dir).some((child) => existsSync(join(event.dir, child, event.name)));

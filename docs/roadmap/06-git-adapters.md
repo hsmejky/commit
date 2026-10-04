@@ -175,8 +175,11 @@ test harness today (case timeout, after-hook kill, self-exiting fixtures), not i
 - [ ] `callStarted` (RUN-03) is read once at dispatch (`cli.mjs`'s `main`) and threaded through
       `injected`/`ctx`, rather than each M18 workflow reading it itself (review-RUN-03
       finding 3).
-- [ ] An M11 `probeSigning` `git config` read that times out ends as `ready: "unknown"`
-      (per M11), not a `plan` `timeout` refusal (review-GIT-10 finding 2).
+- [ ] An M11 `probeSigning` git read (`git config`, `git --exec-path`) runs under its own
+      fixed 5 s timeout, like `ssh-add` (the smaller of that and `deadline - now()`); a read
+      that times out on that cap ends as `ready: "unknown"` (per M11; for `--exec-path`, the
+      `ssh-add -L` check not run) and `plan` goes on, not a `plan` `timeout` refusal
+      (review-GIT-10 finding 2; user decision on review-GIT-07 finding 1).
 - [ ] Replace GIT-12's child-only `SIGKILL` path in `run` with the tree kill; M11's
       `ssh-add` takes the smaller of its fixed 5 s and `deadline - now()`; an M11
       `git --exec-path` timeout means the check was not run (review-GIT-12 finding 2).

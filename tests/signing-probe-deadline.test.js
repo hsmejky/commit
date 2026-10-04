@@ -106,6 +106,10 @@ test('a timed-out user.signingKey read gives ready "unknown", not a throw', asyn
 test('a timed-out git --exec-path means the ssh-add check was not run, on every platform', async (t) => {
   const c = sshRepo(t);
   const marker = path.join(c.root, 'ssh-add-ran');
+  // review-GIT-07 finding Low-8: on win32 this case is a no-op proof. The listing shim's
+  // `#!/bin/sh` scripts are not found by shell-less spawn there (KD-R21), and an exec path
+  // that could not be read (`null`) already skips the check on Windows, so the assertions
+  // hold with or without the timed-out handling; POSIX CI carries the proof.
   const env = process.platform === 'win32' ? c.env : listingShim(c, marker);
   const scope = scriptedScope([4]);
   assert.deepEqual(await probe(c, scope, env), { enabled: true, format: 'ssh', ready: 'unknown' });

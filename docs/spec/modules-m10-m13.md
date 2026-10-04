@@ -162,16 +162,17 @@ and `ssh-add` is taken only from the directory of the `ssh-keygen` git runs. ope
 `"prompt"`, with the note "signing enabled; a passphrase prompt may appear" (a locked
 openpgp key is not detected; Out of Scope). x509 or custom `gpg.program` → `"unknown"`;
 custom `gpg.ssh.program` → `"prompt"`. Never pops up a prompt. The probe runs only git and
-`ssh-add`, each under a fixed timeout (a fixed 5-second `ssh-add -L` timeout); a timeout
-ends as `"unknown"` instead of stalling `plan`. It runs after clean-tree and `staged-hit`
+`ssh-add`, each under a fixed 5-second timeout (every git read and `ssh-add -L` alike); a
+timeout ends as `"unknown"` instead of stalling `plan`, and `plan` goes on. It runs after clean-tree and `staged-hit`
 detection (M18 `plan` step 6), so a clean tree on a locked key reports "nothing to commit".
 `probeSigning({ osHome, toplevel, execPath, env, now }) → { enabled, format?, ready }`
 (`execPath` asked of git when not given). The call's `deadline` reaches the probe as M2's
-deadline scope (`withDeadline`, set by `plan`), not as an argument: each git call takes the
-time left at its own start, `ssh-add` the smaller of its 5 s and that; a timed-out git read
-gives `"unknown"` (on `commit.gpgsign` or `gpg.*`, `{ enabled: true, ready: "unknown" }`),
-and a timed-out `git --exec-path` means the `ssh-add -L` check was not run. A read the
-deadline ended still ends `plan` as `timeout` (C:plan). The `signing-locked` refusal text and the openpgp note are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, C:plan, C:cli-and-exit-codes.
+deadline scope (`withDeadline`, set by `plan`), not as an argument: each probe process
+(git read or `ssh-add`) takes the smaller of its fixed 5 s and the time left at its own
+start; a timed-out git read gives `"unknown"` (on `commit.gpgsign` or `gpg.*`,
+`{ enabled: true, ready: "unknown" }`), and a timed-out `git --exec-path` means the
+`ssh-add -L` check was not run. Only a call the deadline itself ended (less than 5 s left)
+ends `plan` as `timeout` (C:plan); one the fixed 5 s ended leaves `plan` going on. The `signing-locked` refusal text and the openpgp note are the recorded-texts table of C:cli-and-exit-codes, verbatim. Sources: Q18, C:plan, C:cli-and-exit-codes.
 
 **M12 Run.** Everything under the run folder. Check `.commit-plan` (Run-folder directory
 check above); add the exclude line once (path from `gitPath`, `info/exclude`, which git

@@ -249,3 +249,25 @@ test('M15 deadline and cleanupDeadline are the call\'s own start plus 540 s and 
   assert.equal(runPolicy.deadline(1_000), 541_000, 'an earlier call\'s deadline is unchanged');
   assert.equal(runPolicy.cleanupDeadline(90_000), 670_000);
 });
+
+// review-GIT-07 finding Low-7 (GIT-07 AC5): each workflow takes the call's start from
+// `injected.callStarted` (read once at dispatch) and never re-reads it from the clock. The
+// injected clock sits exactly at the deadline measured from `callStarted`, so only a
+// workflow that honours `callStarted` ends `timeout`; one that re-read the clock as its start
+// would see a full budget and go on.
+for (const [name, argv, elapsedMs] of [
+  ['plan', {}, 540_000],
+  ['check', { plan: '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b' }, 540_000],
+  ['infer', {}, 540_000],
+  ['release', { plan: '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b' }, 45_000],
+]) {
+  test(`${name} takes its deadline from injected.callStarted, not a fresh clock read`, async (t) => {
+    const c = dirtyCase(t);
+    const start = Date.UTC(2026, 0, 1);
+    const injected = {
+      env: c.env, now: () => start + elapsedMs, claudeHome: c.claudeHome, cwd: c.repoDir, callStarted: start,
+    };
+    const result = await workflows[name](argv, injected, { cwd: c.repoDir });
+    assert.equal(result.failure?.kind, 'timeout', JSON.stringify(result));
+  });
+}

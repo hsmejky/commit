@@ -182,14 +182,14 @@ export function resolveMode(flags, indexState, killedLeftover) {
 }
 
 /** The budget of `releaseDeadline` (RUN-03, C:reply-and-handback): kept below the 60 s
- * `release` tool timeout (M17), since the release itself (lock removed, folder deleted) is
- * already complete by the time it could run out. */
+ * `release` tool timeout (M17), so a spent budget still ends the call with its own output. */
 export const RELEASE_DEADLINE_MS = 45_000;
 
 /**
  * M15 `releaseDeadline(callStarted)` (docs/spec/modules-m14-m19.md, C:reply-and-handback):
- * the instant past which `release`'s tree-state read for its reply is skipped rather than
- * spawned.
+ * the instant past which `release` ends `timeout` before the release itself, the run kept
+ * (KD-R78 decision), and past which its tree-state read for the reply is skipped rather
+ * than spawned.
  *
  * @param {number} callStarted the call's start (its first read of the injected clock).
  * @returns {number}

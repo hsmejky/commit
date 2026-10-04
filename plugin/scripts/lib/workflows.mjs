@@ -1008,6 +1008,8 @@ const INFER_STEPS = Object.freeze([probeRepo, inferRefusals, inferFromHistory]);
 // RUN-12: the text of `plan`'s `timeout` past its M15 `deadline` (C:cli-and-exit-codes
 // `timeout` row; no recorded text).
 const DEADLINE_TEXT = '/commit passed its 540-second deadline';
+// KD-R78 decision: the text of `release`'s `timeout` past its 45 s M15 `releaseDeadline`.
+const RELEASE_DEADLINE_TEXT = '/commit release passed its 45-second deadline';
 
 // RUN-12: `plan`'s deadline bounds its git calls (C:plan). A call that set `ctx.deadline`
 // (only `plan` so far) is checked before every step that makes git calls, and before step 7's
@@ -1016,10 +1018,31 @@ const DEADLINE_TEXT = '/commit passed its 540-second deadline';
 // sweep make no git call, so a clock past the deadline there no longer ends the run. Inside
 // a step, GIT-07 bounds each M2 call by `deadline - now()` at its own start (`plan` runs its
 // step table inside M2 `withDeadline`); a call that deadline ends or skips marks the scope
-// `expired`, and `plan` then ends `timed-out` the same way.
+// `expired`, and `plan` then ends `timed-out` the same way. `release`, `check` and `infer`
+// (`runStepsWithin`) also stop before the next step once their scope is `expired`, even with
+// the clock still short of the deadline, so `release` never removes a lock after a timed-out
+// git call (KD-R78 decision).
 function pastDeadline(ctx) {
-  if (ctx.deadline === undefined || ctx.injected.now() < ctx.deadline) return undefined;
-  return { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
+  if (ctx.deadline === undefined) return undefined;
+  if (ctx.injected.now() < ctx.deadline && ctx.scope?.expired !== true) return undefined;
+  return { refusal: { code: 'timed-out', message: ctx.deadlineText ?? DEADLINE_TEXT } };
+}
+
+// GIT-07: runs `steps` inside M2 `withDeadline` on `ctx.deadline`. A git call that deadline
+// ended or skipped (`scope.expired`) ends the call `timed-out`, whatever the steps returned
+// or threw (a step can throw on what a timed-out call left it, such as `release`'s KD-S78
+// throw on a probe that timed out); any other throw passes through.
+async function runStepsWithin(steps, ctx) {
+  const scope = { deadline: ctx.deadline, now: ctx.injected.now };
+  ctx.scope = scope;
+  let facts;
+  try {
+    facts = await withDeadline(scope, () => runSteps(steps, ctx));
+  } catch (err) {
+    if (!scope.expired) throw err;
+  }
+  if (scope.expired) return { refusal: { code: 'timed-out', message: ctx.deadlineText ?? DEADLINE_TEXT } };
+  return facts;
 }
 
 const GIT_FREE_STEPS = new Set([storeNotices, renderHunkIndex]);
@@ -1182,11 +1205,16 @@ export async function release(values, injected, { cwd }) {
   // The call's start (RUN-03), so `releaseDeadline` bounds the whole call, not just the part
   // after it. GIT-07: read once at dispatch (`cli.mjs`'s `main`) and threaded through
   // `injected.callStarted` (review-RUN-03 finding 3); read here only for a direct call that
-  // did not pass one. `release`'s own steps run outside any deadline scope (KD-R78); only
-  // the reply's tree-state read is bounded, by `releaseDeadline` (`finalReply`).
+  // did not pass one. `release`'s own steps (probe, M12 `releaseById`) run under the same
+  // 45 s `releaseDeadline` (user decision on KD-R78): past it, or after a git call it ended,
+  // `release` ends `timed-out` (exit 5 `timeout`) before `releaseById`, so the run folder
+  // and the lock are kept for the next `plan`'s takeover. The reply's tree-state read is
+  // bounded by the same deadline (`finalReply`).
   const callStarted = injected.callStarted ?? injected.now();
-  const ctx = { injected, cwd, values };
-  const facts = await runSteps(RELEASE_STEPS, ctx);
+  const ctx = {
+    injected, cwd, values, deadline: releaseDeadline(callStarted), deadlineText: RELEASE_DEADLINE_TEXT,
+  };
+  const facts = await runStepsWithin(RELEASE_STEPS, ctx);
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return { output: { reply: await finalReply(facts, ctx, { deadline: releaseDeadline(callStarted) }) } };
 }
@@ -1279,14 +1307,8 @@ export async function commit(values, injected, { cwd }) {
 export async function check(values, injected, { cwd }) {
   const callStarted = injected.callStarted ?? injected.now();
   const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
-  const scope = { deadline: ctx.deadline, now: injected.now };
   try {
-    let facts;
-    try {
-      facts = await withDeadline(scope, () => runSteps(CHECK_STEPS, ctx));
-    } finally {
-      if (scope.expired) facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
-    }
+    const facts = await runStepsWithin(CHECK_STEPS, ctx);
     if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
     if (facts.lint !== undefined) return await lintFailureOf(facts, ctx);
     return { output: facts };
@@ -1339,13 +1361,7 @@ async function lintFailureOf(facts, ctx) {
 export async function infer(values, injected, { cwd }) {
   const callStarted = injected.callStarted ?? injected.now();
   const ctx = { injected, cwd, values, deadline: deadline(callStarted) };
-  const scope = { deadline: ctx.deadline, now: injected.now };
-  let facts;
-  try {
-    facts = await withDeadline(scope, () => runSteps(INFER_STEPS, ctx));
-  } finally {
-    if (scope.expired) facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
-  }
+  const facts = await runStepsWithin(INFER_STEPS, ctx);
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return { output: facts };
 }

@@ -247,6 +247,12 @@
   0.1.0. Its text ("signing key locked — …"), the `head-moved` text and the openpgp note
   above are recorded verbatim, with Q20's merge-commit text and Q21's repo-state texts, in
   the recorded-texts table of [C:cli-and-exit-codes](../contracts/cli-and-exit-codes.md#recorded-texts), which tests assert.
+- **Amended.** By the user's decision on review-GIT-07 finding 1 (2026-10-04): the signing
+  probe's fixed timeout is 5 seconds for every probe process, its git reads (`git config`,
+  `git --exec-path`) as well as `ssh-add -L`, capped by the time left before the call's
+  deadline. A probe call the fixed 5 s ended gives `"unknown"` (a timed-out
+  `git --exec-path`: the `ssh-add -L` check was not run) and `plan` goes on; only a call the
+  deadline itself ended ends `plan` as `timeout`.
 - **Rejected.**
   - Rolling back committed groups (destroys work the user may want); retrying on a repo hook
     failure (the hook's rules are not the plugin's to guess); `-c commit.gpgsign=false`.

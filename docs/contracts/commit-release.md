@@ -211,7 +211,13 @@ Its private name is `lock.<fresh randomUUID>`, not `lock.<planId>` like `acquire
 own, so on a put-back miss the kept private copy is an orphan whose chain ends at once (its
 name resolves to no folder) — adoption finishes it with no facts to check, and the 24-hour
 sweep leaves it alone like any other renamed lock file, [contracts](run-folder.md) orphan
-paragraph. Outside a working tree (not a repo, a bare repository, or git timing out), what
-`release` does is not yet settled (KD-S78). Output `{ "version": 1, "ok": true, "reply": {
+paragraph. Outside a working tree (not a repo, a bare repository, or git timing out on its
+own fixed timeout), what `release` does is not yet settled (KD-S78). The whole call runs
+under M15 `releaseDeadline` (the call's start plus 45 s, below its 60 s tool timeout): every
+git call takes the time left before it, and once it is spent (before a step, or by a git
+call it ended) `release` ends with exit 5 `timeout` before removing anything, so the run
+folder and the lock are kept for the next `plan`'s takeover (user decision on KD-R78);
+past the release itself, only the reply's tree-state line is omitted
+([reply](reply-and-handback.md)). Output `{ "version": 1, "ok": true, "reply": {
 "status": "nothing", "text": "nothing committed", … } }`; after a no-op the `text` says
 "nothing to release: the run has already ended or was taken over".

@@ -147,3 +147,67 @@ test('infer 540 s into the call: exit 5 timeout, no step ran', async (t) => {
   assert.equal(result.json.error.kind, 'timeout', detail(result));
   assert.match(result.json.error.message, /540-second deadline/);
 });
+
+// KD-R78 (user decision): `release`'s own steps run under its 45 s `releaseDeadline`; spent
+// before `releaseById`, `release` ends exit 5 `timeout` and keeps the run folder and the
+// lock for the next `plan`'s takeover.
+test('release 45 s into the call: exit 5 timeout, the run folder and the lock kept', async (t) => {
+  const c = createCase(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  fs.mkdirSync(path.join(runDir, planId), { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId, created: '2026-01-01T00:00:00.000Z' }));
+  fs.writeFileSync(path.join(runDir, planId, 'state.json'), '{"version":1}\n');
+
+  const result = await runClocked(c, ['release', '--plan', planId], 45_000);
+
+  assert.equal(result.exitCode, 5, detail(result));
+  assert.equal(result.json.ok, false, detail(result));
+  assert.equal(result.json.error.kind, 'timeout', detail(result));
+  assert.equal(result.json.error.message, '/commit release passed its 45-second deadline');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), true, 'the lock is kept');
+  assert.equal(fs.existsSync(path.join(runDir, planId, 'state.json')), true, 'the run folder is kept');
+});
+
+// GIT-07 AC6 (user decision on review-GIT-07 finding 1): an M11 git read runs under its own
+// fixed 5 s timeout (`PROBE_CALL_TIMEOUT_MS`), so a wedged `commit.gpgsign` read ends as
+// `ready: "unknown"` with the deadline far off, and `plan` goes on to its hunk index instead
+// of ending `timeout`. A PATH git shim (POSIX only, KD-R21) stalls just that read.
+const SHIM_SKIP = process.platform === 'win32'
+  && 'PATH script shims are not found by shell-less spawn on Windows (KD-R21)';
+
+test('a probe git config read that stalls past its fixed 5 s: signing "unknown", plan goes on', { skip: SHIM_SKIP }, async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'one\n');
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.git(['config', 'commit.gpgsign', 'true']);
+  const beat = path.join(c.root, 'stall');
+  fs.writeFileSync(path.join(c.root, 'stall.js'), heartbeat(beat));
+  killLeftovers(t, () => [beat]);
+  const realGit = require('node:child_process')
+    .spawnSync('sh', ['-c', 'command -v git'], { env: c.env, encoding: 'utf8' }).stdout.trim();
+  assert.ok(realGit, 'no git on the host PATH');
+  const shimDir = path.join(c.root, 'shim-bin');
+  fs.mkdirSync(shimDir);
+  fs.writeFileSync(path.join(shimDir, 'git'), [
+    '#!/bin/sh',
+    'case "$*" in *commit.gpgsign*) exec \'' + process.execPath + '\' \'' + path.join(c.root, 'stall.js') + '\' ;; esac',
+    `exec '${realGit}' "$@"`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(shimDir, 'git'), 0o755);
+
+  const result = await runCommit(c, ['plan'], {
+    env: { PATH: [shimDir, c.env.PATH].join(path.delimiter) },
+    timeoutMs: 45_000,
+  });
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.ok, true, detail(result));
+  const planJson = path.join(runDirOf(c), result.json.planId, 'plan.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(planJson, 'utf8')).signing, { enabled: true, ready: 'unknown' });
+  assert.ok(fs.existsSync(`${beat}.pid`), 'the stalling read ran');
+  assert.equal(await stopped(beat), true, 'the stalled read is gone after the call');
+});

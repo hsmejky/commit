@@ -379,7 +379,9 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   run.
 
   The probe never pops up a prompt and runs only git and `ssh-add`, each under a fixed
-  timeout (a fixed 5-second `ssh-add -L` timeout); a timeout gives `"unknown"`. The private key file is `stat`ed before it is
+  5-second timeout (every git read and `ssh-add -L` alike, capped by the time left before
+  the deadline); a timeout gives `"unknown"` and `plan` goes on. Only a probe call the
+  deadline itself ended ends `plan` as `timeout`. The private key file is `stat`ed before it is
   opened: anything but a regular file, or one over a 64 KiB cap, gives `"unknown"` without
   being read, and only a bounded prefix within the cap is read for the ones that qualify,
   so a FIFO, a device file or an oversized file can never block or cost unbounded work.

@@ -82,7 +82,9 @@ fixed, delete it here; IDs are never reused.
   cannot reach without a wall-clock wait: a per-call budget scripted call by call, a spent
   budget never spawning, and the probe's `"unknown"` mapping of each timed-out read. Fix:
   either add an "in-process adapter" seam to testing-seams.md (a user decision), or rebuild
-  these cases at Seam 1. Slice: none yet (needs the user's seam decision).
+  these cases at Seam 1. Slice: none yet (needs the user's seam decision). Status:
+  accepted (user decision, 2026-10-04): the in-process cases stay, and the seam list in
+  testing-seams.md stays as confirmed.
 
 ## Coverage
 
@@ -250,14 +252,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   spawn options. Fix: none needed beyond GIT-08 landing as scheduled; this row documents the
   gap until then. Slice: GIT-08 (closes this row; also blocked on PRE-13, RUN-04, RUN-20,
   INT-02, so this window may be long).
-- **KD-R78.** `release`'s own steps (probe, M12 `releaseById`, sweep) run outside any deadline
-  scope (GIT-07): only its reply's tree-state read is bounded, by `releaseDeadline`. M2's
-  spec bounds every call of every subcommand by the call's `deadline`, but `release`'s
-  540 s `deadline` is far past its 60 s tool timeout (M17), so a scope on it would never
-  bind, and no contract says what a `release` past its deadline returns. Where:
-  `plugin/scripts/lib/workflows.mjs` `release`. Fix: a user decision on `release`'s budget
-  (`releaseDeadline` for the whole call, or `deadline`) and its outcome when spent, then
-  wrap `RELEASE_STEPS` in `withDeadline`. Slice: none yet.
 
 ## Bookkeeping
 
