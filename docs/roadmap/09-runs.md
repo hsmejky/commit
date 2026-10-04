@@ -509,8 +509,8 @@ builds, so INT-12 asserts that row instead of here.
 ## RUN-18: `check` routes on the confirmation
 
 **What to build:** M15 `afterCheck` → `commit` | `confirm` | `handedBack` |
-`releaseNothing`. `confirm: null` commits in the same process (the route INT-02's `check` takes
-unconditionally until this slice). `confirm` stores
+`releaseNothing`. `confirm: null` commits in the same process (the route INT-02's `check` always takes until
+this slice, for whole-file groups; a hunk-level group keeps the run instead, KD-R83). `confirm` stores
 `awaitingConfirm` and returns a `confirm` handback without committing. A `humanOnly`
 confirmation under `--no-user` hands back and releases the run. Zero groups releases. It
 builds the first `confirm` and `handedBack` handbacks; INT-09 adds the confirm block and the

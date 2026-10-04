@@ -166,6 +166,15 @@ Plan text that depends on a design fix; fix the design and the slice together.
   i-t-a paths still uncommitted when building `unstaged`, or accept and document the loss.
   Slices: EXE-11, CHG-20, RUN-23.
 
+- **KD-R83.** `commitCheckedGroups` (INT-02) skips `check`'s in-process commit, keeping the
+  run with the pre-INT-02 output, whenever any group has a hunk-level file entry
+  (`hunks !== null`): M16's (c) apply stages whole paths today, so routing a hunk-level group
+  through it would also commit the file's other hunks, `notIncluded` ones included
+  (review-INT-02 Medium-2). The gate has no owner to remove it once that is no longer true.
+  Where: `plugin/scripts/lib/workflows.mjs` `commitCheckedGroups`. Fix: once CHG-20's `stage`
+  commits only a group's own hunks, lift the gate as part of INT-18 (its criterion names
+  this). Slices: CHG-20, INT-18, RUN-18.
+
 - **KD-R79.** CHG-16 leaves a scan-skipped file's (`scan.skipped`, over 1 MB added) whole
   body in `hunks.txt` unscanned, interim: CHG-17's `size`/`lines` summary-only rule (256 KB /
   1000 lines, which always catches a file with over 1 MB added) removes the block. Matches

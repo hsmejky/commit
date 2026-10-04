@@ -952,6 +952,11 @@ async function commitGroups(ctx) {
     || outcome.refusal?.code === 'git-failed') {
     const released = releaseOpen(run);
     if (released.notice !== null) outcome.notices.push(released.notice);
+    // review-INT-02 Low-3: a `release()` that could not remove the lock (`busy`) reports
+    // `kept: true` with the folder left alone too (review-CHG-03b finding 2); `committedOutput`
+    // reads this to keep `reply.planId` instead of nulling it for a run C:run-folder still
+    // holds.
+    outcome.kept = released.kept;
   }
   return outcome;
 }
@@ -1005,19 +1010,30 @@ async function validateWorkerPlan(ctx) {
   }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
   ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
-  return undefined;
+  // Terminates `CHECK_STEPS` with a defined value (`runSteps` throws on falling off the end).
+  // `check()` runs `commitCheckedGroups` itself, in a separate, unscoped `runSteps` call
+  // (review-INT-02 Medium-1) rather than as a further step here.
+  return ctx.checked;
 }
 
 /**
- * `check` step 6 (INT-02): with no `computeConfirm` yet, `confirm` is always `null`, so
- * `check` goes straight on as `commit --all` in the same process (C:check): `commitGroups`,
- * the `commit` workflow's own step 4, under this call's lock, deadline and scope. The output
- * is `commit --all`'s with `groups` and `notIncluded` merged in, and `check`'s own notices
- * ahead of `commit`'s in `notices`. Zero groups end here with `check`'s own output and the
- * run kept: the release and the `nothing` reply are RUN-18's. So does a plan with any
- * hunk-level file entry (`hunks` not `null`): INT-02 is the whole-file path only, and M16's
- * (c) apply stages whole paths today, so a hunk-level group would also commit the file's
- * other hunks, `notIncluded` ones included.
+ * `check` step 6 (INT-02), run by `check()` itself after `runStepsWithin(CHECK_STEPS, ctx)`
+ * returns, through a second, plain `runSteps([commitCheckedGroups], ctx)` — the same way
+ * `commit()` runs `commitGroups` (`COMMIT_STEPS`'s own step 4), unscoped by any `withDeadline`
+ * (review-INT-02 Medium-1; see that call site's comment). With no `computeConfirm` yet,
+ * `confirm` is always `null`, so `check` goes straight on as `commit --all` in the same
+ * process (C:check): `commitGroups`, under this call's lock and `deadline`, but outside the
+ * GIT-07 deadline *scope* `CHECK_STEPS` ran in — `commitAll`'s own git calls (its cleanup and
+ * reporting ones included, once EXE-10/EXE-11/EXE-17 build them against `cleanupDeadline`)
+ * must not be capped a second time by the spent outer `deadline`, and a `scope.expired` past
+ * it must not blank out `commits`/`remaining`/`unstaged` the way `runStepsWithin` does for its
+ * own steps. The output is `commit --all`'s with `groups` and `notIncluded` merged in, and
+ * `check`'s own notices ahead of `commit`'s in `notices`. Zero groups end here with `check`'s
+ * own output and the run kept: the release and the `nothing` reply are RUN-18's. So does a
+ * plan with any hunk-level file entry (`hunks` not `null`): INT-02 is the whole-file path
+ * only, and M16's (c) apply stages whole paths today, so a hunk-level group would also commit
+ * the file's other hunks, `notIncluded` ones included (KD-R83: this gate has no owner yet to
+ * remove it).
  */
 async function commitCheckedGroups(ctx) {
   const { groups, notIncluded, notices } = ctx.checked;
@@ -1028,7 +1044,7 @@ async function commitCheckedGroups(ctx) {
 }
 
 const CHECK_STEPS = Object.freeze([
-  probeRepo, checkRefusals, openRun, checkAlreadyCommitted, validateWorkerPlan, commitCheckedGroups,
+  probeRepo, checkRefusals, openRun, checkAlreadyCommitted, validateWorkerPlan,
 ]);
 
 /**
@@ -1355,19 +1371,24 @@ function commitAllFailure(facts) {
 /**
  * Runs `check --plan <planId>` (C:check), the thin file-level form PLN-01 builds: M12 `open`
  * (the call's own lock check, as in `commit`), then `checkAlreadyCommitted` (RUN-19, M15
- * `checkGate`), then `validateWorkerPlan`. `run.close()` always runs for a call that reached
- * a successful `open`.
+ * `checkGate`), then `validateWorkerPlan` — `CHECK_STEPS`, run inside the GIT-07 deadline
+ * scope (`runStepsWithin`) — then `commitCheckedGroups` (INT-02's commit routing), run after
+ * that scope has already exited, through its own plain `runSteps` call (review-INT-02
+ * Medium-1; see `commitCheckedGroups`'s own comment). `run.close()` always runs for a call
+ * that reached a successful `open`.
  *
  * GIT-07 (C:cli-and-exit-codes exit 5 `timeout` row names `check`): `check` takes its own M15
  * `deadline` the same way `plan` does, so a step past it ends as `timed-out` (review-GIT-07
- * finding Medium-2) instead of running unbounded; today none of `check`'s own steps make an
- * M2 call past the exempt `probe()` (`validateWorkerPlan` is pure file/state work), so this
- * only guards future steps (M16 routing, M10 `treeState`) that will. A `timed-out` outcome
- * reached after `openRun` (`ctx.opened`) ends the run the same way every other exit 3-5
- * refusal does (C:cli-and-exit-codes "exits 3-5 end the run"; review-GIT-07 r2 finding
- * Low-2): `releaseOpen` runs before the reply, so the lock and the run folder go with it, and
- * the `finally`'s `close` below finds nothing of this call's own left to close, the same
- * pattern `commitGroups`' run-ending refusals and `plan --hunks`' `PLAN_HUNKS_RUN_ENDING` use.
+ * finding Medium-2) instead of running unbounded; today none of `CHECK_STEPS`' own steps make
+ * an M2 call past the exempt `probe()` (`validateWorkerPlan` is pure file/state work), so the
+ * scope only guards future steps (M10 `treeState`) that will — `commitCheckedGroups`'s own
+ * `commitAll` calls are deliberately outside it (Medium-1). A `timed-out` outcome reached
+ * after `openRun` (`ctx.opened`), from either part, ends the run the same way every other
+ * exit 3-5 refusal does (C:cli-and-exit-codes "exits 3-5 end the run"; review-GIT-07 r2
+ * finding Low-2): `releaseOpen` runs before the reply, so the lock and the run folder go with
+ * it, and the `finally`'s `close` below finds nothing of this call's own left to close, the
+ * same pattern `commitGroups`' run-ending refusals and `plan --hunks`' `PLAN_HUNKS_RUN_ENDING`
+ * use.
  *
  * @param {{ plan: string }} values the parsed and validated `check` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.
@@ -1381,36 +1402,55 @@ export async function check(values, injected, { cwd }) {
   const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
   try {
     const facts = await runStepsWithin(CHECK_STEPS, ctx);
-    if (facts.refusal !== undefined) {
-      // review-GIT-07 r2 finding Low-2: a `timed-out` outcome reached after `openRun` ends
-      // the run (lock and folder released) like every other exit 3-5 refusal; one before
-      // `openRun` ever ran has no run to release.
-      if (ctx.opened && facts.refusal.code === 'timed-out') {
-        releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
-      }
-      if (facts.commits !== undefined) return commitAllFailure(facts);
-      return refusalFailure(facts.refusal);
-    }
+    const validationEnding = checkRefusalEnding(facts, ctx, values);
+    if (validationEnding !== undefined) return validationEnding;
     if (facts.lint !== undefined) return await lintFailureOf(facts, ctx);
-    if (facts.commits === undefined) return { output: facts };
-    return { output: await committedOutput(facts, ctx, callStarted) };
+    // review-INT-02 Medium-1: a second, plain `runSteps` call, unscoped by `withDeadline` —
+    // `commitAll`'s own git calls (cleanup and reporting ones included, once
+    // EXE-10/EXE-11/EXE-17 build them against `cleanupDeadline`) are never capped a second
+    // time by the spent outer `deadline`, and a `timed-out` outcome here keeps whatever
+    // `commits`/`remaining`/`unstaged` `commitAll` actually reached instead of being blanked
+    // the way `runStepsWithin` blanks its own steps' outcome on `scope.expired`.
+    const checked = await runSteps([commitCheckedGroups], ctx);
+    const commitEnding = checkRefusalEnding(checked, ctx, values);
+    if (commitEnding !== undefined) return commitEnding;
+    if (checked.commits === undefined) return { output: checked };
+    return { output: await committedOutput(checked, ctx, callStarted) };
   } finally {
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
 }
 
+// Shared refusal handling for both `CHECK_STEPS`' own outcome and the separate
+// `commitCheckedGroups` call (review-INT-02 Medium-1): a `timed-out` refusal reached after
+// `openRun` ends the run (lock and folder released) like every other exit 3-5 refusal
+// (review-GIT-07 r2 finding Low-2); one before `openRun` ever ran has no run to release. One
+// carrying `commits` is `commitAll`'s own refusal (e.g. `head-moved`), reported through
+// `commitAllFailure`, not a bare refusal. Returns `undefined` when `facts` holds no refusal.
+function checkRefusalEnding(facts, ctx, values) {
+  if (facts.refusal === undefined) return undefined;
+  if (ctx.opened && facts.refusal.code === 'timed-out') {
+    releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
+  }
+  if (facts.commits !== undefined) return commitAllFailure(facts);
+  return refusalFailure(facts.refusal);
+}
+
 // INT-02 (C:check `confirm: null`, C:reply-and-handback): `check`'s in-process `commit --all`
 // that ended with no refusal. All groups committed → the `committed` reply (the run is
-// released by then, so `planId: null`); EXE-16's budget stop → the `continue` handback M16
-// `commitAll` built, moved from the output's interim top-level `handback` into
-// `reply.handback`, with the run kept under `planId`. Either way the merged `notices` land in
-// `reply.notices`. The tree-state read is a reporting call after the commits, so it runs
-// against `cleanupDeadline` (M15) rather than the spent `deadline`.
+// released by then, so `planId: null`, unless `release()` could not remove the lock —
+// `outcome.kept: true`, review-INT-02 Low-3 — in which case the folder is still C:run-folder's
+// for the next `plan`'s takeover, so `planId` names it instead); EXE-16's budget stop → the
+// `continue` handback M16 `commitAll` built, moved from the output's interim top-level
+// `handback` into `reply.handback`, with the run kept under `planId`. Either way the merged
+// `notices` land in `reply.notices`. The tree-state read is a reporting call after the
+// commits, so it runs against `cleanupDeadline` (M15) rather than the spent `deadline`
+// (review-INT-02 Low-1, documented at C:commit-release's `cleanupDeadline` paragraph).
 async function committedOutput(facts, ctx, callStarted) {
-  const { handback, ...output } = facts;
+  const { handback, kept, ...output } = facts;
   const { commits, notices } = output;
   const replyFacts = handback === undefined
-    ? { status: 'committed', commits, notices }
+    ? { status: 'committed', commits, notices, planId: kept === true ? ctx.values.plan : null }
     : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, notices, handback };
   return { ...output, reply: await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) }) };
 }

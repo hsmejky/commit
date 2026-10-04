@@ -25,9 +25,11 @@ const HEADER = 'feat: change both files';
 
 let BASE_CALLER_RULE;
 let scriptCall;
+let workflows;
 beforeEach(async () => {
   ({ BASE_CALLER_RULE } = await loadLib('reply'));
   scriptCall = await loadLib('script-call');
+  workflows = await loadLib('workflows');
 });
 
 function detail(result) {
@@ -226,4 +228,100 @@ test('a budget stop after group 1 under check: the continue handback moves into 
   assert.equal(json.reply.text.split('\n')[0], `${shas[0]} feat: change a`);
   assert.equal(fs.existsSync(runDir), true, 'the run is kept for the continue call');
   assert.equal(fs.existsSync(lockPath(c)), true, 'the lock is kept');
+});
+
+// review-INT-02 Medium-1: a clock whose value depends on who is asking. Every direct
+// `now()` read from workflows.mjs (the pre-step `pastDeadline` checks in both CHECK_STEPS and
+// the separate `commitCheckedGroups` call, plus M15 `nextStep`'s own read in
+// commit-executor.mjs) sees a value comfortably under `ctx.deadline`, so the call never ends
+// `timed-out` on that account. Only a `now()` read from inside process-adapter.mjs itself
+// (M2's own `callBudget`, which reads `scope.now()` to size an M2 call's timeout while a
+// GIT-07 deadline scope is active) sees `deadlineAt`, exactly `ctx.deadline`: were
+// `commitCheckedGroups` still one of `CHECK_STEPS` (the pre-fix shape), that reading would
+// spend the shared scope's budget on the group's own `git commit` call, set `scope.expired`,
+// and `runStepsWithin` would then discard whatever `commitAll` returned for a bare
+// `{ refusal: 'timed-out' }` with no `commits`. The fix runs `commitCheckedGroups` through a
+// second, unscoped `runSteps` call, so no GIT-07 scope is active once it runs: M2's
+// `callBudget` finds no scope to read `now()` from at all (`deadlineScope.getStore()` is
+// `undefined`), the call-stack-keyed reading never gates anything, and the single group
+// commits for real.
+function clockAtDeadlineInsideM2(callStarted, deadlineAt) {
+  return () => {
+    const caller = new Error().stack.split('\n')[2] ?? '';
+    return caller.includes('process-adapter.mjs') ? deadlineAt : callStarted;
+  };
+}
+
+test('review-INT-02 Medium-1: check commits a one-group plan even though a deadline-scoped M2 call would have spent the GIT-07 scope', async (t) => {
+  const c = twoModifiedFiles(t);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  writeWorkerPlan(runDir, [{ header: HEADER, files: ['a.txt', 'b.txt'] }]);
+
+  const callStarted = Date.UTC(2026, 0, 1);
+  const deadlineAt = callStarted + 540_000; // M15 DEADLINE_MS, matches run-policy.deadline().
+  const injected = {
+    env: c.env,
+    now: clockAtDeadlineInsideM2(callStarted, deadlineAt),
+    claudeHome: c.claudeHome,
+    cwd: c.repoDir,
+    callStarted,
+    osUser: null,
+    scriptPath: 'commit.cjs',
+  };
+
+  const result = await workflows.check({ plan: planId }, injected, { cwd: c.repoDir });
+
+  assert.equal(result.failure, undefined, JSON.stringify(result));
+  const shas = c.git(['rev-list', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'the one group is committed, not lost to a bare timeout');
+  const [sha] = shas;
+  assert.deepEqual(result.output.commits, [{ n: 1, sha, header: HEADER }]);
+  assert.equal(result.output.reply.status, 'committed');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is gone');
+  assert.equal(fs.existsSync(lockPath(c)), false, 'the lock is gone');
+});
+
+// review-INT-02 Low-3 (C:reply-and-handback: `planId` is `null` "when no run folder is
+// kept"): `releaseOpen`'s `busy` outcome (the lock rename hit a file-in-use error) keeps the
+// folder and reports `kept: true`; `committedOutput` must then keep `reply.planId` instead of
+// nulling it. Forced by injecting a `release` that always reports `kept: true`, standing in
+// for a locked-file rename failure (the real failure is OS/timing-dependent, Seam 1 cannot
+// force it directly).
+test('review-INT-02 Low-3: a committed reply keeps planId when release could not remove the lock', async (t) => {
+  const c = twoModifiedFiles(t);
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  writeWorkerPlan(runDir, [{ header: HEADER, files: ['a.txt', 'b.txt'] }]);
+
+  const callStarted = Date.UTC(2026, 0, 1);
+  const injected = {
+    env: c.env,
+    now: () => callStarted,
+    claudeHome: c.claudeHome,
+    cwd: c.repoDir,
+    callStarted,
+    osUser: null,
+    scriptPath: 'commit.cjs',
+  };
+  const lockFile = lockPath(c);
+  const original = fs.renameSync;
+  fs.renameSync = (src, dest) => {
+    if (src === lockFile) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    return original(src, dest);
+  };
+  let result;
+  try {
+    result = await workflows.check({ plan: planId }, injected, { cwd: c.repoDir });
+  } finally {
+    fs.renameSync = original;
+  }
+
+  assert.equal(result.failure, undefined, JSON.stringify(result));
+  assert.equal(result.output.reply.status, 'committed');
+  assert.equal(result.output.reply.planId, planId, 'planId is kept, not nulled, since the run folder is still held');
+  assert.equal(fs.existsSync(runDir), true, 'the run folder is still kept (release could not remove the lock)');
 });

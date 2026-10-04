@@ -326,6 +326,9 @@ exactly its planned hunks, identical hunks stay together.
 - [ ] The confirm block shows a hunk count per file for a hunk plan (story 91)
 - [ ] Identical hunks of one file split across groups → lint error (story 67)
 - [ ] The commits' blobs equal the working-tree bytes after the last group
+- [ ] The INT-02 whole-file gate in `commitCheckedGroups` (any group with a hunk-level file
+      entry keeps the run instead of committing, KD-R83) is removed: a hunk-level `check`
+      commits in-process the same way a whole-file one does
 
 
 ## INT-19: Large change sets stay fully planned
