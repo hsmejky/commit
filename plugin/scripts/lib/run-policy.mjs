@@ -17,8 +17,10 @@
 //
 // GIT-10 adds the `signing` row (Q18, C:plan step 6): M11's `ready: false` refuses
 // `signing-locked`, last, after every pre-folder row; `plan` calls it again at step 6, after
-// the clean-tree check, with the probe's result. RUN-15 asserts its place among the post-scan
-// rows (`staged-hit`, the clean tree).
+// the clean-tree check, with the probe's result. RUN-15 adds the clean-tree row itself
+// (`nothing`, never in `reword`) between `staged-hit` and `signing`, and its message, naming
+// the hidden-only, collapsed-only, `stagedExcluded`-only, non-UTF-8-only, `dirtySubmodules`-
+// only or `embeddedRepos`-only reasons M18 still found clean.
 //
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 //
@@ -107,7 +109,11 @@ function rewordRefusal(reword) {
  *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null,
  *   reword?: { unborn: boolean, merge: boolean, root: boolean, pushed: boolean } | null,
  *   signing?: { enabled: boolean, format?: string, ready?: boolean|string },
- *   stagedHit?: { hidden?: string[], hits?: string[], notUtf8?: string[] } | null }}
+ *   stagedHit?: { hidden?: string[], hits?: string[], notUtf8?: string[] } | null,
+ *   clean?: { hidden?: { count: number, sample: string[] }, collapsed?: Array<{ dir: string,
+ *     count: number }>, stagedExcluded?: Array<{ path: string, reason: 'hidden' } |
+ *     { dir: string, count: number, reason: 'collapsed' }>, dirtySubmodules?: string[],
+ *     notUtf8?: string[], embeddedRepos?: string[] } | null }}
  *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (CFG-05: an
  *   `{ error }` object only when a layer error was found, else the effective `{ values,
  *   sources }`, which never refuses; `null` or omitted is also "no error" for callers that
@@ -123,7 +129,13 @@ function rewordRefusal(reword) {
  *   which runs before the probe; only `ready: false` refuses), plus, at step 6 of `plan
  *   --staged` only, `stagedHit: { hidden, hits, notUtf8 }` (CHG-14: escaped paths of the
  *   hidden staged-new paths, the scan-hit paths and the staged non-UTF-8 paths), which
- *   refuses `staged-hit` ahead of the signing row.
+ *   refuses `staged-hit` ahead of the signing row. Plus, also at step 6, `clean` (RUN-15,
+ *   never in `reword`): the breakdown of whatever still counts as clean but is named for the
+ *   user (hidden-only, collapsed-only, `stagedExcluded`-only, non-UTF-8-only,
+ *   `dirtySubmodules`-only or `embeddedRepos`-only), present only when M18's own `clean`
+ *   check (M10 `inventory`'s `clean`, recomputed post-cap) found the tree clean; it then
+ *   returns `{ code: 'nothing', ... }` ahead of the signing row too, so a clean tree on a
+ *   locked key reports "nothing to commit", not `signing` (Q9, Q18).
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */
@@ -150,8 +162,50 @@ export function planRefusal(facts) {
     return { code: 'timed-out', message: 'git did not answer its start-up call in time' };
   }
   if (facts.stagedHit != null) return { code: 'staged-hit', message: stagedHitMessage(facts.stagedHit) };
+  // RUN-15 (Q9, Q16, Q11, C:plan step 6, stories 156, 219): the clean-tree check, after
+  // `staged-hit` and before the signing probe, so a clean tree on a locked key reports
+  // "nothing to commit" rather than `signing` (never checked in `reword`, M18's own job to
+  // skip). `facts.clean` carries the breakdown (already escaped by M18, as `stagedHit`
+  // is) of whatever counts as clean but is still named for the user.
+  if (facts.clean != null) return { code: 'nothing', message: cleanTreeMessage(facts.clean) };
   if (facts.signing?.ready === false) return { code: 'signing-locked', message: SIGNING_LOCKED_MESSAGE };
   return null;
+}
+
+// RUN-15 (C:plan `clean`, stories 156, 219): one part per reason that still applies on a
+// clean tree, joined with "; ", each naming its (already escaped) count and paths as M18's
+// `stagedHitMessage` does. `hidden.sample` is already capped at 5 by M10; a remainder is
+// named as "+N more". `undefined`/empty collections name nothing, so a truly empty tree
+// (nothing left at all) still reads as plain "nothing to commit".
+function cleanTreeMessage(clean) {
+  const { hidden, collapsed = [], stagedExcluded = [], dirtySubmodules = [], notUtf8 = [], embeddedRepos = [] } = clean;
+  const list = (paths) => paths.map((p) => `\`${p}\``).join(', ');
+  const parts = [];
+  if (hidden != null && hidden.count > 0) {
+    const shown = list(hidden.sample);
+    const extra = hidden.count - hidden.sample.length;
+    const noun = hidden.count === 1 ? 'hidden file' : 'hidden files';
+    parts.push(`${hidden.count} ${noun}: ${shown}${extra > 0 ? `, +${extra} more` : ''}`);
+  }
+  const collapsedDirs = collapsed.map(({ dir, count }) => `\`${dir}\` (${count} collapsed)`);
+  if (collapsedDirs.length > 0) parts.push(collapsedDirs.join(', '));
+  const stagedHidden = stagedExcluded.filter((e) => e.reason === 'hidden').map((e) => e.path);
+  if (stagedHidden.length > 0) parts.push(`staged but hidden: ${list(stagedHidden)}`);
+  const stagedCollapsed = stagedExcluded
+    .filter((e) => e.reason === 'collapsed')
+    .map(({ dir, count }) => `\`${dir}\` (${count} staged, collapsed)`);
+  if (stagedCollapsed.length > 0) parts.push(stagedCollapsed.join(', '));
+  if (dirtySubmodules.length > 0) {
+    parts.push(`${dirtySubmodules.length === 1 ? 'dirty submodule' : 'dirty submodules'}: ${list(dirtySubmodules)}`);
+  }
+  if (notUtf8.length > 0) {
+    parts.push(`${notUtf8.length === 1 ? 'path' : 'paths'} not UTF-8: ${list(notUtf8)}`);
+  }
+  if (embeddedRepos.length > 0) {
+    const noun = embeddedRepos.length === 1 ? 'embedded repository' : 'embedded repositories';
+    parts.push(`${noun}: ${list(embeddedRepos)}`);
+  }
+  return parts.length === 0 ? 'nothing to commit' : `nothing to commit: ${parts.join('; ')}`;
 }
 
 // CHG-14 (Q10, C:plan step 6, C:cli-and-exit-codes `staged-hit`): one part per reason that

@@ -14,7 +14,8 @@
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
 // state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
 // with the commits made before the budget stop; the not-included and `unstaged` lines, the
-// trailer line and the notices block in `text` are later slices'.
+// trailer line and the notices block in `text` are later slices'. RUN-15 adds `cleanText`,
+// M15 `planRefusal`'s own text for a clean tree that still has something to name.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -90,6 +91,7 @@ function modeChoiceQuestion({ staged, other }) {
  * Builds a reply from the facts of the output that ends the worker's part.
  *
  * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended',
+ *   cleanText?: string,
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'failed', message: string,
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
@@ -104,6 +106,10 @@ function modeChoiceQuestion({ staged, other }) {
  *   `continue` handback, passed through verbatim (INT-02).
  *   `errors` (a `lintFailed`, or a `failed` lint failure with `--no-user`): C:check's lint
  *   errors, listed in `text` after the first line. `planId`: the kept run's (default `null`).
+ *   `cleanText` (`nothing`/`clean` only, RUN-15): M15 `planRefusal`'s own text for the clean
+ *   tree, naming whatever still counts as clean (hidden-only, collapsed-only,
+ *   `stagedExcluded`-only, non-UTF-8-only, `dirtySubmodules`-only or `embeddedRepos`-only);
+ *   `undefined` falls back to the plain `NOTHING_LINES.clean` (a caller that never built it).
  *   `notices`: the call's notices (RUN-05: a provisional run
  *   folder `plan` could not remove); RPL-05 repeats them in `text`.
  *   `treeState`: `undefined` when it was never read (`release` past its 45 s
@@ -119,7 +125,10 @@ export function reply(facts) {
   const commits = facts.commits ?? [];
   let firstLines;
   let handback = null;
-  if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
+  if (facts.status === 'nothing' && facts.reason === 'clean' && facts.cleanText !== undefined) {
+    // RUN-15: M15 `planRefusal` already built this text (the clean-tree breakdown, named).
+    firstLines = [facts.cleanText];
+  } else if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
     firstLines = [NOTHING_LINES[facts.reason]];
   } else if (facts.status === 'failed') {
     firstLines = [facts.message];

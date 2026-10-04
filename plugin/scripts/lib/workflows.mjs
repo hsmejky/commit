@@ -560,20 +560,44 @@ async function scanDiff(ctx) {
 
 /**
  * Step 6: post-scan refusals. A clean tree ends the call with `nothing`, except in `reword`,
- * which takes the lock on a clean tree too (C:plan step 6, RUN-06). Then the signing probe
- * (GIT-10, M11), so a clean tree on a locked key reports "nothing to commit": M15
- * `planRefusal` refuses its `ready: false` (`signing-locked`); `"prompt"` queues the note.
+ * which takes the lock on a clean tree too (C:plan step 6, RUN-06). RUN-15: M15 `planRefusal`
+ * builds the `nothing` reply's text itself, from the breakdown `cleanBreakdownOf` below reads
+ * off `ctx.inventory` (post-cap, C:plan `clean`), so a clean tree still names its hidden-only,
+ * collapsed-only, `stagedExcluded`-only, non-UTF-8-only, `dirtySubmodules`-only or
+ * `embeddedRepos`-only reason, the same way `stagedHitOf` below already escapes paths for
+ * `planRefusal`'s `stagedHit` branch. Then the signing probe (GIT-10, M11), so a clean tree on
+ * a locked key reports "nothing to commit": M15 `planRefusal` refuses its `ready: false`
+ * (`signing-locked`); `"prompt"` queues the note.
  */
 async function postScanRefusals(ctx) {
   const stagedHit = stagedHitOf(ctx);
   if (stagedHit !== null) return { refusal: planRefusal({ ...ctx.probe, stagedHit }) };
-  if (ctx.inventory.clean === true && ctx.mode !== 'reword') return { status: 'nothing', reason: 'clean' };
+  if (ctx.inventory.clean === true && ctx.mode !== 'reword') {
+    const { message } = planRefusal({ ...ctx.probe, clean: cleanBreakdownOf(ctx.inventory) });
+    return { status: 'nothing', reason: 'clean', cleanText: message };
+  }
   const { env, now, osHome } = ctx.injected;
   ctx.signing = await probeSigning({ toplevel: ctx.toplevel, env, now, osHome });
   const refusal = planRefusal({ ...ctx.probe, signing: ctx.signing });
   if (refusal !== null) return { refusal };
   if (ctx.signing.ready === 'prompt') ctx.notices.push(SIGNING_PROMPT_NOTICE);
   return undefined;
+}
+
+// RUN-15 (C:plan `clean`, stories 156, 219): the clean-tree breakdown `planRefusal`'s `clean`
+// branch names, paths escaped as in the reply (M17 `escapePath`), like `stagedHitOf` below.
+// `notUtf8` is already in its `\xNN` form (M10 `escapeNonUtf8`), never re-escaped here.
+function cleanBreakdownOf(inventory) {
+  return {
+    hidden: { count: inventory.hidden.count, sample: inventory.hidden.sample.map(escapePath) },
+    collapsed: inventory.collapsed.map(({ dir, count }) => ({ dir: escapePath(dir), count })),
+    stagedExcluded: inventory.stagedExcluded.map((entry) => (entry.reason === 'hidden'
+      ? { path: escapePath(entry.path), reason: 'hidden' }
+      : { dir: escapePath(entry.dir), count: entry.count, reason: 'collapsed' })),
+    dirtySubmodules: inventory.dirtySubmodules.map(escapePath),
+    notUtf8: inventory.notUtf8,
+    embeddedRepos: inventory.embeddedRepos.map(escapePath),
+  };
 }
 
 // CHG-14 (Q10, Q11, C:plan step 6): `plan --staged` commits the index as-is, so it cannot
@@ -1035,7 +1059,14 @@ async function validateWorkerPlan(ctx) {
     return { lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape' };
   }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
-  ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
+  // INT-27 (Q23): the guard notice `plan` stored in `state.json`'s `notices` (GRD-17) carries
+  // into `check`'s own output, ahead of its own notices (the same order `plan` itself uses,
+  // step 8): a `check --plan` after a heartbeat-less `plan` must still tell the caller the
+  // guard did not run, since the worker only ever surfaces the final reply. Only the guard
+  // notice carries forward; `plan`'s other, plan-time-only notices (detached HEAD, the
+  // sweep's cleanup errors) are not repeated here.
+  const guardNotice = Array.isArray(state.notices) ? state.notices.filter((n) => n === GUARD_NOTICE) : [];
+  ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: [...guardNotice, ...validated.notices] };
   // Terminates `CHECK_STEPS` with a defined value (`runSteps` throws on falling off the end).
   // `check()` runs `commitCheckedGroups` itself, in a separate, unscoped `runSteps` call
   // (review-INT-02 Medium-1) rather than as a further step here.
