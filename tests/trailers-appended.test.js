@@ -100,12 +100,47 @@ test('AC4: attribution resolved to null (includeCoAuthoredBy: false) commits the
   assert.equal(rawMessage(c, sha), 'feat: change a\n');
 });
 
+test('AC5: a spoofed Co-Authored-By or Signed-off-by trailer in the worker plan fails lint, nothing committed', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const before = c.git(['rev-parse', 'HEAD']).trim();
+
+  writeWorkerPlan(
+    runDir,
+    'feat: change a',
+    'Co-Authored-By: Evil <noreply@anthropic.com>\nSigned-off-by: Evil <e@x>',
+    ['a.txt'],
+  );
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 2, detail(checked));
+  const reason = (token) =>
+    `\`${token}\` is not an allowed footer token. If this is body text, rephrase it or add a non-footer line to the paragraph.`;
+  assert.deepEqual(checked.json.errors, [
+    { group: 1, reason: reason('Co-Authored-By') },
+    { group: 1, reason: reason('Signed-off-by') },
+  ]);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), before);
+  assert.equal(c.git(['log', '--all', '--format=%B']).includes('Evil'), false);
+});
+
 test('AC6: the committed message has LF line ends and exactly one trailing LF', async (t) => {
   const { c, sha } = await planAndCheck(t, { body: 'Closes #12' });
 
   const raw = rawMessage(c, sha);
   assert.equal(raw.includes('\r'), false);
   assert.match(raw, /[^\n]\n$/, 'exactly one trailing LF, no trailing blank line');
+});
+
+test('AC6: a CRLF body normalises to LF before the trailer is appended, into the footer paragraph', async (t) => {
+  const { c, sha } = await planAndCheck(t, { body: 'Closes #12\r\n' });
+
+  assert.equal(rawMessage(c, sha), `feat: change a\n\nCloses #12\n${DEFAULT_TRAILER}\n`);
 });
 
 test('AC7: a user\'s attribution.commit edited between plan and check still commits the trailer plan stored', async (t) => {

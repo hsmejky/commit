@@ -263,33 +263,6 @@ export function parse(message) {
  *   reason; defaults to the identity function.
  * @returns {string[]}
  */
-/**
- * MSG-07 (C:message-grammar "Trailers"): appends `commit`'s own trailers to a lint-approved
- * `message`, in the fixed order new footers (already in `message`), carried trailers
- * (`carried`, MSG-08's reword carry-over; `[]` here), attribution (`attribution`, a trailer
- * string or `null` for "no trailer"). Goes into the message's own footer paragraph when it
- * ends in one (one more line of that paragraph, no blank line), otherwise starts a new last
- * paragraph (one blank line before it). `attribution` and each entry of `carried` may hold
- * several trailer-shaped lines (`\n`-joined); every line lands in the same paragraph, in
- * order. With nothing to append, `message` is returned unchanged, byte for byte.
- *
- * @param {string} message lint-approved, ending in exactly one trailing LF.
- * @param {{ carried?: string[], attribution?: string | null }} [options]
- * @returns {string}
- */
-export function appendTrailers(message, options = {}) {
-  const carried = options.carried ?? [];
-  const attribution = options.attribution ?? null;
-  const trailers = [...carried, ...(attribution === null ? [] : [attribution])];
-  if (trailers.length === 0) {
-    return message;
-  }
-  const base = message.endsWith('\n') ? message.slice(0, -1) : message;
-  const { footer } = parse(message);
-  const separator = footer !== null ? '\n' : '\n\n';
-  return `${base}${separator}${trailers.join('\n')}\n`;
-}
-
 export function lint(message, values, options = {}) {
   const quote = options.quote ?? ((fragment) => fragment);
   const { header, body, footer } = parse(message);
@@ -326,4 +299,31 @@ export function lint(message, values, options = {}) {
     reasons.push('body not allowed (body: forbidden)');
   }
   return reasons;
+}
+
+/**
+ * MSG-07 (C:message-grammar "Trailers"): appends `commit`'s own trailers to a lint-approved
+ * `message`, in the fixed order new footers (already in `message`), carried trailers
+ * (`carried`, MSG-08's reword carry-over; `[]` here), attribution (`attribution`, a trailer
+ * string or `null` for "no trailer"). Goes into the message's own footer paragraph when it
+ * ends in one (one more line of that paragraph, no blank line), otherwise starts a new last
+ * paragraph (one blank line before it). `attribution` and each entry of `carried` may hold
+ * several trailer-shaped lines (`\n`-joined); every line lands in the same paragraph, in
+ * order. With nothing to append, `message` is returned unchanged, byte for byte.
+ *
+ * @param {string} message lint-approved, ending in exactly one trailing LF.
+ * @param {{ carried?: string[], attribution?: string | null }} [options]
+ * @returns {string}
+ */
+export function appendTrailers(message, options = {}) {
+  const carried = options.carried ?? [];
+  const attribution = options.attribution ?? null;
+  const trailers = [...carried, ...(attribution === null ? [] : [attribution])];
+  if (trailers.length === 0) {
+    return message;
+  }
+  const base = message.endsWith('\n') ? message.slice(0, -1) : message;
+  const { footer } = parse(message);
+  const separator = footer !== null ? '\n' : '\n\n';
+  return `${base}${separator}${trailers.join('\n')}\n`;
 }

@@ -55,7 +55,7 @@ import {
   writeTree,
 } from './change-set.mjs';
 import { run } from './process-adapter.mjs';
-import { appendTrailers } from './message-grammar.mjs';
+import { appendTrailers, normaliseText } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
@@ -141,18 +141,24 @@ async function resetIndex({ toplevel, env, now }) {
 
 /**
  * The commit message as approved: the header, then a blank line and the body when there is
- * one, ending with exactly one LF (C:message-grammar), then MSG-07's `appendTrailers` with
- * the run's stored attribution trailer (`state.attribution.trailer`, resolved once by `plan`
- * and never re-resolved here, C:run-folder). Attribution applies always in the only modes
- * this executor reaches so far (`split`, `staged`, C:message-grammar "Trailers"); `reword`'s
- * conditional attribution and carried-trailer rules are MSG-08's.
+ * one, run through M6 `normaliseText` (MSG-06) so CRLF or lone-CR line ends written into the
+ * worker plan's `header`/`body` strings read as LF and the result ends with exactly one LF
+ * (C:message-grammar), then MSG-07's `appendTrailers` with the run's stored attribution
+ * trailer (`state.attribution.trailer`, resolved once by `plan` and never re-resolved here,
+ * C:run-folder). `normaliseText` cannot fail here (`ok: false`): `group.header`/`group.body`
+ * are the exact strings `plan`'s lint already ran through this same composition and
+ * `normaliseText` call (plan-validator.mjs `messageOf`), so a lone surrogate would already
+ * have failed lint before this group was ever stored. Attribution applies always in the only
+ * modes this executor reaches so far (`split`, `staged`, C:message-grammar "Trailers");
+ * `reword`'s conditional attribution and carried-trailer rules are MSG-08's.
  *
  * @param {{ header: string, body: string | null }} group
  * @param {{ attribution: { trailer: string | null, source: string } }} state
  * @returns {string}
  */
 function messageOf({ header, body }, state) {
-  const approved = body === null ? `${header}\n` : `${header}\n\n${body.replace(/\n+$/, '')}\n`;
+  const raw = body === null ? header : `${header}\n\n${body}`;
+  const approved = normaliseText(raw).text;
   return appendTrailers(approved, { attribution: state.attribution.trailer });
 }
 
