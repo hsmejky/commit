@@ -12,10 +12,16 @@ and of the real index.
   `lstat` of the old path finds the new path's file (same device and inode); empty on a
   case-sensitive filesystem with `core.ignorecase=false`. Read-only; one `git config` call,
   only when a pair exists (Q11, CHG-07 decision).
-- `snapshot({ mode, storedLists, tracked, indexPath })` → units. `tracked` (required, never
-  defaulted): the tracked paths whose units it must classify, queried by the `check-attr`
-  call below with the stored lists; `plan` passes the inventory's tracked paths, a later
-  subcommand the paths of the run's stored units (review-CHG-10 finding 2). Builds the temporary index by
+- `snapshot({ mode, storedLists, tracked, indexPath, head, root })` → units. `tracked`
+  (required in `split`, never defaulted): the tracked paths whose units it must classify,
+  queried by the `check-attr` call below with the stored lists; `plan` passes the
+  inventory's tracked paths, a later subcommand the paths of the run's stored units
+  (review-CHG-10 finding 2). In `reword` (CHG-15, `head` required, `root`: GIT-09
+  `rewordFacts.root`): skips this paragraph entirely (no temporary index, no `storedLists`/
+  `tracked`/`indexPath`, the real index never read or written); diffs HEAD against its
+  single parent, or the empty tree for a root commit (a shallow clone's boundary commit
+  tries its real parent first instead, KD-R68); still runs the same `check-attr` call below,
+  over a `--name-only` pass of the same two trees. Builds the temporary index by
   copying the real index and running `git reset -q -- .` on the copy (no ref written;
   empty when unborn), then
   `git add -N` of the stored lists, skipping missing paths (Q11 steps 1-3); paths with

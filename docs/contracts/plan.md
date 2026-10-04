@@ -276,7 +276,10 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   `unstagedLeft` counts them. A partially staged file appears in both lists. In `split`
   mode (`--split`, or an index that holds every change), `tracked` lists every change
   against HEAD, `preStaged` is informational and `unstagedLeft` is `null`; `null` in
-  `reword` too.
+  `reword` too. In `reword` (CHG-15), `tracked` is HEAD's own diff (its single parent, or
+  the empty tree for a root commit), not the working tree: `preStaged`, `clean` and
+  `untracked.candidates` keep describing the working tree (always `[]`/`true`/`[]` here,
+  since staged changes never reach these units, Q20).
 - `attribution`: `null` when no trailer is added. `source`: `managed`, `project-local`,
   `project`, `user`, `default`.
 - `config.sources` values: `default`, `user`, `repo`, and `repo@HEAD` (only `scanIgnore`,

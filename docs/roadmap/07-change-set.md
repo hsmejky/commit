@@ -375,11 +375,16 @@ empty tree for a root commit, with the same pinned options; IDs are never staged
 
 **Sources:** Q20, C:plan-hunks (what is diffed), story 177, M10.
 
-KD-R68: on a shallow clone, a boundary (graft) commit's `rewordFacts.root` reads `true` even
-when the commit is not a real root, because `rev-list --parents` prints no parents for it;
-this slice would then diff it against the empty tree instead of its real (unfetched) parent.
-Almost always masked by `pushed`. Check `git rev-parse --is-shallow-repository` here, or
-accept and document.
+KD-R68 (resolved, review-CHG-15 finding 1): on a shallow clone, a boundary (graft) commit's
+`rewordFacts.root` reads `true` even when the commit is not a real root, because `rev-list
+--parents` prints no parents for it; this slice would then diff it against the empty tree
+instead of its real (unfetched) parent. Fixed fail-safe in `snapshot`'s reword branch
+(`plugin/scripts/lib/change-set.mjs`): on a shallow repo (`git rev-parse
+--is-shallow-repository`), a root commit is diffed against `<head>^` instead of the empty
+tree, which resolves to the real parent when one is actually present locally, and otherwise
+fails the diff loudly (git's own "bad revision" error) rather than silently hunk-indexing the
+whole repository. Residual, accepted limitation: a true one-commit shallow clone's root
+reword now also fails instead of succeeding (rare; almost always masked by `pushed` anyway).
 
 - [ ] Seam 1: `plan --reword` → hunk index of HEAD's own changes; on a root commit, against the empty tree.
 - [ ] Seam 1: staged changes present during `plan --reword` → not in the units; real index untouched.

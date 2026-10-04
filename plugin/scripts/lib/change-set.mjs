@@ -494,15 +494,20 @@ function byteOrder(a, b) {
  * second pinned call, the same with `--no-renames` (still no pathspecs), gives each such
  * new path its `A` unit, so the UTF-8 side is not lost (review-CHG-12 finding 1).
  *
- * @param {{ mode: 'split', storedLists: { candidates: string[],
- *   stagedNew: Array<{ path: string, ignored: boolean }> }, tracked: string[],
- *   indexPath: string, unborn: boolean, toplevel: string, env: object,
- *   now?: () => number }} options
- *   `storedLists`: the inventory's lists as stored in `state.json`; `tracked` (required,
- *   CHG-10): the tracked paths whose units this snapshot must classify, which go to the
- *   `check-attr` call with the stored lists (`plan`: the inventory's `tracked`; a later
+ * @param {{ mode: 'split' | 'reword', storedLists?: { candidates: string[],
+ *   stagedNew: Array<{ path: string, ignored: boolean }> }, tracked?: string[],
+ *   indexPath?: string, unborn?: boolean, head?: string, root?: boolean, toplevel: string,
+ *   env: object, now?: () => number }} options
+ *   `storedLists`: the inventory's lists as stored in `state.json`; `tracked` (required in
+ *   `split`, CHG-10): the tracked paths whose units this snapshot must classify, which go to
+ *   the `check-attr` call with the stored lists (`plan`: the inventory's `tracked`; a later
  *   subcommand: the paths of the run's stored units, the only ones it must reproduce);
- *   `indexPath`: the run folder's `git-index`.
+ *   `indexPath`: the run folder's `git-index`. `head` (required in `reword`, CHG-15): HEAD's
+ *   own SHA; `root` (`reword` only): GIT-09's `rewordFacts.root`. `reword` needs none of
+ *   `storedLists`/`tracked`/`indexPath`/`unborn`, builds no temporary index, and never reads
+ *   or writes the real index; it still runs `check-attr` over a `--name-only` pass of the
+ *   same two trees (steps 1-3 below are `split`-only, the `check-attr` and patch passes run
+ *   either way).
  * @returns {Promise<Array<{ path: string, oldPath: string|null, status: 'M'|'A'|'R',
  *   kind: 'text', hash: string, generated: boolean, binary: boolean, added: number, deleted: number, range: string,
  *   body: Buffer }>>} sorted by path in UTF-8 byte order (the user's `diff.orderFile` never
@@ -528,10 +533,30 @@ export async function snapshot({
     // parent, or the empty tree for a root commit (`root`, GIT-09's `rewordFacts.root`,
     // read by the caller before the lock). No temporary index: the real index is never
     // read or written here, so staged changes never reach these units (unlike `split`,
-    // `reword`'s IDs are never staged, Q20).
+    // `reword`'s IDs are never staged, Q20). `tracked`/`indexPath` are `split`-only and
+    // unused here.
     if (typeof head !== 'string') throw new Error('snapshot in reword mode needs head (CHG-15)');
-    const from = root ? await emptyTreeId({ toplevel, env, now }) : `${head}^`;
-    return diffUnits([from, head], { toplevel, env, now });
+    const opts = { toplevel, env, now };
+    // KD-R68 (fail-safe, chosen over "accept and document"): a shallow clone's boundary
+    // (graft) commit also reads `root: true` (GIT-09 `rewordFacts`: `rev-list --parents`
+    // prints no parents for it), even though it is not really a root commit. Diffing it
+    // against the empty tree would then silently hunk-index the whole repository. On a
+    // shallow clone, `<head>^` is tried instead of the empty tree: it resolves to the real
+    // parent when one is actually present locally, and otherwise fails the diff below with
+    // git's own "bad revision" error (the existing plain-Error path, never a silently wrong
+    // tree). Residual, documented limitation: a true one-commit shallow clone's root reword
+    // now also fails loudly instead of succeeding (rare; almost always masked by `pushed`).
+    const shallow = root && await isShallowRepository(opts);
+    const from = root && !shallow ? await emptyTreeId(opts) : `${head}^`;
+    // CHG-10's check-attr pass applies to every hunk index (C:plan-hunks), including
+    // reword's: a name-only pass over the same two trees gives the paths; no temporary
+    // index exists in reword, so this reads the real index/worktree attributes, read-only.
+    const names = nulFields(await gitOk(
+      ['diff', '--no-ext-diff', '--no-renames', '--name-only', '-z', from, head],
+      { cwd: toplevel, env, now, readOnly: true },
+    )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
+    const attrs = await checkAttrs(names, opts);
+    return diffUnits([from, head], opts, attrs);
   }
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14)`);
   // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
@@ -811,8 +836,12 @@ export function matchIds(idMap, units) {
 
 // One `git <args> -z --raw -p` diff with the pinned options, streamed through the patch-pass
 // reader into units (the same pass `snapshot` runs). `attrs`: the `check-attr` results, so
-// a filtered path is the same `filtered` unit `snapshot` made (CHG-10).
-async function diffUnits(args, { toplevel, env, now }, attrs = new Map()) {
+// a filtered path is the same `filtered` unit `snapshot` made (CHG-10). review-CHG-15
+// finding 5: shares `pinnedDiff`'s rediff step (a rename from a non-UTF-8 old path to a
+// UTF-8 new path is dropped by `-M` and needs a `--no-renames` re-diff) with every caller,
+// not only `split`'s own `pinnedDiff`; `allowRediff: false` stops the one re-diff pass from
+// re-triggering itself.
+async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true } = {}) {
   const reader = createDiffReader(attrs);
   const result = await run(
     'git',
@@ -820,7 +849,12 @@ async function diffUnits(args, { toplevel, env, now }, attrs = new Map()) {
     { cwd: toplevel, env, now, readOnly: true, onStdout: (chunk) => reader.push(chunk) },
   );
   if (result.code !== 0) throw new Error(`git diff failed (${result.code}): ${result.stderr}`);
-  return reader.end();
+  const units = reader.end();
+  if (!allowRediff || reader.rediff.length === 0) return units;
+  const rediff = new Set(reader.rediff);
+  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false }))
+    .filter((unit) => rediff.has(unit.path));
+  return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
 }
 
 function sameHashes(units, hashes) {
@@ -903,6 +937,13 @@ async function emptyTreeId({ toplevel, env, now }) {
   return (await gitOk(['hash-object', '-t', 'tree', '--stdin'], {
     cwd: toplevel, env, now, readOnly: true, input: Buffer.alloc(0),
   })).toString('utf8').trim();
+}
+
+// `git rev-parse --is-shallow-repository` (KD-R68, CHG-15): true in a shallow or partial
+// clone, where a boundary (graft) commit can misread as a root commit.
+async function isShallowRepository({ toplevel, env, now }) {
+  const out = await gitOk(['rev-parse', '--is-shallow-repository'], { cwd: toplevel, env, now, readOnly: true });
+  return out.toString('utf8').trim() === 'true';
 }
 
 /**

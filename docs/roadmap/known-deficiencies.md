@@ -131,13 +131,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   misleading. Where: `plugin/scripts/lib/process-adapter.mjs` `toplevel`,
   `plugin/scripts/lib/repo-probe.mjs` `classifyNoWorkTree`. Fix: detect the refusal (e.g. from
   stderr text) and give it its own state or message. Slice: GIT-03 or GIT-04.
-- **KD-R68.** GIT-09's `rewordFacts` reports `root: true` for a shallow clone's boundary
-  (graft) commit, because `rev-list --parents` prints no parents for it, even though that
-  commit is not actually a root commit. CHG-15 would then diff it against the empty tree
-  instead of its real (unfetched) parent. Where: `plugin/scripts/lib/repo-probe.mjs`
-  `rewordFacts` (review-GIT-09 finding 7). In practice almost always masked by `pushed`,
-  since such a HEAD is usually on a remote-tracking ref too. Fix: CHG-15 checks `git
-  rev-parse --is-shallow-repository`, or this is accepted and documented. Slice: CHG-15.
 - **KD-R69.** EXE-11, CHG-20, RUN-23: now that CHG-05 leaves intent-to-add paths out of
   `preStaged`, a split run's `git reset -q -- .` drops a user's i-t-a mark on any path it
   resets; the worktree content stays, only the mark is lost. If that path's group never
