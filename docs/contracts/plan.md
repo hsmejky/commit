@@ -67,7 +67,7 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    and exit codes](cli-and-exit-codes.md)). `staged` and `reword` are never refused for
    it, and a mixed index gets its `modeChoice` first.
 5. Caps (`split` only), snapshot (a failed `git add` → exit 4 `git`, code `git-failed`, delete the
-   folder), unit IDs, scan.
+   folder), unit IDs, scan (not in `reword`, Q20).
 6. Post-scan refusals: `staged-hit`; a clean tree → `nothing`, except with `--reword`, which
    takes the lock on a clean tree too (Q9, Q20); then the signing probe
    (`ready: false` → `signing`). Each deletes the folder, so a clean tree on a locked key

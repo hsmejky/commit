@@ -402,13 +402,13 @@ map (`scanned` per unit) stored, per entry `scan` in the hunk index, `body: "non
 
 **Blocked by:** CHG-05, CHG-06, SCN-13b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, C:plan (`scan`), C:plan-hunks (scan map, body), stories 65, 89, M8, M10, M13.
 
-- [ ] Seam 1: a hunk with a `github-token` → entry `scan: ["github-token"]`, `body: "none"`, the token absent from `hunks.txt` and stdout; the file's other hunks keep their blocks.
-- [ ] Seam 1: a new file with a hit loses its whole body. (The 1 MB skip rule is SCN-13's; SCN-15 asserts `scan.skipped` at Seam 1.)
-- [ ] Seam 1: a tracked file with two hunks of about 600 KB added each (over 1 MB together,
+- [x] Seam 1: a hunk with a `github-token` → entry `scan: ["github-token"]`, `body: "none"`, the token absent from `hunks.txt` and stdout; the file's other hunks keep their blocks.
+- [x] Seam 1: a new file with a hit loses its whole body. (The 1 MB skip rule is SCN-13's; SCN-15 asserts `scan.skipped` at Seam 1.)
+- [x] Seam 1: a tracked file with two hunks of about 600 KB added each (over 1 MB together,
       each under it) → M10 stops collecting at the limit and flags both units
       `overScanLimit: true`; `scan.skipped` has one entry for the path with the reason
       `"added content over 1 MB"`, and a token in either hunk gives no hit. A file whose added
