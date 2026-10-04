@@ -22,6 +22,10 @@ const { loadLib } = require('./helpers/load-lib.js');
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HEADER = 'feat: change both files';
+// INT-27 (Q23): no heartbeat is set up in this case's Claude home, so `plan`'s guard notice
+// carries into the final `committed` reply.
+const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
+  + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
 
 let BASE_CALLER_RULE;
 let scriptCall;
@@ -145,7 +149,7 @@ test('check --plan with a one-group plan commits it in the same process: the pla
   assert.equal(json.groups[0].header, HEADER);
   assert.deepEqual(json.groups[0].files.map((file) => file.path), ['a.txt', 'b.txt']);
   assert.deepEqual(json.notIncluded, []);
-  assert.deepEqual(json.notices, []);
+  assert.deepEqual(json.notices, [GUARD_NOTICE]);
   assert.deepEqual(json.commits, [{ n: 1, sha, header: HEADER }]);
   assert.equal(json.failed, null);
   assert.deepEqual(json.remaining, []);
@@ -161,7 +165,7 @@ test('check --plan with a one-group plan commits it in the same process: the pla
     planId: null,
     text: `${sha} ${HEADER}\nworking tree clean`,
     commits: [{ n: 1, sha, header: HEADER }],
-    notices: [],
+    notices: [GUARD_NOTICE],
     callerRule: BASE_CALLER_RULE,
     handback: null,
   });
@@ -210,12 +214,12 @@ test('a budget stop after group 1 under check: the continue handback moves into 
   assert.equal(json.handback, undefined, 'the interim top-level handback is gone');
   assert.equal(json.groups.length, 2);
   assert.deepEqual(json.notIncluded, []);
-  assert.deepEqual(json.notices, []);
+  assert.deepEqual(json.notices, [GUARD_NOTICE]);
 
   assert.equal(json.reply.status, 'handback');
   assert.equal(json.reply.planId, planId);
   assert.deepEqual(json.reply.commits, json.commits);
-  assert.deepEqual(json.reply.notices, []);
+  assert.deepEqual(json.reply.notices, [GUARD_NOTICE]);
   assert.equal(json.reply.callerRule, BASE_CALLER_RULE);
   assert.deepEqual(json.reply.handback, {
     kind: 'continue',

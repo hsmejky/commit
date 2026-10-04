@@ -125,10 +125,12 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   .gitignore then hides it from `git status`" when the stored staged-new list marks it
   `ignored`. The reset happens in `commit`, so the note describes what `yes` will do;
   with zero groups, or after `no`, the index is untouched and there is no note.
-- `notices`: pattern hits that were left out (Q10), and (`split`, at least one group) one
-  line per `indexOnly` path: "x: the staged version differs from your working tree;
-  committing this plan discards it — recover with `git cat-file -p <blob>`" (Q11). Never a
-  confirmation trigger.
+- `notices`: the guard notice (Q23) carried forward from `plan`'s stored `state.json`
+  `notices`, when present, ahead of `check`'s own; pattern hits that were left out (Q10),
+  and (`split`, at least one group) one line per `indexOnly` path: "x: the staged version
+  differs from your working tree; committing this plan discards it — recover with
+  `git cat-file -p <blob>`" (Q11). `plan`'s other, plan-time-only notices (the detached-HEAD
+  warning, the sweep's cleanup errors) are not repeated. Never a confirmation trigger.
 - `confirm`: `null` when no [trigger](confirmation-triggers.md) for the mode applies. In an
   interactive run marked `resumed` (a respawn after `edit`, `one` or `retry`), `confirm` is
   always set, with the reason `edited plan`, in every mode: the user was reviewing this run
