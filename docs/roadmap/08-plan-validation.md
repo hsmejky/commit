@@ -147,12 +147,12 @@ for `check` to store with `committed: false`.
 
 - [ ] Seam 1: attribution resolved to `null` → stored flag `false` on every group.
 - [ ] Seam 1: `reword` with `source: "user"` and an old message without the trailer → `false`; with the worker's own message → `true`.
-- [ ] Seam 1: the stored group message is the M6-normalised text (CRLF and trailing blank lines normalised), for both `header` and `body` (review-MSG-06 finding 3: today `commit-executor.mjs` commits the raw, un-normalised `stored` strings with `--cleanup=verbatim`, so a CRLF or all-blank-body message that `check` now approves does not commit the way lint approved it).
+- [ ] Seam 1: the stored group message is the M6-normalised text (CRLF and trailing blank lines normalised), for both `header` and `body` (MSG-07, f8e0e06, landed the commit side: `commit-executor.mjs`'s own `messageOf` now runs `normaliseText` at commit time, so a CRLF or all-blank-body message commits the way lint approved it regardless of this criterion. This criterion is narrower now: it is only about `check` storing the already-normalised text in `state.json` groups, which it does not yet do — `stored` at plan-validator.mjs still pushes the raw `group.header`/`group.body`).
 - [ ] Seam 1: a CRLF body's scan span (and the redacted lint quote) index the *stored* normalised message, not just the lint-time one (review-MSG-06 finding 5's "against stored" half — the lint-time half is covered by a `tests/plan-message-lint.test.js` test already; this one needs the stored text normalised first, i.e. is blocked on the previous criterion).
-- [ ] Seam 1: a worker plan whose message has CRLF line ends commits with LF only (review-MSG-06 finding 3).
+- [x] Seam 1: a worker plan whose message has CRLF line ends commits with LF only (MSG-07, f8e0e06: `commit-executor.mjs`'s `messageOf` normalises CRLF before commit; `trailers-appended.test.js`'s AC6 CRLF case asserts the trailer lands in the `Closes #12` paragraph).
 
 **Note (review-MSG-06 finding 10, optional):** `plan-validator.mjs`'s `messageOf` and
-`commit-executor.mjs`'s own trailing-LF trim duplicate part of M6's normalisation. Consider
-having the executor commit `stored`'s already-normalised text (once the criterion above
-lands) instead of re-trimming it itself, now that M6 exports a reusable string-level step
-(`normaliseText`, `message-grammar.mjs`) for exactly this.
+`commit-executor.mjs`'s own `messageOf` (MSG-07, f8e0e06) each run M6's `normaliseText` over
+the same header+body composition, independently. Consider having the executor commit
+`stored`'s already-normalised text (once the criterion above lands) instead of
+re-normalising it itself, now that both sides compose the message the same way.

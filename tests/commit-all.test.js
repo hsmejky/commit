@@ -221,7 +221,8 @@ function readTraceLines(tracePath) {
 
 test('commit.cleanup=strip and core.commentChar=; in repo config do not strip a stored # or ; line, trailing whitespace or a blank-line run, and the call is exactly commit --cleanup=verbatim -F - with no message text in argv', async (t) => {
   const body = '# not a comment to verbatim\n\n; not a comment either\n'
-    + 'Second paragraph with trailing spaces.   \n\n\n\n   ';
+    + 'Second paragraph with trailing spaces.   \n\n\n\n   \n'
+    + 'Third paragraph.';
   const { c, planId } = await groupedRunWithMessage(t, {
     body,
     configure: (repo) => {
