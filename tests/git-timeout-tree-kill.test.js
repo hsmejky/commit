@@ -141,6 +141,42 @@ test(
   },
 );
 
+// review-GIT-07 finding Low-5: every heartbeat process used above dies on SIGTERM, so a
+// regression that dropped the SIGKILL escalation (process-adapter.mjs `killTree`) would still
+// pass every case above. POSIX only: a grandchild that ignores SIGTERM forces the SIGKILL
+// step, so the call must take at least `KILL_GRACE_MS`.
+test(
+  'past its timeout, a grandchild that ignores SIGTERM is still killed, after the SIGKILL grace',
+  { skip: process.platform === 'win32', timeout: 30_000 },
+  async (t) => {
+    let root = null;
+    killLeftovers(t, () => (root === null ? [] : [path.join(root, 'child'), path.join(root, 'grandchild')]));
+    const c = createCase(t, { repo: false });
+    root = c.root;
+    const child = path.join(root, 'child');
+    const grandchild = path.join(root, 'grandchild');
+    const script = "const { spawn } = require('child_process');"
+      + `spawn(process.execPath, ['-e', ${JSON.stringify(`process.on('SIGTERM', () => {});${heartbeat(grandchild)}`)}],`
+      + " { cwd: require('os').tmpdir(), stdio: 'ignore' });"
+      + heartbeat(child);
+
+    const startedAt = Date.now();
+    const result = await processAdapter.run(process.execPath, ['-e', script], {
+      cwd: os.tmpdir(), env: c.env, timeoutMs: 500,
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.timedOut, true);
+    assert.equal(await stopped(child), true, 'the child was not killed');
+    assert.equal(await stopped(grandchild), true, 'the SIGTERM-ignoring grandchild survived SIGKILL');
+    assert.ok(
+      elapsedMs >= processAdapter.KILL_GRACE_MS,
+      `a SIGTERM-ignoring member must force the SIGKILL step: expected at least `
+        + `${processAdapter.KILL_GRACE_MS}ms, took ${elapsedMs}ms`,
+    );
+  },
+);
+
 test(
   'an onStdout that throws kills the whole tree: the grandchild stops too',
   { timeout: 60_000 },

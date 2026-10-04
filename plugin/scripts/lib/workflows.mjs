@@ -1139,6 +1139,12 @@ export async function commit(values, injected, { cwd }) {
  * (the call's own lock check, as in `commit`), then `validateWorkerPlan`. `run.close()`
  * always runs for a call that reached a successful `open`.
  *
+ * GIT-07 (C:cli-and-exit-codes exit 5 `timeout` row names `check`): `check` takes its own M15
+ * `deadline` the same way `plan` does, so a step past it ends as `timed-out` (review-GIT-07
+ * finding Medium-2) instead of running unbounded; today none of `check`'s own steps make an
+ * M2 call past the exempt `probe()` (`validateWorkerPlan` is pure file/state work), so this
+ * only guards future steps (M16 routing, M10 `treeState`) that will.
+ *
  * @param {{ plan: string }} values the parsed and validated `check` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.
  * @param {{ cwd: string }} call the call's working directory.
@@ -1147,9 +1153,16 @@ export async function commit(values, injected, { cwd }) {
  *   `reply` when it ends the worker's retries (RUN-16).
  */
 export async function check(values, injected, { cwd }) {
-  const ctx = { injected, cwd, values, opened: false };
+  const callStarted = injected.callStarted ?? injected.now();
+  const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
+  const scope = { deadline: ctx.deadline, now: injected.now };
   try {
-    const facts = await runSteps(CHECK_STEPS, ctx);
+    let facts;
+    try {
+      facts = await withDeadline(scope, () => runSteps(CHECK_STEPS, ctx));
+    } finally {
+      if (scope.expired) facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
+    }
     if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
     if (facts.lint !== undefined) return await lintFailureOf(facts, ctx);
     return { output: facts };
@@ -1186,14 +1199,26 @@ async function lintFailureOf(facts, ctx) {
 /**
  * Runs `infer` (C:infer): read-only, takes no lock and creates no run folder.
  *
+ * GIT-07 (C:cli-and-exit-codes exit 5 `timeout` row names `infer`): `inferFromHistory`'s M3
+ * history read is a real M2 call with no cap of its own, so `infer` takes its own M15
+ * `deadline` the same way `plan` does (review-GIT-07 finding Medium-2), ending `timed-out`
+ * instead of running unbounded.
+ *
  * @param {object} values the parsed `infer` flags (none).
  * @param {object} injected the injected environment.
  * @param {{ cwd: string }} call the call's working directory.
  * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
  */
 export async function infer(values, injected, { cwd }) {
-  const ctx = { injected, cwd, values };
-  const facts = await runSteps(INFER_STEPS, ctx);
+  const callStarted = injected.callStarted ?? injected.now();
+  const ctx = { injected, cwd, values, deadline: deadline(callStarted) };
+  const scope = { deadline: ctx.deadline, now: injected.now };
+  let facts;
+  try {
+    facts = await withDeadline(scope, () => runSteps(INFER_STEPS, ctx));
+  } finally {
+    if (scope.expired) facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
+  }
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
   return { output: facts };
 }

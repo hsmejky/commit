@@ -140,7 +140,11 @@ async function killTree(child, env) {
     return;
   }
   if (!signalGroup(child.pid, 'SIGTERM') || await groupGone(child.pid)) return;
-  if (signalGroup(child.pid, 'SIGKILL')) await groupGone(child.pid);
+  // review-GIT-07 finding Low-4: `groupGone`'s `kill(-pgid, 0)` still succeeds while any
+  // group member is an unreaped zombie (an orphan reparented to an init that does not reap),
+  // which would poll the full grace on every such kill. `SIGKILL` cannot be caught or
+  // ignored, so once it is delivered the direct child's own `exit` is enough to settle on.
+  if (signalGroup(child.pid, 'SIGKILL')) await exitedWithin(child, KILL_GRACE_MS);
 }
 
 /**

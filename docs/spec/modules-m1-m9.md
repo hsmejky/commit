@@ -40,7 +40,9 @@ its own cap) ends or skips sets the scope's `expired`, so the caller can tell a 
 timeout from any other git failure. The same tree kill (one `KILL_GRACE_MS` of 5 s before the
 forced kill, and again before the call settles anyway) ends an `onStdout` consumer that
 throws. On POSIX each child leads its own process group (`detached`) so the group signal
-reaches its children. Every call is
+reaches its children; until GIT-08's `killActive` lands, this also means a session-level
+signal (Esc, Ctrl-C, session end) does not reach the child on its own, and the child has no
+controlling terminal for a prompt such as an `ssh-keygen` passphrase (KD-R81). Every call is
 asynchronous except `toplevel` and `gitVersion`, which use `spawnSync` under a fixed short
 timeout and decode their output as UTF-8 text (KD-S77: a non-UTF-8 toplevel path is mangled
 to U+FFFD, which then fails as a later call's `cwd`). `run`'s `stdout` is returned as a

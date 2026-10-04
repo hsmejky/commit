@@ -72,13 +72,20 @@ test('a clean filter that never ends, 535 s into plan: exit 5 timeout, no run, t
   killLeftovers(t, () => [beat]);
   c.writeFile('a.txt', 'one\nmore\n');
 
+  const startedAt = Date.now();
   const result = await runClocked(c, ['plan'], 535_000);
+  const elapsedMs = Date.now() - startedAt;
 
   assert.equal(result.exitCode, 5, detail(result));
   assert.equal(result.json.ok, false, detail(result));
   assert.equal(result.json.error.kind, 'timeout', detail(result));
   assert.match(result.json.error.message, /540-second deadline/);
   assert.equal(result.json.reply.status, 'failed');
+  // review-GIT-07 finding Low-6: AC1's "within about 10 s" (5 s of remaining budget plus
+  // KILL_GRACE_MS) was unasserted; the 45 s harness timeout alone would not catch a kill that
+  // regressed to polling a full extra grace (Low-4) or longer. 30 s keeps headroom over the
+  // ~17 s measured here for a slower host while still well short of the 45 s harness cap.
+  assert.ok(elapsedMs < 30_000, `expected well under 30 s, took ${elapsedMs}ms`);
   assert.ok(fs.existsSync(`${beat}.pid`), 'the filter ran');
   const runDir = runDirOf(c);
   const left = fs.existsSync(runDir) ? fs.readdirSync(runDir) : [];
@@ -111,4 +118,32 @@ test('release 42 s into the call with a stalling git status: the tree-state read
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), false, 'the release itself completed');
   assert.ok(fs.existsSync(`${beat}.pid`), 'the tree-state read ran the stalling filter');
   assert.equal(await stopped(beat), true, 'the filter process is gone after the call');
+});
+
+// review-GIT-07 finding Medium-2: `check` and `infer` took no deadline at all, so a stalled
+// git call inside them never ended. Both now take their own M15 `deadline` the way `plan`
+// does; stepping the clock to exactly 540 s elapsed trips the coarse pre-step check
+// (`pastDeadline`) before the first step runs, so no filter is needed to prove the bound.
+test('check 540 s into the call: exit 5 timeout, no step ran', async (t) => {
+  const c = createCase(t);
+  const planId = crypto.randomUUID();
+
+  const result = await runClocked(c, ['check', '--plan', planId], 540_000);
+
+  assert.equal(result.exitCode, 5, detail(result));
+  assert.equal(result.json.ok, false, detail(result));
+  assert.equal(result.json.error.kind, 'timeout', detail(result));
+  assert.match(result.json.error.message, /540-second deadline/);
+  assert.equal(fs.existsSync(runDirOf(c)), false, 'no run folder was ever opened');
+});
+
+test('infer 540 s into the call: exit 5 timeout, no step ran', async (t) => {
+  const c = createCase(t);
+
+  const result = await runClocked(c, ['infer'], 540_000);
+
+  assert.equal(result.exitCode, 5, detail(result));
+  assert.equal(result.json.ok, false, detail(result));
+  assert.equal(result.json.error.kind, 'timeout', detail(result));
+  assert.match(result.json.error.message, /540-second deadline/);
 });

@@ -236,6 +236,18 @@ Plan text that depends on a design fix; fix the design and the slice together.
   Where: `plugin/scripts/lib/commit-executor.mjs` `budgetStop`. Fix: none needed in EXE-16;
   RPL-08's `env` refusal runs before any group starts, so this stops being reachable once
   RPL-08 lands. Slice: RPL-08 (closes this row).
+- **KD-R81.** POSIX detached session: `process-adapter.mjs`'s `run` spawns every git child with
+  `detached: process.platform !== 'win32'`, which calls `setsid`, so each child gets a new
+  session and process group. Until GIT-08's `killActive` lands, two effects stay unwritten: (a)
+  a group-wide `SIGINT`/`SIGTERM` from Esc, Ctrl-C or session end no longer reaches git,
+  `git commit` and its hooks included (no timeout of their own until EXE-17), the exact risk
+  architectural-decisions.md:26-29 and Q9:219 guard against — so an Esc can orphan a
+  `git commit` that later lands a commit; (b) the children lose the controlling terminal, so
+  anything that prompts on `/dev/tty` (an `ssh-keygen` passphrase, an interactive hook) fails
+  (review-GIT-07 finding Medium-3). Where: `plugin/scripts/lib/process-adapter.mjs` `run`'s
+  spawn options. Fix: none needed beyond GIT-08 landing as scheduled; this row documents the
+  gap until then. Slice: GIT-08 (closes this row; also blocked on PRE-13, RUN-04, RUN-20,
+  INT-02, so this window may be long).
 - **KD-R78.** `release`'s own steps (probe, M12 `releaseById`, sweep) run outside any deadline
   scope (GIT-07): only its reply's tree-state read is bounded, by `releaseDeadline`. M2's
   spec bounds every call of every subcommand by the call's `deadline`, but `release`'s
