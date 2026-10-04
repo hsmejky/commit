@@ -6,6 +6,7 @@
 // group, the run's lock and its folder all stay.
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { test, beforeEach } = require('node:test');
@@ -126,4 +127,31 @@ test('after a budget stop that committed group 1, check --plan <id> refuses alre
   assert.equal(fs.existsSync(lockPath), true, "the run's own lock is kept");
   assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
   assert.equal(fs.existsSync(callLockPath), false, 'call.lock is absent after the call ends');
+});
+
+// review-RUN-19 Testing finding 4: pins `checkGate`'s place after `openRun` (M12 `open`,
+// RUN-04) in CHECK_STEPS -- a live foreign `call.lock` still refuses `busy` even with a
+// committed group already present, so a gate moved ahead of `open` would not pass this.
+test('check --plan <id> with a committed group 1 but a live foreign call.lock → busy, not already-committed', async (t) => {
+  const { c, planId, runDir } = await twoGroupRun(t);
+  const callLockPath = path.join(runDir, 'call.lock');
+
+  const stopped = await runCommitAtElapsed(c, planId, 61_000);
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.equal(readState(runDir).groups[0].committed, true);
+  assert.equal(readState(runDir).groups[1].committed, false);
+
+  fs.writeFileSync(callLockPath, JSON.stringify({ pid: process.pid, host: os.hostname() }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 6, detail(checked));
+  assert.equal(checked.json.ok, false, detail(checked));
+  assert.equal(checked.json.error.kind, 'lock', detail(checked));
+  assert.match(checked.json.error.message, /another \/commit call on this run is still running/);
+
+  const stateAfter = readState(runDir);
+  assert.equal(stateAfter.groups[0].committed, true);
+  assert.equal(stateAfter.groups[1].committed, false);
+  assert.equal(fs.existsSync(callLockPath), true, 'the live call.lock is kept, not replaced');
 });

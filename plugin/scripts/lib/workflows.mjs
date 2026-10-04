@@ -1354,8 +1354,9 @@ function commitAllFailure(facts) {
 
 /**
  * Runs `check --plan <planId>` (C:check), the thin file-level form PLN-01 builds: M12 `open`
- * (the call's own lock check, as in `commit`), then `validateWorkerPlan`. `run.close()`
- * always runs for a call that reached a successful `open`.
+ * (the call's own lock check, as in `commit`), then `checkAlreadyCommitted` (RUN-19, M15
+ * `checkGate`), then `validateWorkerPlan`. `run.close()` always runs for a call that reached
+ * a successful `open`.
  *
  * GIT-07 (C:cli-and-exit-codes exit 5 `timeout` row names `check`): `check` takes its own M15
  * `deadline` the same way `plan` does, so a step past it ends as `timed-out` (review-GIT-07

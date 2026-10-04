@@ -25,6 +25,8 @@
 // RUN-13 adds `resolveMode`, without a takeover (`killedLeftover: false`; RUN-24 adds it).
 //
 // RUN-16 adds `onLintFailure`, the lint-failure counter that ends the worker's retries.
+//
+// RUN-19 adds `checkGate`, the already-committed-group refusal `check` runs after `open`.
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });

@@ -543,11 +543,11 @@ at the budget with `continue`), `check` refuses with `already-committed` (exit 1
 
 **Blocked by:** RUN-16, EXE-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, M15 `checkGate`, domain-code table.
 
-- [ ] Seam 1: after a budget stop that committed group 1, `check --plan <id>` → exit 1
+- [x] Seam 1: after a budget stop that committed group 1, `check --plan <id>` → exit 1
       `usage` (`already-committed`), and the committed group stays.
 
 
@@ -842,4 +842,7 @@ CHG-03b built, so every subcommand's `internal` ending goes through it.
       `--no-user` lint ending (RUN-16) has the same gap: a busy lock rename there keeps the
       run but its reply says `failed` with `planId: null`, with only the notice telling the
       caller the run is kept (review-RUN-16 finding Low-2); assert that `releaseOpen` result
-      reaches the reply there too.
+      reaches the reply there too. `check`'s own `timed-out` ending (reached after `open`,
+      GIT-07) has the same gap: it calls `releaseOpen` and discards `{ notice, kept }`
+      (`refusalFailure` has no `reply`/`notices` channel yet), so name it here too
+      (review-RUN-19 r1 GIT-07 Nit).
