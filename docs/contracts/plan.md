@@ -278,8 +278,8 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   against HEAD, `preStaged` is informational and `unstagedLeft` is `null`; `null` in
   `reword` too. In `reword` (CHG-15), `tracked` is HEAD's own diff (its single parent, or
   the empty tree for a root commit), not the working tree: `preStaged`, `clean` and
-  `untracked.candidates` keep describing the working tree (always `[]`/`true`/`[]` here,
-  since staged changes never reach these units, Q20).
+  `untracked.candidates` keep describing the working tree exactly as in other modes;
+  `reword` commits none of it (`--amend --only`, Q20).
 - `attribution`: `null` when no trailer is added. `source`: `managed`, `project-local`,
   `project`, `user`, `default`.
 - `config.sources` values: `default`, `user`, `repo`, and `repo@HEAD` (only `scanIgnore`,

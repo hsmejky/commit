@@ -19,8 +19,9 @@ and of the real index.
   (review-CHG-10 finding 2). In `reword` (CHG-15, `head` required, `root`: GIT-09
   `rewordFacts.root`): skips this paragraph entirely (no temporary index, no `storedLists`/
   `tracked`/`indexPath`, the real index never read or written); diffs HEAD against its
-  single parent, or the empty tree for a root commit (a shallow clone's boundary commit
-  tries its real parent first instead, KD-R68); still runs the same `check-attr` call below,
+  single parent, or the empty tree for a root commit (a shallow repo's boundary commit diffs
+  against `<head>^` instead, which always fails loudly rather than resolving, KD-R68); still
+  runs the same `check-attr` call below,
   over a `--name-only` pass of the same two trees. Builds the temporary index by
   copying the real index and running `git reset -q -- .` on the copy (no ref written;
   empty when unborn), then

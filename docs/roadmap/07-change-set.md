@@ -381,10 +381,13 @@ KD-R68 (resolved, review-CHG-15 finding 1): on a shallow clone, a boundary (graf
 instead of its real (unfetched) parent. Fixed fail-safe in `snapshot`'s reword branch
 (`plugin/scripts/lib/change-set.mjs`): on a shallow repo (`git rev-parse
 --is-shallow-repository`), a root commit is diffed against `<head>^` instead of the empty
-tree, which resolves to the real parent when one is actually present locally, and otherwise
-fails the diff loudly (git's own "bad revision" error) rather than silently hunk-indexing the
-whole repository. Residual, accepted limitation: a true one-commit shallow clone's root
-reword now also fails instead of succeeding (rare; almost always masked by `pushed` anyway).
+tree. `<head>^` never actually resolves there: the graft makes git read a shallow boundary
+commit as parentless regardless of whether the real parent object happens to be present
+locally, so the diff always fails loudly (git's own "bad revision" error) rather than
+silently hunk-indexing the whole repository. Residual, accepted limitation (KD-R68): a root
+reword on any shallow repo now fails instead of succeeding — not only a true one-commit
+clone, almost always masked by `pushed`, but also an unpushed orphan-branch commit in a
+shallow clone (e.g. CI).
 
 - [ ] Seam 1: `plan --reword` → hunk index of HEAD's own changes; on a root commit, against the empty tree.
 - [ ] Seam 1: staged changes present during `plan --reword` → not in the units; real index untouched.

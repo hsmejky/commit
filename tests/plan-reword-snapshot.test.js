@@ -8,6 +8,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -27,6 +28,19 @@ function seed(c, files) {
   for (const [name, text] of Object.entries(files)) c.writeFile(name, text);
   c.git(['add', '--', ...Object.keys(files)]);
   c.git(['commit', '-q', '-m', 'seed']);
+}
+
+// Plumbing git calls (mktree/hash-object/commit-tree) build commits straight from objects,
+// bypassing the index and the working tree entirely, so a non-UTF-8 path can be used in a
+// tree without ever being written to disk as a file name (review-CHG-15-r2 finding 4,
+// probe 1: this runs on every OS, unlike a real non-UTF-8 name on disk, which NTFS cannot
+// hold).
+function plumb(c, args, input) {
+  const result = spawnSync('git', args, { cwd: c.repoDir, env: c.env, input });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(' ')} failed (${result.status}): ${result.stderr.toString('latin1')}`);
+  }
+  return result.stdout.toString('utf8').trim();
 }
 
 test('plan --reword on a non-root HEAD gives a hunk index of HEAD\'s own change against its parent', async (t) => {
@@ -144,6 +158,54 @@ test('plan --reword on a HEAD that renamed a file gives one R unit with oldPath'
 // review-CHG-15 finding 1 (KD-R68): a shallow clone's boundary commit misreads as root
 // (GIT-09 `rewordFacts`). The fail-safe tries the real parent instead of the empty tree, so
 // it fails loudly (git's own "bad revision") instead of silently hunk-indexing the whole repo.
+// review-CHG-15-r2 finding 4: diffUnits' rediff pass (CHG-12 finding 1) must also run for
+// reword, not only split's own pinnedDiff, so a rename from a non-UTF-8 old path to a UTF-8
+// new path is not dropped here either. Built with plumbing (no real file on disk).
+test('plan --reword rediffs a rename from a non-UTF-8 old path into a plain A unit', async (t) => {
+  const c = createCase(t);
+  const blob = plumb(c, ['hash-object', '-w', '--stdin'], Buffer.from('one\ntwo\nthree\nfour\n'));
+  const oldPath = Buffer.from('t\xe9.txt', 'latin1');
+  const tree1 = plumb(
+    c, ['mktree', '-z'],
+    Buffer.concat([Buffer.from(`100644 blob ${blob}\t`), oldPath, Buffer.from('\0')]),
+  );
+  const commit1 = plumb(c, ['commit-tree', tree1, '-m', 'seed']);
+  const tree2 = plumb(c, ['mktree', '-z'], Buffer.from(`100644 blob ${blob}\tte.txt\0`));
+  const commit2 = plumb(c, ['commit-tree', tree2, '-p', commit1, '-m', 'fix: reword me']);
+
+  const units = await changeSet.snapshot({
+    mode: 'reword', head: commit2, root: false, toplevel: c.repoDir, env: c.env,
+  });
+
+  assert.deepEqual(
+    units.map((u) => [u.path, u.oldPath, u.status, u.added, u.deleted]),
+    [['te.txt', null, 'A', 4, 0]],
+  );
+});
+
+// review-CHG-15-r2 finding 4: the reword check-attr pre-pass must also classify a
+// filter-attributed file as kind: "filtered" (change-set-filtered.test.js's split
+// coverage), not only the linguist-generated case above.
+test('plan --reword runs check-attr: a filter-attributed file opens as one filtered unit', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'filter.redact.clean', 'sed s/secret/REDACTED/']);
+  seed(c, { '.gitattributes': 'x.dat filter=redact\n', 'x.dat': 'one\ntwo\n' });
+  c.writeFile('x.dat', 'one\nsecret\n');
+  c.git(['commit', '-q', '-am', 'fix: reword me']);
+  const head = c.git(['rev-parse', 'HEAD']).trim();
+
+  const units = await changeSet.snapshot({
+    mode: 'reword', head, root: false, toplevel: c.repoDir, env: c.env,
+  });
+
+  const unit = units.find((u) => u.path === 'x.dat');
+  assert.ok(unit, 'x.dat unit not found');
+  assert.equal(unit.kind, 'filtered');
+  const bodyText = unit.body.toString('utf8');
+  assert.match(bodyText, /REDACTED/);
+  assert.doesNotMatch(bodyText, /secret/);
+});
+
 test('plan --reword on a shallow clone\'s boundary commit fails loudly instead of using the empty tree (KD-R68)', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });

@@ -127,6 +127,22 @@ Plan text that depends on a design fix; fix the design and the slice together.
   misleading. Where: `plugin/scripts/lib/process-adapter.mjs` `toplevel`,
   `plugin/scripts/lib/repo-probe.mjs` `classifyNoWorkTree`. Fix: detect the refusal (e.g. from
   stderr text) and give it its own state or message. Slice: GIT-03 or GIT-04.
+- **KD-R68.** A reword of a root commit in a shallow repo fails instead of succeeding.
+  `rewordFacts.root` reads `true` for a shallow clone's boundary (graft) commit the same as
+  a real root, because `rev-list --parents` prints no parents for either; diffing the graft
+  against the empty tree would then silently hunk-index the whole repository, so `snapshot`'s
+  `reword` branch diffs a shallow repo's root commit against `<head>^` instead (the fail-safe
+  chosen over "accept and document", review-CHG-15 finding 1). `<head>^` never actually
+  resolves there: the graft makes git read the boundary commit as parentless regardless of
+  whether the real parent object happens to be present locally, so the diff always fails,
+  surfacing to the caller as `internal` (`git diff failed (128)...`), a bug-shaped message for
+  a legitimate repo state. Almost always masked by `pushed`, since such a HEAD is usually on a
+  remote-tracking ref too, but an unpushed orphan-branch commit in a shallow clone (e.g. CI)
+  still hits it. Where: `plugin/scripts/lib/change-set.mjs` `snapshot`'s `reword` branch. Fix:
+  tell graft from true root precisely (`git cat-file commit <head>` prints the real `parent`
+  lines regardless of the graft); refuse with a dedicated message when one is present,
+  otherwise use the empty tree. Slice: CHG-15 (done; this is accepted interim behavior until
+  revisited).
 - **KD-R69.** EXE-11, CHG-20, RUN-23: now that CHG-05 leaves intent-to-add paths out of
   `preStaged`, a split run's `git reset -q -- .` drops a user's i-t-a mark on any path it
   resets; the worktree content stays, only the mark is lost. If that path's group never

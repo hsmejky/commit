@@ -541,11 +541,13 @@ export async function snapshot({
     // (graft) commit also reads `root: true` (GIT-09 `rewordFacts`: `rev-list --parents`
     // prints no parents for it), even though it is not really a root commit. Diffing it
     // against the empty tree would then silently hunk-index the whole repository. On a
-    // shallow clone, `<head>^` is tried instead of the empty tree: it resolves to the real
-    // parent when one is actually present locally, and otherwise fails the diff below with
-    // git's own "bad revision" error (the existing plain-Error path, never a silently wrong
-    // tree). Residual, documented limitation: a true one-commit shallow clone's root reword
-    // now also fails loudly instead of succeeding (rare; almost always masked by `pushed`).
+    // shallow repo, `<head>^` is tried instead of the empty tree: the graft makes git read
+    // a shallow boundary commit as parentless regardless of whether the real parent object
+    // happens to be present locally, so `<head>^` always fails the diff below with git's own
+    // "bad revision" error (the existing plain-Error path, never a silently wrong tree).
+    // Residual, accepted limitation (KD-R68): a root reword on any shallow repo now fails
+    // loudly instead of succeeding, not only a true one-commit clone (almost always masked
+    // by `pushed`, but an unpushed orphan-branch commit in a shallow clone, e.g. CI, is not).
     const shallow = root && await isShallowRepository(opts);
     const from = root && !shallow ? await emptyTreeId(opts) : `${head}^`;
     // CHG-10's check-attr pass applies to every hunk index (C:plan-hunks), including
@@ -939,8 +941,9 @@ async function emptyTreeId({ toplevel, env, now }) {
   })).toString('utf8').trim();
 }
 
-// `git rev-parse --is-shallow-repository` (KD-R68, CHG-15): true in a shallow or partial
-// clone, where a boundary (graft) commit can misread as a root commit.
+// `git rev-parse --is-shallow-repository` (KD-R68, CHG-15): true in a shallow clone, where
+// a boundary (graft) commit can misread as a root commit; false in a partial (filtered)
+// clone, which is not shallow.
 async function isShallowRepository({ toplevel, env, now }) {
   const out = await gitOk(['rev-parse', '--is-shallow-repository'], { cwd: toplevel, env, now, readOnly: true });
   return out.toString('utf8').trim() === 'true';
