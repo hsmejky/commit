@@ -222,6 +222,26 @@ test('plan --reword on a merge commit exits 6 state with the recorded text and n
   assertNoRunFolder(c);
 });
 
+// RUN-14 (docs/roadmap/09-runs.md): with `--reword`, the merge-commit `state` row comes
+// before `pushed` (M15 `planRefusal`), so a merge commit that is also pushed is refused for
+// being a merge commit, not for being pushed.
+test('plan --reword on a pushed merge commit exits 6 state with the merge text, not pushed', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.git(['checkout', '-q', '-b', 'side']);
+  commitEmpty(c, 'feat: side work');
+  c.git(['checkout', '-q', 'main']);
+  commitEmpty(c, 'feat: main work');
+  c.git(['merge', '-q', '--no-ff', '-m', 'Merge branch side', 'side']);
+  c.git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assertRefusal(result, 'state');
+  assert.equal(result.json.error.message, MERGE_TEXT);
+  assertNoRunFolder(c);
+});
+
 test('plan --reword on a HEAD a remote-tracking ref points at exits 6 pushed with no run folder', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });

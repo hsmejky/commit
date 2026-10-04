@@ -403,6 +403,35 @@ test('plan with unparseable repo config JSON exits 1 config, naming the repo lay
   assert.equal(reply.text, `${result.json.error.message}\n1 file left: .claude/commit.json`);
 });
 
+// RUN-14 (docs/roadmap/09-runs.md, C:plan step 2): pre-folder refusals come in order `env`,
+// `config`, `state`; an invalid config and an in-progress operation together still refuse
+// `config`, not `state` (GIT-03's in-progress case, tests/git-in-progress.test.js).
+function commitFile(c, content, subject) {
+  c.writeFile('file.txt', content);
+  c.git(['add', 'file.txt']);
+  c.git(['commit', '-q', '-m', subject]);
+}
+
+test('plan with invalid repo config and an in-progress merge together exits 1 config, not state', async (t) => {
+  const c = createCase(t);
+  commitFile(c, 'a\n', 'base');
+  c.git(['checkout', '-q', '-b', 'other']);
+  commitFile(c, 'b\n', 'other change');
+  c.git(['checkout', '-q', 'main']);
+  commitFile(c, 'c\n', 'main change');
+  try {
+    c.git(['merge', 'other']);
+  } catch {
+    // Conflict expected: git exits non-zero, leaving MERGE_HEAD.
+  }
+  c.writeFile('.claude/commit.json', '{ "types": [');
+
+  const result = await runCommit(c, ['plan']);
+
+  assertRefusal(result, 'config', 1);
+  assertNoRunFolder(c.repoDir);
+});
+
 test('plan with no repo config file gets no config refusal and goes on', async (t) => {
   const c = createCase(t);
 
