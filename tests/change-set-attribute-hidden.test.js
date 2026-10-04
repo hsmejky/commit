@@ -8,7 +8,7 @@
 // whole-file unit (`body` empty, like a summary-only unit, C:plan-hunks) whose added lines
 // come from one shared `--text` pass; a path with a NUL stays genuinely binary. A file over
 // `core.bigFileThreshold` with no hiding attribute is untouched (git's own classification
-// wins, review-CHG-08 finding 2 / KD-R70 until this slice).
+// wins, review-CHG-08 finding 2).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -240,15 +240,15 @@ test('a diff reader with a keep-set pairs every section but builds only the kept
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'spawn-record-preload.mjs')).href;
 
-async function planWithSpawnLog(c) {
+async function planWithSpawnLog(c, argv = ['plan']) {
   const log = path.join(c.root, 'spawns.jsonl');
-  const result = await runCommit(c, ['plan'], {
+  const result = await runCommit(c, argv, {
     nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
     env: { COMMIT_TEST_SPAWN_LOG: log },
   });
   const entries = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const textPasses = entries.filter((e) => Array.isArray(e.args) && e.args.includes('diff') && e.args.includes('--text'));
-  return { result, textPasses };
+  return { result, textPasses, entries };
 }
 
 // review-CHG-11 findings 4 and 7 (AC1 through `plan`): the attribute-hidden text unit has no
@@ -292,4 +292,151 @@ test('plan: an over-limit hidden file is scan skipped; neither it nor a bigFileT
     { path: 'big.txt', kind: 'binary', body: 'none', scan: undefined },
   ], detail);
   assert.deepEqual(textPasses, []);
+});
+
+// review-CHG-11-r2 new finding 1 (Low): the keep-set is actually used to drop the other
+// section's unit at the reader, not merely filtered back out afterward by
+// `resolveHiddenBinaries` (which would still pass every other test in this file even if the
+// `keep` argument were dropped from `pinnedDiff`'s and `diffUnits`' calls, since it already
+// filters its own result by path). With the same two-section raw+patch bytes, a reader built
+// with a keep-set builds no unit for the path outside it; the same reader built with none
+// (`keep: null`, what a dropped argument would leave in `createDiffReader`'s default) builds
+// both, so the two calls are observably different.
+test('a diff reader keep-set drops the other section at the reader; without one it would not', () => {
+  const sha = '0'.repeat(40);
+  const raw = [
+    `:100644 100644 ${sha} ${sha} M\0big.dat\0`,
+    `:100644 100644 ${sha} ${sha} M\0x.bin\0\0`,
+  ].join('');
+  const patch = [
+    'diff --git a/big.dat b/big.dat\n@@ -1 +1 @@\n-a\n+b\n',
+    'diff --git a/x.bin b/x.bin\n@@ -1 +1,2 @@\n one\n+two\n',
+  ].join('');
+  const output = Buffer.from(raw + patch, 'latin1');
+
+  const kept = changeSet.createDiffReader(new Map(), { keep: new Set(['x.bin']) });
+  for (let i = 0; i < output.length; i += 7) kept.push(output.subarray(i, i + 7));
+  assert.deepEqual(kept.end().map((u) => u.path), ['x.bin']);
+
+  const unfiltered = changeSet.createDiffReader(new Map(), { keep: null });
+  for (let i = 0; i < output.length; i += 7) unfiltered.push(output.subarray(i, i + 7));
+  assert.deepEqual(unfiltered.end().map((u) => u.path).sort(), ['big.dat', 'x.bin']);
+});
+
+// A file name given as raw bytes, relative to the repo (review-CHG-12's pattern,
+// tests/change-set-raw-bytes.test.js).
+function writeRaw(c, nameBytes, content) {
+  fs.writeFileSync(Buffer.concat([Buffer.from(c.repoDir + path.sep), nameBytes]), content);
+}
+
+// Whether `dir`'s filesystem keeps a name with a non-UTF-8 byte exactly as written.
+function holdsNonUtf8Names(dir) {
+  const name = Buffer.from('probe-\xff', 'latin1');
+  const full = Buffer.concat([Buffer.from(dir + path.sep), name]);
+  try {
+    fs.writeFileSync(full, '');
+  } catch {
+    return false;
+  }
+  const held = fs.readdirSync(dir, { encoding: 'buffer' }).some((entry) => entry.equals(name));
+  fs.rmSync(full);
+  return held;
+}
+
+// review-CHG-11-r2 new finding 2 (Low): split's own `--text` pass has its own `--no-renames`
+// rediff step (change-set.mjs ~638-640, review-CHG-11 finding 5's split half), separate from
+// the main pass's rediff (CHG-12) that reword's test 9 already covers. A rename whose old
+// path is not UTF-8 into a hidden new path exercises both: the main pass drops the pair and
+// rediffs to an `A` unit for the new path (CHG-12), and the shared `--text` keep-set pass hits
+// the very same non-UTF-8-old-path rename again and must rediff a second time to read it as
+// text.
+test('split: a hidden text file renamed from a non-UTF-8 path gets its own --text rediff', async (t) => {
+  const c = createCase(t);
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip('the filesystem cannot hold a file name that is not valid UTF-8');
+    return;
+  }
+  const lines = Array.from({ length: 20 }, (_, i) => `line ${i}`);
+  const body = `${lines.join('\n')}\n`;
+  writeRaw(c, Buffer.from('t\xe9.bin', 'latin1'), body);
+  c.git(['add', '-A']);
+  c.writeFile('.gitattributes', 'new.bin -diff\n');
+  c.git(['add', '.gitattributes']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.rmSync(Buffer.concat([Buffer.from(c.repoDir + path.sep), Buffer.from('t\xe9.bin', 'latin1')]));
+  c.writeFile('new.bin', `${body}extra\n`);
+
+  const units = await changeSet.snapshot({
+    mode: 'split',
+    storedLists: { candidates: ['new.bin'], stagedNew: [] },
+    tracked: [],
+    indexPath: path.join(c.root, 'git-index'),
+    unborn: false,
+    toplevel: c.repoDir,
+    env: c.env,
+    now: NOW,
+  });
+
+  assert.deepEqual(
+    units.map((u) => [u.path, u.status, u.kind, u.addedLines.map((l) => l.text)]),
+    [['new.bin', 'A', 'text', [...lines, 'extra']]],
+  );
+});
+
+// review-CHG-11-r2 new finding 3 (Low, AC1): a secret in an attribute-hidden file's added
+// lines reaches the scanner end to end through `plan` (CHG-16), not only through the probe
+// the r2 review ran by hand. Token built at run time (tests/plan-scan.test.js's pattern).
+function githubToken(fill) {
+  return 'gh' + 'p_' + fill.repeat(36);
+}
+
+test('plan: a secret added to a -diff hidden text file is found by the scan', async (t) => {
+  const c = createCase(t);
+  c.writeFile('x.bin', 'one\n');
+  c.writeFile('.gitattributes', 'x.bin -diff\n');
+  c.git(['add', '.']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('x.bin', `one\nconst token = "${githubToken('a')}";\n`);
+
+  const result = await runCommit(c, ['plan']);
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 0, detail);
+  const entries = result.json.hunks.hunks.map(({ path: p, kind, body, scan }) => ({ path: p, kind, body, scan }));
+  assert.deepEqual(entries, [{ path: 'x.bin', kind: 'text', body: 'none', scan: ['github-token'] }], detail);
+});
+
+// review-CHG-11-r2 Low finding 9 (reword's two `cat-file` calls per attribute-hidden
+// candidate): with the fix (newOid read straight off the main pass's own unit, one
+// `cat-file --batch-check` sizing every candidate, then one streamed `cat-file --batch`
+// reading every under-limit candidate's content), the spawn count stays at two whatever the
+// candidate count. `big.bin`'s `scan` stays undefined, not `"skipped"`: Q20 ("no content
+// changes, so no content scan") makes `scanDiff` short-circuit `ctx.scanMap` to `{}` for the
+// whole of `reword` mode, over-limit or not, so the batch path's own `overScanLimit` flag
+// (verified separately: it still keeps `kind: "binary"` and empties `addedLines`) never
+// reaches a scan tag there; only `split` mode's over-limit file is reported `scan: "skipped"`.
+test('plan --reword: three attribute-hidden files cost two cat-file calls in all', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.bin', 'one\n');
+  c.writeFile('b.bin', 'one\n');
+  c.writeFile('big.bin', 'one\n');
+  c.writeFile('.gitattributes', '*.bin -diff\n');
+  c.git(['add', '.']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.bin', 'one\na\n');
+  c.writeFile('b.bin', 'one\nb\n');
+  c.writeFile('big.bin', 'x'.repeat(1048577));
+  c.git(['add', '.']);
+  c.git(['commit', '-q', '-m', 'edit']);
+
+  const { result, entries } = await planWithSpawnLog(c, ['plan', '--reword']);
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 0, detail);
+  const hunks = result.json.hunks.hunks.map(({ path: p, kind, body, scan }) => ({ path: p, kind, body, scan }));
+  assert.deepEqual(hunks, [
+    { path: 'a.bin', kind: 'text', body: 'none', scan: undefined },
+    { path: 'b.bin', kind: 'text', body: 'none', scan: undefined },
+    { path: 'big.bin', kind: 'binary', body: 'none', scan: undefined },
+  ], detail);
+  const catFiles = entries.filter((e) => Array.isArray(e.args) && e.args.includes('cat-file'));
+  assert.equal(catFiles.length, 2, JSON.stringify(catFiles));
 });

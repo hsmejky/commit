@@ -707,43 +707,136 @@ async function checkAttrs(paths, { toplevel, env, now, indexPath }) {
 }
 
 // CHG-11 (Q10, Q11, C:plan "Binary is decided by attributes first, then content"): for a
-// path `attrs` marks `hidden`, the new content's size against the 1 MB scan limit, checked
-// before any NUL sniff so a huge file never needs its content read at all; `overLimit: true`
-// skips the NUL check outright (the caller flags the unit `overScanLimit` and leaves it
-// `kind: "binary"`, never guessing whether it was really text). Under the limit, `binary`
-// is whether the first 8000 bytes hold a NUL (git's own heuristic, Q10). In `split` the new
-// content is the worktree file (what the pinned diff actually compares against the temporary
-// index), read straight off disk like `fileFacts`; in `reword` there is no worktree side, so
-// the same content is read from `head`'s own tree with `git cat-file` (read-only, no object
-// is written). A `split` path that is no longer a regular file has no content to sniff and
-// stays binary (`binary: true`, git's own call).
-async function hiddenBinaryFacts(path, { mode, toplevel, env, now, head }) {
-  if (mode === 'split') {
-    const full = join(toplevel, path);
-    let stat;
-    try {
-      stat = lstatSync(full);
-    } catch {
-      return { overLimit: false, binary: true };
-    }
-    if (!stat.isFile()) return { overLimit: false, binary: true };
-    if (stat.size > SCAN_LIMIT) return { overLimit: true, binary: null };
-    const buf = Buffer.alloc(Math.min(BINARY_SNIFF_BYTES, stat.size));
-    const fd = openSync(full, 'r');
-    let read;
-    try {
-      read = readSync(fd, buf, 0, buf.length, 0);
-    } finally {
-      closeSync(fd);
-    }
-    return { overLimit: false, binary: buf.subarray(0, read).includes(NUL) };
+// `split` candidate path `attrs` marks `hidden`, the new content's size against the 1 MB scan
+// limit, checked before any NUL sniff so a huge file never needs its content read at all;
+// `overLimit: true` skips the NUL check outright (the caller flags the unit `overScanLimit`
+// and leaves it `kind: "binary"`, never guessing whether it was really text). Under the
+// limit, `binary` is whether the first 8000 bytes hold a NUL (git's own heuristic, Q10). The
+// new content is the worktree file (what the pinned diff actually compares against the
+// temporary index), read straight off disk like `fileFacts`. A path that is no longer a
+// regular file has no content to sniff and stays binary (`binary: true`, git's own call).
+// `reword` has no worktree side; its candidates are resolved in one batch by
+// `hiddenBinaryFactsBatch` instead (review-CHG-11 finding 9).
+function hiddenBinaryFacts(path, { toplevel }) {
+  const full = join(toplevel, path);
+  let stat;
+  try {
+    stat = lstatSync(full);
+  } catch {
+    return { overLimit: false, binary: true };
   }
-  const ref = `${head}:${path}`;
+  if (!stat.isFile()) return { overLimit: false, binary: true };
+  if (stat.size > SCAN_LIMIT) return { overLimit: true, binary: null };
+  const buf = Buffer.alloc(Math.min(BINARY_SNIFF_BYTES, stat.size));
+  const fd = openSync(full, 'r');
+  let read;
+  try {
+    read = readSync(fd, buf, 0, buf.length, 0);
+  } finally {
+    closeSync(fd);
+  }
+  return { overLimit: false, binary: buf.subarray(0, read).includes(NUL) };
+}
+
+// review-CHG-11 finding 9 (Low; r2's corrections to the handoff design): `reword`'s
+// candidates are resolved in a constant two `git cat-file` spawns in all, however many
+// candidates there are, instead of two per candidate. Each candidate's new blob ID is already
+// on its unit (`newOid`, parsed from the main pass's own `index <old>..<new>` line — no extra
+// names pass needed). One `cat-file --batch-check=%(objectsize)` call sizes every candidate
+// against the 1 MB scan limit; the under-limit OIDs then go through one streamed
+// `cat-file --batch=%(objectsize)` call, sniffing only the first 8000 bytes of each object's
+// content for a NUL and discarding the rest as it arrives (`streamCatFileBatch`), the same
+// bounded-memory shape as the keep-set `--text` pass (review-CHG-11 finding 2).
+async function hiddenBinaryFactsBatch(candidates, { toplevel, env, now }) {
   const opts = { cwd: toplevel, env, now, readOnly: true };
-  const size = Number((await gitOk(['cat-file', '-s', ref], opts)).toString('utf8').trim());
-  if (size > SCAN_LIMIT) return { overLimit: true, binary: null };
-  const content = await gitOk(['cat-file', '-p', ref], opts);
-  return { overLimit: false, binary: content.subarray(0, BINARY_SNIFF_BYTES).includes(NUL) };
+  const sizesOut = await gitOk(['cat-file', '--batch-check=%(objectsize)'], {
+    ...opts, input: Buffer.from(candidates.map((unit) => `${unit.newOid}\n`).join('')),
+  });
+  const sizeLines = sizesOut.toString('utf8').split('\n');
+  const facts = new Map();
+  const underLimit = [];
+  candidates.forEach((unit, i) => {
+    const line = sizeLines[i];
+    if (line === undefined || line.endsWith(' missing')) {
+      throw new Error(`git cat-file reports ${unit.path} (${unit.newOid}) missing`);
+    }
+    const size = Number(line);
+    if (size > SCAN_LIMIT) {
+      facts.set(unit.path, { overLimit: true, binary: null });
+    } else {
+      underLimit.push(unit);
+    }
+  });
+  if (underLimit.length === 0) return facts;
+  for (const [path, binary] of await streamCatFileBatch(underLimit, opts)) {
+    facts.set(path, { overLimit: false, binary });
+  }
+  return facts;
+}
+
+// Streams one `git cat-file --batch=%(objectsize)` call for `units` (in the order given, the
+// same order git answers them in): each object's output is `<size>\n<content bytes><LF>`. Only
+// the first `BINARY_SNIFF_BYTES` of `<content>` are kept per object (the NUL sniff); the rest
+// is counted and skipped as chunks arrive, never buffered, so memory stays bounded by one
+// sniff window regardless of how large an object or how many candidates there are.
+async function streamCatFileBatch(units, opts) {
+  const results = [];
+  let state = 'header';
+  let headerBuf = Buffer.alloc(0);
+  let remaining = 0;
+  let sniff = [];
+  let sniffed = 0;
+  let index = 0;
+
+  const onChunk = (chunk) => {
+    let pos = 0;
+    while (pos < chunk.length) {
+      if (state === 'header') {
+        const lf = chunk.indexOf(LF, pos);
+        if (lf === -1) {
+          headerBuf = Buffer.concat([headerBuf, chunk.subarray(pos)]);
+          return;
+        }
+        const text = Buffer.concat([headerBuf, chunk.subarray(pos, lf)]).toString('utf8');
+        headerBuf = Buffer.alloc(0);
+        pos = lf + 1;
+        if (!/^\d+$/.test(text)) {
+          throw new Error(`git cat-file gave an unreadable size (${JSON.stringify(text)}) for ${units[index]?.path}`);
+        }
+        remaining = Number(text);
+        state = remaining === 0 ? 'trailing' : 'content';
+        continue;
+      }
+      if (state === 'content') {
+        const take = Math.min(remaining, chunk.length - pos);
+        if (sniffed < BINARY_SNIFF_BYTES) {
+          const want = Math.min(take, BINARY_SNIFF_BYTES - sniffed);
+          sniff.push(Buffer.from(chunk.subarray(pos, pos + want)));
+          sniffed += want;
+        }
+        remaining -= take;
+        pos += take;
+        if (remaining === 0) state = 'trailing';
+        continue;
+      }
+      // 'trailing': the one LF byte git appends after every object's content.
+      results.push([units[index].path, Buffer.concat(sniff).includes(NUL)]);
+      index += 1;
+      sniff = [];
+      sniffed = 0;
+      pos += 1;
+      state = 'header';
+    }
+  };
+
+  const result = await run('git', ['cat-file', '--batch=%(objectsize)'], {
+    ...opts, input: Buffer.from(units.map((unit) => `${unit.newOid}\n`).join('')), onStdout: onChunk,
+  });
+  if (result.code !== 0) throw new Error(`git cat-file failed (${result.code}): ${result.stderr}`);
+  if (results.length !== units.length) {
+    throw new Error(`git cat-file --batch returned ${results.length} objects for ${units.length} requested`);
+  }
+  return results;
 }
 
 // CHG-11: resolves every `kind: "binary"` unit whose path `attrs` marks `hidden` (Q10, Q11,
@@ -765,8 +858,9 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
     unit.kind === 'binary' && unit.status !== 'D' && attrs.get(unit.path)?.hidden === true
   ));
   if (candidates.length === 0) return units;
-  const facts = new Map();
-  for (const unit of candidates) facts.set(unit.path, await hiddenBinaryFacts(unit.path, ctx));
+  const facts = ctx.mode === 'reword'
+    ? await hiddenBinaryFactsBatch(candidates, ctx)
+    : new Map(candidates.map((unit) => [unit.path, hiddenBinaryFacts(unit.path, ctx)]));
   const overLimit = new Set([...facts].filter(([, f]) => f.overLimit).map(([p]) => p));
   const hiddenTextPaths = new Set([...facts].filter(([, f]) => !f.overLimit && f.binary === false).map(([p]) => p));
   const textUnits = new Map();
@@ -1403,8 +1497,13 @@ function unitsOf(section) {
   // A section without a hunk: an empty new or deleted file, a pure rename, a mode-only
   // change, a binary file (Q11).
   const range = hunks.length === 0 ? '-0,0 +0,0' : rangeOf(hunks);
+  // review-CHG-11 finding 9 (Low): a binary unit's new blob ID, already parsed from this
+  // section's `index <old>..<new>` line (full under `--full-index`, pinned), is exposed so a
+  // caller resolving hidden-binary candidates (`reword`) can read their content by OID in one
+  // batched `git cat-file` pass instead of spawning one per path.
   return [{
     ...base, hash, identityKey: hash, ...counts, range, body: Buffer.concat(hunks.flatMap((hunk) => hunk.lines)),
+    ...(binary ? { newOid: blobs.split(' ')[1] } : {}),
   }];
 }
 
