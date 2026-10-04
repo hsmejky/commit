@@ -75,12 +75,12 @@ import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import { cleanupDeadline, deadline, planRefusal, releaseDeadline, resolveMode } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
-import { loadConfig } from './config.mjs';
+import { loadConfig, readLayers } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
 import { scanUnits } from './scanner.mjs';
 import { probeSigning } from './signing-probe.mjs';
 import { guardState } from './heartbeat.mjs';
-import { infer as inferFromMessages } from './history-inference.mjs';
+import { configFor, infer as inferFromMessages } from './history-inference.mjs';
 
 // GIT-02: the detached-HEAD notice (Q21, story 183), recorded verbatim in
 // C:cli-and-exit-codes's recorded-texts table (review-GIT-02 finding 9).
@@ -895,15 +895,18 @@ async function inferRefusals(ctx) {
 
 /**
  * `infer` step 3: M3 reads the last 200 non-merge messages (none when unborn) and M19
- * `infer` turns them into C:infer's fields. Read-only: no lock, no run folder. `configJson`
- * stays `null` until INF-07 builds M4 `readLayers` + M19 `configFor`, even under
- * `outcome: proposal`.
+ * `infer` turns them into C:infer's fields. Read-only: no lock, no run folder. INF-07: under
+ * `outcome: proposal`, M4 `readLayers` reads both layers' raw worktree content and M19
+ * `configFor` turns them into `configJson`; `configFor` itself returns `null` for the other
+ * two outcomes (no proposal to merge in).
  */
 async function inferFromHistory(ctx) {
-  const { env, now } = ctx.injected;
+  const { env, now, claudeHome } = ctx.injected;
   const at = { cwd: ctx.toplevel, env, now };
   const messages = await historyMessages({ ...at, head: await head(at) });
-  return { ...inferFromMessages(messages), configJson: null };
+  const facts = inferFromMessages(messages);
+  const layers = readLayers({ toplevel: ctx.toplevel, claudeHome });
+  return { ...facts, configJson: configFor(facts.proposal, layers) };
 }
 
 const INFER_STEPS = Object.freeze([probeRepo, inferRefusals, inferFromHistory]);

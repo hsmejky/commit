@@ -8,10 +8,12 @@
 // sibling `droppedTypes` (non-standard ones under 5%, with counts). INF-06 adds `wouldFail`:
 // the Conventional Commits messages read, relinted with M6 `lint` under the proposed config
 // values, counting how many fail; `wouldFail` stays `null` for `too-few-commits` and
-// `not-conventional` (no proposal to lint against).
+// `not-conventional` (no proposal to lint against). INF-07 adds `configFor`: per layer, the
+// raw current layer (M4 `readLayers`) with the proposal's keys replaced and every other key
+// kept, checked by M4 `validateLayer`.
 
 import { headerLineOf, lint, parse, passesLowerCase } from './message-grammar.mjs';
-import { DEFAULT_VALUES } from './config.mjs';
+import { DEFAULT_VALUES, REPO_LAYER, USER_LAYER, validateLayer } from './config.mjs';
 
 /** Under this many non-merge commits read, `infer` proposes nothing (C:infer). */
 export const MIN_COMMITS = 20;
@@ -273,4 +275,65 @@ export function infer(messages) {
   }
 
   return { outcome, commitCount, ccShare, nonConventional, wouldFail, proposal, droppedTypes };
+}
+
+/**
+ * Replaces one layer's proposal keys over its raw current content and serializes the result
+ * (C:infer `configJson`), after checking the raw content itself with M4 `validateLayer`: a
+ * raw layer that already fails (such as an out-of-range `maxSubjectLength` the proposal does
+ * not happen to touch, or one it would overwrite anyway) gets `{ errors }` instead of
+ * attempting the merge (Q7: "a broken file is fixed by hand first"), so an error here always
+ * names a problem the proposal's five keys cannot silently fix. The merged object is checked
+ * again before being serialized, as a second gate: by construction it is always valid (every
+ * proposal value is already in range, and every other key already passed the first check),
+ * so this never actually trips, but it keeps the contract ("the text is validated by
+ * `validateLayer` before it is returned") true even if that invariant ever broke.
+ *
+ * @param {object} proposal `infer`'s non-null `proposal` object.
+ * @param {{ value: unknown } | { error: string }} raw one of M4 `readLayers`'s two results.
+ * @param {string} label the layer's M4 display label (`REPO_LAYER` or `USER_LAYER`), passed
+ *   to `validateLayer` so an error names the same layer `plan`'s own config errors would.
+ * @returns {{ text: string } | { errors: string[] }}
+ */
+function configForLayer(proposal, raw, label) {
+  if (raw.error !== undefined) return { errors: [raw.error] };
+
+  const currentInvalid = validateLayer(raw.value, label);
+  if (currentInvalid !== null) return currentInvalid;
+
+  const merged = {
+    ...raw.value,
+    types: proposal.types.value,
+    scope: proposal.scope.value,
+    body: proposal.body.value,
+    subjectCase: proposal.subjectCase.value,
+    maxSubjectLength: proposal.maxSubjectLength.value,
+  };
+
+  const mergedInvalid = validateLayer(merged, label);
+  if (mergedInvalid !== null) return mergedInvalid;
+
+  return { text: `${JSON.stringify(merged, null, 2)}\n` };
+}
+
+/**
+ * M19 `configFor(proposal, layers) → { repo, user }` (C:infer): per layer, the raw current
+ * layer (M4 `readLayers`) with `proposal`'s keys replacing those five and every other key
+ * (such as `scanIgnore`) kept, as `{ text }`; a layer that already fails `validateLayer`
+ * gets `{ errors }` instead, and nothing is merged into it. `null` when there is no proposal
+ * (`infer`'s `too-few-commits` and `not-conventional` outcomes), matching `configJson`.
+ *
+ * @param {null | { types: object, scope: object, body: object, subjectCase: object,
+ *   maxSubjectLength: object }} proposal `infer(...).proposal`.
+ * @param {{ repo: { value: unknown } | { error: string }, user: { value: unknown } |
+ *   { error: string } }} layers M4 `readLayers`'s result.
+ * @returns {null | { repo: { text: string } | { errors: string[] }, user: { text: string } |
+ *   { errors: string[] } }}
+ */
+export function configFor(proposal, layers) {
+  if (proposal === null) return null;
+  return {
+    repo: configForLayer(proposal, layers.repo, REPO_LAYER),
+    user: configForLayer(proposal, layers.user, USER_LAYER),
+  };
 }

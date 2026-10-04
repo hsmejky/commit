@@ -325,11 +325,13 @@ function readLayer(filePath, layer, kind) {
   return { value: sanitized, warnings };
 }
 
-/** The repo layer's display label, matching `REPO_CONFIG_PATH`. */
-const REPO_LAYER = `repo config (${REPO_CONFIG_PATH})`;
+/** The repo layer's display label, matching `REPO_CONFIG_PATH`. Exported so M19 `configFor`
+ * (INF-07) calls `validateLayer` with the same label `readLayer` itself uses. */
+export const REPO_LAYER = `repo config (${REPO_CONFIG_PATH})`;
 
-/** The user layer's display label, matching `USER_CONFIG_FILENAME`. */
-const USER_LAYER = `user config (${USER_CONFIG_FILENAME})`;
+/** The user layer's display label, matching `USER_CONFIG_FILENAME`. Exported for the same
+ * reason as `REPO_LAYER`. */
+export const USER_LAYER = `user config (${USER_CONFIG_FILENAME})`;
 
 /**
  * Q6's defaults (commitlint `config-conventional` types, no scope, no body, 72 code points,
@@ -426,6 +428,64 @@ export async function loadConfig({ toplevel, claudeHome, unborn = false, env, no
   const warnings = [...userResult.warnings, ...repoWarnings];
   if (head.warning !== null) warnings.push(head.warning);
   return { values, sources, warnings, scanIgnore: head.matchers };
+}
+
+/**
+ * Reads one config layer's raw JSON value straight off disk, with none of `readLayer`'s
+ * `validateLayer` check or CFG-06 sanitisation (`readLayers`, INF-07): the caller runs
+ * `validateLayer` on the raw value itself, before merging anything into it, and an unknown
+ * key (or a known, repo-only key in the wrong layer) survives untouched, since `readLayers`
+ * only reports what is on disk now.
+ *
+ * @param {string} filePath absolute path to the layer's file.
+ * @param {string} layer the layer's display label (used in the `error` message only).
+ * @returns {{ value: unknown } | { error: string }} `value: {}` when the file is absent (no
+ *   layer at all, same as `readLayer`, Q6).
+ */
+function readRawLayer(filePath, layer) {
+  let stats;
+  try {
+    stats = fs.statSync(filePath);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: {} };
+    return { error: `the ${layer} cannot be read (${err.code})` };
+  }
+  if (!stats.isFile()) {
+    return { error: `the ${layer} is not a regular file` };
+  }
+  if (stats.size > CONFIG_MAX_BYTES) {
+    return { error: `the ${layer} is larger than ${CONFIG_MAX_BYTES} bytes` };
+  }
+
+  let buffer;
+  try {
+    buffer = fs.readFileSync(filePath);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: {} };
+    return { error: `the ${layer} cannot be read (${err.code})` };
+  }
+
+  const decoded = decodeLayerBytes(buffer, layer);
+  if (decoded.problem !== undefined) return { error: decoded.problem };
+  return { value: decoded.value };
+}
+
+/**
+ * Reads both config layers' raw current content for M19 `configFor` (INF-07, C:infer): the
+ * user layer directly under the Claude home, the repo layer from the worktree (never HEAD,
+ * unlike `scanIgnore`'s effective value) -- no validation, no CFG-06 sanitisation, since
+ * `configFor` merges the proposal's keys into this raw value and checks the result itself
+ * with `validateLayer`.
+ *
+ * @param {{ toplevel: string, claudeHome: string }} options
+ * @returns {{ repo: { value: unknown } | { error: string }, user: { value: unknown } |
+ *   { error: string } }}
+ */
+export function readLayers({ toplevel, claudeHome }) {
+  return {
+    repo: readRawLayer(path.join(toplevel, REPO_CONFIG_PATH), REPO_LAYER),
+    user: readRawLayer(path.join(claudeHome, USER_CONFIG_FILENAME), USER_LAYER),
+  };
 }
 
 /** The HEAD read's result when there is nothing to read (no worktree, unborn, no file or key). */
