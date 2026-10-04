@@ -187,24 +187,24 @@ value (string, or a glob error) asserting a warning, not a `config` refusal.
 
 **Blocked by:** CFG-06, SCN-03, CFG-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10 (read at HEAD; amended by CFG-01), Q6 (amended by CFG-01), M4, C:plan
 (`config.sources`), C:scanignore-globs, stories 107, 148, 150.
 
-- [ ] Seam 1: `scanIgnore` added in the worktree only → effective `[]`; after it is
+- [x] Seam 1: `scanIgnore` added in the worktree only → effective `[]`; after it is
       committed → effective patterns with source `repo@HEAD`.
-- [ ] Seam 1: on an unborn repo `scanIgnore` is `[]` while other worktree repo keys apply.
-- [ ] Seam 1: a pattern `**/*` and one with braces, at HEAD and unchanged in the worktree
+- [x] Seam 1: on an unborn repo `scanIgnore` is `[]` while other worktree repo keys apply.
+- [x] Seam 1: a pattern `**/*` and one with braces, at HEAD and unchanged in the worktree
       → exit 1 `config` naming the pattern (the worktree layer).
-- [ ] Seam 1: `scanIgnore` given as a string, and as an array with a non-string entry, at
+- [x] Seam 1: `scanIgnore` given as a string, and as an array with a non-string entry, at
       HEAD and unchanged in the worktree, each → exit 1 `config` naming the key.
-- [ ] Seam 1: each of those values (and unparseable JSON) at HEAD only, with a valid copy in
+- [x] Seam 1: each of those values (and unparseable JSON) at HEAD only, with a valid copy in
       the worktree → no refusal, `config.values.scanIgnore` is `[]` and `warnings` names the
       repo config at HEAD (CFG-01 item 5).
-- [ ] Seam 3: `validateLayer`, called directly (not through `loadConfig`) on a repo layer
+- [x] Seam 3: `validateLayer`, called directly (not through `loadConfig`) on a repo layer
       with `scanIgnore: ["**"]`, returns a `config` error naming the pattern.
-- [ ] Seam 3: `isRepoConfigPath` is true for `.claude/commit.json` and false for
+- [x] Seam 3: `isRepoConfigPath` is true for `.claude/commit.json` and false for
       `sub/.claude/commit.json` and `.claude/commit.JSON`; `REPO_CONFIG_PATH` is
       `.claude/commit.json`.
 
