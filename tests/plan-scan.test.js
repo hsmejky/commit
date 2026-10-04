@@ -118,6 +118,27 @@ test('a hunk with a github-token loses its body; the file\'s other hunk keeps it
   assert.equal(hunksTxt.includes(token), false, 'hunks.txt holds the token');
   assert.equal(stdout.includes(token), false, 'stdout holds the token');
   assert.equal(JSON.stringify(planJson).includes(token), false, 'plan.json holds the token');
+  assert.equal(JSON.stringify(state).includes(token), false, 'state.json holds the token');
+});
+
+test('a scanIgnore\'d path keeps its body and its unit: no hit, no scanned entry', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'README.md': 'readme\n' });
+  c.writeFile('.claude/commit.json', JSON.stringify({ scanIgnore: ['ignored/**'] }));
+  c.git(['add', '--', '.claude/commit.json']);
+  c.git(['commit', '-q', '-m', 'config']);
+  const token = githubToken('f');
+  c.writeFile('ignored/secrets.js', `const visible = 1;\n${tokenLine('f')}`);
+
+  const { hunks, state, planJson, hunksTxt, stdout } = await plan(c);
+
+  const entry = hunks.find((h) => h.path === 'ignored/secrets.js');
+  assert.equal(Object.hasOwn(entry, 'scan'), false);
+  assert.equal(entry.body, 'file');
+  assert.equal(Object.hasOwn(state.scanned, entry.id), false);
+  assert.deepEqual(planJson.scan, { hits: [], skipped: [], scanIgnoreChanged: false });
+  assert.match(hunksTxt, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(stdout.includes(token), false, 'stdout holds the token');
 });
 
 test('a new file with a hit loses its whole body', async (t) => {
@@ -157,6 +178,26 @@ test('two ~600 KB hunks of one file, over 1 MB together: both units flagged, pat
   assert.deepEqual(state.scanned, { [hunks[0].id]: 'skipped', [hunks[1].id]: 'skipped' });
   assert.deepEqual(planJson.scan.skipped, [{ path: 'data/big.txt', reason: SKIP_REASON }]);
   assert.deepEqual(planJson.scan.hits, []);
+});
+
+test('plan --reword runs no content scan (Q20): HEAD\'s own token stays, no hits, no scanned entry', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  const token = githubToken('g');
+  c.writeFile('a.txt', `${tokenLine('g')}`);
+  c.git(['commit', '-q', '-am', 'fix: reword me']);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.mode, 'reword');
+  const runDir = path.join(c.repoDir, '.commit-plan', result.json.planId);
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  const planJson = JSON.parse(fs.readFileSync(path.join(runDir, 'plan.json'), 'utf8'));
+  const hunksTxt = fs.readFileSync(path.join(runDir, 'hunks.txt'), 'utf8');
+  assert.deepEqual(planJson.scan, { hits: [], skipped: [], scanIgnoreChanged: false });
+  assert.deepEqual(state.scanned, {});
+  assert.match(hunksTxt, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('added content of exactly 1,048,576 bytes is scanned; one byte more is flagged and skipped', async (t) => {

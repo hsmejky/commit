@@ -481,6 +481,10 @@ async function snapshotUnits(ctx) {
  * are over the limit, so every one of them is flagged. `scanIgnoreUnits` (a `scanIgnore`
  * edit itself flagging the repo config's own units) is SCN-14's; this slice flags hits and
  * skips only.
+ *
+ * @throws {Error} when a hit's `(path, line)` matches no unit's `addedLines` (review-CHG-16
+ *   finding 2): this cannot happen today (no two units with added lines share a path), so a
+ *   hit silently falling through to a kept body would be the wrong default for a secret.
  */
 function buildScanMap(units, { hits, skipped }) {
   const unitByPathLine = new Map();
@@ -492,7 +496,9 @@ function buildScanMap(units, { hits, skipped }) {
   const scanned = {};
   for (const { patternId, path, line } of hits) {
     const id = unitByPathLine.get(`${path}\u0000${line}`);
-    if (id === undefined) continue;
+    if (id === undefined) {
+      throw new Error(`a scan hit at ${path}:${line} matches no unit's added lines`);
+    }
     (scanned[id] ??= []).push(patternId);
   }
   const skippedPaths = new Set(skipped.map(({ path }) => path));
@@ -508,10 +514,13 @@ function buildScanMap(units, { hits, skipped }) {
  * of on `ctx.config`; the entry point's `osUser`, Q10). Stores `ctx.scan` (`plan.json`
  * `scan.hits`/`scan.skipped`, C:plan) and `ctx.scanMap` (`state.json` `scanned`,
  * C:plan-hunks), read by `renderHunkIndex` (step 8) to withhold a hit's whole body and flag
- * every entry's `scan`. A clean tree (no units) scans nothing.
+ * every entry's `scan`. A clean tree (no units) scans nothing. `reword`'s units are HEAD's
+ * own diff against its single parent (CHG-15): content already committed, not a change the
+ * run is about to make, so Q20 ("no content changes, so no content scan") applies and this
+ * step scans nothing in `reword` mode either.
  */
 async function scanDiff(ctx) {
-  if (ctx.units === undefined) {
+  if (ctx.units === undefined || ctx.mode === 'reword') {
     ctx.scan = { hits: [], skipped: [] };
     ctx.scanMap = {};
     return undefined;

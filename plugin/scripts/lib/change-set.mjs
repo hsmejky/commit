@@ -949,8 +949,9 @@ export async function writeTree({ toplevel, env, now }) {
 }
 
 /**
- * M10 `treeDiffUnits` (EXE-02, thin: CHG-20 adds the attribute-hidden `--text` pass and the
- * 1 MB scan limit): the units of the diff from `fromTree` (the expected HEAD, or `null` for
+ * M10 `treeDiffUnits` (EXE-02, thin: CHG-20 adds the attribute-hidden `--text` pass; the
+ * shared `createDiffReader` already applies the CHG-16 1 MB scan limit here, same as
+ * `snapshot`): the units of the diff from `fromTree` (the expected HEAD, or `null` for
  * the empty tree when unborn) to `toTree`, with the same pinned options and patch pass as
  * `snapshot`, so the backstop scans the recorded tree as `plan` scanned the snapshot.
  *
@@ -1211,9 +1212,10 @@ function unitsOf(section) {
   const base = { path, pathBytes, oldPath, status, kind, generated, binary };
   if (status === 'M' && kind === 'text') {
     const occurrences = new Map();
+    const box = { total: 0 };
     return hunks.map((hunk) => {
       const identity = createHash('sha256').update(pathBytes).update(Buffer.from([NUL]));
-      const counts = hashHunk(hunk, identity);
+      const counts = hashHunk(hunk, identity, box);
       const identityKey = identity.copy().digest('hex');
       const occurrence = occurrences.get(identityKey) ?? 0;
       occurrences.set(identityKey, occurrence + 1);
@@ -1237,8 +1239,9 @@ function unitsOf(section) {
   if (modes !== null) whole.update(Buffer.from(`mode ${modes}\0`));
   if (binary) whole.update(Buffer.from(`blob ${blobs}\0`));
   const counts = { added: 0, deleted: 0, addedLines: [] };
+  const box = { total: 0 };
   for (const hunk of hunks) {
-    const one = hashHunk(hunk, whole);
+    const one = hashHunk(hunk, whole, box);
     counts.added += one.added;
     counts.deleted += one.deleted;
     counts.addedLines.push(...one.addedLines);
@@ -1316,8 +1319,15 @@ function typeChangeUnit(section) {
 // (BACKSLASH) also follows an unchanged context line whose last line lacks a trailing
 // newline on both sides; it is hashed only when it follows a `-`/`+` line, since context is
 // otherwise excluded from the hash (Q11). `addedLines`: each `+` line's 1-based line number
-// in the new file and its lossy decode without the `+` and `\n` (M10, for M8).
-function hashHunk(hunk, hash) {
+// in the new file and its lossy decode without the `+` and `\n` (M10, for M8). `box`, shared
+// across every hunk of one section (CHG-16 review finding 5), tracks the same running byte
+// total `withScanLimit` recomputes from `body`: once it passes `SCAN_LIMIT`, decoding stops
+// and no further line is pushed to `addedLines`, so a section already bound to be discarded
+// never grows its decoded lines without limit. `added`/`deleted` and the hash itself are
+// unaffected, and a section that stays under the limit collects every line exactly as before
+// (the two measures use the same per-line length, so a cut here is always confirmed by
+// `withScanLimit`'s own total).
+function hashHunk(hunk, hash, box = { total: 0 }) {
   let added = 0;
   let deleted = 0;
   const addedLines = [];
@@ -1331,7 +1341,10 @@ function hashHunk(hunk, hash) {
       if (lead === PLUS) {
         added += 1;
         const end = line[line.length - 1] === LF ? line.length - 1 : line.length;
-        addedLines.push({ line: newLine, text: LOSSY_UTF8.decode(line.subarray(1, end)) });
+        if (box.total <= SCAN_LIMIT) {
+          addedLines.push({ line: newLine, text: LOSSY_UTF8.decode(line.subarray(1, end)) });
+        }
+        box.total += end;
       }
     } else if (lead === BACKSLASH && (prevLead === PLUS || prevLead === MINUS)) {
       hash.update(line);
