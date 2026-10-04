@@ -102,6 +102,31 @@ test('M15 planRefusal names a staged-but-hidden-only clean tree\'s path', async 
   assert.equal(refusal.message, 'nothing to commit: staged but hidden: `.env`');
 });
 
+test('M15 planRefusal names a staged-but-collapsed-only clean tree\'s directory and count', async () => {
+  const { planRefusal } = await loadLib('run-policy');
+  const refusal = planRefusal({
+    git: OK_GIT, repo: WORKTREE,
+    clean: { stagedExcluded: [{ dir: 'dist', count: 3, reason: 'collapsed' }] },
+  });
+  assert.equal(refusal.message, 'nothing to commit: `dist` (3 staged, collapsed)');
+});
+
+test('M15 planRefusal joins multiple clean-tree reasons with "; "', async () => {
+  const { planRefusal } = await loadLib('run-policy');
+  const refusal = planRefusal({
+    git: OK_GIT, repo: WORKTREE,
+    clean: {
+      hidden: { count: 1, sample: ['.env'] },
+      dirtySubmodules: ['libs/x'],
+      embeddedRepos: ['nested'],
+    },
+  });
+  assert.equal(
+    refusal.message,
+    'nothing to commit: 1 hidden file: `.env`; dirty submodule: `libs/x`; embedded repository: `nested`',
+  );
+});
+
 test('M15 planRefusal reports a plain "nothing to commit" when nothing is left to name', async () => {
   const { planRefusal } = await loadLib('run-policy');
   const refusal = planRefusal({ git: OK_GIT, repo: WORKTREE, clean: {} });

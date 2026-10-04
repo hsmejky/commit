@@ -273,6 +273,25 @@ test('a locked key on a clean tree reports nothing to commit, not signing', { sk
   assert.equal(result.json.reply.status, 'nothing', detail(result));
 });
 
+// AC2 (review-RUN-15 Medium 1): Seam 1 proof that a staged secret on a locked key refuses
+// `staged-hit`, not the signing probe (`stagedHitOf` runs before `probeSigning`,
+// workflows.mjs `postScanRefusals`). `sshAdd: listing([], 1)` answers `-L` with an empty
+// list (locked, not in any agent), same as the clean-tree case above.
+test('plan --staged with a staged secret on a locked key refuses staged-hit, not signing', { skip: SHIM_SKIP }, async (t) => {
+  const c = sshRepo(t, { dirty: false });
+  c.writeFile('.git/info/k', opensshKeyFile('aes256-ctr'));
+  c.git(['config', 'user.signingKey', path.join(c.repoDir, '.git', 'info', 'k')]);
+  c.writeFile('t.js', `const token = "${'gh' + 'p_' + 'a'.repeat(36)}";\n`);
+  c.git(['add', '--', 't.js']);
+
+  const env = sshShim(c, { sshAdd: listing([], 1) });
+  const result = await runCommit(c, ['plan', '--staged'], { env });
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'staged-hit', detail(result));
+  assert.equal(result.json.error.message, 'unstage `t.js` and run `/commit` again, or commit by hand', detail(result));
+});
+
 test('the SSH probe spawns only git and the ssh-add next to git\'s ssh-keygen', { skip: SHIM_SKIP }, async (t) => {
   const c = sshRepo(t);
   c.writeFile('id_ed25519', opensshKeyFile('aes256-ctr'));

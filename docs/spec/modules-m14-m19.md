@@ -32,7 +32,8 @@ Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
   `staged-hit` (`facts.stagedHit: { hidden, hits, notUtf8 }`, built in `staged` only;
   `stagedExcluded` holds hidden paths only, `notUtf8` the other staged non-UTF-8 paths,
   CHG-14) and clean-tree
-  detection (hidden-only, collapsed-only, `stagedExcluded`-only, non-UTF-8-only or `dirtySubmodules`-only
+  detection (hidden-only, collapsed-only, `stagedExcluded`-only, non-UTF-8-only,
+  `dirtySubmodules`-only or `embeddedRepos`-only
   counts as clean, and the `nothing` reply's `text` names their counts and paths,
   C:plan; skipped in `reword`, which
   usually runs on a clean tree, Q9), then `signing`. Each refusal's `message` for a

@@ -586,7 +586,10 @@ async function postScanRefusals(ctx) {
 
 // RUN-15 (C:plan `clean`, stories 156, 219): the clean-tree breakdown `planRefusal`'s `clean`
 // branch names, paths escaped as in the reply (M17 `escapePath`), like `stagedHitOf` below.
-// `notUtf8` is already in its `\xNN` form (M10 `escapeNonUtf8`), never re-escaped here.
+// `notUtf8` is already in its `\xNN` form for each bad byte (M10 `escapeNonUtf8`), but a
+// valid-UTF-8 control character elsewhere in the same path (a literal LF or ESC byte) is not:
+// `escapePath` is idempotent on the `\xNN` text, so mapping it over `notUtf8` here escapes
+// those control characters too without double-escaping (review-RUN-15 Medium 2).
 function cleanBreakdownOf(inventory) {
   return {
     hidden: { count: inventory.hidden.count, sample: inventory.hidden.sample.map(escapePath) },
@@ -595,7 +598,7 @@ function cleanBreakdownOf(inventory) {
       ? { path: escapePath(entry.path), reason: 'hidden' }
       : { dir: escapePath(entry.dir), count: entry.count, reason: 'collapsed' })),
     dirtySubmodules: inventory.dirtySubmodules.map(escapePath),
-    notUtf8: inventory.notUtf8,
+    notUtf8: inventory.notUtf8.map(escapePath),
     embeddedRepos: inventory.embeddedRepos.map(escapePath),
   };
 }
@@ -612,7 +615,10 @@ function stagedHitOf(ctx) {
   const hits = [...new Set(ctx.scan.hits.map((hit) => hit.path))].filter((p) => !hiddenSet.has(p));
   const notUtf8 = ctx.inventory.stagedNotUtf8;
   if (hidden.length === 0 && hits.length === 0 && notUtf8.length === 0) return null;
-  return { hidden: hidden.map(escapePath), hits: hits.map(escapePath), notUtf8 };
+  // `notUtf8` already has each bad byte as `\xNN` (M10 `escapeNonUtf8`); `escapePath` is
+  // idempotent on that text, so mapping it over escapes any remaining valid-UTF-8 control
+  // character too, without double-escaping (review-RUN-15 Medium 2).
+  return { hidden: hidden.map(escapePath), hits: hits.map(escapePath), notUtf8: notUtf8.map(escapePath) };
 }
 
 /**

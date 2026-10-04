@@ -178,6 +178,25 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   collapsed-only untracked files, staged-new paths in `stagedExcluded`, paths that are not
   valid UTF-8, `dirtySubmodules` and `embeddedRepos` are clean; `plan` still reports them (the `nothing`
   reply names them), and the index is left as it is.
+  The `nothing` reply's `text` (RUN-15, M15 `planRefusal`) is "nothing to commit" alone when
+  none of these apply, else "nothing to commit: " followed by one part per reason that
+  applies, joined with "; ", in this order (paths escaped as in `text` generally, M17
+  `escapePath`; `notUtf8`'s bad-byte `\xNN` escapes, M10 `escapeNonUtf8`, are themselves
+  escaped again for any remaining control character, since `escapePath` is idempotent on
+  `\xNN` text):
+  - hidden: "N hidden file: `` `a` `` " / "N hidden files: `` `a`, `b` `` " (first 5, plus
+    "+N more" past that, M10's `hidden.sample` cap);
+  - collapsed: "`` `dir` `` (N collapsed)", one per directory, joined with ", ";
+  - `stagedExcluded` reason `hidden`: "staged but hidden: `` `a` ``" (a clean tree's
+    staged-new hidden path is reported here, never refused: `staged-hit`'s own "is/are
+    staged but hidden" wording, [cli-and-exit-codes.md](cli-and-exit-codes.md), only fires
+    under `--staged`);
+  - `stagedExcluded` reason `collapsed`: "`` `dir` `` (N staged, collapsed)", one per
+    directory, joined with ", ";
+  - `dirtySubmodules`: "dirty submodule: `` `a` ``" / "dirty submodules: `` `a`, `b` ``";
+  - `notUtf8`: "path not UTF-8: `` `a` ``" / "paths not UTF-8: `` `a`, `b` ``";
+  - `embeddedRepos`: "embedded repository: `` `a` ``" / "embedded repositories:
+    `` `a`, `b` ``".
   The inventory's tracked-change read is `git status --porcelain -z --untracked-files=no
   --no-renames`: a rename's old path is its own deletion there, so a tracked file renamed
   (`git mv`, or `mv` plus `git add -N`) to a hidden path in `stagedExcluded` still leaves
