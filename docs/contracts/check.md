@@ -110,8 +110,12 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   ``{ "group": 1, "reason": "message contains `local-path`", "spans": [{ "patternId":
   "local-path", "start": 19, "end": 37 }] }``.
 - `groups[].files`: every path in the group, `hunks` = the number of the path's hunks in
-  this group (`null` in the file-level slice). The confirmation shows at most 20 per group,
-  then "+N more".
+  this group (`null` in the file-level slice, and in `staged` and `reword`, where a path is
+  never told apart by hunk ID). The confirmation shows at most 20 per group, then "+N more".
+  `new` is `true` when the unit's `status` is `A`, in every mode including `reword`; it
+  reports the unit's own status and is independent of `newFiles` below, which `reword`
+  forces to `[]` regardless of any `new: true` file (nothing is committed in `reword`, so
+  no file is "new" for that purpose).
 - `newFiles`: derived from status `A` or untracked, never from the worker. `split`:
   temporary-index diff (Q11); `staged`: index diff, for the report only; `reword`: always
   `[]`.

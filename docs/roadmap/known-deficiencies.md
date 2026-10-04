@@ -75,6 +75,21 @@ fixed, delete it here; IDs are never reused.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R29.** FND-10's ESM check does not import `node:fs/promises`; add it.
+- **KD-R89.** PLN-05's `staged`/`reword` AC1 ("a group naming only some files still holds
+  every unit") and AC2 (`newFiles`) are asserted on M14 `validatePlan` directly
+  (`tests/plan-staged-reword-group.test.js`), not through `check`'s own output: `check`'s
+  success path goes straight on to `commit --all` in-process, and M16's execution for
+  `staged`/`reword` is not built yet (EXE-19, EXE-20). INT-14 covers a staged commit
+  end-to-end but no criterion checks that a plan naming only some files still commits every
+  staged unit, or `newFiles` in `check`'s output; INT-24 covers reword but not
+  `newFiles: []`. AC3 ("`split`-only extras absent in `staged`") is asserted
+  (`notIncluded: []`, `notices: []`) but cannot fail today: PLN-04, which gives `split` its
+  own extras, is not built, so `split` emits none either. Fix: once EXE-19/EXE-20 land, add
+  subprocess `check --plan` success cases to `tests/plan-staged-reword-group.test.js`:
+  staged with a partial `files` list still commits every unit and reports `newFiles` from
+  the index diff; reword output has `newFiles: []`. Once PLN-04 lands, add a staged case
+  with a `stagedExcluded`/`indexOnly`/collapsed path and assert it still gives no
+  `notIncluded` extras or notices. Slice: PLN-05, EXE-19, EXE-20, PLN-04.
 - **KD-R77.** GIT-07's M2 and M11 cases (`tests/git-timeout-tree-kill.test.js`,
   `tests/signing-probe-deadline.test.js`), like GIT-05's and GIT-12's own M2 cases, call
   `run`/`withDeadline`/`probeSigning` in-process, outside testing-seams.md's user-confirmed

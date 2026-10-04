@@ -95,13 +95,17 @@ in `staged`, always `[]` in `reword`; no `split`-only extras.
 
 **Blocked by:** PLN-01, CHG-14, CHG-15.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q20, C:check, C:worker-plan, stories 83, 175, M14.
 
-- [ ] Seam 1: `staged` with two groups, or zero → exit 2 error; with one group listing only some files → the group holds every staged unit.
-- [ ] Seam 1: a staged new file → listed in `newFiles` (report only); `reword` → `newFiles: []`.
-- [ ] Seam 1: `split`-only extras (collapsed, unstaging notes, `indexOnly` notices) absent in `staged`.
+- [x] Seam 1: `staged` with two groups, or zero → exit 2 error; with one group listing only some files → the group holds every staged unit.
+- [x] Seam 1: a staged new file → listed in `newFiles` (report only); `reword` → `newFiles: []`.
+- [x] Seam 1: `split`-only extras (collapsed, unstaging notes, `indexOnly` notices) absent in `staged`.
+
+**Note (review-PLN-05):** AC1/AC2 are asserted on M14 `validatePlan` directly rather than
+through `check`'s subprocess output, and AC3's assertion cannot fail until PLN-04 lands.
+See KD-R89 (`docs/roadmap/known-deficiencies.md`).
 
 
 ## PLN-06: Message lint and message scan per group

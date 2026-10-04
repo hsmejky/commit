@@ -90,6 +90,29 @@ test('staged: a staged new file is listed in newFiles', async (t) => {
   assert.deepEqual(result.groups[0].newFiles, ['c.txt']);
 });
 
+// --- `reword`: real `plan --reword` state, M14 `validatePlan` called directly ------------
+//
+// Same reason as the `staged` block above: M16's execution for `reword` is not built yet
+// (EXE-19/EXE-20).
+
+test('reword: a real plan --reword run holds every unit; a file added in HEAD is new but not in newFiles', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('b.txt', 'two\n');
+  c.git(['add', '--', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'feat: add b']);
+  const { runDir } = await plan(c, ['--reword']);
+  const bytes = Buffer.from(JSON.stringify(oneGroup({ files: ['b.txt'] })));
+
+  const result = validatePlan(bytes, readState(runDir));
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.groups[0].files, [{ path: 'b.txt', status: 'A', new: true, hunks: null }]);
+  assert.deepEqual(result.groups[0].newFiles, []);
+  assert.deepEqual(result.notIncluded, []);
+  assert.deepEqual(result.notices, []);
+});
+
 // --- Seam 1: staged group-count errors (end before M16, so no EXE-19/20 dependency) -------
 
 for (const [label, groups] of [['zero groups', []], ['two groups', [{ header: 'feat: x', body: null, files: [], hunks: [] }, { header: 'feat: y', body: null, files: [], hunks: [] }]]]) {
