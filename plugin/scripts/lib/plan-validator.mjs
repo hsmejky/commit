@@ -29,6 +29,14 @@
 // value) for M17's future redaction of the quoted message. A lint reason that quotes a
 // fragment overlapping a span quotes `[<pattern-id>]` in its place, so no matched text
 // reaches stdout (C:check).
+//
+// PLN-05: `staged` and `reword` need exactly one group, which holds every unit implicitly;
+// the plan's own `files`, `hunks` and `notIncluded` are never read in these modes, so a
+// worker does not have to describe placement at all. Only the one group's message is
+// validated; `newFiles` comes from the unit status, same as `split` (C:check), except it is
+// always `[]` in `reword` (nothing is committed, Q20); there is none of `split`'s
+// `notIncluded` extras or notices, since those describe units left out of a group, and
+// `staged`/`reword` leave none out.
 
 import { lint, normalise, normaliseText } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
@@ -86,6 +94,62 @@ function spansByPattern(hits) {
   return byPattern;
 }
 
+// Validates one group's message (PLN-06) and pushes its lint and scan errors (`group: n`)
+// onto `errors`. Shared by the `split` loop below and `validateSingleGroupPlan` (PLN-05),
+// so `staged` and `reword` lint their one group exactly like every `split` group.
+function lintMessage(header, body, n, messageValues, osUser, errors) {
+  const normalisedMessage = messageOf(header, body);
+  if (!normalisedMessage.ok) {
+    errors.push({ group: n, reason: normalisedMessage.reason });
+    return;
+  }
+  const message = normalisedMessage.text;
+  const hits = scanText(message, { osUser });
+  for (const reason of lint(message, messageValues, { quote: redactingQuote(message, hits) })) {
+    errors.push({ group: n, reason });
+  }
+  for (const [patternId, spans] of spansByPattern(hits)) {
+    errors.push({ group: n, reason: `message contains \`${patternId}\``, spans });
+  }
+}
+
+// PLN-05: `staged` and `reword` hold every stored unit in the one implicit group, so
+// `groups[].files` is built from `runState.units` directly (grouped by path, in
+// first-appearance order), never from the worker's own `files`/`hunks`/`notIncluded`
+// (C:worker-plan: "ignored"). `hunks` stays `null`: like `split`'s file-level slice, this
+// group was never told apart by hunk ID, so there is nothing to count.
+function filesOf(units) {
+  const files = [];
+  const seen = new Set();
+  for (const unit of units) {
+    if (seen.has(unit.path)) continue;
+    seen.add(unit.path);
+    files.push({ path: unit.path, status: unit.status, new: unit.status === 'A', hunks: null });
+  }
+  return files;
+}
+
+// PLN-05: the single-group validation for `staged` and `reword` (C:check, C:worker-plan).
+// `workerPlan.groups.length` must be exactly 1; its `files`, `hunks` and `notIncluded` are
+// never read. `newFiles` is forced `[]` in `reword` (Q20: nothing is committed, so "new"
+// means nothing); `staged` derives it from unit status like `split` does.
+function validateSingleGroupPlan(mode, workerPlan, runState, options) {
+  if (workerPlan.groups.length !== 1) {
+    const reason = `\`${mode}\` needs exactly one group; got ${workerPlan.groups.length}`;
+    return lintFailure([{ group: null, reason }], 'plan', workerPlan.source);
+  }
+  const [group] = workerPlan.groups;
+  const errors = [];
+  lintMessage(group.header, group.body, 1, runState.config.values, options.osUser ?? null, errors);
+  if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source);
+
+  const files = filesOf(runState.units);
+  const newFiles = mode === 'reword' ? [] : files.filter((file) => file.new).map((file) => file.path);
+  const stored = [{ n: 1, units: runState.units.map((unit) => unit.id), header: group.header, body: group.body }];
+  const groups = [{ n: 1, header: group.header, body: group.body, fileCount: files.length, files, newFiles }];
+  return { ok: true, groups, notIncluded: [], notices: [], stored };
+}
+
 /**
  * Validates the worker plan against the run state (C:check "Validates").
  *
@@ -107,16 +171,20 @@ function spansByPattern(hits) {
  *   `plan`; `source` is the plan's own, carried through even on a shape failure when the
  *   parsed JSON has `source: "user"` elsewhere valid (Q20: dictated text must not be
  *   rewritten unseen), else `undefined`.
- * @throws {Error} for a part of the worker plan no slice has built yet (a mode other than
- *   `split`).
+ * @throws {Error} for a run mode no slice has built yet (none past `split`, `staged` and
+ *   `reword`, PLN-05).
  */
 export function validatePlan(planBytes, runState, options = {}) {
-  if (runState.mode !== 'split') {
-    throw new Error(`check in ${runState.mode} mode is not built yet (PLN-05)`);
-  }
   const parsed = parseWorkerPlan(planBytes);
   if (!parsed.ok) return lintFailure([{ group: null, reason: parsed.reason }], 'shape', parsed.source);
   const workerPlan = parsed.value;
+
+  if (runState.mode === 'staged' || runState.mode === 'reword') {
+    return validateSingleGroupPlan(runState.mode, workerPlan, runState, options);
+  }
+  if (runState.mode !== 'split') {
+    throw new Error(`check in ${runState.mode} mode is not built yet (PLN-05)`);
+  }
 
   const table = unitTable(runState.units);
   const placement = new Placement();
@@ -130,19 +198,7 @@ export function validatePlan(planBytes, runState, options = {}) {
   }
   workerPlan.groups.forEach((group, index) => {
     const n = index + 1;
-    const normalisedMessage = messageOf(group.header, group.body);
-    if (!normalisedMessage.ok) {
-      errors.push({ group: n, reason: normalisedMessage.reason });
-    } else {
-      const message = normalisedMessage.text;
-      const hits = scanText(message, { osUser });
-      for (const reason of lint(message, messageValues, { quote: redactingQuote(message, hits) })) {
-        errors.push({ group: n, reason });
-      }
-      for (const [patternId, spans] of spansByPattern(hits)) {
-        errors.push({ group: n, reason: `message contains \`${patternId}\``, spans });
-      }
-    }
+    lintMessage(group.header, group.body, n, messageValues, osUser, errors);
     const files = [];
     const units = [];
     for (const path of new Set(group.files)) {
