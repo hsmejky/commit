@@ -284,15 +284,15 @@ story 149.
 
 **Blocked by:** SCN-13, CHG-16, FND-10.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, C:plan (`scan`), M18, stories 135-137, 140, 145.
 
-- [ ] Seam 1: an added token in a modified file → `scan.hits` entry with path, line and
+- [x] Seam 1: an added token in a modified file → `scan.hits` entry with path, line and
       pattern; the token string is absent from stdout and every run-folder file.
-- [ ] Seam 1: a 2 MB untracked candidate → `scan.skipped` with the exact reason `"added
+- [x] Seam 1: a 2 MB untracked candidate → `scan.skipped` with the exact reason `"added
       content over 1 MB"`.
-- [ ] Seam 1: the entry point derives `osUser` via `os.userInfo()` when available, else
+- [x] Seam 1: the entry point derives `osUser` via `os.userInfo()` when available, else
       falls back to `USER` then `USERNAME`, else `null`; with the fault preload making
       `os.userInfo()` throw and neither env var set, `plan` still completes with
       `osUser: null` — the OS-user segment check is skipped, the fixed `local-path` shapes
