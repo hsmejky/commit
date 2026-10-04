@@ -253,6 +253,20 @@ function isAlive(pid) {
   }
 }
 
+// Polls `isAlive(pid)` until it reports dead or `deadlineMs` elapses, rather than sleeping a
+// fixed amount and checking once: on Windows a killed process is reaped asynchronously, so a
+// single check shortly after the kill can still observe it as alive (CI run 37206315296:
+// failed once on windows-latest node 24 with "grandchild still running", passed on rerun).
+// Checks immediately before the first sleep so an already-dead process needs no wait.
+async function waitUntilDead(pid, { intervalMs = 100, deadlineMs = 10_000 } = {}) {
+  const start = Date.now();
+  for (;;) {
+    if (!isAlive(pid)) return true;
+    if (Date.now() - start >= deadlineMs) return false;
+    await new Promise((resolve) => { setTimeout(resolve, intervalMs); });
+  }
+}
+
 test('a timed-out run kills the direct child\'s grandchild too', async (t) => {
   const c = createCase(t, { repo: false });
   const pidFile = path.join(c.root, 'grandchild.pid');
@@ -273,10 +287,10 @@ test('a timed-out run kills the direct child\'s grandchild too', async (t) => {
     Number.isInteger(grandchildPid) && grandchildPid > 0,
     `pid file did not contain a valid pid: ${fs.readFileSync(pidFile, 'utf8')}`,
   );
-  // The kill is sent right after the timeout fires; give the OS a moment to tear the
-  // grandchild down before checking it is gone (also generous for a loaded CI container).
-  await new Promise((resolve) => { setTimeout(resolve, 1000); });
-  assert.equal(isAlive(grandchildPid), false, 'grandchild still running');
+  // The kill is sent right after the timeout fires; poll for up to 10s rather than sleeping a
+  // fixed amount and checking once, since the OS (notably Windows) can tear the grandchild
+  // down asynchronously after the kill.
+  assert.ok(await waitUntilDead(grandchildPid), 'grandchild still running');
 });
 
 test(
