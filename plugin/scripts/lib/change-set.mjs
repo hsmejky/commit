@@ -737,7 +737,7 @@ export async function unstagedUnits({ toplevel, env, now }) {
   // review-CHG-14 finding 5: this diffs the real index against the worktree, same as
   // `split`'s pinned diff; an attribute-hidden text file's new content is therefore the
   // worktree file, so the NUL sniff reads it straight off disk (`hiddenBinaryFacts`), never
-  // the batch `cat-file` path (`newOid` is all-zero on an uncomputed worktree side, unlike
+  // the batch `cat-file` path (`newOid` is the worktree file's hash, but that object is not in the object database, unlike
   // `reword`/`staged`'s index-side diffs). `ctx.mode` is deliberately neither `reword` nor
   // `staged`, to take that disk-read branch in `resolveHiddenBinaries`.
   const ctx = { mode: 'unstaged', toplevel, env, now };
