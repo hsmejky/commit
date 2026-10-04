@@ -439,7 +439,7 @@ the first file crossing 3000 changed lines and every later file keep per-hunk ID
 - [ ] Seam 1: a `package-lock.json` change → one `summaryOnly` entry with reason `lockfile`; its content still scanned.
 - [ ] Seam 1: the 3000-line cap sums changed lines of the files that are not summary-only only; a lockfile of 2000 or more changed lines (summary-only, sorting before the code files in byte-wise path order) does not count toward the cap.
 - [ ] Seam 1: fixtures at 3000 and 3001 cumulative changed lines of non-summary-only files → the crossing file and all later files `body: "cap"` with their own IDs and ranges; earlier files keep blocks.
-- [ ] Seam 1: a summary-only file's and a cap-file's hunk lines and added lines are dropped while streaming, not held and discarded afterward — only counts, ranges and (below the file's own measure) `addedLines` are kept, so retained memory stays bounded by the Q19 and Q10 caps (M10) for a diff this large.
+- [ ] Seam 1: a summary-only file's hunk lines and added lines are dropped while streaming, not held and discarded afterward — only counts, ranges and (below the file's own measure) `addedLines` are kept, so retained memory stays bounded by the Q19 and Q10 caps (M10) for a diff this large.
 
 
 ## CHG-18: Stdout budget and spill to `hunks.json`
@@ -503,6 +503,7 @@ mark, which CHG-05 already leaves out of `preStaged`; if that path's group never
 the loss of the mark is silent.
 
 - [ ] Seam 1: three hunks of one file in two groups → group 2's hunks staged at their shifted ranges after group 1 committed; each commit holds exactly its hunks.
+- [ ] Seam 1: a file past the 3000-line body cap (`body: "cap"`, CHG-17) with two hunks in two groups → each commit holds exactly its hunk (M10 keeps capped bodies; drop KD-R88's in-process case then).
 - [ ] Seam 1: a trailing-whitespace hunk under `apply.whitespace=error` → committed as planned.
 - [ ] Seam 1: paths with quotes, tabs and (POSIX) newlines split into two groups → committed through the built patch.
 - [ ] Seam 1: the sparse-checkout fixture of CHG-07 committed → the out-of-cone and `skip-worktree` paths keep their HEAD content.

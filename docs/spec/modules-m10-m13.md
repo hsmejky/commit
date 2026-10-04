@@ -41,9 +41,19 @@ and of the real index.
   of patch text; the patch pass supplies only hunk bodies, ranges and the added lines the
   scan reads. A unit carries `addedLines: [{ line, text }]`, where `line` is the 1-based
   line number in the new file and `text` is the lossy UTF-8 decode of the line, without the
-  `+` and `\n`. It also carries `size` in bytes for M9 `summaryOnly`'s `size` rule — the new
-  content's size, or the old content's for a deletion — each read with a `cat-file -s <blob>`
-  call (`inventory` sets the same field on an untracked candidate). The patch pass is one
+  `+` and `\n`. M9 `summaryOnly`'s `size` rule reads a size in bytes, internal to M10 (not a
+  unit field; `inventory` sets its own `size` on an untracked candidate), and only for a
+  file no other rule already marks: the new content's size off disk when the new side is the
+  worktree (a split snapshot, and `stage`'s verify, which sizes the files it just `git add`ed
+  off disk too, so a file whose cleaned blob falls on the other side of 256 KB under
+  `eol=crlf`, `core.autocrlf` or `working-tree-encoding` keeps the hash `plan` stored), else
+  the blob's size (the old blob for a deletion), all read with at most one `cat-file
+  --batch-check=%(objectsize)` call per snapshot. A summary-only file is one whole-file unit
+  carrying its reason, its body dropped and its added lines kept for the scan. Past the
+  3000-line body cap (C:summary-only-files) a unit keeps its own hash, range, counts, added
+  lines and body, marked `capped`: the cap limits the worker's context, not the tool output
+  (Q19), so `stage` can still split a capped file by its ranges; only M13 leaves its block
+  out. The patch pass is one
   `git diff -z --raw -p` call over the whole diff (one exception, below), with no
   pathspecs (a path list would go on argv, and a pathspec narrows rename detection, Q11),
   read as a stream (M2 `onStdout`) keeping only what a later step needs: hunks of

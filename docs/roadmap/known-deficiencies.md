@@ -100,16 +100,25 @@ fixed, delete it here; IDs are never reused.
   need the fault preload's basename match widened to a path, a seam-list change. Fix: either
   add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's), or
   rebuild these cases at Seam 1. Slice: none yet (needs the user's seam decision).
-- **KD-R87.** CHG-17's fourth criterion (a summary-only or cap file's hunk lines dropped
-  while streaming, retained memory bounded by the Q19 and Q10 caps) is neither met nor
-  testable. No seam in testing-seams.md observes retained memory. M10 also decides both
-  rules after the patch pass (`withBodyRules` in `change-set.mjs`): the `size` rule needs a
-  size read after the stream, and a file under 1000 changed lines can still turn out
-  summary-only by size, which takes it out of the cap sum. So every body is held until
-  `snapshot` returns and is dropped only then. Only the added lines stay bounded (1 MB per
-  file, CHG-16). Fix: read the sizes from a `--raw` pass before the patch pass, then decide
-  per file in the reader (`finishSection`), holding at most 1000 lines of one file at a
-  time. Or relax the criterion to "bodies dropped before M13". Slice: CHG-17 (criterion 4).
+- **KD-R87.** CHG-17's fourth criterion (a summary-only file's hunk lines dropped while
+  streaming, retained memory bounded by the Q19 and Q10 caps) is neither met nor testable.
+  No seam in testing-seams.md observes retained memory. M10 also decides summary-only after
+  the patch pass (`withBodyRules` in `change-set.mjs`): the `size` rule needs a size read
+  after the stream. So a summary-only file's body is held until `snapshot` returns and is
+  dropped only then. Only the added lines stay bounded (1 MB per file, CHG-16). A capped
+  file's body is kept on purpose (Q19: the cap limits the worker's context, not the tool
+  output; CHG-20 splits a capped file by its ranges), so it is outside this row. Fix: read
+  the sizes from a `--raw` pass before the patch pass, then decide per file in the reader
+  (`finishSection`). Relaxing the criterion to "bodies dropped before M13" instead would
+  amend Q11 and M10, a user decision. Slice: CHG-17 (criterion 4).
+- **KD-R88.** CHG-17's review-Medium-2 case in `tests/plan-summary-cap.test.js` ("M10 keeps
+  the body of a capped unit") calls `snapshot` in-process, outside testing-seams.md's
+  user-confirmed seam list, the same gap KD-R77 names for M2/M11. Seam 1 cannot observe a
+  capped unit's body today: M13 leaves it out of `hunks.txt`, and `stage` still adds whole
+  files. The earlier `tests/change-set-*.test.js` files call M10 in-process the same way and
+  no row records them either. Fix: once CHG-20 stages a capped file split across two groups
+  from its ranges, prove it at Seam 1 and drop this case; or add an "in-process adapter"
+  seam (a user decision, as KD-R77's). Slice: CHG-20.
 
 ## Coverage
 

@@ -4,10 +4,10 @@
 // (C:summary-only-files, C:plan-hunks, Q19). M10 decides both over a snapshot's units: a
 // summary-only file is one whole-file unit with its reason, its body dropped and its added
 // lines kept for the scan; past the cap, every hunk of the crossing file and every later
-// file keeps its own unit and range with its body dropped. M13 renders the first as a
-// `summaryOnly[]` entry (no kind, no range, no block) and the second as `body: "cap"`.
-// Through `plan` (Seam 1). This file's own text holds no literal hit: the token is built at
-// run time.
+// file keeps its own unit, range and body, marked capped. M13 renders the first as a
+// `summaryOnly[]` entry (no kind, no range, no block) and the second as `body: "cap"` (no
+// block). Through `plan` and `commit` (Seam 1), except one in-process M10 case (KD-R88).
+// This file's own text holds no literal hit: the token is built at run time.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -49,12 +49,14 @@ function edit(text, at) {
   return lines.join('\n');
 }
 
-async function plan(c) {
-  const result = await runCommit(c, ['plan']);
+async function plan(c, args = ['plan']) {
+  const result = await runCommit(c, args);
   assert.equal(result.exitCode, 0, detail(result));
   const runDir = path.join(c.repoDir, '.commit-plan', result.json.planId);
   const read = (name) => fs.readFileSync(path.join(runDir, name), 'utf8');
   return {
+    planId: result.json.planId,
+    runDir,
     index: result.json.hunks,
     planJson: JSON.parse(read('plan.json')),
     hunksTxt: read('hunks.txt'),
@@ -83,23 +85,29 @@ test('a package-lock.json change is one summaryOnly entry (lockfile), still scan
   assert.equal(hunksTxt.includes('package-lock.json'), false);
 });
 
-test('a summary-only lockfile stages and verifies as its one whole-file unit', async (t) => {
+// The worker's one group over every planned unit (the files the worker would write, Seam 1),
+// then `commit --all`.
+async function commitAll(c, { planId, runDir }, header) {
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = [{ n: 1, units: state.units.map((unit) => unit.id), header, body: '', committed: false }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return runCommit(c, ['commit', '--plan', planId, '--all']);
+}
+
+test('a summary-only lockfile commits as its one whole-file unit (stage verifies its hash)', async (t) => {
   const c = createCase(t);
   const lock = numbered(40);
   seed(c, { 'package-lock.json': lock });
-  c.writeFile('package-lock.json', edit(lock, [3, 30]));
-  const units = await changeSet.snapshot({
-    mode: 'split', storedLists: { candidates: [], stagedNew: [] }, tracked: ['package-lock.json'],
-    indexPath: path.join(c.root, 'git-index'), unborn: false,
-    toplevel: c.repoDir, env: c.env, now: () => 0,
-  });
+  const edited = edit(lock, [3, 30]);
+  c.writeFile('package-lock.json', edited);
+  const planned = await plan(c, ['plan', '--split']);
+  assert.deepEqual(planned.index.summaryOnly.map((e) => [e.path, e.reason]), [['package-lock.json', 'lockfile']]);
 
-  assert.equal(units.length, 1);
-  assert.equal(units[0].summaryOnly, 'lockfile');
-  assert.equal(units[0].body.length, 0);
-  assert.deepEqual(units[0].addedLines, [{ line: 3, text: 'changed 3' }, { line: 30, text: 'changed 30' }]);
-  const staged = await changeSet.stage({ units, toplevel: c.repoDir, env: c.env, now: () => 0 });
-  assert.deepEqual(staged, { ok: true });
+  const result = await commitAll(c, planned, 'chore: bump lockfile');
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(c.git(['show', 'HEAD:package-lock.json']), edited);
 });
 
 // Code files of 1000, 1000 and `third` added lines, then a two-hunk `src/d.js` (2 changed
@@ -174,16 +182,58 @@ test('a file over 256 KB with one changed line is summary-only (size), worktree 
   seed(c, { 'data/big.txt': `top\n${big}`, 'data/small.txt': 'top\n' });
   c.writeFile('data/big.txt', `TOP\n${big}`);
   c.writeFile('data/small.txt', 'TOP\n');
-  const split = await changeSet.snapshot({
-    mode: 'split', storedLists: { candidates: [], stagedNew: [] }, tracked: ['data/big.txt', 'data/small.txt'],
+  const split = await plan(c, ['plan', '--split']);
+  fs.rmSync(path.join(c.repoDir, '.commit-plan'), { recursive: true, force: true });
+  c.git(['add', '--', 'data']);
+  const staged = await plan(c, ['plan', '--staged']);
+
+  for (const { index } of [split, staged]) {
+    assert.deepEqual(index.summaryOnly.map((e) => [e.path, e.reason]), [['data/big.txt', 'size']]);
+    assert.deepEqual(index.hunks.map((e) => [e.path, e.body]), [['data/small.txt', 'file']]);
+  }
+});
+
+// review-CHG-17 Medium 1: `snapshot` (split) sizes a worktree file off disk, so `stage`'s
+// verify must too: with `eol=crlf` the disk copy (CRLF) is over 256 KB while the staged blob
+// (LF) is under it, and a verify sizing the blob hashed the file per hunk → `mismatch`.
+test('eol=crlf file over 256 KB on disk, under it as a blob: summary-only and commits', async (t) => {
+  const c = createCase(t);
+  const lines = Array.from({ length: 12800 }, () => 'x'.repeat(19));
+  const crlf = (rows) => `${rows.join('\r\n')}\r\n`;
+  c.writeFile('.gitattributes', 'data.txt text eol=crlf\n');
+  c.writeFile('data.txt', crlf(lines));
+  c.git(['add', '--', '.gitattributes', 'data.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  assert.equal(Number(c.git(['cat-file', '-s', 'HEAD:data.txt']).trim()), 256000);
+  lines[5] = 'y'.repeat(19);
+  c.writeFile('data.txt', crlf(lines));
+  assert.equal(fs.statSync(path.join(c.repoDir, 'data.txt')).size, 268800);
+
+  const planned = await plan(c, ['plan', '--split']);
+  assert.deepEqual(planned.index.summaryOnly.map((e) => [e.path, e.reason]), [['data.txt', 'size']]);
+  const result = await commitAll(c, planned, 'fix: change data row');
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(c.git(['show', 'HEAD:data.txt']), `${lines.join('\n')}\n`);
+});
+
+// review-CHG-17 Medium 2: the cap limits the worker's context, not the tool output (Q19), so
+// M10 keeps a capped unit's body (a split by its ranges builds the staging patch from it,
+// CHG-20); only M13 leaves its block out. In-process M10 case: KD-R88.
+test('M10 keeps the body of a capped unit; only a summary-only file loses it', async (t) => {
+  const c = capCase(t, { third: 997, withE: true, lockLines: 5 });
+  const units = await changeSet.snapshot({
+    mode: 'split', storedLists: { candidates: [], stagedNew: [] },
+    tracked: ['package-lock.json', 'src/a.js', 'src/b.js', 'src/c.js', 'src/d.js', 'src/e.js'],
     indexPath: path.join(c.root, 'git-index'), unborn: false,
     toplevel: c.repoDir, env: c.env, now: () => 0,
   });
-  c.git(['add', '--', 'data']);
-  const staged = await changeSet.snapshot({ mode: 'staged', toplevel: c.repoDir, env: c.env, now: () => 0 });
 
-  for (const units of [split, staged]) {
-    assert.deepEqual(units.map((unit) => [unit.path, unit.summaryOnly]), [['data/big.txt', 'size'], ['data/small.txt', undefined]]);
-  }
-  assert.equal(split[0].hash, staged[0].hash);
+  const byPath = (p) => units.filter((unit) => unit.path === p);
+  assert.equal(byPath('package-lock.json')[0].body.length, 0);
+  const capped = [...byPath('src/d.js'), ...byPath('src/e.js')];
+  assert.equal(capped.length, 3);
+  for (const unit of capped) assert.equal(unit.capped, true);
+  assert.match(capped[0].body.toString('utf8'), /^\+changed 3$/m);
+  assert.match(capped[2].body.toString('utf8'), /^\+E$/m);
 });

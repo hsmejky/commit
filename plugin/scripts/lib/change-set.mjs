@@ -1291,7 +1291,11 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   // The real index's attributes for the group's paths (CHG-10): without them a filtered
   // file's staged diff splits into `text` hunks that never match its stored unit.
   const attrs = await checkAttrs(units.map((unit) => unit.path), { toplevel, env, now });
-  const staged = await withBodyRules(await diffUnits(['--cached'], { toplevel, env, now }, attrs), { worktree: false, toplevel, env, now });
+  // review-CHG-17 Medium 1: sized off disk (`worktree: true`), as the split `snapshot` that
+  // produced the stored units was: the group's files were just `git add`ed from there, and a
+  // blob size can fall on the other side of 256 KB (eol=crlf, core.autocrlf,
+  // working-tree-encoding), turning a stored whole-file hash into per-hunk ones.
+  const staged = await withBodyRules(await diffUnits(['--cached'], { toplevel, env, now }, attrs), { worktree: true, toplevel, env, now });
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
 }
 
@@ -1662,7 +1666,9 @@ const ZERO_OID = /^0+$/;
 // (C:summary-only-files: the scan ignores summary-only status), its `body` is dropped. Then,
 // in path order, the changed lines of the files that are not summary-only are summed: the
 // first file taking the sum over 3000 and every later one keep each unit (own hash, range,
-// counts, `addedLines`) with `capped: true` and the `body` dropped. `size` (the `size` rule)
+// counts, `addedLines`, `body`) with `capped: true`: the cap limits the worker's context, not
+// the tool output (Q19), so the body stays for a split by ranges (CHG-20) and only M13
+// leaves its block out (review-CHG-17 Medium 2). `size` (the `size` rule)
 // is read only for a file no earlier rule already marks: off disk when the new side is the
 // worktree (`worktree`), else with one `cat-file --batch-check` over the blob IDs (the old
 // one for a deletion). The internal `blobs`, `fileHash` and `fileRange` are stripped.
@@ -1704,7 +1710,7 @@ async function withBodyRules(units, { worktree, toplevel, env, now }) {
       continue;
     }
     if (sum <= BODY_CAP_LINES) sum += file.added + file.deleted;
-    if (sum > BODY_CAP_LINES) out.push(...plain.map((unit) => ({ ...unit, body: Buffer.alloc(0), capped: true })));
+    if (sum > BODY_CAP_LINES) out.push(...plain.map((unit) => ({ ...unit, capped: true })));
     else out.push(...plain);
   }
   return out;
