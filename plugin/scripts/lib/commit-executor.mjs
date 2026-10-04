@@ -42,9 +42,11 @@
 // clean `after` clears it instead. The next group's own (b) `unmatched` refusal then reads
 // it: when set, its text names that group as the likely cause of a repo hook (lint-staged, a
 // formatter) rewriting files during its commit, instead of "files changed since plan".
-// The failure paths (EXE-10 to
-// EXE-13), the parent and tree check (EXE-14), trailers
-// (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
+// MSG-07 adds the trailers: `messageOf` runs M6 `appendTrailers` over the approved message
+// with the run's stored attribution trailer, always applied in `split`/`staged` (the only
+// modes reached so far). The failure paths (EXE-10 to
+// EXE-13), the parent and tree check (EXE-14)
+// and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
@@ -53,6 +55,7 @@ import {
   writeTree,
 } from './change-set.mjs';
 import { run } from './process-adapter.mjs';
+import { appendTrailers } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
@@ -138,13 +141,19 @@ async function resetIndex({ toplevel, env, now }) {
 
 /**
  * The commit message as approved: the header, then a blank line and the body when there is
- * one, ending with exactly one LF (C:message-grammar). MSG-07 appends the trailers.
+ * one, ending with exactly one LF (C:message-grammar), then MSG-07's `appendTrailers` with
+ * the run's stored attribution trailer (`state.attribution.trailer`, resolved once by `plan`
+ * and never re-resolved here, C:run-folder). Attribution applies always in the only modes
+ * this executor reaches so far (`split`, `staged`, C:message-grammar "Trailers"); `reword`'s
+ * conditional attribution and carried-trailer rules are MSG-08's.
  *
  * @param {{ header: string, body: string | null }} group
+ * @param {{ attribution: { trailer: string | null, source: string } }} state
  * @returns {string}
  */
-function messageOf({ header, body }) {
-  return body === null ? `${header}\n` : `${header}\n\n${body.replace(/\n+$/, '')}\n`;
+function messageOf({ header, body }, state) {
+  const approved = body === null ? `${header}\n` : `${header}\n\n${body.replace(/\n+$/, '')}\n`;
+  return appendTrailers(approved, { attribution: state.attribution.trailer });
 }
 
 // Every stored unit of each file the group names (whole-file staging, EXE-02).
@@ -361,7 +370,7 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
       // EXE-23 (Q18): the repo's signing config stays untouched — never `--no-gpg-sign` or
       // `-c commit.gpgsign=false`; M2's scrub keeps an exported `GIT_CONFIG_SYSTEM`.
       const committed = await commitGuarded({
-        args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group), ...git,
+        args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group, state), ...git,
       });
       if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
 

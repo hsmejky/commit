@@ -6,7 +6,8 @@
 // which validates the plan and, with no confirmation logic yet (RUN-18), commits it in the
 // same process as `commit --all` (C:check `confirm: null`): its output is `commit --all`'s
 // with `groups`, `notIncluded` and `notices` merged in, plus the `committed` reply
-// (C:reply-and-handback). The message is committed as planned, without a trailer (MSG-07).
+// (C:reply-and-handback). MSG-07 now appends the default attribution trailer (no settings
+// layer sets one up here) as a new last paragraph, since the planned header has no footer.
 // Seam 1 only.
 
 const fs = require('node:fs');
@@ -22,6 +23,7 @@ const { loadLib } = require('./helpers/load-lib.js');
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HEADER = 'feat: change both files';
+const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 // INT-27 (Q23): no heartbeat is set up in this case's Claude home, so `plan`'s guard notice
 // carries into the final `committed` reply.
 const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
@@ -139,7 +141,7 @@ test('check --plan with a one-group plan commits it in the same process: the pla
   const shas = c.git(['rev-list', `${seed}..HEAD`]).trim().split('\n');
   assert.equal(shas.length, 1, 'HEAD gains exactly one commit');
   const [sha] = shas;
-  assert.equal(rawMessage(c, sha), `${HEADER}\n`, 'the planned header byte for byte, no trailer');
+  assert.equal(rawMessage(c, sha), `${HEADER}\n\n${DEFAULT_TRAILER}\n`, 'MSG-07: the default trailer as a new paragraph');
   assert.equal(c.git(['diff-tree', '--no-commit-id', '--name-only', '-r', sha]), 'a.txt\nb.txt\n');
 
   // C:check: `commit --all`'s output with `groups`, `notIncluded` and `notices` merged in.

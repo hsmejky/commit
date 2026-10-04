@@ -33,6 +33,10 @@ function detail(result) {
 
 const HEADER = 'feat: change both files';
 const BODY = 'Some body.';
+// MSG-07: the default attribution trailer this file's cases all get (none sets up a custom
+// settings layer), appended as a new last paragraph since none of these bodies end in a
+// footer paragraph.
+const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
 // Two committed files, both modified, a `plan --split` run holding the lock, and one stored
 // group naming every unit, as `check` stores it (PLN-01). `configure` runs on the case right
@@ -95,7 +99,7 @@ test("the commit's tree holds both files' working-tree content, its message is t
   assert.equal(c.git(['show', `${sha}:a.txt`]), 'one\nmore\n');
   assert.equal(c.git(['show', `${sha}:b.txt`]), 'two\nmore\n');
   const raw = c.git(['cat-file', 'commit', sha]);
-  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${BODY}\n`);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${BODY}\n\n${DEFAULT_TRAILER}\n`);
   assert.equal(c.git(['status', '--porcelain']), '', 'nothing is left uncommitted');
 });
 
@@ -234,7 +238,7 @@ test('commit.cleanup=strip and core.commentChar=; in repo config do not strip a 
   assert.equal(fs.existsSync(marker), true, 'the pre-commit hook ran');
   const [{ sha }] = result.json.commits;
   const raw = c.git(['cat-file', 'commit', sha]);
-  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n`);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n\n${DEFAULT_TRAILER}\n`);
   const lines = readTraceLines(trace);
   assert.ok(
     lines.some((line) => line.includes('built-in: git commit --cleanup=verbatim -F -')),
@@ -267,7 +271,7 @@ test('a stored body line reading --amend or -n is committed as text, changes no 
   );
   assert.equal(c.git(['rev-list', '--count', sha]).trim(), '2', 'history has two commits, not one');
   const raw = c.git(['cat-file', 'commit', sha]);
-  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n`);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\n${body}\n\n${DEFAULT_TRAILER}\n`);
   const lines = readTraceLines(trace);
   assert.ok(
     lines.some((line) => line.includes('built-in: git commit --cleanup=verbatim -F -')),
@@ -290,7 +294,7 @@ test('a stored body ending in blank lines is committed with exactly one trailing
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;
   const raw = c.git(['cat-file', 'commit', sha]);
-  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\nLine one.\n`);
+  assert.equal(raw.slice(raw.indexOf('\n\n') + 2), `${HEADER}\n\nLine one.\n\n${DEFAULT_TRAILER}\n`);
 });
 
 test('matchIds: every id whose hash a current unit carries → ok; a missing hash → unmatched', () => {
