@@ -76,7 +76,7 @@ import { renderHunks } from './hunk-index.mjs';
 import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import {
-  cleanupDeadline, deadline, onLintFailure, planRefusal, releaseDeadline, resolveMode,
+  checkGate, cleanupDeadline, deadline, onLintFailure, planRefusal, releaseDeadline, resolveMode,
 } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig, readLayers, scanIgnoreChanged, isRepoConfigPath, REPO_CONFIG_PATH } from './config.mjs';
@@ -957,7 +957,20 @@ async function checkRefusals(ctx) {
 }
 
 /**
- * `check` step 4 (PLN-01): clears the stored groups and `awaitingConfirm` before anything is
+ * `check` step 4 (RUN-19): M15 `checkGate` over the run state read after the lock check (step
+ * 3, `openRun`), before step 5 ever clears or re-validates anything. Once a budget stop
+ * (EXE-16) has left any stored group committed, `check` must not clear `state.groups` (the
+ * next step would) nor validate a fresh plan over it, so this runs first and keeps the run on
+ * a refusal, same as every other `usage` refusal (no `releaseOpen`; only this call's
+ * `call.lock` goes, via `check`'s own `finally`).
+ */
+async function checkAlreadyCommitted(ctx) {
+  const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
+  return checkGate(readState(run)) ?? undefined;
+}
+
+/**
+ * `check` step 5 (PLN-01): clears the stored groups and `awaitingConfirm` before anything is
  * validated (C:check), so a failed `check` leaves no group that `commit` would accept, then
  * M14 `validatePlan` over `plan.groups.json` and the run state. A lint failure ends the call
  * with exit 2 and the `errors`; RUN-16 counts it in `lintFailures` and asks M15
@@ -966,8 +979,8 @@ async function checkRefusals(ctx) {
  * it to drop the `edit` answer when the plan's one error is a shape error) into the
  * `lintFailed` reply facts, unused until then. On success the validated groups are stored with
  * `committed: false`; the output is `groups`, `notIncluded` and `notices` only, with the
- * lock kept: M15 `checkGate` (RUN-19), `computeConfirm` and the routing to `commit --all`
- * arrive with their own slices (RUN-17, RUN-18, EXE-02, INT-02).
+ * lock kept: `computeConfirm` and the routing to `commit --all` arrive with their own slices
+ * (RUN-17, RUN-18, EXE-02, INT-02).
  */
 async function validateWorkerPlan(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
@@ -987,7 +1000,7 @@ async function validateWorkerPlan(ctx) {
   return { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
 }
 
-const CHECK_STEPS = Object.freeze([probeRepo, checkRefusals, openRun, validateWorkerPlan]);
+const CHECK_STEPS = Object.freeze([probeRepo, checkRefusals, openRun, checkAlreadyCommitted, validateWorkerPlan]);
 
 /**
  * `infer` step 2 (INF-01): the probe's refusals, the `env` row, the first `state` clause

@@ -12,6 +12,8 @@
 // manifest once the roadmap builds them. The manifest is data so a later slice adds a row (and, once reachable, a Seam
 // 1 case) instead of writing a new test file.
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
@@ -46,7 +48,31 @@ const ROWS = [
       return runCommit(c, ['plan', '--staged']);
     },
   },
-  { row: 'already-committed', reachable: false },
+  {
+    row: 'already-committed',
+    kind: 'usage',
+    exitCode: 1,
+    reachable: true,
+    // RUN-19: M15 `checkGate` refuses `check` once any stored group is committed. A group
+    // marked committed by hand stands in for a budget stop (EXE-16) having committed it
+    // (tests/check-already-committed.test.js builds the real budget-stop case).
+    async seam1Case(t) {
+      const c = createCase(t);
+      c.writeFile('a.txt', 'one\n');
+      c.git(['add', '--', 'a.txt']);
+      c.git(['commit', '-q', '-m', 'seed']);
+      c.writeFile('a.txt', 'two\n');
+      const planned = await runCommit(c, ['plan']);
+      const { planId, runDir } = planned.json;
+      const statePath = path.join(runDir, 'state.json');
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      state.groups = [{
+        n: 1, units: state.units.map((unit) => unit.id), header: 'feat: change a', body: null, committed: true,
+      }];
+      fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+      return runCommit(c, ['check', '--plan', planId]);
+    },
+  },
   { row: 'no-groups', reachable: false },
   {
     row: 'config',
@@ -172,7 +198,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 8);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 9);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

@@ -277,3 +277,25 @@ export function onLintFailure(runState, source, kind) {
   if (source === 'user') return 'lintFailed';
   return (runState.lintFailures ?? 0) >= 1 ? 'lintFailed' : 'fix';
 }
+
+// RUN-19 (C:check, domain-code table): a run stopped at the budget (EXE-16) with `continue`
+// keeps the lock and the folder with some groups already committed; `checkGate` keeps `check`
+// from clearing and re-validating a plan over that state (`validateWorkerPlan` would otherwise
+// discard the stored groups and their `committed` SHAs are only readable through `commit`'s
+// own output, not recomputed by a fresh `check`).
+const ALREADY_COMMITTED_TEXT = 'check cannot run again: this run already committed a group; '
+  + 'continue with commit --all, or end the run with release';
+
+/**
+ * M15 `checkGate(runState)` (RUN-19, C:check, Q9, domain-code table): refuses `check` once any
+ * group this run stored has been committed.
+ *
+ * @param {{ groups?: Array<{ committed: boolean }> }} runState the state `check` read.
+ * @returns {{ refusal: { code: 'already-committed', message: string } } | null}
+ */
+export function checkGate(runState) {
+  if (Array.isArray(runState.groups) && runState.groups.some((group) => group.committed)) {
+    return { refusal: { code: 'already-committed', message: ALREADY_COMMITTED_TEXT } };
+  }
+  return null;
+}
