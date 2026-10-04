@@ -88,7 +88,10 @@ index covers every unit. The bodies go to `hunks.txt` in the [run folder](run-fo
   When they differ, every unit of the repo config file (its path or old path) is flagged,
   since a whole-file comparison cannot tell which hunk carries the change; when they are
   equal, as when only another repo-config key (e.g. `maxSubjectLength`) was edited, the list
-  is empty. The hunk index carries the same as
+  is empty. When no unit's path or old path is the repo config, `scanIgnoreChanged` is
+  `false` and `scanIgnoreUnits` is empty without reading `snapshotBlob` at all (M18 step 5;
+  e.g. a gitignored, untracked repo config change has no unit to flag). The hunk index
+  carries the same as
   `"scan": ["github-token"]` or `"scan": "skipped"` per entry, so the worker can put a hit
   in `notIncluded` on the first try.
 - Every run for a `planId`, the first one included (then every respawn for `edit` or

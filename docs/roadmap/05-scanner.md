@@ -249,29 +249,32 @@ scan map as `scanIgnoreUnits`.
 
 **Blocked by:** SCN-13, CFG-07, CFG-01, CHG-08, CHG-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M4, M8, M18 step 5, C:plan-hunks (scan map, `snapshotBlob`), Q10 (pass 9),
 story 149.
 
-- [ ] Seam 3: `scanIgnoreChanged: true` flags both hunks of the repo config; `false` flags
+- [x] Seam 3: `scanIgnoreChanged: true` flags both hunks of the repo config; `false` flags
       none.
-- [ ] Seam 1: editing only `maxSubjectLength` → `scan.scanIgnoreChanged: false`, empty
+- [x] Seam 1: editing only `maxSubjectLength` → `scan.scanIgnoreChanged: false`, empty
       `scanIgnoreUnits`; adding a pattern → `true` and every repo-config unit in the scan
       map, including a hunk that edits only another key (CFG-01 item 2).
-- [ ] Seam 1: snapshot content that is not valid JSON, or a non-array `scanIgnore`, counts
-      as changed; a missing file or key is no patterns.
-- [ ] Seam 1: renaming or moving `.claude/commit.json` while also changing `scanIgnore` →
+- [x] Seam 1: snapshot content that is not valid JSON, or a non-array `scanIgnore`, counts
+      as changed; a missing file or key is no patterns. The `split`-mode half of this (an
+      invalid file at the repo config's own path) cannot fire: `loadConfig` refuses before
+      `scanDiff` runs, so it is covered instead at Seam 3; the `staged`-mode half (an
+      invalid staged copy with a valid worktree copy) is KD-R82, moved to CHG-14.
+- [x] Seam 1: renaming or moving `.claude/commit.json` while also changing `scanIgnore` →
       the unit is flagged by its old path, since it is the repo config file (C:plan-hunks);
       a rename away with no edit, while HEAD holds patterns, → `true` too, since
       `snapshotBlob(REPO_CONFIG_PATH)` reads no file (CFG-01 item 3).
-- [ ] Seam 1: an invalid `scanIgnore` at HEAD fixed in the worktree with a pattern → `true`
+- [x] Seam 1: an invalid `scanIgnore` at HEAD fixed in the worktree with a pattern → `true`
       and the repo-config units flagged (CFG-01 item 5).
-- [ ] Seam 1 (macOS runner, case-insensitive FS): a `scanIgnore` pattern differing in case
+- [x] Seam 1 (macOS runner, case-insensitive FS): a `scanIgnore` pattern differing in case
       from the path does not exempt it.
-- [ ] Seam 1: a `scanIgnore` pattern committed at HEAD exempts a matching hit from
+- [x] Seam 1: a `scanIgnore` pattern committed at HEAD exempts a matching hit from
       `scan.hits`.
-- [ ] A static test asserts M18's source imports `isRepoConfigPath` and `REPO_CONFIG_PATH`,
+- [x] A static test asserts M18's source imports `isRepoConfigPath` and `REPO_CONFIG_PATH`,
       passes the first to `scanUnits` and the second to `snapshotBlob`, M8's source does
       not import them, and neither holds a repo-config filename
       literal of its own.
