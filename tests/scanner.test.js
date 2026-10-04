@@ -55,6 +55,7 @@ test('scanUnits: a github-token added line is one hit with pattern ID, path and 
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'src/config.js', line: 14 }],
     skipped: [],
+    scanIgnoreUnits: [],
   });
   assert.ok(!JSON.stringify(result).includes(token), 'the result holds the matched value');
   assert.ok(!JSON.stringify(result).includes(token.slice(4)), 'the result holds part of the value');
@@ -263,7 +264,7 @@ test('scanUnits: hits in unit order, then line order; one hit per pattern and li
 
 test('scanUnits of units with no hit reports no hits and no skipped files', () => {
   const units = [textUnit('README.md', [{ line: 1, text: 'See ghp_ prefixed tokens.' }])];
-  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [], scanIgnoreUnits: [] });
 });
 
 // Line cut at 4096 characters (SCN-12): every scanned line (diff line, symlink target,
@@ -596,7 +597,7 @@ test('scanUnits: a binary unit is neither a hit nor skipped', () => {
     { path: 'image.png', oldPath: null, status: 'M', kind: 'binary', addedLines: [{ line: 1, text: token }] },
   ];
 
-  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [], scanIgnoreUnits: [] });
 });
 
 test('scanUnits: content outside addedLines is never scanned', () => {
@@ -614,7 +615,7 @@ test('scanUnits: content outside addedLines is never scanned', () => {
     },
   ];
 
-  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [] });
+  assert.deepEqual(scanUnits(units, { scanIgnore: [], osUser: null }), { hits: [], skipped: [], scanIgnoreUnits: [] });
 });
 
 test('scanUnits: a unit with over 1 MB added is skipped with the exact reason, no hits', () => {
@@ -628,6 +629,7 @@ test('scanUnits: a unit with over 1 MB added is skipped with the exact reason, n
   assert.deepEqual(result, {
     hits: [],
     skipped: [{ path: 'assets/big.json', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -650,6 +652,7 @@ test('scanUnits: a unit with exactly 1 MB added is scanned, not skipped', () => 
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'assets/exact.json', line: 2 }],
     skipped: [],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -687,6 +690,7 @@ test('scanUnits: non-ASCII content one byte under the 1 MB limit is scanned, not
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'assets/under.json', line: 2 }],
     skipped: [],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -698,6 +702,7 @@ test('scanUnits: non-ASCII content exactly at the 1 MB limit is scanned, not ski
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'assets/boundary.json', line: 2 }],
     skipped: [],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -709,6 +714,7 @@ test('scanUnits: non-ASCII content one byte over the 1 MB limit is skipped, no h
   assert.deepEqual(result, {
     hits: [],
     skipped: [{ path: 'assets/over.json', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -725,6 +731,7 @@ test('scanUnits: a unit flagged overScanLimit is skipped even with short added l
   assert.deepEqual(result, {
     hits: [],
     skipped: [{ path: 'assets/cut.json', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -738,6 +745,7 @@ test('scanUnits: a flagged binary unit with empty addedLines is still skipped (f
   assert.deepEqual(result, {
     hits: [],
     skipped: [{ path: 'assets/cut.bin', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -754,6 +762,7 @@ test('scanUnits: two flagged units of the same path are one skipped entry; an un
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'src/ok.js', line: 1 }],
     skipped: [{ path: 'assets/split.bin', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -768,6 +777,7 @@ test('scanUnits: two unflagged units of the same path, each over the 1 MB byte m
   assert.deepEqual(result, {
     hits: [],
     skipped: [{ path: 'assets/big.bin', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -783,6 +793,7 @@ test('scanUnits: a flagged unit and an unflagged unit over the byte measure, sam
   assert.deepEqual(result, {
     hits: [],
     skipped: [{ path: 'assets/mixed.bin', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -802,6 +813,7 @@ test('scanUnits: a flagged unit and an unflagged, under-limit unit of the same p
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'assets/disagree.bin', line: 2 }],
     skipped: [{ path: 'assets/disagree.bin', reason: 'added content over 1 MB' }],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -827,7 +839,7 @@ test('scanUnits: a secret in a unit matched by a scanIgnore glob is not a hit', 
 
   const result = scanUnits(units, { scanIgnore: [ignoreGlob('tests/fixtures/**')], osUser: null });
 
-  assert.deepEqual(result, { hits: [], skipped: [] });
+  assert.deepEqual(result, { hits: [], skipped: [], scanIgnoreUnits: [] });
 });
 
 test('scanUnits: a scanIgnore glob that does not match the unit path still scans it', () => {
@@ -839,6 +851,7 @@ test('scanUnits: a scanIgnore glob that does not match the unit path still scans
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'src/config.js', line: 1 }],
     skipped: [],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -859,6 +872,7 @@ test('scanUnits: a rename is matched against its new path, not its old path (C:s
   assert.deepEqual(result, {
     hits: [{ patternId: 'github-token', path: 'src/a.js', line: 1 }],
     skipped: [],
+    scanIgnoreUnits: [],
   });
 });
 
@@ -871,5 +885,43 @@ test('scanUnits: any matching scanIgnore matcher in the list drops the unit', ()
     osUser: null,
   });
 
-  assert.deepEqual(result, { hits: [], skipped: [] });
+  assert.deepEqual(result, { hits: [], skipped: [], scanIgnoreUnits: [] });
+});
+
+// SCN-14 (docs/roadmap/05-scanner.md, M8): `scanIgnoreUnits` is computed over ALL units
+// unconditionally, independently of the scanIgnore-exempt/skip/binary `continue`s above. M8
+// never imports M4, so a plain stub stands in for `isRepoConfigPath` here.
+const isRepoConfigPath = (p) => p === '.claude/commit.json';
+
+test('scanUnits: scanIgnoreChanged true flags every unit whose path or old path is the repo config', () => {
+  const units = [
+    { id: 'h1', path: '.claude/commit.json', oldPath: null, status: 'M', kind: 'text', addedLines: [] },
+    { id: 'h2', path: '.claude/commit.json', oldPath: null, status: 'M', kind: 'text', addedLines: [] },
+    { id: 'h3', path: 'src/other.js', oldPath: null, status: 'M', kind: 'text', addedLines: [] },
+    { id: 'h4', path: 'config/commit.json', oldPath: '.claude/commit.json', status: 'R', kind: 'text', addedLines: [] },
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null, scanIgnoreChanged: true, isRepoConfigPath });
+
+  assert.deepEqual(result.scanIgnoreUnits, ['h1', 'h2', 'h4']);
+});
+
+test('scanUnits: scanIgnoreChanged false gives an empty scanIgnoreUnits even when a unit is the repo config', () => {
+  const units = [
+    { id: 'h1', path: '.claude/commit.json', oldPath: null, status: 'M', kind: 'text', addedLines: [] },
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null, scanIgnoreChanged: false, isRepoConfigPath });
+
+  assert.deepEqual(result.scanIgnoreUnits, []);
+});
+
+test('scanUnits: the backstop call shape (neither option passed) gives an empty scanIgnoreUnits', () => {
+  const units = [
+    { id: 'h1', path: '.claude/commit.json', oldPath: null, status: 'M', kind: 'text', addedLines: [] },
+  ];
+
+  const result = scanUnits(units, { scanIgnore: [], osUser: null });
+
+  assert.deepEqual(result.scanIgnoreUnits, []);
 });

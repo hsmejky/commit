@@ -473,13 +473,23 @@ export function createScanner(patterns) {
    *
    * Every other unit, symlinks included, is scanned line by line like a text unit.
    *
+   * Independently of the unit-level rules above, when `scanIgnoreChanged` is true and
+   * `isRepoConfigPath` is given (SCN-14), every unit whose path OR old path is the repo
+   * config is collected into `scanIgnoreUnits` by id — computed over ALL units
+   * unconditionally, so a repo-config unit dropped by the `scanIgnore`-exempt, over-limit or
+   * binary `continue`s above is still flagged. Neither option passed (the M18 backstop call
+   * shape) or `scanIgnoreChanged` false/absent gives an empty array.
+   *
    * @param {readonly Unit[]} units
-   * @param {{ scanIgnore?: readonly object[], osUser?: string | null }} [options] `scanIgnore`
-   *   holds M7 `Matcher` values, opaque here; each is checked against a unit's path with M7's
-   *   own `matches`
-   * @returns {{ hits: UnitHit[], skipped: { path: string, reason: string }[] }}
+   * @param {{ scanIgnore?: readonly object[], osUser?: string | null, scanIgnoreChanged?:
+   *   boolean, isRepoConfigPath?: ((path: string) => boolean) | null }} [options]
+   *   `scanIgnore` holds M7 `Matcher` values, opaque here; each is checked against a unit's
+   *   path with M7's own `matches`. `isRepoConfigPath` is opaque here too (M4's own
+   *   predicate, injected so M8 never imports M4 or holds a repo-config path literal).
+   * @returns {{ hits: UnitHit[], skipped: { path: string, reason: string }[], scanIgnoreUnits:
+   *   string[] }}
    */
-  function scanUnits(units, { scanIgnore = [], osUser = null } = {}) {
+  function scanUnits(units, { scanIgnore = [], osUser = null, scanIgnoreChanged = false, isRepoConfigPath = null } = {}) {
     const osUserSegment = osUserSegmentName(osUser);
     const hits = [];
     const skipped = [];
@@ -510,7 +520,12 @@ export function createScanner(patterns) {
         }
       });
     }
-    return { hits, skipped };
+    const scanIgnoreUnits = scanIgnoreChanged && isRepoConfigPath !== null
+      ? units
+        .filter((u) => isRepoConfigPath(u.path) || (u.oldPath != null && isRepoConfigPath(u.oldPath)))
+        .map((u) => u.id)
+      : [];
+    return { hits, skipped, scanIgnoreUnits };
   }
 
   return { scanText, scanUnits };
