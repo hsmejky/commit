@@ -7,7 +7,8 @@
 // C:reply-and-handback). RPL-04 adds the `failed` status for a pre-folder refusal (`text`:
 // the refusal's own message, then the tree state); `committed` and `handback` replies, the
 // handback rule, notices and the trailer line are later slices'. CHG-04 adds the "N files
-// left" tree state.
+// left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers,
+// `ifNoUser` and handback rule are INT-13's.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -57,6 +58,13 @@ const NOTHING_LINES = Object.freeze({
   'already-ended': 'nothing to release: the run has already ended or was taken over',
 });
 
+// The `modeChoice` counts question (C:plan `mode`, Q9): counts only, never file names.
+function modeChoiceQuestion({ staged, other }) {
+  const files = staged === 1 ? '1 file is' : `${staged} files are`;
+  const changes = other === 1 ? '1 other change' : `${other} other changes`;
+  return `${files} staged, ${changes}: commit only the staged ones, or group all changes within the task?`;
+}
+
 /**
  * Builds a reply from the facts of the output that ends the worker's part.
  *
@@ -64,7 +72,9 @@ const NOTHING_LINES = Object.freeze({
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'failed', message: string,
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
- *   notices?: string[] }} facts `notices`: the call's notices (RUN-05: a provisional run
+ *   notices?: string[] } | { status: 'handback', kind: 'modeChoice', staged: number,
+ *   other: number, treeState, notices?: string[] }} facts
+ *   `notices`: the call's notices (RUN-05: a provisional run
  *   folder `plan` could not remove); RPL-05 repeats them in `text`.
  *   `treeState`: `undefined` when it was never read (`release` past its 45 s
  *   `releaseDeadline`, or a case with no working tree to read) — the tree-state line is then
@@ -81,6 +91,8 @@ export function reply(facts) {
     firstLine = NOTHING_LINES[facts.reason];
   } else if (facts.status === 'failed') {
     firstLine = facts.message;
+  } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
+    firstLine = modeChoiceQuestion(facts);
   } else {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
@@ -93,6 +105,6 @@ export function reply(facts) {
     commits: [],
     notices: facts.notices === undefined ? [] : [...facts.notices],
     callerRule: BASE_CALLER_RULE,
-    handback: null,
+    handback: facts.status === 'handback' ? { kind: facts.kind, question: firstLine } : null,
   };
 }

@@ -144,7 +144,8 @@ test('non-ASCII untracked and force-added paths are A units through the temporar
   c.writeFile('ñ.log', 'log\n');
   c.git(['add', '-f', 'ñ.log']);
 
-  const result = await runCommit(c, ['plan']);
+  // `--split`: the force-added path beside a candidate is a mixed index (RUN-13).
+  const result = await runCommit(c, ['plan', '--split']);
 
   assert.equal(result.exitCode, 0, detail(result));
   for (const name of ['déjà ü.txt', 'ñ.log']) {

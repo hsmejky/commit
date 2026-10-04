@@ -69,7 +69,7 @@ import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
-import { cleanupDeadline, deadline, planRefusal, releaseDeadline } from './run-policy.mjs';
+import { cleanupDeadline, deadline, planRefusal, releaseDeadline, resolveMode } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
@@ -250,17 +250,47 @@ async function createRunFolder(ctx) {
  * Step 4: M10 `indexFingerprint` (CHG-04), read first, before the inventory's own git calls,
  * so step 7's re-read covers every index change since the inventory began (C:plan step 4).
  * Then M10 `inventory`: tracked changes, candidates, hidden, staged-new and pre-staged paths
- * (CHG-05), pre-cap (CHG-13: the caps are step 5, `collapseCandidates` below). Also the
- * mode decision (C:plan step 4, review-RUN-06 finding 7): `reword` or `split` for now; the
- * full `modeChoice` (M15 `resolveMode`) is a later slice's, and will count these same pre-cap
- * `candidates`/`stagedNew` lists (C:plan step 4: "candidates for the mode decision are
- * counted after the hidden rule and before the caps").
+ * (CHG-05), pre-cap (CHG-13: the caps are step 5, `collapseCandidates` below). The mode
+ * decision is the next step, `resolveRunMode`.
  */
 async function inventory(ctx) {
   ctx.indexFingerprint = await indexFingerprint({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
-  ctx.mode = ctx.values.reword === true ? 'reword' : 'split';
   ctx.inventory = await takeInventory({ toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now });
   return undefined;
+}
+
+/**
+ * Step 4, the mode decision (RUN-13, C:plan step 4, review-RUN-06 finding 7): `--reword`
+ * keeps `reword`; otherwise M15 `resolveMode` (no takeover yet: `killedLeftover: false`,
+ * RUN-24) over the inventory's counts. `staged-empty` refuses; a `modeChoice` ends the call
+ * with counts only, `mode: null` and no run folder (the provisional one is discarded by
+ * `plan`'s `finally`).
+ */
+async function resolveRunMode(ctx) {
+  if (ctx.values.reword === true) {
+    ctx.mode = 'reword';
+    return undefined;
+  }
+  const flags = { split: ctx.values.split === true, staged: ctx.values.staged === true };
+  const decision = resolveMode(flags, indexState(ctx.inventory), false);
+  if (decision.refusal !== undefined) return { refusal: decision.refusal };
+  if (decision.modeChoice !== undefined) return { status: 'handback', kind: 'modeChoice', ...decision.modeChoice };
+  ctx.mode = decision.mode;
+  return undefined;
+}
+
+// M15 `resolveMode`'s `indexState` from M10's pre-cap inventory (C:plan step 4: candidates
+// counted after the hidden rule and before the caps). `staged`: every path the index changes
+// against HEAD (`preStaged`, a hidden staged-new path included: its content is staged).
+// `other`: the tracked changes not in `preStaged`, the candidates, and the intent-to-add
+// staged-new paths (`git add -N` stages no content). Per file: a file both staged and
+// edited again counts as staged only, until CHG-14 reads the unstaged column (KD-R75).
+function indexState(inv) {
+  const staged = new Set(inv.preStaged);
+  const other = inv.tracked.filter((p) => !staged.has(p)).length
+    + inv.candidates.length
+    + inv.stagedNew.filter((entry) => !staged.has(entry.path)).length;
+  return { staged: staged.size, other };
 }
 
 /**
@@ -639,7 +669,7 @@ async function renderHunkIndex(ctx) {
 
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
-  refuseCaseRenames,
+  resolveRunMode, refuseCaseRenames,
   collapseCandidates, snapshotUnits, postScanRefusals, readHistory, storeAndLock, storeNotices,
   renderHunkIndex,
 ]);
@@ -842,10 +872,11 @@ export async function plan(values, injected, { cwd }) {
   // RUN-12: the call's start, read once and first (as `release`'s, RUN-03), so M15
   // `deadline` and `cleanupDeadline` bound the whole call.
   const callStarted = injected.now();
-  // Only bare `plan`, `plan --split` and `plan --reword` (RUN-06: the lock on a clean tree;
-  // its reword facts GIT-09's, its snapshot CHG-15's) are built: every other flag
-  // changes the mode or the clean-tree outcome (C:plan `mode`).
-  const unbuilt = ['dictated', 'staged', 'take-over', 'hunks'].filter((f) => values[f] !== undefined);
+  // Only bare `plan`, `plan --split`, `plan --reword` (RUN-06: the lock on a clean tree;
+  // its reword facts GIT-09's, its snapshot CHG-15's) and `plan --staged` (RUN-13: its mode
+  // decision; its index-only snapshot is CHG-14's) are built: every other flag changes the
+  // mode or the clean-tree outcome (C:plan `mode`).
+  const unbuilt = ['dictated', 'take-over', 'hunks'].filter((f) => values[f] !== undefined);
   if (unbuilt.length > 0) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
@@ -893,9 +924,8 @@ export async function plan(values, injected, { cwd }) {
     output: {
       planId: null,
       runDir: null,
-      // With no mode flag an empty index resolves to `split` (C:plan `mode`); a clean tree
-      // has an empty index. M15 `resolveMode` replaces this at step 4.
-      mode: 'split',
+      // The resolved mode (a clean tree's), or `null` with a `modeChoice` (C:plan `mode`).
+      mode: ctx.mode ?? null,
       reply: await finalReply({ ...facts, notices: ctx.notices }, ctx),
       hunks: null,
     },

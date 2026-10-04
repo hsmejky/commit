@@ -21,6 +21,8 @@
 // rows (`staged-hit`, the clean tree).
 //
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
+//
+// RUN-13 adds `resolveMode`, without a takeover (`killedLeftover: false`; RUN-24 adds it).
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });
@@ -141,6 +143,37 @@ export function planRefusal(facts) {
   }
   if (facts.signing?.ready === false) return { code: 'signing-locked', message: SIGNING_LOCKED_MESSAGE };
   return null;
+}
+
+/** `staged-empty`'s text (RUN-13, Q9): `plan --staged` with nothing staged. */
+export const STAGED_EMPTY_MESSAGE = 'nothing is staged: --staged commits only what the index holds';
+
+/**
+ * M15 `resolveMode(flags, indexState, killedLeftover)` (RUN-13, C:plan `mode`, Q9, Q16):
+ * `plan`'s mode at step 4. A mode flag wins: `--split` plans `split`, `--staged` plans
+ * `staged`, or refuses `staged-empty` (exit 1 `usage`) when nothing is staged. Without a
+ * flag `plan` never picks `staged`: an empty or fully staged index plans `split`, and a
+ * mixed index (staged changes plus other changes) is a `modeChoice` with counts only. M18
+ * counts `indexState` from M10's inventory (candidates after the hidden rule, before the
+ * caps) and handles `--reword` itself; `killedLeftover` (a takeover's leftover staging,
+ * C:run-folder) is RUN-24's.
+ *
+ * @param {{ split: boolean, staged: boolean }} flags the call's mode flags.
+ * @param {{ staged: number, other: number }} indexState `staged`: the staged files;
+ *   `other`: the unstaged tracked changes and candidates.
+ * @param {boolean} killedLeftover always `false` until RUN-24.
+ * @returns {{ mode: 'split' | 'staged' } | { modeChoice: { staged: number, other: number } }
+ *   | { refusal: { code: 'staged-empty', message: string } }}
+ * @throws {Error} for `killedLeftover: true`, not built yet.
+ */
+export function resolveMode(flags, indexState, killedLeftover) {
+  if (killedLeftover) throw new Error('resolveMode with killedLeftover is not built yet (RUN-24)');
+  if (flags.staged) {
+    if (indexState.staged === 0) return { refusal: { code: 'staged-empty', message: STAGED_EMPTY_MESSAGE } };
+    return { mode: 'staged' };
+  }
+  if (flags.split || indexState.staged === 0 || indexState.other === 0) return { mode: 'split' };
+  return { modeChoice: { staged: indexState.staged, other: indexState.other } };
 }
 
 /** The budget of `releaseDeadline` (RUN-03, C:reply-and-handback): kept below the 60 s

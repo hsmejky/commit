@@ -192,6 +192,15 @@ Plan text that depends on a design fix; fix the design and the slice together.
   the stored `kind` instead of a fresh call) if this is wanted, then land the code change
   and a seam test for the probe above. Slice: CHG-10 (done; this is accepted interim
   behavior, fails safe, until revisited).
+- **KD-R75.** RUN-13 counts `resolveMode`'s `indexState` per file from M10's inventory,
+  which has no unstaged column: a file both staged and edited again (`MM`) counts as staged
+  only, so a bare `plan` whose only other change is such a file plans `split` instead of
+  asking `modeChoice` (C:plan `mode`: "index plus other changes"). Also, `plan --staged`
+  now reaches step 5, whose snapshot is still the `split` one (worktree, candidates
+  included) until CHG-14 builds the index-only snapshot. Where:
+  `plugin/scripts/lib/workflows.mjs` `indexState` and `snapshotUnits`. Fix: CHG-14 (blocked
+  by RUN-13) exposes the unstaged changes per path; count them in `indexState` and add a
+  Seam 1 case for a partly staged file.
 
 ## Bookkeeping
 

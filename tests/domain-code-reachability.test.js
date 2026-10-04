@@ -31,7 +31,21 @@ const ROWS = [
     },
   },
   { row: 'unconfirmed', reachable: false },
-  { row: 'staged-empty', reachable: false },
+  {
+    row: 'staged-empty',
+    kind: 'usage',
+    exitCode: 1,
+    reachable: true,
+    // RUN-13: `plan --staged` with an empty index (tests/plan-mode.test.js).
+    async seam1Case(t) {
+      const c = createCase(t);
+      c.writeFile('a.txt', 'a\n');
+      c.git(['add', '--', 'a.txt']);
+      c.git(['commit', '-q', '-m', 'seed']);
+      c.writeFile('a.txt', 'a2\n');
+      return runCommit(c, ['plan', '--staged']);
+    },
+  },
   { row: 'already-committed', reachable: false },
   { row: 'no-groups', reachable: false },
   {
@@ -158,7 +172,7 @@ test('every row of docs/spec/domain-code-cli-kind.md is accounted for, reachable
   // doc's key (a multi-code doc row whose aside sits after only the first code) passes when
   // it starts with that key.
   assert.equal(ROWS.length, docRows.length);
-  assert.equal(ROWS.filter((r) => r.reachable).length, 7);
+  assert.equal(ROWS.filter((r) => r.reachable).length, 8);
 
   docRows.forEach((docRow, i) => {
     const docKey = firstColumnKey(docRow);

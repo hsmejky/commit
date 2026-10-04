@@ -27,8 +27,10 @@ function numbered(count) {
   return Array.from({ length: count }, (_, i) => `${i + 1}\n`).join('');
 }
 
+// `--split`: some fixtures stage part of their changes, a mixed index that would otherwise
+// end with a `modeChoice` (RUN-13).
 async function plan(c) {
-  const result = await runCommit(c, ['plan']);
+  const result = await runCommit(c, ['plan', '--split']);
   assert.equal(result.exitCode, 0, detail(result));
   const runDir = path.join(c.repoDir, '.commit-plan', result.json.planId);
   const read = (name) => fs.readFileSync(path.join(runDir, name), 'utf8');

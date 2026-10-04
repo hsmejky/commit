@@ -112,7 +112,8 @@ for (const row of ROWS) {
     const c = createCase(t);
     buildFixture(c, row);
 
-    const result = await runCommit(c, ['plan']);
+    // `--split`: a row with staged-new paths beside candidates is a mixed index (RUN-13).
+    const result = await runCommit(c, ['plan', '--split']);
 
     assert.equal(result.exitCode, 0, detail(result));
     const plan = readJson(path.join(result.json.runDir, 'plan.json'));
