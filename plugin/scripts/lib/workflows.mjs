@@ -1047,6 +1047,7 @@ async function runSteps(steps, ctx) {
  *   shape and exit code.
  */
 export async function plan(values, injected, { cwd }) {
+  if (values.hunks) return planHunks(values, injected, { cwd });
   // RUN-12: the call's start, so M15 `deadline` and `cleanupDeadline` bound the whole call;
   // GIT-07: read once at dispatch (`cli.mjs`'s `main`, `injected.callStarted`), here only
   // for a direct call that did not pass one.
@@ -1070,7 +1071,6 @@ export async function plan(values, injected, { cwd }) {
   // GIT-07: every M2 call of the steps takes `deadline - now()` at its own start (M2
   // `withDeadline`); `run` marks the scope `expired` when that deadline ended or skipped one.
   const scope = { deadline: ctx.deadline, now: injected.now };
-  if (values.hunks) return planHunks(values, injected, { cwd });
   try {
     facts = await withDeadline(scope, () => runSteps(PLAN_STEPS, ctx));
   } catch (err) {
@@ -1123,29 +1123,6 @@ export async function plan(values, injected, { cwd }) {
 }
 
 /**
- * Runs `release --plan <planId>` (C:commit-release `release`).
- *
- * @param {{ plan: string }} values the parsed and validated `release` flags (M1 `parseArgv`).
- * @param {object} injected the injected environment.
- * @param {{ cwd: string }} call the call's working directory.
- * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
- */
-export async function release(values, injected, { cwd }) {
-  // The call's start (RUN-03), so `releaseDeadline` bounds the whole call, not just the part
-  // after it. GIT-07: read once at dispatch (`cli.mjs`'s `main`) and threaded through
-  // `injected.callStarted` (review-RUN-03 finding 3); read here only for a direct call that
-  // did not pass one. `release`'s own steps run outside any deadline scope (KD-R78); only
-  // the reply's tree-state read is bounded, by `releaseDeadline` (`finalReply`).
-  const callStarted = injected.callStarted ?? injected.now();
-  const ctx = { injected, cwd, values };
-  const facts = await runSteps(RELEASE_STEPS, ctx);
-  if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
-  return { output: { reply: await finalReply(facts, ctx, { deadline: releaseDeadline(callStarted) }) } };
-}
-
-/**
- * Runs `commit --plan <planId> --all` (C:commit-release `commit`, M12 `open`).
-/**
  * Runs the separate `plan --hunks --plan <planId>` (CHG-19, M18 "`plan --hunks`",
  * C:plan-hunks): M12 `open`, then `resnapshotUnits`. The call takes its own M15 `deadline`
  * (540 s from its own start) for every M2 call of its steps (exceeded → `timeout`) and
@@ -1193,6 +1170,29 @@ async function planHunks(values, injected, { cwd }) {
   }
 }
 
+/**
+ * Runs `release --plan <planId>` (C:commit-release `release`).
+ *
+ * @param {{ plan: string }} values the parsed and validated `release` flags (M1 `parseArgv`).
+ * @param {object} injected the injected environment.
+ * @param {{ cwd: string }} call the call's working directory.
+ * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
+ */
+export async function release(values, injected, { cwd }) {
+  // The call's start (RUN-03), so `releaseDeadline` bounds the whole call, not just the part
+  // after it. GIT-07: read once at dispatch (`cli.mjs`'s `main`) and threaded through
+  // `injected.callStarted` (review-RUN-03 finding 3); read here only for a direct call that
+  // did not pass one. `release`'s own steps run outside any deadline scope (KD-R78); only
+  // the reply's tree-state read is bounded, by `releaseDeadline` (`finalReply`).
+  const callStarted = injected.callStarted ?? injected.now();
+  const ctx = { injected, cwd, values };
+  const facts = await runSteps(RELEASE_STEPS, ctx);
+  if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
+  return { output: { reply: await finalReply(facts, ctx, { deadline: releaseDeadline(callStarted) }) } };
+}
+
+/**
+ * Runs `commit --plan <planId> --all` (C:commit-release `commit`, M12 `open`).
  *
  * `open` is the whole call's own lock check (RUN-04): `taken-over` (the lock holds another
  * `planId`, or its own lock/`call.lock`/folder vanishes mid-call with a late `ENOENT`) and
