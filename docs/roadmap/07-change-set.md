@@ -333,17 +333,17 @@ blob ID; a hidden staged-new path under `--staged` is the `staged-hit` fact.
 
 **Blocked by:** CHG-05, CHG-13, RUN-13.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q10, Q11 (index-only content), C:plan (`preStaged`, `unstagedLeft`), stories 83-85, 225, M10;
 KD-S82 (a staged mode change under `core.fileMode=false` is index-only state `indexOnly`
 misses, [known deficiencies](../spec/known-deficiencies.md)).
 
-- [ ] Seam 1: `plan --staged` with a partial `git add -p` → units from the index only, `unstagedLeft` = count of unstaged changes, the file in both `preStaged` and `tracked`.
-- [ ] Seam 1: `git add x && rm x`, a staged edit reverted in the worktree, and `git add -p` plus more edits under `--split` → `indexOnly` stored with the blob ID, no unit, no `diff-changed`.
-- [ ] Seam 1: a force-added hidden file under `--staged` → `staged-hit` (exit 6); a staged 60-file new directory under `--staged` → scanned units, no collapse.
-- [ ] Seam 1: with `core.ignorecase=true`, `plan --staged` on a staged case-only `git mv` → not refused (`case-rename` is `split`-only, C:plan step 4; review-CHG-07 finding 1).
-- [ ] Seam 1 (KD-R82, review-SCN-14 claim 1): `staged` mode's `snapshotBlob` reads the index
+- [x] Seam 1: `plan --staged` with a partial `git add -p` → units from the index only, `unstagedLeft` = count of unstaged changes, the file in both `preStaged` and `tracked`.
+- [x] Seam 1: `git add x && rm x`, a staged edit reverted in the worktree, and `git add -p` plus more edits under `--split` → `indexOnly` stored with the blob ID, no unit, no `diff-changed`.
+- [x] Seam 1: a force-added hidden file under `--staged` → `staged-hit` (exit 6); a staged 60-file new directory under `--staged` → scanned units, no collapse.
+- [x] Seam 1: with `core.ignorecase=true`, `plan --staged` on a staged case-only `git mv` → not refused (`case-rename` is `split`-only, C:plan step 4; review-CHG-07 finding 1).
+- [x] Seam 1 (KD-R82, review-SCN-14 claim 1): `staged` mode's `snapshotBlob` reads the index
       entry, not the worktree file; an invalid staged repo config (unparseable JSON or a
       non-array `scanIgnore`) with a valid worktree copy → `loadConfig` still validates the
       worktree copy and succeeds, so `scan.scanIgnoreChanged: true` and the repo-config

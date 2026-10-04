@@ -46,9 +46,10 @@
     extended with the intent-to-add entries, so it keeps the stat cache and the
     sparse-checkout entries; built from HEAD, out-of-cone sparse-checkout paths would show
     as deleted. A path whose bytes are not valid UTF-8 is not a
-    unit: it goes to `notIncluded` ("path is not UTF-8 — commit by hand"), written with
-    each non-UTF-8 byte as `\xNN`, since the state file and the reply carry paths as
-    strings. `plan` also records an index fingerprint (a hash of `git ls-files --stage -z`,
+    unit: in `split` it goes to `notIncluded` ("path is not UTF-8 — commit by hand"),
+    written with each non-UTF-8 byte as `\xNN`, since the state file and the reply carry
+    paths as strings; in `staged`, a staged one refuses `staged-hit` instead ("path is not
+    UTF-8 — unstage it or commit by hand", Q10). `plan` also records an index fingerprint (a hash of `git ls-files --stage -z`,
     read-only, no index lock); when it changes between inventory and the lock while HEAD
     is unchanged, `plan` refuses with `index-changed` (CLI kind `diff-changed`).
 
@@ -80,8 +81,9 @@
     .gitignore then hides it from `git status`". `commit`'s final output lists every
     pre-staged path the run leaves unstaged (Q18). Nothing is dropped silently, and staging a
     file does not get it past the hidden rule (agents stage too, Q16). In `staged` mode a
-    hidden staged-new path makes `plan --staged` refuse with `staged-hit` (Q10): a set is
-    committed as-is and cannot leave it out. The collapse rule does not apply in `staged`.
+    hidden staged-new path, or any other staged path that is not UTF-8, makes
+    `plan --staged` refuse with `staged-hit` (Q10): a set is committed as-is and cannot
+    leave it out. The collapse rule does not apply in `staged`.
 
     **Index-only content** (`split`): the real index can hold a version that is in neither
     HEAD nor the working tree: `git add x && rm x`, a staged edit later reverted in the
@@ -198,8 +200,9 @@
     plus the lists contradicted step 1.
   - The index fingerprint (`git ls-files --stage -z`) and its `index-changed` refusal
     (CLI kind `diff-changed`) at `plan`'s lock.
-  - A path that is not UTF-8 goes to `notIncluded` with `\xNN` escapes (accepted gap:
-    such paths are never planned).
+  - A path that is not UTF-8 goes to `notIncluded` with `\xNN` escapes in `split` (accepted
+    gap: such paths are never planned there); in `staged`, a staged one refuses
+    `staged-hit` instead (Q10, CHG-14).
   - Binary decided by content; an attribute-binary text file is a whole-file `text` unit
     whose added lines are still scanned (also Q10).
   - Paths with `ignored: true` in separate `git add -N -f` (`snapshot`) and `git add -A -f`

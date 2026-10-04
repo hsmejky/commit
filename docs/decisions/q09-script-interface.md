@@ -57,7 +57,7 @@
     | a `git add` of the temporary index fails | 4 `git` (code `git-failed`) | none |
     | `plan` past its 540-second deadline | 5 `timeout` | none |
     | `--staged` with an empty index | 1 `usage` (code `staged-empty`) | none |
-    | `--staged` and the index diff has a pattern hit, or the index holds a staged-new path the hidden rule excludes (Q10, Q11) | 6 `staged-hit` | none |
+    | `--staged` and the index diff has a pattern hit, the index holds a staged-new path the hidden rule excludes, or a staged path that is not UTF-8 (Q10, Q11) | 6 `staged-hit` | none |
     | clean tree (nothing plannable, Q16) | 0, `planId: null`, reply `nothing` | none |
     | index and other changes both present, no mode flag | 0, `planId: null`, `modeChoice` handback | none |
     | HEAD moved, or the index changed (`index-changed`), after `acquire` | 6 `head-moved`, `diff-changed` | taken, then released |

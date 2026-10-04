@@ -63,7 +63,9 @@
     the unit out, so `plan` refuses with exit 6 `staged-hit` before any lock or grouping:
     "unstage `<file>` and run `/commit` again, or commit by hand". The same refusal covers a
     staged-new path that the **hidden** rule excludes (Q11): "`.env.local` is staged but
-    hidden — unstage it or commit by hand". The reason that applies the hidden rule in
+    hidden — unstage it or commit by hand". The same refusal also covers any other staged
+    path that is not UTF-8 (Q11): "path is not UTF-8 — unstage it or commit by hand". The
+    reason that applies the hidden rule in
     `split` (staging a file does not get it past it; agents stage too) holds for `staged` as
     well, and the user who picked `staged` saw counts only (Q9). The **collapse** rule does
     not apply in `staged`: it keeps junk out of the worker's grouping, the set is not

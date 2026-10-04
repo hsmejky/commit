@@ -63,10 +63,12 @@ and of the real index.
   the raw bytes, so a Latin-1 file or CRLF content is staged exactly as git showed it. Only
   presentation decodes, lossily: M13 for the worker's body text, M17 for the reply, and M8
   scans a lossy decode (its patterns are ASCII); none of them feeds a hash or a patch. A path
-  that is not valid UTF-8 is not a unit: it goes to `notIncluded` ("path is not UTF-8 —
-  commit by hand"), since `state.json` and the reply carry paths as strings; its string
-  form writes each non-UTF-8 byte as `\xNN` (a staged one is also in `preStaged`, a hidden
-  untracked one is counted as hidden, C:plan). A rename from a non-UTF-8 path to a UTF-8 one
+  that is not valid UTF-8 is not a unit: in `split` it goes to `notIncluded` ("path is not
+  UTF-8 — commit by hand"), since `state.json` and the reply carry paths as strings; its
+  string form writes each non-UTF-8 byte as `\xNN` (a staged one is also in `preStaged`, a
+  hidden untracked one is counted as hidden, C:plan); in `staged`, a staged one refuses
+  `staged-hit` instead ("path is not UTF-8 — unstage it or commit by hand", CHG-14). A
+  rename from a non-UTF-8 path to a UTF-8 one
   is split: a second pinned diff with `--no-renames` (no pathspecs) gives each new path an
   `A` unit. Whole-file unit categories: new,
   deleted, binary, summary-only via M9, rename, mode, symlink, submodule, filtered: one

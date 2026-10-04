@@ -53,7 +53,7 @@
 139. As a developer in a container without a passwd entry, I want the OS-user rule skipped rather than the scan failing, so that planning still works. [Q10]
 140. As a developer, I want hits reported by pattern ID and location only, never in `hunks.txt` or any output, so that a secret I am adding is copied nowhere (a secret on a removed line is not scanned, see [Out of Scope](out-of-scope.md)). [Q10]
 141. As a developer, I want a hit's unit left out with two manual commit lines (`add`, then `commit`), except a path holding `'`, a PowerShell single quote (U+2018–U+201B) or a control character, which gets only "commit by hand", so that the rest still commits. [Q10]
-142. As a developer, I want a staged set with a hit or a hidden staged-new path refused (`staged-hit`), so that a set cannot smuggle it in. [Q10, Q11]
+142. As a developer, I want a staged set with a hit, a hidden staged-new path, or a staged non-UTF-8 path refused (`staged-hit`), so that a set cannot smuggle it in. [Q10, Q11]
 143. As a developer, I want the index rescanned before each commit, so that a file changed after planning cannot slip a secret into the commit. [Q10]
 144. As a developer, I want filtered files scanned in cleaned form, so that the scan sees what is committed. [Q10]
 145. As a developer, I want binaries not scanned, and additions over 1 MB skipped and reported in `scan.skipped`, so that the scan is bounded. [Q10, C:scan-patterns]

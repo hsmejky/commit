@@ -476,7 +476,7 @@ no git process is running, check it and remove it by hand".
 staging; any difference from the stored hash map → `diff-changed`, the index left as is. It
 builds M10 `verifyIndex`.
 
-**Blocked by:** EXE-07, EXE-13, RUN-13.
+**Blocked by:** EXE-07, EXE-13, RUN-13, PLN-05, CHG-14.
 
 **Status:** ready-for-agent
 

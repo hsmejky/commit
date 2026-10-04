@@ -114,8 +114,10 @@ and the module sections point here, and the README states it in full.
   whoever can commit `.claude/commit.json` can widen it (Q10). Only a pattern with no
   literal character is rejected (a `config` error); a broad but
   literal pattern such as `src/**` is legal.
-- A path whose bytes are not UTF-8 is never planned (Q11); it is reported in `notIncluded`,
-  each non-UTF-8 byte written as `\xNN`, for the user to commit by hand.
+- A path whose bytes are not UTF-8 is never planned (Q11); in `split` it is reported in
+  `notIncluded`, each non-UTF-8 byte written as `\xNN`, for the user to commit by hand; in
+  `staged`, a staged one refuses `staged-hit` instead ("path is not UTF-8 — unstage it or
+  commit by hand", Q10, CHG-14).
 - An unstaged case-only rename on a case-insensitive filesystem is invisible to git and not
   planned (Q11, story 78).
 - A staged case-only rename on a case-insensitive filesystem, or with
