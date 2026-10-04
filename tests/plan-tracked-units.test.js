@@ -29,12 +29,15 @@ const PINNED_DIFF_CALL = [
   '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
   '--full-index', '-z', '--raw', '-p',
 ];
+// CHG-17 (KD-R87): the `size` rule's raw pass, the same pinned options and no pathspec,
+// run before the patch pass so its reader can drop a summary-only body while streaming.
+const PINNED_SIZE_CALL = [...PINNED_DIFF_CALL.slice(0, -3), '--no-abbrev', '-z', '--raw'];
 // CHG-05: the inventory's own staged-paths read, the only other `diff` call.
 const INVENTORY_DIFF_CALL = [
   'diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z',
 ];
 
-test('plan on modified tracked files runs one pinned diff with no pathspec and keeps the run', async (t) => {
+test('plan on modified tracked files runs one pinned patch pass with no pathspec and keeps the run', async (t) => {
   const c = createCase(t);
   c.writeFile('a b/c.txt', 'old\n');
   c.writeFile('src/b.js', 'one\n');
@@ -61,7 +64,7 @@ test('plan on modified tracked files runs one pinned diff with no pathspec and k
   const diffCalls = entries.filter((e) => Array.isArray(e.args) && e.args.includes('diff') && e.args[0] !== 'check-attr');
   assert.deepEqual(
     diffCalls.map((e) => [e.file, e.args]),
-    [['git', INVENTORY_DIFF_CALL], ['git', PINNED_DIFF_CALL]],
+    [['git', INVENTORY_DIFF_CALL], ['git', PINNED_SIZE_CALL], ['git', PINNED_DIFF_CALL]],
     JSON.stringify(diffCalls),
   );
   // The inventory's tracked list reads `git status` without walking untracked files: its

@@ -658,11 +658,12 @@ export async function snapshot({
       { cwd: toplevel, env, now, readOnly: true },
     )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
     const attrs = await checkAttrs(names, opts);
-    const units = await diffUnits([from, head], opts, attrs);
+    const sizeOf = await bodyRuleSizes([from, head], opts, attrs, false);
+    const units = await diffUnits([from, head], opts, attrs, { sizeOf });
     const ctx = { mode: 'reword', toplevel, env, now, head };
     // review-CHG-11 finding 5: the text pass keeps `diffUnits`' own rediff step.
     const runTextPass = (keep) => diffUnits([from, head, '--text'], opts, attrs, { keep });
-    return withBodyRules(await resolveHiddenBinaries(units, attrs, runTextPass, ctx), { worktree: false, ...opts });
+    return withBodyCap(await resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf));
   }
   if (mode === 'staged') {
     // CHG-14 (C:plan-hunks "what is diffed"): the index against HEAD (the empty tree when
@@ -674,10 +675,11 @@ export async function snapshot({
       { cwd: toplevel, env, now, readOnly: true },
     )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
     const attrs = await checkAttrs(names, opts);
-    const units = await diffUnits(['--cached'], opts, attrs);
+    const sizeOf = await bodyRuleSizes(['--cached'], opts, attrs, false);
+    const units = await diffUnits(['--cached'], opts, attrs, { sizeOf });
     const ctx = { mode: 'staged', toplevel, env, now };
     const runTextPass = (keep) => diffUnits(['--cached', '--text'], opts, attrs, { keep });
-    return withBodyRules(await resolveHiddenBinaries(units, attrs, runTextPass, ctx), { worktree: false, ...opts });
+    return withBodyCap(await resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf));
   }
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not supported`);
   // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
@@ -696,7 +698,10 @@ export async function snapshot({
     ...storedLists.stagedNew.map((entry) => entry.path),
   ])];
   const attrs = await checkAttrs(attrPaths, opts);
-  const reader = await pinnedDiff([], opts, attrs);
+  // CHG-17 (KD-R87): the `size` rule's sizes, read before the patch pass, so the reader
+  // decides summary-only per file as each section closes.
+  const sizeOf = await bodyRuleSizes([], opts, attrs, true);
+  const reader = await pinnedDiff([], opts, attrs, null, sizeOf);
   const units = reader.end();
   let all = units;
   if (reader.rediff.length > 0) {
@@ -704,7 +709,7 @@ export async function snapshot({
     // rename detection, is an `A` unit; the old path stays in `notUtf8` (review-CHG-12
     // finding 1). No pathspec (Q11: argv length), so the other paths' units are dropped.
     const rediff = new Set(reader.rediff);
-    const again = (await pinnedDiff(['--no-renames'], opts, attrs)).end().filter((unit) => rediff.has(unit.path));
+    const again = (await pinnedDiff(['--no-renames'], opts, attrs, null, sizeOf)).end().filter((unit) => rediff.has(unit.path));
     all = [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
   }
   const ctx = { mode: 'split', toplevel, env, now };
@@ -715,7 +720,7 @@ export async function snapshot({
     // review-CHG-11 finding 5: the same `--no-renames` rediff as the main pass above.
     return [...textUnits, ...(await pinnedDiff(['--text', '--no-renames'], opts, attrs, new Set(textReader.rediff))).end()];
   };
-  return withBodyRules(await resolveHiddenBinaries(all, attrs, runTextPass, ctx), { worktree: true, toplevel, env, now });
+  return withBodyCap(await resolveHiddenBinaries(all, attrs, runTextPass, ctx, sizeOf));
 }
 
 /**
@@ -733,7 +738,8 @@ export async function unstagedUnits({ toplevel, env, now }) {
     { cwd: toplevel, env, now, readOnly: true },
   )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
   const attrs = await checkAttrs(names, opts);
-  const units = await diffUnits(['--no-renames'], opts, attrs);
+  const sizeOf = await bodyRuleSizes(['--no-renames'], opts, attrs, true);
+  const units = await diffUnits(['--no-renames'], opts, attrs, { sizeOf });
   // review-CHG-14 finding 5: this diffs the real index against the worktree, same as
   // `split`'s pinned diff; an attribute-hidden text file's new content is therefore the
   // worktree file, so the NUL sniff reads it straight off disk (`hiddenBinaryFacts`), never
@@ -742,7 +748,7 @@ export async function unstagedUnits({ toplevel, env, now }) {
   // `staged`, to take that disk-read branch in `resolveHiddenBinaries`.
   const ctx = { mode: 'unstaged', toplevel, env, now };
   const runTextPass = (keep) => diffUnits(['--no-renames', '--text'], opts, attrs, { keep });
-  return withBodyRules(await resolveHiddenBinaries(units, attrs, runTextPass, ctx), { worktree: true, ...opts });
+  return withBodyCap(await resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf));
 }
 
 /**
@@ -965,7 +971,12 @@ async function streamCatFileBatch(units, opts) {
 // whose reader builds units for the `keep` paths alone and discards every other section as
 // it arrives (C:plan; review-CHG-11 finding 2: `--text` turns every real binary in the change
 // set into text lines). A unit under the limit with a NUL stays genuinely binary, untouched.
-async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
+//
+// CHG-17 (KD-R87): the main pass's reader decided summary-only on the binary unit's own
+// counts (zero); a unit turned `text` here is decided again on its text counts with the same
+// `sizeOf`, as it would have been had its section been text. Its body is empty either way
+// (a binary section has no hunk lines), so nothing is held for this.
+async function resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf) {
   const candidates = units.filter((unit) => (
     unit.kind === 'binary' && unit.status !== 'D' && attrs.get(unit.path)?.hidden === true
   ));
@@ -985,18 +996,23 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
     if (overLimit.has(unit.path)) return { ...unit, overScanLimit: true, addedLines: [] };
     const textUnit = textUnits.get(unit.path);
     if (textUnit === undefined) return unit;
-    return {
+    const { summaryOnly: decided, ...text } = {
       ...unit, kind: 'text', added: textUnit.added, deleted: textUnit.deleted, addedLines: textUnit.addedLines,
     };
+    const reason = summaryOnly(text.path, {
+      added: text.added, deleted: text.deleted, generated: text.generated, size: sizeOf(text) ?? 0,
+    });
+    return reason === null ? text : { ...text, summaryOnly: reason };
   });
 }
 
 // One pinned `git diff -z --raw -p` call against the temporary index, `extra` appended,
 // streamed into a diff reader. `attrs`: the `check-attr` results (CHG-10), threaded to
 // `openSection` so a `filter`-attributed path's section opens as `kind: "filtered"`. `keep`:
-// the reader's keep-set (`createDiffReader`), null for every path.
-async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map(), keep = null) {
-  const reader = createDiffReader(attrs, { keep });
+// the reader's keep-set (`createDiffReader`), null for every path. `sizeOf`: the reader's
+// summary-only sizes (`bodyRuleSizes`), null for none (a `--text` pass).
+async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map(), keep = null, sizeOf = null) {
+  const reader = createDiffReader(attrs, { keep, sizeOf });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...extra],
@@ -1081,17 +1097,23 @@ function existsInWorktree(toplevel, path) {
  * @param {Map<string, { filtered: boolean, generated: boolean }>} [attrs] the `check-attr`
  *   results (CHG-10), keyed by path: a `filtered` path's section opens with
  *   `entryKind: "filtered"` and every unit carries `generated`.
- * @param {{ keep?: Set<string> | null }} [options] `keep` (CHG-11's `--text` pass): only
+ * @param {{ keep?: Set<string> | null, sizeOf?: ((unit: object) => number | undefined) | null }} [options]
+ *   `keep` (CHG-11's `--text` pass): only
  *   these paths make units; every other section is still paired with its record, but its
  *   lines are discarded as they arrive, like a non-UTF-8 one's, and a rename from a non-UTF-8
  *   path goes to `rediff` only when its new path is kept. Null (the default): every path.
+ *   `sizeOf` (CHG-17, KD-R87): the `size` rule's sizes from `bodyRuleSizes`, read before this
+ *   pass; non-null, each file is decided summary-only (M9 `summaryOnly`) as its section
+ *   closes, and a summary-only file's hunk lines and body are dropped right there
+ *   (`summaryOnlyFile`), so no summary-only body outlives its own section. Null (the
+ *   default): no decision (a `--text` pass, crafted bytes).
  * @returns {{ rediff: string[], push: (chunk: Buffer) => void, end: () => object[] }}
  *   `push` throws on the first pairing error and is not called again; `end` flushes the
  *   last line, checks the section count and returns the units in `snapshot`'s shape and
  *   order. `rediff`: the new paths of the renames whose old path is not UTF-8, in diff
  *   order (complete once `end` returns), which made no unit here.
  */
-export function createDiffReader(attrs = new Map(), { keep = null } = {}) {
+export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null } = {}) {
   const records = [];
   const units = [];
   const rediff = [];
@@ -1109,8 +1131,10 @@ export function createDiffReader(attrs = new Map(), { keep = null } = {}) {
     if (typeChange !== null) {
       throw new Error(`a type change (${typeChange.path}) has one patch section, not two`);
     }
-    if (section !== null) units.push(...withScanLimit(unitsOf(section)));
+    if (section === null) return;
+    const made = withScanLimit(unitsOf(section));
     section = null;
+    units.push(...(sizeOf === null ? made : summaryOnlyFile(made, sizeOf)));
   };
   const onLine = (line) => {
     if (startsWith(line, SECTION_START)) {
@@ -1233,9 +1257,11 @@ export function matchIds(idMap, units, { exact = false } = {}) {
 // UTF-8 new path is dropped by `-M` and needs a `--no-renames` re-diff) with every caller,
 // not only `split`'s own `pinnedDiff`; `allowRediff: false` stops the one re-diff pass from
 // re-triggering itself. `keep`: the reader's keep-set (`createDiffReader`), null for every
-// path; the re-diff keeps only the rediff paths.
-async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null } = {}) {
-  const reader = createDiffReader(attrs, { keep });
+// path; the re-diff keeps only the rediff paths. `sizeOf`: the reader's summary-only sizes
+// (`bodyRuleSizes` over the same `args`), null for none; the re-diff reuses them (its `A`
+// unit's new side is the rename's).
+async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null, sizeOf = null } = {}) {
+  const reader = createDiffReader(attrs, { keep, sizeOf });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...args],
@@ -1245,7 +1271,7 @@ async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allo
   const units = reader.end();
   if (!allowRediff || reader.rediff.length === 0) return units;
   const rediff = new Set(reader.rediff);
-  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff }))
+  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff, sizeOf }))
     .filter((unit) => rediff.has(unit.path));
   return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
 }
@@ -1295,7 +1321,8 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   // produced the stored units was: the group's files were just `git add`ed from there, and a
   // blob size can fall on the other side of 256 KB (eol=crlf, core.autocrlf,
   // working-tree-encoding), turning a stored whole-file hash into per-hunk ones.
-  const staged = await withBodyRules(await diffUnits(['--cached'], { toplevel, env, now }, attrs), { worktree: true, toplevel, env, now });
+  const sizeOf = await bodyRuleSizes(['--cached'], { toplevel, env, now }, attrs, true);
+  const staged = withBodyCap(await diffUnits(['--cached'], { toplevel, env, now }, attrs, { sizeOf }));
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
 }
 
@@ -1325,7 +1352,8 @@ export async function writeTree({ toplevel, env, now }) {
  */
 export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
   const from = fromTree ?? await emptyTreeId({ toplevel, env, now });
-  return withBodyRules(await diffUnits([from, toTree], { toplevel, env, now }), { worktree: false, toplevel, env, now });
+  const sizeOf = await bodyRuleSizes([from, toTree], { toplevel, env, now }, new Map(), false);
+  return withBodyCap(await diffUnits([from, toTree], { toplevel, env, now }, new Map(), { sizeOf }));
 }
 
 // The empty tree's object ID (CHG-15, EXE-02): `git hash-object -t tree --stdin` on empty
@@ -1421,9 +1449,9 @@ function readRaw(buf, records) {
       fields.push(buf.subarray(at, end));
       at = end + 1;
     }
-    const [oldMode, newMode, , , status] = fields[0].toString('latin1').slice(1).split(' ');
+    const [oldMode, newMode, oldOid, newOid, status] = fields[0].toString('latin1').slice(1).split(' ');
     records.push({
-      oldMode, newMode, status, pathBytes: Buffer.from(fields[fields.length - 1]),
+      oldMode, newMode, oldOid, newOid, status, pathBytes: Buffer.from(fields[fields.length - 1]),
       oldPathBytes: fields.length === 3 ? Buffer.from(fields[1]) : null,
     });
     pos = at;
@@ -1578,7 +1606,7 @@ function unitsOf(section) {
     const box = { total: 0 };
     // CHG-17: the same lines also feed the file's whole-file hash (`M`, NUL, path, NUL, then
     // every hunk's `-`/`+` lines, as a whole-file unit hashes), which the file's one unit
-    // takes if it turns out summary-only (`withBodyRules`).
+    // takes if it turns out summary-only (`summaryOnlyFile`).
     const file = createHash('sha256').update(Buffer.from('M\0')).update(pathBytes).update(Buffer.from([NUL]));
     const units = hunks.map((hunk) => {
       const identity = createHash('sha256').update(pathBytes).update(Buffer.from([NUL]));
@@ -1659,93 +1687,113 @@ function withScanLimit(units) {
 const BODY_CAP_LINES = 3000;
 const ZERO_OID = /^0+$/;
 
-// CHG-17 (C:summary-only-files, Q19, M10): M9 `summaryOnly` and the body cap over a unit
-// list sorted by path (one file's units are consecutive). A summary-only file becomes one
-// whole-file unit carrying `summaryOnly` (the reason): a content-only `M`'s hunk units fold
-// into its whole-file hash, range and summed counts; its `addedLines` stay for the scan
-// (C:summary-only-files: the scan ignores summary-only status), its `body` is dropped. Then,
-// in path order, the changed lines of the files that are not summary-only are summed: the
-// first file taking the sum over 3000 and every later one keep each unit (own hash, range,
-// counts, `addedLines`, `body`) with `capped: true`: the cap limits the worker's context, not
-// the tool output (Q19), so the body stays for a split by ranges (CHG-20) and only M13
-// leaves its block out (review-CHG-17 Medium 2). `size` (the `size` rule)
-// is read only for a file no earlier rule already marks: off disk when the new side is the
-// worktree (`worktree`), else with one `cat-file --batch-check` over the blob IDs (the old
-// one for a deletion). The internal `blobs`, `fileHash` and `fileRange` are stripped.
-async function withBodyRules(units, { worktree, toplevel, env, now }) {
-  const files = [];
-  for (const unit of units) {
-    const last = files[files.length - 1];
-    if (last !== undefined && last.path === unit.path) last.units.push(unit);
-    else files.push({ path: unit.path, units: [unit] });
-  }
-  const sizeless = [];
-  for (const file of files) {
-    file.added = file.units.reduce((sum, unit) => sum + unit.added, 0);
-    file.deleted = file.units.reduce((sum, unit) => sum + unit.deleted, 0);
-    const stats = { added: file.added, deleted: file.deleted, generated: file.units[0].generated, size: 0 };
-    file.reason = summaryOnly(file.path, stats);
-    if (file.reason === null) sizeless.push(file);
-  }
-  await fileSizes(sizeless, { worktree, toplevel, env, now });
-  for (const file of sizeless) {
-    if (file.size !== undefined && summaryOnly(file.path, { ...file, generated: false }) === 'size') file.reason = 'size';
-  }
+// CHG-17 (C:summary-only-files, M10, KD-R87): M9 `summaryOnly` over one closed section's
+// units (one file), decided in the reader as the section closes. A summary-only file
+// becomes one whole-file unit carrying `summaryOnly` (the reason): a content-only `M`'s hunk
+// units fold into its whole-file hash, range and summed counts; its `addedLines` stay for
+// the scan (C:summary-only-files: the scan ignores summary-only status), its `body` is
+// dropped. `sizeOf` (`bodyRuleSizes`) gives the `size` rule's size, read before the pass.
+function summaryOnlyFile(units, sizeOf) {
+  if (units.length === 0) return units;
+  const [first] = units;
+  const added = units.reduce((sum, unit) => sum + unit.added, 0);
+  const deleted = units.reduce((sum, unit) => sum + unit.deleted, 0);
+  const reason = summaryOnly(first.path, { added, deleted, generated: first.generated, size: sizeOf(first) ?? 0 });
+  if (reason === null) return units;
+  const folded = first.fileHash === undefined ? first : {
+    ...first,
+    hash: first.fileHash,
+    identityKey: first.fileHash,
+    added,
+    deleted,
+    addedLines: units.flatMap((unit) => unit.addedLines),
+    range: first.fileRange,
+  };
+  return [{ ...folded, body: Buffer.alloc(0), summaryOnly: reason }];
+}
+
+// The body cap (CHG-17, C:summary-only-files, Q19, M10) over a unit list sorted by path (one
+// file's units are consecutive), after the reader's summary-only decision: in path order,
+// the changed lines of the files that are not summary-only are summed; the first file taking
+// the sum over 3000 and every later one keep each unit (own hash, range, counts,
+// `addedLines`, `body`) with `capped: true`: the cap limits the worker's context, not the
+// tool output (Q19), so the body stays for a split by ranges (CHG-20) and only M13 leaves
+// its block out (review-CHG-17 Medium 2). The internal `blobs`, `fileHash` and `fileRange`
+// are stripped.
+function withBodyCap(units) {
   const out = [];
   let sum = 0;
-  for (const file of files) {
-    const plain = file.units.map(({ blobs, fileHash, fileRange, ...unit }) => unit);
-    if (file.reason !== null) {
-      const { fileHash, fileRange } = file.units[0];
-      const folded = fileHash === undefined ? plain[0] : {
-        ...plain[0],
-        hash: fileHash,
-        identityKey: fileHash,
-        added: file.added,
-        deleted: file.deleted,
-        addedLines: plain.flatMap((unit) => unit.addedLines),
-        range: fileRange,
-      };
-      out.push({ ...folded, body: Buffer.alloc(0), summaryOnly: file.reason });
+  for (let i = 0; i < units.length;) {
+    let j = i + 1;
+    while (j < units.length && units[j].path === units[i].path) j += 1;
+    const file = units.slice(i, j).map(({ blobs, fileHash, fileRange, ...unit }) => unit);
+    i = j;
+    if (file[0].summaryOnly !== undefined) {
+      out.push(...file);
       continue;
     }
-    if (sum <= BODY_CAP_LINES) sum += file.added + file.deleted;
-    if (sum > BODY_CAP_LINES) out.push(...plain.map((unit) => ({ ...unit, capped: true })));
-    else out.push(...plain);
+    if (sum <= BODY_CAP_LINES) sum += file.reduce((total, unit) => total + unit.added + unit.deleted, 0);
+    if (sum > BODY_CAP_LINES) out.push(...file.map((unit) => ({ ...unit, capped: true })));
+    else out.push(...file);
   }
   return out;
 }
 
-// Sets `size` (bytes) on each file whose size can be read: the new content (off disk when
-// `worktree`, else its blob), the old blob for a deletion. A symlink, submodule or type
-// change, a missing side, or an unreadable file leaves it unset (the `size` rule then never
-// matches).
-async function fileSizes(files, { worktree, toplevel, env, now }) {
-  const byOid = [];
-  for (const file of files) {
-    const [unit] = file.units;
-    if (unit.status === 'T' || unit.kind === 'symlink' || unit.kind === 'submodule') continue;
-    if (unit.status !== 'D' && worktree) {
+// The `size` rule's sizes (CHG-17, KD-R87), read in one `git diff -z --raw` pass over the
+// same `args` (and index) as the patch pass that follows, so the reader decides summary-only
+// per file while streaming instead of holding every body until a size read after the
+// stream. Only a file no size-free rule (lockfile, minified, sourcemap, generated) already
+// marks is sized: its new content off disk when the new side is the worktree (`worktree`),
+// else its blob (the old one for a deletion), all through one `cat-file --batch-check`. A
+// type change, symlink or submodule, a missing side, a non-UTF-8 path or an unreadable file
+// gets no size (the `size` rule then never matches). Returns `sizeOf(unit)` for a unit of
+// the patch pass: by path off disk, else by the blob ID of the unit's own `index` line (none
+// without one, as for a pure rename).
+async function bodyRuleSizes(args, { toplevel, env, now, indexPath }, attrs, worktree) {
+  const out = await gitOk(
+    [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '--no-abbrev', '-z', '--raw', ...args],
+    { cwd: toplevel, env, now, readOnly: true, index: indexPath },
+  );
+  const records = [];
+  readRaw(out, records);
+  const byPath = new Map();
+  const byOid = new Map();
+  const oids = new Set();
+  for (const record of records) {
+    const path = utf8Path(record.pathBytes);
+    if (path === null || record.status === 'T') continue;
+    const modes = [record.oldMode, record.newMode];
+    if (modes.includes(SYMLINK_MODE) || modes.includes(GITLINK_MODE)) continue;
+    const generated = attrs.get(path)?.generated ?? false;
+    if (summaryOnly(path, { added: 0, deleted: 0, generated, size: 0 }) !== null) continue;
+    if (record.status !== 'D' && worktree) {
       try {
-        const stat = lstatSync(join(toplevel, file.path));
-        if (stat.isFile()) file.size = stat.size;
+        const stat = lstatSync(join(toplevel, path));
+        if (stat.isFile()) byPath.set(path, stat.size);
       } catch {
         // Unreadable: no size.
       }
       continue;
     }
-    const oid = typeof unit.blobs === 'string' ? unit.blobs.split(' ')[unit.status === 'D' ? 0 : 1] : null;
-    if (oid && !ZERO_OID.test(oid)) byOid.push({ file, oid });
+    const oid = record.status === 'D' ? record.oldOid : record.newOid;
+    if (oid && !ZERO_OID.test(oid)) oids.add(oid);
   }
-  if (byOid.length === 0) return;
-  const out = await gitOk(['cat-file', '--batch-check=%(objectsize)'], {
-    cwd: toplevel, env, now, readOnly: true, input: Buffer.from(byOid.map(({ oid }) => `${oid}\n`).join('')),
-  });
-  const lines = out.toString('utf8').split('\n');
-  byOid.forEach(({ file }, i) => {
-    const size = Number(lines[i]);
-    if (/^\d+$/.test(lines[i] ?? '')) file.size = size;
-  });
+  if (oids.size > 0) {
+    const list = [...oids];
+    const sizes = await gitOk(['cat-file', '--batch-check=%(objectsize)'], {
+      cwd: toplevel, env, now, readOnly: true, input: Buffer.from(list.map((oid) => `${oid}\n`).join('')),
+    });
+    const lines = sizes.toString('utf8').split('\n');
+    list.forEach((oid, i) => {
+      if (/^\d+$/.test(lines[i] ?? '')) byOid.set(oid, Number(lines[i]));
+    });
+  }
+  return (unit) => {
+    if (unit.status === 'T' || unit.kind === 'symlink' || unit.kind === 'submodule') return undefined;
+    if (unit.status !== 'D' && worktree) return byPath.get(unit.path);
+    const oid = typeof unit.blobs === 'string' ? unit.blobs.split(' ')[unit.status === 'D' ? 0 : 1] : null;
+    return oid ? byOid.get(oid) : undefined;
+  };
 }
 
 // A type change's one whole-file unit (CHG-09, Q11 pass 8 amendment), `kind` its

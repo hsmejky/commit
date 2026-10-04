@@ -11,11 +11,16 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+
+const SPAWN_RECORD_PRELOAD = pathToFileURL(
+  path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
+).href;
 
 let changeSet;
 
@@ -236,4 +241,53 @@ test('M10 keeps the body of a capped unit; only a summary-only file loses it', a
   for (const unit of capped) assert.equal(unit.capped, true);
   assert.match(capped[0].body.toString('utf8'), /^\+changed 3$/m);
   assert.match(capped[2].body.toString('utf8'), /^\+E$/m);
+});
+
+// KD-R87 (CHG-17 criterion 4): M10 reads the `size` rule's sizes in a `git diff --raw` pass
+// before the patch pass, so the reader decides summary-only per file as each section closes
+// and drops that file's body there, never after the stream. Retained memory has no seam
+// (KD-R87); what is observable is the order and count of the git calls: the raw pass, then
+// one `cat-file --batch-check` for every blob the size rule needs (none for a lockfile,
+// none off disk), then the patch pass, with the same summary-only output as before.
+test('the size rule is read before the patch pass: raw pass, one cat-file, then the patch', async (t) => {
+  const c = createCase(t);
+  const big = `${'z'.repeat(1023)}\n`.repeat(300);
+  seed(c, { 'big.txt': `top\n${big}`, 'package-lock.json': '{}\n', 'small.txt': 'top\n' });
+  c.writeFile('big.txt', `TOP\n${big}`);
+  c.writeFile('package-lock.json', '{ }\n');
+  c.writeFile('small.txt', 'TOP\n');
+  c.git(['add', '--', '.']);
+
+  const calls = async (argv) => {
+    const log = path.join(c.root, `spawns-${argv[1]}.jsonl`);
+    const result = await runCommit(c, argv, {
+      nodeArgs: ['--import', SPAWN_RECORD_PRELOAD],
+      env: { COMMIT_TEST_SPAWN_LOG: log },
+    });
+    assert.equal(result.exitCode, 0, detail(result));
+    fs.rmSync(path.join(c.repoDir, '.commit-plan'), { recursive: true, force: true });
+    const kinds = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
+      .filter((e) => Array.isArray(e.args) && e.args[0] !== 'check-attr')
+      .map((e) => {
+        if (e.args.includes('cat-file')) return 'cat-file';
+        if (!e.args.includes('diff') || !e.args.includes('--raw')) return null;
+        return e.args.includes('-p') ? 'patch' : 'raw';
+      })
+      .filter((kind) => kind !== null);
+    return { result, kinds };
+  };
+
+  const staged = await calls(['plan', '--staged']);
+  // The staged snapshot (blob side), then the unstaged-changes read (off disk, no cat-file).
+  assert.deepEqual(staged.kinds, ['raw', 'cat-file', 'patch', 'raw', 'patch']);
+  const split = await calls(['plan', '--split']);
+  assert.deepEqual(split.kinds, ['raw', 'patch']);
+  for (const { result } of [staged, split]) {
+    assert.deepEqual(
+      result.json.hunks.summaryOnly.map((e) => [e.path, e.reason]),
+      [['big.txt', 'size'], ['package-lock.json', 'lockfile']],
+      detail(result),
+    );
+    assert.deepEqual(result.json.hunks.hunks.map((e) => [e.path, e.body]), [['small.txt', 'file']]);
+  }
 });
