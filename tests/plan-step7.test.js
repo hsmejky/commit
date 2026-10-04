@@ -19,7 +19,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
-const { parseBaseCallerRule } = require('./helpers/reply-contract-doc.js');
+const { parseBaseCallerRule, parseHandbackRule } = require('./helpers/reply-contract-doc.js');
 
 const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const SHIM_SKIP = process.platform === 'win32'
@@ -88,6 +88,26 @@ function assertLockRefusal(result, kind) {
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.ok, false);
   assert.equal(result.json.error.kind, kind);
+}
+
+// INT-05 (C:reply-and-handback `lock` row, Q22): the takeover question/answers/ifNoUser shape
+// an interactive refusal of a live, readable-`planId` lock gets, plus the handback-rule
+// addition to `callerRule`. `respawn` has no `mode` line for a bare `plan` call.
+function assertLockHandback(result, { respawn }) {
+  const { reply } = result.json;
+  assert.equal(reply.status, 'handback');
+  assert.equal(reply.handback.kind, 'lock');
+  assert.match(
+    reply.handback.question,
+    /^A \/commit run started at \d\d:\d\d holds the lock, last active \d+ s ago\. It may still be running \(a subagent committing in parallel\); taking it over resets its index mid-commit\. Take it over\?$/,
+  );
+  assert.equal(reply.handback.question, reply.text.split('\n')[0]);
+  assert.deepEqual(reply.handback.answers, [
+    { label: 'take over', respawn },
+    { label: 'wait' },
+  ]);
+  assert.deepEqual(reply.handback.ifNoUser, { answer: 'wait', returnToParent: true });
+  assert.equal(reply.callerRule, `${parseBaseCallerRule()} ${parseHandbackRule()}`);
 }
 
 // Writes the run lock with a fixed mtime a minute in the past: fresh (under 15 minutes) and
@@ -206,6 +226,8 @@ test('plan that loses the lock race to a lock placed after its folder exists exi
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed);
   assert.equal(fs.readFileSync(path.join(runDirOf(c), OTHER_PLAN_ID, 'state.json'), 'utf8'), 'kept');
   assert.deepEqual(folderNames(c), [OTHER_PLAN_ID]);
+  // INT-05: a lost race at `acquire` gets the same `lock` handback as a `peek` refusal.
+  assertLockHandback(result, { respawn: `takeOver: ${OTHER_PLAN_ID}` });
 });
 
 test('plan whose lock link fails with EEXIST exits 6 lock and deletes its own provisional folder', async (t) => {
@@ -300,10 +322,12 @@ test('plan refused by a live lock already in place exits 6 lock before any inven
   }
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed, "the holder's lock is untouched");
   assert.deepEqual(folderNames(c), [], 'no provisional folder and no temporary index are left');
-  assert.equal(result.json.reply.handback, null, "the lock handback itself is INT-05's");
+  // INT-05: a `peek` refusal of a live lock with a readable `planId`, interactive, carries
+  // the `lock` handback.
+  assertLockHandback(result, { respawn: `takeOver: ${OTHER_PLAN_ID}` });
 });
 
-test('plan --no-user --split refused by a live lock carries the same holder fields', async (t) => {
+test('plan --no-user --split refused by a live lock carries the same holder fields but no handback', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
   c.writeFile('a.txt', 'one\nmore\n');
@@ -315,6 +339,13 @@ test('plan --no-user --split refused by a live lock carries the same holder fiel
   assertLockRefusal(result, 'lock');
   assertHolderFields(result, c, { planId: OTHER_PLAN_ID, created: '2026-09-26T13:58:02.000Z' });
   assert.deepEqual(folderNames(c), []);
+  // INT-05 (Q22 "A run without a user gets a plain refusal and returns it to its parent";
+  // C:reply-and-handback marks the `lock` row `interactive`): `--no-user` skips the handback,
+  // the same as `lintFailed`'s own `--no-user` skip — unlike `modeChoice`, which never checks
+  // `--no-user` at all.
+  assert.equal(result.json.reply.status, 'failed');
+  assert.equal(result.json.reply.handback, null);
+  assert.equal(result.json.reply.callerRule, parseBaseCallerRule());
 });
 
 // RUN-07: a fresh lock whose planId is not in the minted form also refuses at `peek`, with

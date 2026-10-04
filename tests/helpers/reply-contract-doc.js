@@ -13,6 +13,11 @@ const DOC_PATH = path.join(__dirname, '..', '..', 'docs', 'contracts', 'reply-an
 // The rule is the double-quoted text after the bullet's label; it holds no `"` of its own.
 const BASE_RULE_RE = /^\s*- Base rule, always: "([^"]*)"/m;
 
+// INT-05: the sibling bullet, nested under the same `callerRule` bullet as the base rule
+// (one extra indent level, irrelevant to `\s*`), added to the base rule only for a
+// `handback` reply.
+const HANDBACK_RULE_RE = /^\s*- Handback rule, added when `handback` is set: "([^"]*)"/m;
+
 /**
  * @param {string} [content] defaults to reading DOC_PATH; a caller can pass fixed text.
  * @returns {string} the base rule, with the doc's line wraps joined by single spaces.
@@ -23,4 +28,14 @@ function parseBaseCallerRule(content = fs.readFileSync(DOC_PATH, 'utf8')) {
   return match[1].replace(/\s*\r?\n\s*/g, ' ');
 }
 
-module.exports = { parseBaseCallerRule };
+/**
+ * @param {string} [content] defaults to reading DOC_PATH; a caller can pass fixed text.
+ * @returns {string} the handback rule, with the doc's line wraps joined by single spaces.
+ */
+function parseHandbackRule(content = fs.readFileSync(DOC_PATH, 'utf8')) {
+  const match = HANDBACK_RULE_RE.exec(content);
+  if (!match) throw new Error(`no "Handback rule, added when \`handback\` is set:" bullet found in ${DOC_PATH}`);
+  return match[1].replace(/\s*\r?\n\s*/g, ' ');
+}
+
+module.exports = { parseBaseCallerRule, parseHandbackRule };
