@@ -133,12 +133,15 @@ created between groups are both caught:
   `cleanupDeadline`, `unstaged` is `null`, the outcome keeps its original cause, and the run
   is kept for the next run's takeover repair (M15 `cleanupDeadline`, C:run-folder).
 
-`commitAll(run, { now, osUser, env }) → Outcome` (`env`: the injected environment its M10/M3 calls take), with `osUser` passed by M18 for the backstop's
+`commitAll(run, { now, osUser, env, deadline, scriptPath }) → Outcome` (`env`: the injected environment its M10/M3 calls take;
+`deadline`: this call's M15 `deadline()`, read by M15 `nextStep` for the budget stop, EXE-16), with `osUser` passed by M18 for the backstop's
 M8 `scanUnits` and never stored in the run state (Q10 as amended by EXE-01), where `Outcome` holds the output fields of
 C:commit-release, plus `refusal: { code, message } | null`: how a phase (a) or (b) check hands a mid-run refusal to M18, which
 maps `code` through the domain-code table (C:cli-and-exit-codes) and merges `message` into the CLI `error`; `null` on
 every other outcome, including success and a budget stop. `hits` is present on a backstop-scan refusal (exit 3), `sha` after exit 4 or 5, and before an
-`internal` reply (exit 1), when HEAD moved anyway; a budget stop is `ok` with `failed: null` and a non-empty `remaining`. M18
+`internal` reply (exit 1), when HEAD moved anyway; a budget stop is `ok` with `failed: null` and a non-empty `remaining` and
+builds the `continue` handback itself (EXE-16; `scriptPath`, the injected CLI entry path, is for S2 `build()` there — Interim,
+see C:commit-release). M18
 adds M10 `treeState`, builds the reply (M17) and releases per M15 `runEnd`.
 
 Accepted limits of the hook path are listed in [Out of Scope](out-of-scope.md).

@@ -292,8 +292,9 @@ commits (it is only in the stored `stagedNew`).
       `diff-changed` in (b) → the real index is left exactly as it is, and `unstaged` (from
       group 1's reset) is still listed in the output that ends the run.
 - [ ] Seam 1: a budget stop (EXE-16) after a group that set `indexReset` → the `continue`
-      output still carries `unstaged: []` (not `null`): `indexReset` alone gates it, never
-      whether the output ends the run (C:commit-release).
+      output still carries `unstaged` as an array (the reset paths, `[]` when none), never
+      `null`: `indexReset` alone gates it, never whether the output ends the run
+      (C:commit-release).
 
 
 ## EXE-12: a failing `git commit` stops the run, no retry

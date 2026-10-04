@@ -167,7 +167,9 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
 - `commits`: the groups this call committed. `failed`: `null`, or the group number whose
   step failed; `error` is then that failure (the exit code is its cause's) and
   `remaining` the groups not committed. A stop on the budget is not a failure: exit 0,
-  `failed: null`, `remaining` set, and a `continue` handback in `reply`.
+  `failed: null`, `remaining` set, and a `continue` handback in `reply`. Interim: until
+  INT-02 moves it, M16 `commitAll` builds this handback itself and returns it as the
+  top-level `handback` field (EXE-16), not yet inside `reply`.
 - Exit 4 fills `gitOutput` with git's stdout and stderr verbatim (unescaped, uncut); what a
   caller shows through `text` is the capped, escaped copy of it ([Reply and
   handback](reply-and-handback.md)). Exit 3 fills `error` and adds `hits`.

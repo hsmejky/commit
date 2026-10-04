@@ -206,6 +206,14 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `plugin/scripts/lib/workflows.mjs` `collapseCandidates`, `refuseCaseRenames` and
   `snapshotUnits`. Fix: CHG-14 (blocked by RUN-13) builds the index-only snapshot for
   `staged` mode, removing untracked candidates from it instead of capping them.
+- **KD-R76.** A budget stop (EXE-16) builds its `continue` handback with S2 `build()`
+  (`commit-executor.mjs`), which throws a `TypeError` for an install path holding `"`, `$`,
+  a backtick, `!` or a control character. Until RPL-08 adds the up-front `env` refusal for
+  such a path, a budget stop that lands on one turns group 1's otherwise-clean exit 0 into an
+  `internal` exit 1 after that group was already committed (review-EXE-16-r2 finding L3).
+  Where: `plugin/scripts/lib/commit-executor.mjs` `budgetStop`. Fix: none needed in EXE-16;
+  RPL-08's `env` refusal runs before any group starts, so this stops being reachable once
+  RPL-08 lands. Slice: RPL-08 (closes this row).
 
 ## Bookkeeping
 

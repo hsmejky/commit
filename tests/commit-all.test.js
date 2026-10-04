@@ -983,6 +983,27 @@ function runCommitAtElapsed(c, planId, elapsedMs) {
   });
 }
 
+// A schedule whose single step holds from a marker file written before launch, so the clock
+// already reads `elapsedMs` from this call's very first group onward (FND-05). Needed for the
+// AC5 first-group exemption itself: `scheduleAfterNextCommit` only steps the clock after this
+// call's own next commit lands, so the call's first group always starts under the real (near-0)
+// elapsed clock and never exercises the exemption. Here the first group starts already "at"
+// `elapsedMs` — proving `nextStep` lets it through regardless of the floor.
+function scheduleFromStart(c, elapsedMs) {
+  const marker = path.join(c.root, 'clock-marker');
+  fs.writeFileSync(marker, '');
+  const schedulePath = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedulePath, JSON.stringify([{ event: { type: 'path', path: marker }, elapsedMs }]));
+  return schedulePath;
+}
+
+function runCommitAtElapsedFromStart(c, planId, elapsedMs) {
+  return runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: scheduleFromStart(c, elapsedMs) },
+  });
+}
+
 test('61 s elapsed after group 1 stops the call: exit 0, commits [1], remaining [2, 3], run kept, a `continue` handback', async (t) => {
   const { c, planId, runDir, seed } = await threeGroupRun(t);
 
@@ -1039,7 +1060,7 @@ test('a `continue` call resuming at group 2 still starts it at 539 s elapsed: co
   const stopped = await runCommitAtElapsed(c, planId, 61_000);
   assert.deepEqual(stopped.json.remaining, [2, 3], detail(stopped));
 
-  const result = await runCommitAtElapsed(c, planId, 539_000);
+  const result = await runCommitAtElapsedFromStart(c, planId, 539_000);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.failed, null);
@@ -1084,7 +1105,7 @@ test('a budget stop after group 1, then a manual `git add` before the `continue`
 test('the first group of the call starts even at 539 s elapsed, but group 2 then stops on budget', async (t) => {
   const { c, planId, seed } = await threeGroupRun(t);
 
-  const result = await runCommitAtElapsed(c, planId, 539_000);
+  const result = await runCommitAtElapsedFromStart(c, planId, 539_000);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.failed, null);

@@ -77,6 +77,9 @@ C:run-folder, C:reply-and-handback, stories 40, 70, 194.
       `commit --all` output, and a `reply` with `status: "committed"`, the `sha subject` line,
       the base `callerRule` and "working tree clean"
 - [ ] After the commit the lock and the run folder are gone (story 194)
+- [ ] The EXE-16 budget-stop `continue` handback, built by M16 `commitAll` as an interim
+      top-level `handback` field (C:commit-release), moves into `reply.handback` here,
+      merged the same way `notices` already is
 
 
 ## INT-05: A live lock at `plan` becomes a `lock` handback
