@@ -22,7 +22,8 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    and validate the config; resolve the attribution. Signing is probed only at step 6.
 2. Pre-folder refusals, in order: `env`, `config`, `state` (including `sequencer/`,
    `SQUASH_MSG`, `unmerged` and the encoding), and with `--reword` unborn or merge-commit
-   HEAD (`state`) and `pushed`. None of them creates the run folder.
+   HEAD (`state`) and `pushed`, then `timed-out` (the start-up `spawnSync` calls' own
+   timeout, held last among these rows). None of them creates the run folder.
 3. Mint `planId`, check `.commit-plan` and create the run folder (provisional); then a
    read-only lock `peek`, before any inventory work: a live lock → `lock`, delete the
    folder; a stale lock → the automatic takeover, here: `acquire` takes it over; no lock

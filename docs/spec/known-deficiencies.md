@@ -99,6 +99,18 @@ delete it here; IDs are never reused.
   finding L3. Fix: derive `ownHashes` from what phase (c) actually staged for this group
   (its own unit IDs, not `wholeFileUnits`), once a group's units can be hunks. Slice: the
   hunk-level staging slice (not yet scheduled in 0.1.0).
+- **KD-S85. An invalid config can be masked by a throw or timeout in the read `plan` runs
+  before loading it.** `readHeadState` (`plugin/scripts/lib/workflows.mjs:127`) runs before
+  `loadConfigLayers` (`PLAN_STEPS`, workflows.mjs:748), so it always spawns
+  `inProgressState`/`commitEncoding`, and with `--reword` also `rewordFacts`, while `plan`'s
+  own config layer is still unloaded; its preview `planRefusal` call (workflows.mjs:144)
+  omits `config`, since there is no config result yet, so an invalid config can never end the
+  step early. If one of those calls throws or times out instead, the result is `internal` or
+  `timeout` rather than `config` (C:plan step 2's order), even though `config` would have
+  refused first had the two steps run in the other order. Where:
+  `plugin/scripts/lib/workflows.mjs` `readHeadState`, `PLAN_STEPS`. Fix: load the config
+  before `readHeadState` and pass it into the preview `planRefusal` call. Disposition:
+  accepted for 0.1.0 (review-RUN-14 finding 2).
 
 ## Error tables and API contract
 

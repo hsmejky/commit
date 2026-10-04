@@ -424,6 +424,7 @@ test('plan with invalid repo config and an in-progress merge together exits 1 co
   } catch {
     // Conflict expected: git exits non-zero, leaving MERGE_HEAD.
   }
+  c.git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']);
   c.writeFile('.claude/commit.json', '{ "types": [');
 
   const result = await runCommit(c, ['plan']);

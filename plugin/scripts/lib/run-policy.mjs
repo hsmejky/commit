@@ -9,8 +9,8 @@
 // `config` (C:plan step 2 order: `env`, `config`, `state`); GIT-02 onward adds the other
 // `state` rows; GIT-04 adds `unmerged` (recorded text) and `encoding` (no recorded text,
 // only a message naming the state), both ahead of the not-a-repo/bare rows (moot in
-// practice: `unmerged`/`commitEncoding` are only ever facts inside a worktree); RUN-14
-// completes their order.
+// practice: `unmerged`/`commitEncoding` are only ever facts inside a worktree); RUN-14 pins
+// their order with Seam-1 tests.
 //
 // GIT-09 adds the reword rows (Q20, C:plan step 2), after every other `state` row: an
 // unborn or merge-commit HEAD (`state`), then `pushed`.
