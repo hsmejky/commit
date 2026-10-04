@@ -55,7 +55,7 @@ test('Seam 1: WIP: and Update: headers do not count; a 20-commit 50% share is a 
   assert.equal(result.json.nonConventional, 10, detail(result));
   assert.equal(result.json.outcome, 'proposal', detail(result));
   assert.notEqual(result.json.proposal, null, detail(result));
-  assert.equal(result.json.configJson, null, detail(result));
+  assert.notEqual(result.json.configJson, null, detail(result));
 });
 
 test('Seam 1: a 49% Conventional Commits share is not-conventional with proposal null', async (t) => {

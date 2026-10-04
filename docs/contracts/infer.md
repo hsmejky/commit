@@ -23,8 +23,8 @@ git repository or in a bare repository, the same text family as `plan`
   },
   "droppedTypes": [{ "type": "wip", "count": 3 }],
   "configJson": {
-    "repo": { "text": "{\n  \"scope\": \"optional\",\n  …\n}\n" },
-    "user": { "errors": ["maxSubjectLength: 300 is above 200"] }
+    "repo": { "text": "{\n  \"types\": [ … ],\n  \"scope\": \"optional\",\n  …\n}\n" },
+    "user": { "errors": ["the user config (commit.json) maxSubjectLength must be an integer between 20 and 200, not 300"] }
   }
 }
 ```
@@ -55,7 +55,9 @@ git repository or in a bare repository, the same text family as `plan`
   `null` when there is no proposal (same as `proposal`).
 - `configJson`: per layer (`repo`, `user`), the current raw layer with the proposal's keys
   replaced and every other key (such as `scanIgnore`) kept, serialised as `{ "text" }`. The
-  text is validated by `validateLayer` (Q6) before it is returned; a layer that
-  already fails validation gets `{ "errors" }` instead of text. The `commit-config` skill
-  writes the chosen layer's text verbatim and never composes JSON itself (Q7). `null` when
-  there is no proposal.
+  current raw layer is checked by `validateLayer` first (as `plan` checks it, with repo-only
+  keys such as `scanIgnore` excluded from the user layer's check, same as `plan`'s
+  `readLayer`); a layer that already fails gets `{ "errors" }` and nothing is merged.
+  Otherwise the merged object, validated again the same way, is returned as text. The
+  `commit-config` skill writes the chosen layer's text verbatim and never composes JSON
+  itself (Q7). `null` when there is no proposal.

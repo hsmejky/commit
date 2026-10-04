@@ -158,6 +158,12 @@ delete it here; IDs are never reused.
   PRE-03); narrow it only with a reading of Start-Process's target that is checked against
   PowerShell 5.1 and 7.
 
+- **KD-S86. `configJson`'s unknown-key round-trip loses extreme numbers.** M19 `configFor`
+  re-serialises an unknown key's raw JSON value through `JSON.parse`/`JSON.stringify`
+  (`history-inference.mjs` `configForLayer`): a value like `1e400` becomes `null`, and an
+  integer above `2^53` loses precision. Where: [C:infer](../contracts/infer.md) `configJson`.
+  Disposition: accepted for 0.1.0.
+
 ## Testing
 
 Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](testing-seams.md)):

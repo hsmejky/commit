@@ -78,8 +78,10 @@ const REPO_ONLY_KEYS = Object.freeze(['scanIgnore']);
 const GLOB_RULES = "is not a supported glob: no braces, classes, '!', '\\', '..' or empty "
   + "segments, '**' only as a whole segment, and at least one literal character";
 
-/** A shallow copy of a layer object without `REPO_ONLY_KEYS` (CFG-07, `readLayer`). */
-function withoutRepoOnlyKeys(obj) {
+/** A shallow copy of a layer object without `REPO_ONLY_KEYS` (CFG-07, `readLayer`); exported
+ * so M19 `configFor` (INF-07) can exclude them from the user layer's `validateLayer` check
+ * the same way `readLayer` does, without a bad user-layer `scanIgnore` refusing (Q6). */
+export function withoutRepoOnlyKeys(obj) {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return obj;
   const copy = { ...obj };
   for (const key of REPO_ONLY_KEYS) delete copy[key];
@@ -257,57 +259,33 @@ function decodeLayerBytes(buffer, label) {
 }
 
 /**
- * Reads and validates one config layer's file: the read/decode/parse/`validateLayer`
- * pipeline shared by the user and repo layers (CFG-04), each named only by their path and
- * display label. A missing file is no layer at all, not an error (Q6).
+ * Reads and validates one config layer's file: the read/decode/parse pipeline is
+ * `readRawLayer`'s (review-INF-07 finding 3: no duplicate read pipeline), then
+ * `validateLayer` and CFG-06 sanitisation run over the result, shared by the user and repo
+ * layers (CFG-04), each named only by their path and display label. A missing file is no
+ * layer at all, not an error (Q6).
  *
  * @param {string} filePath absolute path to the layer's file.
  * @param {string} layer the layer's display label (used in every message, and passed to
  *   `validateLayer` so a key error names the same layer).
  * @param {'user' | 'repo'} kind the layer's identity (CFG-06: `collectConfigWarnings`'
  *   wrong-layer check).
- * @returns {{ error: string } | { value: object | null, warnings: string[] }} `value: null`
- *   when the file is absent; otherwise the parsed, validated and CFG-06-sanitized layer
- *   object. `error` names `layer`.
+ * @returns {{ error: string } | { value: object, warnings: string[] }} `value: {}` when the
+ *   file is absent (same as `readRawLayer`; every caller treats it as no layer, same as a
+ *   literal `null` would, since `validateLayer`/`collectConfigWarnings` find nothing to flag
+ *   in an empty object and `effectiveConfig`'s `Object.hasOwn` check treats `{}` and `null`
+ *   alike); otherwise the parsed, validated and CFG-06-sanitized layer object. `error` names
+ *   `layer`.
  */
 function readLayer(filePath, layer, kind) {
-  let stats;
-  try {
-    // Follows a link (read only, never write), so a link to a huge file or a FIFO is caught
-    // the same as one in place directly (review-CFG-02 finding 10).
-    stats = fs.statSync(filePath);
-  } catch (err) {
-    // No layer at all: no config, no error (Q6, CFG-02 seam "a repo with no config file gets
-    // no `config` refusal"). ENOTDIR: a path component (e.g. the repo layer's `.claude`, or
-    // the user layer's Claude home) is a file, which is just as absent a layer as ENOENT.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null, warnings: [] };
-    // EACCES, EPERM, ELOOP and the like: the layer exists but cannot be inspected. A `config`
-    // refusal naming the layer, not an uncaught throw ending as `internal`
-    // (review-CFG-02 finding 1).
-    return { error: `the ${layer} cannot be read (${err.code})` };
-  }
-
-  // A directory (e.g. `mkdir .claude/commit.json`), a device, socket or FIFO: never a valid
-  // config file, and never opened (review-CFG-02 finding 1's EISDIR case, finding 10).
-  if (!stats.isFile()) {
-    return { error: `the ${layer} is not a regular file` };
-  }
-  if (stats.size > CONFIG_MAX_BYTES) {
-    return { error: `the ${layer} is larger than ${CONFIG_MAX_BYTES} bytes` };
-  }
-
-  let buffer;
-  try {
-    buffer = fs.readFileSync(filePath);
-  } catch (err) {
-    // The layer vanished, or turned unreadable, between the stat and the read.
-    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return { value: null, warnings: [] };
-    return { error: `the ${layer} cannot be read (${err.code})` };
-  }
-
-  const decoded = decodeLayerBytes(buffer, layer);
-  if (decoded.problem !== undefined) return { error: decoded.problem };
-  const parsed = decoded.value;
+  // The stat / non-regular / size cap / read / decode pipeline is `readRawLayer`'s own
+  // (review-INF-07 finding 3): a missing file's `{ value: {} }` behaves exactly like this
+  // function's own "no layer at all" case below, since neither `validateLayer` nor
+  // `collectConfigWarnings` ever finds anything to flag on an empty object, and
+  // `effectiveConfig`'s `Object.hasOwn` check treats `{}` and `null` alike.
+  const raw = readRawLayer(filePath, layer);
+  if (raw.error !== undefined) return { error: raw.error };
+  const parsed = raw.value;
   // CFG-03: a non-object top level, a wrong JSON type, an out-of-range number or a bad
   // `types` array is a `config` error naming the layer and the key (Q6, review-CFG-02
   // finding 5: CFG-02 was JSON-parseability only). `validateLayer` collects every error it
@@ -431,11 +409,12 @@ export async function loadConfig({ toplevel, claudeHome, unborn = false, env, no
 }
 
 /**
- * Reads one config layer's raw JSON value straight off disk, with none of `readLayer`'s
- * `validateLayer` check or CFG-06 sanitisation (`readLayers`, INF-07): the caller runs
- * `validateLayer` on the raw value itself, before merging anything into it, and an unknown
- * key (or a known, repo-only key in the wrong layer) survives untouched, since `readLayers`
- * only reports what is on disk now.
+ * Reads one config layer's raw JSON value straight off disk: the stat / non-regular / size
+ * cap / read / decode pipeline shared by `readLayer` (which then runs `validateLayer` and
+ * CFG-06 sanitisation over the result, review-INF-07 finding 3) and `readLayers` (INF-07,
+ * which leaves that to its own caller, M19 `configFor`): there an unknown key (or a known,
+ * repo-only key in the wrong layer) survives untouched, since `readLayers` only reports
+ * what is on disk now.
  *
  * @param {string} filePath absolute path to the layer's file.
  * @param {string} layer the layer's display label (used in the `error` message only).

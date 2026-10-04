@@ -13,7 +13,9 @@
 // kept, checked by M4 `validateLayer`.
 
 import { headerLineOf, lint, parse, passesLowerCase } from './message-grammar.mjs';
-import { DEFAULT_VALUES, REPO_LAYER, USER_LAYER, validateLayer } from './config.mjs';
+import {
+  DEFAULT_VALUES, REPO_LAYER, USER_LAYER, validateLayer, withoutRepoOnlyKeys,
+} from './config.mjs';
 
 /** Under this many non-merge commits read, `infer` proposes nothing (C:infer). */
 export const MIN_COMMITS = 20;
@@ -289,6 +291,12 @@ export function infer(messages) {
  * so this never actually trips, but it keeps the contract ("the text is validated by
  * `validateLayer` before it is returned") true even if that invariant ever broke.
  *
+ * Both gates validate the user layer without its repo-only keys (`scanIgnore`), same as M4
+ * `readLayer` (review-INF-07 finding 2): outside the repo layer a bad `scanIgnore` is CFG-06's
+ * wrong-layer warning whatever its value, never a refusal (CFG-07, roadmap 04 "Forward note
+ * (review-CFG-06 finding 6)"), so `configFor` must not refuse over it either, on either gate.
+ * The key itself is still kept in the serialized text (every other key kept, unchecked).
+ *
  * @param {object} proposal `infer`'s non-null `proposal` object.
  * @param {{ value: unknown } | { error: string }} raw one of M4 `readLayers`'s two results.
  * @param {string} label the layer's M4 display label (`REPO_LAYER` or `USER_LAYER`), passed
@@ -298,7 +306,9 @@ export function infer(messages) {
 function configForLayer(proposal, raw, label) {
   if (raw.error !== undefined) return { errors: [raw.error] };
 
-  const currentInvalid = validateLayer(raw.value, label);
+  const validate = (obj) => validateLayer(label === USER_LAYER ? withoutRepoOnlyKeys(obj) : obj, label);
+
+  const currentInvalid = validate(raw.value);
   if (currentInvalid !== null) return currentInvalid;
 
   const merged = {
@@ -310,7 +320,7 @@ function configForLayer(proposal, raw, label) {
     maxSubjectLength: proposal.maxSubjectLength.value,
   };
 
-  const mergedInvalid = validateLayer(merged, label);
+  const mergedInvalid = validate(merged);
   if (mergedInvalid !== null) return mergedInvalid;
 
   return { text: `${JSON.stringify(merged, null, 2)}\n` };
