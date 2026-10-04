@@ -38,8 +38,12 @@
 // `plan.json` `signing`. CFG-10 widens step 1's M5 call again, with the injected
 // `projectDir` (CFG-08/CFG-09's `toplevel` param, always ignored, is dropped), so the
 // project-local and project settings layers feed `resolveAttribution` ahead of the user
-// layer. Later
-// slices insert the other rows (3 lock peek, 5 scan) in their place in
+// layer. CHG-16 adds step 5's scan part (`scanDiff`, after `snapshotUnits`): M8 `scanUnits`
+// over the snapshot's units, with `loadConfigLayers`' compiled `scanIgnore` matchers
+// (`ctx.scanIgnoreMatchers`, kept off `ctx.config`) and the injected `osUser`; `ctx.scan`
+// (`plan.json` `scan`) and `ctx.scanMap` (`state.json` `scanned`, read by `renderHunkIndex`
+// to withhold a hit's whole body) are stored. Later
+// slices insert the other row (3 lock peek) in its place in
 // PLAN_STEPS, and widen these.
 //
 // `release` (RUN-01) runs its own step table the same way: probe, M12 `releaseById`, then the
@@ -73,6 +77,7 @@ import { cleanupDeadline, deadline, planRefusal, releaseDeadline, resolveMode } 
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
+import { scanUnits } from './scanner.mjs';
 import { probeSigning } from './signing-probe.mjs';
 import { guardState } from './heartbeat.mjs';
 import { infer as inferFromMessages } from './history-inference.mjs';
@@ -188,8 +193,13 @@ async function loadConfigLayers(ctx) {
   if (configResult.error !== undefined) {
     ctx.config = configResult;
   } else {
-    const { values, sources, warnings: configWarnings } = configResult;
+    const { values, sources, warnings: configWarnings, scanIgnore } = configResult;
     ctx.config = { values, sources };
+    // CHG-16: the compiled M7 matchers, kept off `ctx.config` (which stays exactly
+    // `{ values, sources }`, C:plan `config`) so `scanDiff` (step 5) can exempt a matched
+    // unit's path from the scan (Q10). `scanIgnoreChanged`/`scanIgnoreUnits` (a `scanIgnore`
+    // edit itself flagging the repo config's own units) move to SCN-14.
+    ctx.scanIgnoreMatchers = scanIgnore;
     for (const warning of configWarnings) {
       ctx.notices.push(warning);
       ctx.warnings.push(warning);
@@ -464,6 +474,58 @@ async function snapshotUnits(ctx) {
 }
 
 /**
+ * Maps every scan hit and skipped path to the unit that holds it (C:plan-hunks "scan map"):
+ * `{ h4: ["github-token"], h9: "skipped" }`. A hit's `(path, line)` belongs to exactly one
+ * unit of that path (hunk-level units never share a line; a whole-file unit's one unit
+ * holds every line of the file); a path appears in `skipped` once however many of its units
+ * are over the limit, so every one of them is flagged. `scanIgnoreUnits` (a `scanIgnore`
+ * edit itself flagging the repo config's own units) is SCN-14's; this slice flags hits and
+ * skips only.
+ */
+function buildScanMap(units, { hits, skipped }) {
+  const unitByPathLine = new Map();
+  for (const unit of units) {
+    for (const { line } of unit.addedLines ?? []) {
+      unitByPathLine.set(`${unit.path}\u0000${line}`, unit.id);
+    }
+  }
+  const scanned = {};
+  for (const { patternId, path, line } of hits) {
+    const id = unitByPathLine.get(`${path}\u0000${line}`);
+    if (id === undefined) continue;
+    (scanned[id] ??= []).push(patternId);
+  }
+  const skippedPaths = new Set(skipped.map(({ path }) => path));
+  for (const unit of units) {
+    if (skippedPaths.has(unit.path)) scanned[unit.id] = 'skipped';
+  }
+  return scanned;
+}
+
+/**
+ * Step 5 (scan part, CHG-16): M8 `scanUnits` over the snapshot's units (CFG-07's compiled
+ * `scanIgnore` matchers, captured by `loadConfigLayers` as `ctx.scanIgnoreMatchers` instead
+ * of on `ctx.config`; the entry point's `osUser`, Q10). Stores `ctx.scan` (`plan.json`
+ * `scan.hits`/`scan.skipped`, C:plan) and `ctx.scanMap` (`state.json` `scanned`,
+ * C:plan-hunks), read by `renderHunkIndex` (step 8) to withhold a hit's whole body and flag
+ * every entry's `scan`. A clean tree (no units) scans nothing.
+ */
+async function scanDiff(ctx) {
+  if (ctx.units === undefined) {
+    ctx.scan = { hits: [], skipped: [] };
+    ctx.scanMap = {};
+    return undefined;
+  }
+  const { hits, skipped } = scanUnits(ctx.units, {
+    scanIgnore: ctx.scanIgnoreMatchers,
+    osUser: ctx.injected.osUser,
+  });
+  ctx.scan = { hits, skipped };
+  ctx.scanMap = buildScanMap(ctx.units, { hits, skipped });
+  return undefined;
+}
+
+/**
  * Step 6: post-scan refusals. A clean tree ends the call with `nothing`, except in `reword`,
  * which takes the lock on a clean tree too (C:plan step 6, RUN-06). Then the signing probe
  * (GIT-10, M11), so a clean tree on a locked key reports "nothing to commit": M15
@@ -547,6 +609,9 @@ async function storeAndLock(ctx) {
     config: ctx.config,
     attribution: ctx.attribution,
     recentSubjects: ctx.recentSubjects,
+    // CHG-16 (C:plan-hunks "scan map"): every scan hit and skipped path mapped to the unit
+    // that holds it, cut from the very diff `scanDiff` (step 5) scanned.
+    scanned: ctx.scanMap,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
     // commit, which CHG-15's snapshot diffs against the empty tree.
     ...(ctx.mode === 'reword' ? { oldMessage: ctx.oldMessage, rootCommit: ctx.reword.root } : {}),
@@ -602,6 +667,14 @@ async function storeAndLock(ctx) {
     },
     stagedExcluded: stagedExcludedOf(ctx),
     dirtySubmodules: dirtySubmodulesOf(ctx),
+    // CHG-16 (C:plan `scan`): hits (M8's `patternId` as C:plan's `pattern`, never the
+    // matched value) and skips from `scanDiff` (step 5). `scanIgnoreChanged` is SCN-14's;
+    // `false` is a stand-in until that slice computes it.
+    scan: {
+      hits: ctx.scan.hits.map(({ path, line, patternId }) => ({ path, line, pattern: patternId })),
+      skipped: ctx.scan.skipped,
+      scanIgnoreChanged: false,
+    },
     // CFG-05 (C:plan `config.sources`): the effective values, repo over user over default.
     config: ctx.config,
     attribution: ctx.attribution.trailer === null ? null : ctx.attribution,
@@ -663,6 +736,7 @@ async function renderHunkIndex(ctx) {
       config: { values: ctx.config.values },
       recentSubjects: ctx.recentSubjects,
       oldMessage: ctx.oldMessage,
+      scanMap: ctx.scanMap,
     },
     ctx.units,
   );
@@ -673,7 +747,7 @@ async function renderHunkIndex(ctx) {
 const PLAN_STEPS = Object.freeze([
   probeRepo, readHeadState, loadConfigLayers, preFolderRefusals, createRunFolder, inventory,
   resolveRunMode, refuseCaseRenames,
-  collapseCandidates, snapshotUnits, postScanRefusals, readHistory, storeAndLock, storeNotices,
+  collapseCandidates, snapshotUnits, scanDiff, postScanRefusals, readHistory, storeAndLock, storeNotices,
   renderHunkIndex,
 ]);
 
