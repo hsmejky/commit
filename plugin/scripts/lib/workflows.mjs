@@ -926,8 +926,8 @@ async function openRun(ctx) {
 // true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`,
 // `index-changed` (`diff-changed`), `index-locked` (`index-lock`), and EXE-09's `unmatched`
 // (`diff-changed`) and `git-failed` all end it the same way (C:cli-and-exit-codes).
-// The release's notice and the `reply` with `status: "committed"` are INT-02's
-// (C:reply-and-handback).
+// INT-02: the release's own notice (a cleanup error after the commits, C:run-folder) joins
+// the outcome's `notices`, which `check` merges into `reply.notices` (C:check).
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { env, now, osUser } = ctx.injected;
@@ -950,7 +950,8 @@ async function commitGroups(ctx) {
     || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed'
     || outcome.refusal?.code === 'index-locked' || outcome.refusal?.code === 'unmatched'
     || outcome.refusal?.code === 'git-failed') {
-    releaseOpen(run);
+    const released = releaseOpen(run);
+    if (released.notice !== null) outcome.notices.push(released.notice);
   }
   return outcome;
 }
@@ -984,9 +985,9 @@ async function checkAlreadyCommitted(ctx) {
  * a `reply`), passing on the run's `interactive`; it also carries `shapeOnly` (RPL-08 reads
  * it to drop the `edit` answer when the plan's one error is a shape error) into the
  * `lintFailed` reply facts, unused until then. On success the validated groups are stored with
- * `committed: false`; the output is `groups`, `notIncluded` and `notices` only, with the
- * lock kept: `computeConfirm` and the routing to `commit --all` arrive with their own slices
- * (RUN-17, RUN-18, EXE-02, INT-02).
+ * `committed: false`, and `groups`, `notIncluded` and `notices` are kept on `ctx.checked` for
+ * step 6 (`commitCheckedGroups`); `computeConfirm` arrives with its own slices (RUN-17,
+ * RUN-18).
  */
 async function validateWorkerPlan(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
@@ -1003,10 +1004,32 @@ async function validateWorkerPlan(ctx) {
     return { lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape' };
   }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
-  return { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
+  ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
+  return undefined;
 }
 
-const CHECK_STEPS = Object.freeze([probeRepo, checkRefusals, openRun, checkAlreadyCommitted, validateWorkerPlan]);
+/**
+ * `check` step 6 (INT-02): with no `computeConfirm` yet, `confirm` is always `null`, so
+ * `check` goes straight on as `commit --all` in the same process (C:check): `commitGroups`,
+ * the `commit` workflow's own step 4, under this call's lock, deadline and scope. The output
+ * is `commit --all`'s with `groups` and `notIncluded` merged in, and `check`'s own notices
+ * ahead of `commit`'s in `notices`. Zero groups end here with `check`'s own output and the
+ * run kept: the release and the `nothing` reply are RUN-18's. So does a plan with any
+ * hunk-level file entry (`hunks` not `null`): INT-02 is the whole-file path only, and M16's
+ * (c) apply stages whole paths today, so a hunk-level group would also commit the file's
+ * other hunks, `notIncluded` ones included.
+ */
+async function commitCheckedGroups(ctx) {
+  const { groups, notIncluded, notices } = ctx.checked;
+  const wholeFiles = groups.every((group) => group.files.every((file) => file.hunks === null));
+  if (groups.length === 0 || !wholeFiles) return { groups, notIncluded, notices };
+  const outcome = await commitGroups(ctx);
+  return { ...outcome, groups, notIncluded, notices: [...notices, ...outcome.notices] };
+}
+
+const CHECK_STEPS = Object.freeze([
+  probeRepo, checkRefusals, openRun, checkAlreadyCommitted, validateWorkerPlan, commitCheckedGroups,
+]);
 
 /**
  * `infer` step 2 (INF-01): the probe's refusals, the `env` row, the first `state` clause
@@ -1278,8 +1301,8 @@ export async function release(values, injected, { cwd }) {
  * `no-groups`.
  *
  * The output holds C:commit-release's fields (`commits`, `failed`, `remaining`, `error`,
- * `gitOutput`, `unstaged`) but no `reply` yet: the `reply` with `status: "committed"` is
- * asserted first in INT-02 (docs/roadmap/12-integration.md), which builds that reply surface.
+ * `gitOutput`, `unstaged`) but no `reply` yet (KD-R73): INT-02 builds the `committed` reply
+ * on `check`'s in-process `commit --all` only (`committedOutput`).
  *
  * @param {{ plan: string }} values the parsed and validated `commit` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.
@@ -1301,27 +1324,32 @@ export async function commit(values, injected, { cwd }) {
     // C:commit-release, not only the refusal's own `kind`/`message` (review-EXE-04 Medium-1).
     // EXE-09: `gitOutput` too, git's verbatim output on a `git-failed` exit 4 (`null` on
     // every other refusal), so that failure never reads as success.
-    if (facts.refusal !== undefined) {
-      const { commits, failed, remaining, gitOutput, unstaged, notices } = facts;
-      return {
-        failure: {
-          kind: kindForDomainCode(facts.refusal.code),
-          message: facts.refusal.message,
-          commits,
-          failed,
-          remaining,
-          gitOutput,
-          unstaged,
-          notices,
-        },
-      };
-    }
+    if (facts.refusal !== undefined) return commitAllFailure(facts);
     return { output: facts };
   } finally {
     // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
     // `ended`, `busy`) leaves no `call.lock` of this call's own to close.
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
+}
+
+// A refusal M16 `commitAll` itself returned (`commit`, and `check`'s in-process
+// `commit --all`): the C:commit-release fields beside the refusal's `kind`/`message`; the
+// `failed` reply on it is KD-R73's gap.
+function commitAllFailure(facts) {
+  const { commits, failed, remaining, gitOutput, unstaged, notices } = facts;
+  return {
+    failure: {
+      kind: kindForDomainCode(facts.refusal.code),
+      message: facts.refusal.message,
+      commits,
+      failed,
+      remaining,
+      gitOutput,
+      unstaged,
+      notices,
+    },
+  };
 }
 
 /**
@@ -1359,13 +1387,31 @@ export async function check(values, injected, { cwd }) {
       if (ctx.opened && facts.refusal.code === 'timed-out') {
         releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
       }
+      if (facts.commits !== undefined) return commitAllFailure(facts);
       return refusalFailure(facts.refusal);
     }
     if (facts.lint !== undefined) return await lintFailureOf(facts, ctx);
-    return { output: facts };
+    if (facts.commits === undefined) return { output: facts };
+    return { output: await committedOutput(facts, ctx, callStarted) };
   } finally {
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
+}
+
+// INT-02 (C:check `confirm: null`, C:reply-and-handback): `check`'s in-process `commit --all`
+// that ended with no refusal. All groups committed → the `committed` reply (the run is
+// released by then, so `planId: null`); EXE-16's budget stop → the `continue` handback M16
+// `commitAll` built, moved from the output's interim top-level `handback` into
+// `reply.handback`, with the run kept under `planId`. Either way the merged `notices` land in
+// `reply.notices`. The tree-state read is a reporting call after the commits, so it runs
+// against `cleanupDeadline` (M15) rather than the spent `deadline`.
+async function committedOutput(facts, ctx, callStarted) {
+  const { handback, ...output } = facts;
+  const { commits, notices } = output;
+  const replyFacts = handback === undefined
+    ? { status: 'committed', commits, notices }
+    : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, notices, handback };
+  return { ...output, reply: await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) }) };
 }
 
 // RUN-16 (C:check "Lint failure", Q18): a `fix` is exit 2 with the `errors` and no `reply`.
@@ -1431,8 +1477,8 @@ function refusalFailure(refusal) {
 // below), and it gets this same plain `failed` reply with no handback until INT-05 and
 // RPL-05 add the documented `lock` handback. `release`,
 // `commit`, `check` and `infer` keep `refusalFailure` above unchanged: their own `reply`
-// wiring (`infer` has no `reply` field at all, C:infer) is later slices' (INT-02 and after;
-// KD-R73 tracks the gap for `release`/`commit`). `ctx.toplevel` is not set yet this early in
+// wiring (`infer` has no `reply` field at all, C:infer) is later slices' (INT-02 built
+// `check`'s success reply only; KD-R73 tracks the gap for `release`/`commit`). `ctx.toplevel` is not set yet this early in
 // `plan()` (it is set from step 2), so the usable-worktree check below is done on
 // `ctx.probe.repo` directly and passed to the shared `finalReply` as its `toplevel`.
 //

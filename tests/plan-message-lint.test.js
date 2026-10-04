@@ -361,9 +361,9 @@ test('MSG-06: a valid UTF-8 U+FFFD in the message passes normalise', async () =>
 
 // FND-10 Seam 1: os.userInfo() throws, so commit.cjs falls back to USER/USERNAME; `osUser`
 // reaches M14 unchanged and `state.json` never stores it (EXE-01 item 1).
-// Every call, `plan` included, runs under the fallback, and a passing `check` (which writes the
-// stored groups) follows the failing one, so a regression storing `osUser` from any of the
-// three calls would put `jdoe1` into `state.json`.
+// Every call, `plan` included, runs under the fallback, so a regression storing `osUser` from
+// `plan` or the failing `check` would put `jdoe1` into `state.json`; the passing `check` that
+// follows commits and releases the run (INT-02), leaving no `state.json` to read.
 test('FND-10: os.userInfo() throwing falls back to USER/USERNAME for the message scan', async (t) => {
   const fallback = {
     nodeArgs: ['--import', PRELOAD],
@@ -385,12 +385,18 @@ test('FND-10: os.userInfo() throwing falls back to USER/USERNAME for the message
     }],
   }]);
 
+  const failedState = fs.readFileSync(path.join(runDir, 'state.json'), 'utf8');
+  assert.equal(failedState.includes('jdoe1'), false, failedState);
+
+  // INT-02: a passing `check` now commits in the same process and releases the run, so its
+  // stored groups are gone with the run folder; the commit itself shows the fallback reached
+  // M16's backstop scan without refusing the message.
   writeWorkerPlan(runDir, 'feat: x', null);
   const passed = await runCommit(c, ['check', '--plan', planId], fallback);
   assert.equal(passed.exitCode, 0, detail(passed));
-  const state = fs.readFileSync(path.join(runDir, 'state.json'), 'utf8');
-  assert.equal(JSON.parse(state).groups.length, 1, state);
-  assert.equal(state.includes('jdoe1'), false, state);
+  assert.equal(passed.json.reply.status, 'committed');
+  assert.equal(c.git(['log', '-1', '--format=%s']), 'feat: x\n');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder goes with the release');
 });
 
 test('MSG-06: a UTF-8 BOM, a CRLF header and a CRLF footer with trailing blank lines normalise before lint', async (t) => {

@@ -169,16 +169,20 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
 - `commits`: the groups this call committed. `failed`: `null`, or the group number whose
   step failed; `error` is then that failure (the exit code is its cause's) and
   `remaining` the groups not committed. A stop on the budget is not a failure: exit 0,
-  `failed: null`, `remaining` set, and a `continue` handback in `reply`. Interim: until
-  INT-02 moves it, M16 `commitAll` builds this handback itself and returns it as the
-  top-level `handback` field (EXE-16), not yet inside `reply`.
+  `failed: null`, `remaining` set, and a `continue` handback in `reply`. M16 `commitAll`
+  builds this handback itself (EXE-16); `check`'s in-process `commit --all` puts it in
+  `reply.handback` (INT-02). Interim: a direct `commit --all` call has no `reply` yet
+  (KD-R73), so it still returns the handback as a top-level `handback` field.
 - Exit 4 fills `gitOutput` with git's stdout and stderr verbatim (unescaped, uncut); what a
   caller shows through `text` is the capped, escaped copy of it ([Reply and
   handback](reply-and-handback.md)). Exit 3 fills `error` and adds `hits`.
 - `notices`: present on every `commit --all` output, `[]` unless this call hit the EXE-06
-  "another commit was made during group `n`; later groups refused" case. Interim: INT-02
-  moves this into `reply.notices` alongside `plan`'s own collected notices; this top-level
-  field goes away once that lands.
+  "another commit was made during group `n`; later groups refused" case, or the release
+  after the last group could not remove the run folder (a cleanup notice, [run
+  folder](run-folder.md)). `check`'s in-process `commit --all` merges them with `check`'s own
+  into `notices` and `reply.notices` (INT-02, [check](check.md)). Interim: a direct
+  `commit --all` call has no `reply` yet (KD-R73), so this top-level field stays until it
+  does.
 - `unstaged`: present on every `commit --all` output, run-ending or mid-run (e.g. a `lock`
   refusal between groups), gated only by the state file's `indexReset: true`; `indexReset`
   decides only this report, never whether to unstage. `[]` once `indexReset` is true (an

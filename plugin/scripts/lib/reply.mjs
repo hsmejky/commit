@@ -10,7 +10,11 @@
 // left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers,
 // `ifNoUser` and handback rule are INT-13's. RUN-16 adds the `lintFailed` handback's question
 // and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
-// run's `planId`; its answers, `ifNoUser` and the quoted rejected messages are RPL's.
+// run's `planId`; its answers, `ifNoUser` and the quoted rejected messages are RPL's. INT-02
+// adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
+// state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
+// with the commits made before the budget stop; the not-included and `unstaged` lines, the
+// trailer line and the notices block in `text` are later slices'.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -70,6 +74,12 @@ function renderErrors(errors) {
   return errors.map((error) => (error.group === null ? error.reason : `group ${error.group}: ${error.reason}`));
 }
 
+// The `sha subject` lines of a `committed` reply (Q18, C:reply-and-handback): one per commit,
+// its full SHA and the header as committed. The 10-entry cap is RPL-05's.
+function renderCommits(commits) {
+  return commits.map(({ sha, header }) => `${sha} ${header}`);
+}
+
 function modeChoiceQuestion({ staged, other }) {
   const files = staged === 1 ? '1 file is' : `${staged} files are`;
   const changes = other === 1 ? '1 other change' : `${other} other changes`;
@@ -85,7 +95,13 @@ function modeChoiceQuestion({ staged, other }) {
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'handback', kind: 'modeChoice', staged: number,
  *   other: number, treeState, notices?: string[] } | { status: 'handback', kind: 'lintFailed',
- *   planId: string, errors: object[], shapeOnly?: boolean, treeState, notices?: string[] }} facts
+ *   planId: string, errors: object[], shapeOnly?: boolean, treeState, notices?: string[] }
+ *   | { status: 'committed', commits: object[], treeState, notices?: string[] }
+ *   | { status: 'handback', kind: 'continue', planId: string, commits: object[],
+ *   handback: object, treeState, notices?: string[] }} facts
+ *   `commits`: the commits the call made (`n`, `sha`, `header`, C:commit-release), one
+ *   `sha subject` line each in `text`. `handback` (`continue` only): M16 `commitAll`'s own
+ *   `continue` handback, passed through verbatim (INT-02).
  *   `errors` (a `lintFailed`, or a `failed` lint failure with `--no-user`): C:check's lint
  *   errors, listed in `text` after the first line. `planId`: the kept run's (default `null`).
  *   `notices`: the call's notices (RUN-05: a provisional run
@@ -100,29 +116,37 @@ function modeChoiceQuestion({ staged, other }) {
  * @throws {Error} for a status, reason or tree state not built yet.
  */
 export function reply(facts) {
-  let firstLine;
+  const commits = facts.commits ?? [];
+  let firstLines;
+  let handback = null;
   if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
-    firstLine = NOTHING_LINES[facts.reason];
+    firstLines = [NOTHING_LINES[facts.reason]];
   } else if (facts.status === 'failed') {
-    firstLine = facts.message;
+    firstLines = [facts.message];
+  } else if (facts.status === 'committed') {
+    firstLines = renderCommits(commits);
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
-    firstLine = modeChoiceQuestion(facts);
+    firstLines = [modeChoiceQuestion(facts)];
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
-    firstLine = LINT_FAILED_QUESTION;
+    firstLines = [LINT_FAILED_QUESTION];
+  } else if (facts.status === 'handback' && facts.kind === 'continue') {
+    firstLines = renderCommits(commits);
+    handback = facts.handback;
   } else {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
-  const lines = [firstLine, ...renderErrors(facts.errors ?? [])];
+  const lines = [...firstLines, ...renderErrors(facts.errors ?? [])];
   if (facts.treeState !== undefined) lines.push(renderTreeState(facts.treeState));
   const text = lines.join('\n');
+  if (facts.status === 'handback' && handback === null) handback = { kind: facts.kind, question: firstLines[0] };
   return {
     version: 1,
     status: facts.status,
     planId: facts.planId ?? null,
     text,
-    commits: [],
+    commits: commits.map((commit) => ({ ...commit })),
     notices: facts.notices === undefined ? [] : [...facts.notices],
     callerRule: BASE_CALLER_RULE,
-    handback: facts.status === 'handback' ? { kind: facts.kind, question: firstLine } : null,
+    handback,
   };
 }

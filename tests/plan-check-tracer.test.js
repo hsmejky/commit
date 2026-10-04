@@ -81,14 +81,12 @@ test('a plan with one group naming both modified files validates into groups[0]'
   }]);
   assert.deepEqual(checked.json.notIncluded, []);
   assert.deepEqual(checked.json.notices, []);
-  const state = storedState(runDir);
-  const ids = state.units.map((unit) => unit.id);
-  assert.deepEqual(state.groups, [{
-    n: 1, units: ids, header: 'feat: change both files', body: null, committed: false,
-  }]);
-  // The call's own `call.lock` is gone, the run lock stays for the next call.
-  assert.equal(fs.existsSync(path.join(runDir, 'call.lock')), false);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(c.repoDir, '.commit-plan', 'lock'), 'utf8')).planId, planId);
+  // INT-02: the stored group goes straight on to `commit --all` in the same process, so it
+  // shows as the commit (both files, the planned header) and the run is released
+  // (tests/first-end-to-end-commit.test.js covers that path in full).
+  assert.deepEqual(checked.json.commits.map(({ n, header }) => ({ n, header })), [{ n: 1, header: 'feat: change both files' }]);
+  assert.equal(c.git(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']), 'a.txt\nb.txt\n');
+  assert.equal(fs.existsSync(runDir), false);
 });
 
 test('newFiles comes from the unit status: an untracked file in a group is new', async (t) => {
@@ -130,13 +128,13 @@ for (const [label, content, reason] of [
 
 test('after a failed check, no stored group remains in state.json', async (t) => {
   const { c, planId, runDir } = await plannedRun(t);
-  writeWorkerPlan(runDir, oneGroup(['a.txt', 'b.txt']));
-  const first = await runCommit(c, ['check', '--plan', planId]);
-  assert.equal(first.exitCode, 0, detail(first));
-  assert.equal(storedState(runDir).groups.length, 1);
-
-  // Simulate a prior confirm handback so the second, failing `check` has something to clear.
+  // A group stored as a passing `check` stores it, plus a prior confirm handback, so the
+  // failing `check` has something to clear. Written by hand: a passing `check` now commits
+  // its group and releases the run in the same process (INT-02), leaving nothing to clear.
   const beforeSecond = storedState(runDir);
+  beforeSecond.groups = [{
+    n: 1, units: beforeSecond.units.map((unit) => unit.id), header: 'feat: change both files', body: null, committed: false,
+  }];
   beforeSecond.awaitingConfirm = true;
   fs.writeFileSync(path.join(runDir, 'state.json'), `${JSON.stringify(beforeSecond)}\n`);
 

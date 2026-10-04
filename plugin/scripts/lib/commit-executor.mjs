@@ -181,8 +181,9 @@ function refused(state, group, commits, refusal, notices, gitOutput = null) {
 // at the end of `commitAll`, plus the `continue` handback (AC1, AC6): the one answer's `run`
 // is the same `commit --plan <id> --all` (no `--confirmed`), built with S2 `build()` over the
 // injected `scriptPath` so it matches the anchored allow rule; `ifNoUser` runs it unasked.
-// Interim placement on the output itself, like `notices` (C:reply-and-handback), until
-// INT-02 moves it into `reply.handback`.
+// Placed on the output itself, like `notices`: `check`'s in-process `commit --all` moves it
+// into `reply.handback` (INT-02); a direct `commit --all` keeps it there until its own reply
+// lands (KD-R73).
 function budgetStop(state, commits, notices, scriptPath, planId) {
   return {
     commits,
@@ -327,7 +328,7 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
       if (err.domainCode !== 'git-failed') throw err;
       // Short, like the contract's other exit-4 example ("git commit failed for group 2"):
       // `err.message` carries git's full raw output too, which would duplicate `gitOutput`
-      // uncut in the reply's capped, escaped `text` (INT-02).
+      // uncut in the reply's capped, escaped `text` (C:reply-and-handback).
       const message = `git add -N failed rebuilding the temporary index for group ${group.n}`;
       return refused(state, group, commits, { code: 'git-failed', message }, notices, err.gitOutput);
     }

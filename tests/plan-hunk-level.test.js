@@ -104,6 +104,10 @@ test('a group holding two of a file\'s three hunks → files[].hunks: 2', async 
     newFiles: [],
   }]);
   assert.deepEqual(storedState(runDir).groups.map(({ n, units: ids }) => ({ n, ids })), [{ n: 1, ids: ['h1', 'h4', 'h3'] }]);
+  // INT-02 routes only whole-file groups into `commit --all`: a hunk-level plan stops at its
+  // validated groups, nothing committed, the run kept.
+  assert.equal(checked.json.commits, undefined);
+  assert.equal(c.git(['diff', '--name-only']), 'f.txt\ng.txt\n');
 });
 
 test('an unknown ID and an ID used twice → one error each with the group number', async (t) => {
