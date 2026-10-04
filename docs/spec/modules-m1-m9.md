@@ -30,7 +30,17 @@ that kills the process tree: on POSIX `SIGTERM` to the process group, then `SIGK
 intended: bounded, and inside the cleanup window). The
 `timeoutMs` of every M2 call, in `plan` as in later subcommands, is computed from the call's
 `deadline` (M15), or from `cleanupDeadline` for the cleanup and reporting calls after a
-failure or timeout, so `plan`'s calls before `acquire` are bounded too. Every call is
+failure or timeout, so `plan`'s calls before `acquire` are bounded too. The deadline
+reaches M2 as a scope, not as an argument of each call: `withDeadline({ deadline, now }, fn)`
+(Node's `AsyncLocalStorage`) bounds every `run` started inside `fn`, at any depth, by
+`deadline - now()` read at that call's own start, or by the call's explicit `timeoutMs`
+(such as M11's fixed `ssh-add` cap) when that is smaller. A call whose budget is at or below
+0 is not spawned and resolves `timedOut` with `code: null`; a call the scope's deadline (not
+its own cap) ends or skips sets the scope's `expired`, so the caller can tell a deadline
+timeout from any other git failure. The same tree kill (one `KILL_GRACE_MS` of 5 s before the
+forced kill, and again before the call settles anyway) ends an `onStdout` consumer that
+throws. On POSIX each child leads its own process group (`detached`) so the group signal
+reaches its children. Every call is
 asynchronous except `toplevel` and `gitVersion`, which use `spawnSync` under a fixed short
 timeout and decode their output as UTF-8 text (KD-S77: a non-UTF-8 toplevel path is mangled
 to U+FFFD, which then fails as a later call's `cwd`). `run`'s `stdout` is returned as a
@@ -41,7 +51,7 @@ handler.
 
 `run(cmd, args, { cwd, env, now, index?, input?, timeoutMs, readOnly?, history?, commit?, onStdout? }) →
 { code, stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`);
-`toplevel(fromCwd, { env })`; `gitVersion({ cwd, env })`; `gitPath(names, { cwd, env, now })` (one
+`withDeadline({ deadline, now }, fn) → fn()`; `toplevel(fromCwd, { env })`; `gitVersion({ cwd, env })`; `gitPath(names, { cwd, env, now })` (one
 `rev-parse --git-path` call, absolute paths); `killActive()`. Sources: Q9, Q18.
 
 **M3 Repo-state probe.** Every question about repository state, as typed results: not a

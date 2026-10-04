@@ -11,7 +11,6 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { ChildProcess } = require('node:child_process');
 const { beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -19,6 +18,7 @@ const { pathToFileURL } = require('node:url');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib.js');
+const { TICK_MS, heartbeat, killLeftovers, stopped, ticking } = require('./helpers/heartbeat.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
   path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
@@ -333,94 +333,8 @@ test('run: an onStdout that throws rejects the call with its error once the chil
 });
 
 
-// The two cases below spawn processes that never exit on their own, so each process proves
-// it is still running by ticking a heartbeat file (`heartbeat` below) instead of the test
-// trusting its pid alone: on a busy Windows box a killed child's pid can be handed to an
-// unrelated process within a second, which `process.kill(pid, 0)` would then report as alive
-// (a false failure) and a cleanup kill by pid would hit (a stray kill). A pid is only acted
-// on while its heartbeat is still ticking, which no other process can do.
-
-const TICK_MS = 50;
-const LIFETIME_MS = 120_000;
-// `ticking()`'s default window: wide enough that a process stalled by antivirus-on-every-write
-// or CPU contention on a loaded Windows runner still reads as alive. `stopped()` passes the
-// narrower, original window instead (review-process-adapter-hang finding L3): a killed
-// process never ticks again, so detecting that needs no slack, and keeping it tight is what
-// lets `stopped()`'s short-attempt loop fail fast on a regression instead of hanging.
-const ALIVE_WINDOW_MS = 3000;
-const STOPPED_WINDOW_MS = 1000;
-
-function sleep(ms) {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
-}
-
-// A `node -e` snippet that writes its pid to `<base>.pid` and then a growing counter to
-// `<base>.beat` every TICK_MS. It never exits on its own within a case; it does exit after
-// LIFETIME_MS, a last line of defence against an immortal process if even the cleanup below
-// never runs (e.g. the test process itself is killed).
-function heartbeat(base) {
-  return `{ const fs = require('fs'); fs.writeFileSync(${JSON.stringify(`${base}.pid`)}, String(process.pid));`
-    + ` let n = 0; setInterval(() => { fs.writeFileSync(${JSON.stringify(`${base}.beat`)}, String(++n)); }, ${TICK_MS});`
-    + ` setTimeout(() => process.exit(0), ${LIFETIME_MS}); }`;
-}
-
-function readOrNull(file) {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-// True if the heartbeat process at `base` is still running: its counter moves within
-// `windowMs`, polled so a running process is reported as soon as it ticks.
-async function ticking(base, windowMs = ALIVE_WINDOW_MS) {
-  const before = readOrNull(`${base}.beat`);
-  for (let waited = 0; waited < windowMs; waited += TICK_MS) {
-    await sleep(TICK_MS);
-    const now = readOrNull(`${base}.beat`);
-    if (now !== null && now !== before) return true;
-  }
-  return false;
-}
-
-// Registers, before the case's own cleanup (`after` hooks run in the order they were added,
-// and the case directory cannot be removed on Windows while a process still runs in it), a
-// hook that kills every heartbeat process in `bases()` that is still running: a regression
-// then fails the case instead of leaking an immortal process or hanging the suite.
-function killLeftovers(t, bases) {
-  t.after(async () => {
-    for (const base of bases()) {
-      const pid = Number(readOrNull(`${base}.pid`));
-      if (!Number.isInteger(pid) || pid <= 0 || !(await ticking(base))) continue;
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch (err) {
-        if (err.code !== 'ESRCH') throw err;
-      }
-      // Windows keeps the case directory busy (the process's cwd) until the killed process
-      // is fully gone, so wait (bounded) for its pid to disappear before the case's cleanup.
-      for (let waited = 0; waited < 5000; waited += TICK_MS) {
-        try {
-          process.kill(pid, 0);
-        } catch {
-          break;
-        }
-        await sleep(TICK_MS);
-      }
-    }
-  });
-}
-
-// Waits (bounded) until the heartbeat process at `base` has stopped ticking. Uses the
-// narrow, strict window (not the widened `ticking()` default): a killed process never ticks
-// again, so this still fails fast on a regression instead of hanging.
-async function stopped(base) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    if (!(await ticking(base, STOPPED_WINDOW_MS))) return true;
-  }
-  return false;
-}
+// The cases below spawn processes that never exit on their own; each proves it is still
+// running by ticking a heartbeat file (tests/helpers/heartbeat.js).
 
 test(
   'run: an onStdout that throws kills the child instead of leaving it running to completion',
@@ -482,14 +396,21 @@ test(
       /consumer failed/,
     );
 
-    // Still running when the call has settled: the call did not wait for it.
-    assert.equal(await ticking(grandchild), true, 'the call waited for the grandchild to end');
+    // GIT-07's tree kill: on POSIX the `detached` grandchild left the child's process group,
+    // so it escapes the group kill and is still running when the call has settled (the call
+    // did not wait for it); on Windows `taskkill /T` walks the parent-child tree and takes it
+    // down with the child.
+    if (process.platform === 'win32') {
+      assert.equal(await stopped(grandchild), true, 'taskkill /T did not reach the grandchild');
+    } else {
+      assert.equal(await ticking(grandchild), true, 'the call waited for the grandchild to end');
+    }
     assert.equal(await stopped(child), true, 'child was not killed after the consumer threw');
   },
 );
 
 test(
-  'run: the backstop rejects anyway when the kill never takes effect (review-process-adapter-hang L4)',
+  'run: the kill graces reject anyway when the kill never takes effect (review-process-adapter-hang L4)',
   { timeout: 30_000 },
   async (t) => {
     let base = null;
@@ -498,13 +419,29 @@ test(
     base = path.join(c.root, 'child');
     const script = `${heartbeat(base)} process.stdout.write('first\\n');`;
 
-    // Faking `kill` as a no-op (restored below, before `killLeftovers` needs the real one) is
-    // the only deterministic way to make a kill "never take effect": SIGKILL/TerminateProcess
-    // themselves cannot be blocked from the outside. Since tests in this file run
-    // sequentially (node:test's default within one file), this cannot race another test's own
-    // child.
-    const originalKill = ChildProcess.prototype.kill;
-    ChildProcess.prototype.kill = function fakeKill() { return true; };
+    // A kill that never takes effect (GIT-07's tree kill, KILL_GRACE_MS): on POSIX
+    // `process.kill` is faked as a no-op, so the group always reads as alive; on Windows
+    // `child_process.spawn` is faked for `taskkill.exe` only (an ENOENT spawn error), and
+    // `syncBuiltinESMExports` carries the fake into M2's ESM import. Both are restored below,
+    // before `killLeftovers` needs the real ones. SIGKILL/TerminateProcess themselves cannot
+    // be blocked from the outside. Tests in this file run sequentially (node:test's default
+    // within one file), so the fakes cannot race another test's own child.
+    const childProcess = require('node:child_process');
+    const { syncBuiltinESMExports } = require('node:module');
+    const { EventEmitter } = require('node:events');
+    const originalKill = process.kill;
+    const originalSpawn = childProcess.spawn;
+    if (process.platform === 'win32') {
+      childProcess.spawn = function fakeSpawn(file, ...rest) {
+        if (!/taskkill\.exe$/i.test(String(file))) return originalSpawn.call(this, file, ...rest);
+        const fake = new EventEmitter();
+        process.nextTick(() => fake.emit('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })));
+        return fake;
+      };
+      syncBuiltinESMExports();
+    } else {
+      process.kill = function fakeKill() { return true; };
+    }
     try {
       await assert.rejects(
         processAdapter.run(process.execPath, ['-e', script], {
@@ -515,12 +452,13 @@ test(
         /consumer failed/,
       );
     } finally {
-      ChildProcess.prototype.kill = originalKill;
+      process.kill = originalKill;
+      childProcess.spawn = originalSpawn;
+      syncBuiltinESMExports();
     }
 
-    // The call only settled through the backstop: the fake kill never touched the process, so
-    // `exit`/`close` could not have fired it. `killLeftovers` (real `process.kill` by pid, not
-    // `ChildProcess#kill`) reaps it afterwards.
+    // The call only settled through the graces: the kill never touched the process.
+    // `killLeftovers` (the real `process.kill` by pid) reaps it afterwards.
     assert.equal(await ticking(base), true, 'the child should still be alive: its kill was faked as a no-op');
   },
 );

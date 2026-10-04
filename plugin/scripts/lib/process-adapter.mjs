@@ -5,8 +5,10 @@
 // short timeout of the two start-up `spawnSync` calls, typed start-up results (git missing,
 // timed out) and `run`'s `timedOut` and `spawnedAt`. RUN-05 adds `gitPath`. GIT-05 adds the `GIT_*` environment
 // hygiene, the config pins, `readOnly`, `index`, `history` and `input`; GIT-06 `git commit`'s
-// own environment (`commit`); GIT-07 the deadline-driven timeout and process-tree kill.
+// own environment (`commit`); GIT-07 the deadline scope (`withDeadline`) and the
+// process-tree kill.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -14,10 +16,132 @@ import path from 'node:path';
 export const STARTUP_TIMEOUT_MS = 10_000;
 
 /**
- * How long `run` waits, after killing a child whose `onStdout` consumer threw, for the
- * child to exit before rejecting anyway (a kill that never takes effect must not hang).
+ * The tree kill's grace (M2): how long `run` waits after the polite kill (POSIX `SIGTERM` to
+ * the process group, Windows `taskkill /T`) before the forced one (`SIGKILL`, `taskkill /T
+ * /F`), and again after that before settling anyway, so a kill that never takes effect
+ * cannot hang the call.
  */
-export const KILL_BACKSTOP_MS = 5_000;
+export const KILL_GRACE_MS = 5_000;
+
+const KILL_POLL_MS = 25;
+
+// The deadline scope of the current call (GIT-07): `withDeadline` below.
+const deadlineScope = new AsyncLocalStorage();
+
+/**
+ * Runs `fn` inside a deadline scope (M2, M15 `deadline`): every `run` started inside it, at
+ * any depth of awaits, takes `timeoutMs = scope.deadline - scope.now()` at its own start (the
+ * smaller of that and its own explicit `timeoutMs`). A call whose budget is at or below 0 is
+ * not spawned; a call the deadline (not its own explicit timeout) ends or skips sets
+ * `scope.expired = true`, so the caller can tell a deadline timeout from any other failure.
+ *
+ * @template T
+ * @param {{ deadline: number, now: () => number, expired?: boolean }} scope the call's
+ *   deadline (epoch ms) and the injected clock; `expired` is set by `run`.
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function withDeadline(scope, fn) {
+  if (typeof scope?.deadline !== 'number') throw new Error('withDeadline: deadline is required');
+  if (typeof scope.now !== 'function') throw new Error('withDeadline: now is required');
+  return deadlineScope.run(scope, fn);
+}
+
+// The call's effective timeout: the smaller of its explicit `timeoutMs` and the enclosing
+// deadline scope's budget, with the scope returned only when its deadline is the binding one.
+function callBudget(timeoutMs) {
+  const explicit = timeoutMs ?? Infinity;
+  const scope = deadlineScope.getStore();
+  if (scope === undefined) return { ms: explicit, scope: undefined };
+  const left = scope.deadline - scope.now();
+  return left <= explicit ? { ms: left, scope } : { ms: explicit, scope: undefined };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// `SystemRoot` from the injected environment, matched case-insensitively (Windows names are).
+function systemRoot(env) {
+  for (const [key, value] of Object.entries(env ?? {})) {
+    if (key.toUpperCase() === 'SYSTEMROOT' && value) return value;
+  }
+  return 'C:\\Windows';
+}
+
+// Runs `taskkill` from the system directory (never `PATH`, docs/spec/constraints.md),
+// bounded by the grace; a spawn error (no `taskkill` there) is swallowed: the grace below
+// still bounds the call.
+function taskkill(args, env) {
+  return new Promise((resolve) => {
+    const file = path.join(systemRoot(env), 'System32', 'taskkill.exe');
+    let killer;
+    const timer = setTimeout(done, KILL_GRACE_MS);
+    function done() {
+      clearTimeout(timer);
+      resolve();
+    }
+    try {
+      killer = spawn(file, args, { windowsHide: true, stdio: 'ignore' });
+    } catch {
+      done();
+      return;
+    }
+    killer.on('error', done);
+    killer.on('exit', done);
+  });
+}
+
+// Sends `signal` to the process group `-pid`; false when the group is gone (or unreachable).
+function signalGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Polls (bounded by the grace) until the process group `-pid` is gone.
+async function groupGone(pid) {
+  for (let waited = 0; waited < KILL_GRACE_MS; waited += KILL_POLL_MS) {
+    if (!signalGroup(pid, 0)) return true;
+    await sleep(KILL_POLL_MS);
+  }
+  return false;
+}
+
+// Resolves true once `child` has exited, or false after the grace.
+function exitedWithin(child, ms) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
+// The tree kill of M2; never rejects. POSIX: the child leads its own process group
+// (`detached`), so `SIGTERM` to the group, then `SIGKILL` after the grace, reaches every
+// process the child started that did not leave the group. Windows: `taskkill /T`, then
+// `taskkill /T /F` after the grace. A child that already exited is not looked up by pid on
+// Windows (the pid may already name an unrelated process); on POSIX its group is still
+// signalled, since a group outlives its leader while any member runs.
+async function killTree(child, env) {
+  if (child.pid === undefined) return;
+  if (process.platform === 'win32') {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    await taskkill(['/T', '/PID', String(child.pid)], env);
+    if (await exitedWithin(child, KILL_GRACE_MS)) return;
+    await taskkill(['/T', '/F', '/PID', String(child.pid)], env);
+    await exitedWithin(child, KILL_GRACE_MS);
+    return;
+  }
+  if (!signalGroup(child.pid, 'SIGTERM') || await groupGone(child.pid)) return;
+  if (signalGroup(child.pid, 'SIGKILL')) await groupGone(child.pid);
+}
 
 /**
  * The inherited `GIT_*` variables every git call except `git commit` keeps (M2, story 147):
@@ -197,24 +321,32 @@ export async function gitPath(names, { cwd, env, now }) {
  *   `log.showSignature=false` and `i18n.logOutputEncoding=UTF-8`; `input`: written to the
  *   child's stdin, which is then closed (message input, path lists); without it stdin is
  *   ignored; `onStdout`: a consumer (M10's patch pass only, CHG-06) that gets each raw
- *   stdout chunk as it arrives, nothing being buffered here; if it throws, the child is
- *   killed (`SIGKILL`, the child only, same as `timeoutMs` below) instead of being left to
- *   run to completion, its stdout and stderr are no longer read, it gets no further chunk,
- *   and the call rejects with that error once the child has exited, without waiting for a
- *   process the child left holding its pipes, or `KILL_BACKSTOP_MS` after the kill if the
- *   child never exits;
- *   `timeoutMs` (GIT-12, the signing probe's fixed `ssh-add` timeout): past it the child is
- *   killed (`SIGKILL`, the child only) and the call resolves at once with `timedOut: true`
- *   and `code: null`, without waiting for a process the child left holding the pipes.
- *   GIT-07's deadline-driven timeout and process-tree kill replace this.
+ *   stdout chunk as it arrives, nothing being buffered here; if it throws, the process
+ *   tree is killed (as for the timeout below) instead of being left to run to completion,
+ *   its stdout and stderr are no longer read, it gets no further chunk, and the call rejects
+ *   with that error once the tree kill has finished;
+ *   `timeoutMs` (an explicit cap, such as the signing probe's fixed `ssh-add` timeout): the
+ *   call's timeout is the smaller of it and, inside `withDeadline`, the scope's
+ *   `deadline - now()` read at the call's start (GIT-07). At or below 0 the call is not
+ *   spawned and resolves `timedOut: true`, `code: null`, `spawnedAt: null`; past it the
+ *   process tree is killed (POSIX: `SIGTERM` to the child's process group, `SIGKILL` after
+ *   `KILL_GRACE_MS`; Windows: `taskkill /T`, then `/T /F` after the same grace, `taskkill`
+ *   from `%SystemRoot%\System32`) and the call resolves `timedOut: true`, `code: null`,
+ *   without waiting for a process that escaped the tree and still holds the pipes.
  * @returns {Promise<{ code: number|null, stdout: Buffer, stderr: string, timedOut: boolean,
  *   spawnedAt: number|null }>} `stdout` is the raw bytes, never decoded here, and empty with
- *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` is `true` only past
- *   `timeoutMs`.
+ *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` is `true` only past (or
+ *   at a spent) timeout.
  */
 export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit, input, onStdout, timeoutMs }) {
   if (commit && (readOnly || history || index != null)) {
     throw new Error('run: commit cannot be combined with readOnly, history or index');
+  }
+  const budget = callBudget(timeoutMs);
+  if (budget.ms <= 0) {
+    // A spent budget (M15: a cleanup call at or below 0 counts as `timed-out`): not spawned.
+    if (budget.scope !== undefined) budget.scope.expired = true;
+    return Promise.resolve({ code: null, stdout: Buffer.alloc(0), stderr: '', timedOut: true, spawnedAt: null });
   }
   return new Promise((resolve, reject) => {
     const isGit = path.basename(cmd, '.exe').toLowerCase() === 'git';
@@ -224,6 +356,8 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit
       cwd,
       env: childEnv,
       windowsHide: true,
+      // POSIX: the child leads its own process group, so the tree kill reaches its children.
+      detached: process.platform !== 'win32',
       stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     });
     if (input !== undefined) {
@@ -240,76 +374,53 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit
     });
     let settled = false;
     let timer;
-    if (timeoutMs !== undefined) {
+    // Settles the call now (no later event changes it), stops reading the pipes, kills the
+    // tree and then calls `finish`. The pipes are destroyed first: a process that escaped the
+    // tree kill (a POSIX one in its own session) and still holds them would otherwise keep
+    // `close` from ever firing.
+    function stopTree(finish) {
+      clearTimeout(timer);
+      settled = true;
+      child.stdout.destroy();
+      child.stderr.destroy();
+      killTree(child, env).then(finish);
+    }
+    if (budget.ms !== Infinity) {
       timer = setTimeout(() => {
-        settled = true;
-        child.kill('SIGKILL');
-        child.stdout.destroy();
-        child.stderr.destroy();
-        resolve({
+        if (budget.scope !== undefined) budget.scope.expired = true;
+        stopTree(() => resolve({
           code: null,
           stdout: Buffer.concat(stdout),
           stderr: Buffer.concat(stderr).toString('utf8'),
           timedOut: true,
           spawnedAt,
-        });
-      }, timeoutMs);
+        }));
+      }, budget.ms);
     }
-    let consumerError = null;
     child.stdout.on('data', (chunk) => {
       if (onStdout === undefined) {
         stdout.push(chunk);
         return;
       }
-      if (consumerError !== null) return;
+      if (settled) return;
       try {
         onStdout(chunk);
       } catch (err) {
-        consumerError = err;
-        abandon();
+        // Left running, the child would keep producing output nobody reads: the tree is
+        // killed like the timeout path above, and the call rejects with the consumer's error.
+        stopTree(() => reject(err));
       }
     });
     child.stderr.on('data', (chunk) => stderr.push(chunk));
-    // Left running, the child would keep producing output nobody reads; it is killed like
-    // the `timeoutMs` path above instead of being waited for. Its pipes are destroyed too: a
-    // process the child left holding them (the real git.exe behind Git for Windows'
-    // `cmd\git.exe` launcher, a textconv filter) survives a kill of the child alone and
-    // would otherwise keep `close` from ever firing, so the call settles on the child's own
-    // exit. If even that never comes (the kill failed), the backstop rejects anyway.
-    function abandon() {
-      clearTimeout(timer);
-      child.kill('SIGKILL');
-      child.stdout.destroy();
-      child.stderr.destroy();
-      // A non-ESRCH `kill` failure rejects synchronously through the `error` handler below,
-      // which sets `settled` before this call returns; arming the backstop then would only
-      // keep the event loop alive for `KILL_BACKSTOP_MS` with nothing left to do.
-      if (!settled) {
-        timer = setTimeout(() => {
-          if (!settled) reject(consumerError);
-          settled = true;
-        }, KILL_BACKSTOP_MS);
-      }
-    }
     child.on('error', (err) => {
       clearTimeout(timer);
-      if (!settled) reject(consumerError ?? err);
-      settled = true;
-    });
-    child.on('exit', () => {
-      if (consumerError === null) return;
-      clearTimeout(timer);
-      if (!settled) reject(consumerError);
+      if (!settled) reject(err);
       settled = true;
     });
     child.on('close', (code) => {
       clearTimeout(timer);
       if (settled) return;
       settled = true;
-      if (consumerError !== null) {
-        reject(consumerError);
-        return;
-      }
       resolve({
         code,
         stdout: Buffer.concat(stdout),

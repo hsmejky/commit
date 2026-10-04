@@ -386,8 +386,8 @@ test('locateSshAdd takes the ssh-add beside the first ssh-keygen on PATH, or non
   assert.equal(locateSshAdd({ execPath, env: at('c'), platform: 'linux' }), null);
 });
 
-// M2 `run`'s `timeoutMs` (the `ssh-add` call's fixed timeout until GIT-07): a child past it
-// is killed and the call resolves at once with `timedOut: true` (every platform).
+// M2 `run`'s explicit `timeoutMs` (the `ssh-add` call's fixed timeout): a child past it is
+// killed and the call resolves with `timedOut: true` (every platform).
 test('M2 run with timeoutMs kills a child past it and resolves timedOut', async () => {
   const { run } = await loadLib('process-adapter');
   const result = await run(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
@@ -397,12 +397,10 @@ test('M2 run with timeoutMs kills a child past it and resolves timedOut', async 
   assert.equal(result.code, null);
 });
 
-// Past the timeout, `run` kills only the direct child (its JSDoc); a grandchild the child
-// left holding the inherited stdout/stderr pipes must not make the call wait for it
-// (review-GIT-12 finding 7). `sh` backgrounds a 60 s `sleep` and then itself waits on it, so
-// the direct child (`sh`) is the one `run` kills at 200 ms; the orphaned `sleep` keeps the
-// pipes open for the rest of its 60 s unless `run` resolves without waiting for a `close`
-// that depends on it.
+// Past the timeout, `run` kills the process tree (GIT-07); a grandchild holding the
+// inherited stdout/stderr pipes must not make the call wait out its lifetime (review-GIT-12
+// finding 7). `sh` backgrounds a 60 s `sleep` and then itself waits on it; the group kill at
+// 200 ms takes down both, and `run` never waits for a `close` that depends on the `sleep`.
 test('M2 run with timeoutMs resolves without waiting for an orphaned grandchild on the pipes', { skip: process.platform === 'win32' && 'POSIX-only (sh)' }, async () => {
   const { run } = await loadLib('process-adapter');
   const started = Date.now();
