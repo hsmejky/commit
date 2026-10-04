@@ -29,17 +29,29 @@ const LOSSY_UTF8 = new TextDecoder('utf-8');
  *   submodule unit with an empty body (a pointer change), or any unit with a pattern hit,
  *   has no block: `body: "none"`, `offset` and `lines` null, so the secret never reaches
  *   `hunks.txt` or the worker's context (CHG-16, Q10). An entry with a hit or an
- *   over-limit skip carries `scan`, the scan map's value for its ID.
+ *   over-limit skip carries `scan`, the scan map's value for its ID. CHG-17: a unit M10
+ *   marked `summaryOnly` (its reason) goes to `summaryOnly` as `{ id, path, reason, added,
+ *   deleted }` (plus `scan`), not to `hunks`; one M10 marked `capped` has no block either
+ *   (`body: "cap"`, its `range`, `added` and `deleted` kept, `offset` and `lines` null).
  */
 export function renderHunks(runState, units) {
   const { scanIgnore, ...values } = runState.config.values;
   const scanMap = runState.scanMap ?? {};
   const blocks = [];
   const hunks = [];
+  const summaryOnly = [];
   let nextLine = 1;
   for (const unit of units) {
     const scanEntry = scanMap[unit.id];
     const scanField = scanEntry !== undefined ? { scan: scanEntry } : {};
+    // CHG-17: a summary-only file (M10's one whole-file unit with its reason) is a
+    // `summaryOnly` entry, never a `hunks` one: no kind, range or block (C:plan-hunks).
+    if (unit.summaryOnly !== undefined) {
+      summaryOnly.push({
+        id: unit.id, path: unit.path, reason: unit.summaryOnly, added: unit.added, deleted: unit.deleted, ...scanField,
+      });
+      continue;
+    }
     // CHG-08, CHG-09: a binary unit or a submodule pointer change has no block (`body:
     // "none"`, C:plan-hunks); a file↔submodule `T` with file lines has one. CHG-10: a
     // `filtered` unit whose cleaned form is binary has no block either (its own `binary`
@@ -64,6 +76,25 @@ export function renderHunks(runState, units) {
         lines: null,
         offset: null,
         body: 'none',
+        ...scanField,
+      });
+      continue;
+    }
+    // CHG-17: past the body cap (M10's `capped`), a unit keeps its own ID, range and counts
+    // but has no block (`body: "cap"`, C:plan-hunks).
+    if (unit.capped === true) {
+      hunks.push({
+        id: unit.id,
+        path: unit.path,
+        oldPath: unit.oldPath,
+        status: unit.status,
+        kind: unit.kind,
+        range: unit.range,
+        lines: null,
+        offset: null,
+        body: 'cap',
+        added: unit.added,
+        deleted: unit.deleted,
         ...scanField,
       });
       continue;
@@ -100,7 +131,7 @@ export function renderHunks(runState, units) {
       counts: { units: units.length, files: new Set(units.map((unit) => unit.path)).size },
       hunksFile: `${runState.runDir}/hunks.txt`,
       hunks,
-      summaryOnly: [],
+      summaryOnly,
     },
     hunksTxt: blocks.join(''),
   };

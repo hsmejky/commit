@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, rmSync, statSync } from 'node:fs';
 import { copyFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hideFilter } from './path-classifier.mjs';
+import { hideFilter, summaryOnly } from './path-classifier.mjs';
 import { gitPath, run } from './process-adapter.mjs';
 
 // `snapshotBlob`'s (SCN-14) record of the last `snapshot()` call's `mode`/`toplevel`/`env`/
@@ -662,7 +662,7 @@ export async function snapshot({
     const ctx = { mode: 'reword', toplevel, env, now, head };
     // review-CHG-11 finding 5: the text pass keeps `diffUnits`' own rediff step.
     const runTextPass = (keep) => diffUnits([from, head, '--text'], opts, attrs, { keep });
-    return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
+    return withBodyRules(await resolveHiddenBinaries(units, attrs, runTextPass, ctx), { worktree: false, ...opts });
   }
   if (mode === 'staged') {
     // CHG-14 (C:plan-hunks "what is diffed"): the index against HEAD (the empty tree when
@@ -677,7 +677,7 @@ export async function snapshot({
     const units = await diffUnits(['--cached'], opts, attrs);
     const ctx = { mode: 'staged', toplevel, env, now };
     const runTextPass = (keep) => diffUnits(['--cached', '--text'], opts, attrs, { keep });
-    return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
+    return withBodyRules(await resolveHiddenBinaries(units, attrs, runTextPass, ctx), { worktree: false, ...opts });
   }
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not supported`);
   // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
@@ -715,7 +715,7 @@ export async function snapshot({
     // review-CHG-11 finding 5: the same `--no-renames` rediff as the main pass above.
     return [...textUnits, ...(await pinnedDiff(['--text', '--no-renames'], opts, attrs, new Set(textReader.rediff))).end()];
   };
-  return resolveHiddenBinaries(all, attrs, runTextPass, ctx);
+  return withBodyRules(await resolveHiddenBinaries(all, attrs, runTextPass, ctx), { worktree: true, toplevel, env, now });
 }
 
 /**
@@ -742,7 +742,7 @@ export async function unstagedUnits({ toplevel, env, now }) {
   // `staged`, to take that disk-read branch in `resolveHiddenBinaries`.
   const ctx = { mode: 'unstaged', toplevel, env, now };
   const runTextPass = (keep) => diffUnits(['--no-renames', '--text'], opts, attrs, { keep });
-  return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
+  return withBodyRules(await resolveHiddenBinaries(units, attrs, runTextPass, ctx), { worktree: true, ...opts });
 }
 
 /**
@@ -1291,7 +1291,7 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   // The real index's attributes for the group's paths (CHG-10): without them a filtered
   // file's staged diff splits into `text` hunks that never match its stored unit.
   const attrs = await checkAttrs(units.map((unit) => unit.path), { toplevel, env, now });
-  const staged = await diffUnits(['--cached'], { toplevel, env, now }, attrs);
+  const staged = await withBodyRules(await diffUnits(['--cached'], { toplevel, env, now }, attrs), { worktree: false, toplevel, env, now });
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
 }
 
@@ -1321,7 +1321,7 @@ export async function writeTree({ toplevel, env, now }) {
  */
 export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
   const from = fromTree ?? await emptyTreeId({ toplevel, env, now });
-  return diffUnits([from, toTree], { toplevel, env, now });
+  return withBodyRules(await diffUnits([from, toTree], { toplevel, env, now }), { worktree: false, toplevel, env, now });
 }
 
 // The empty tree's object ID (CHG-15, EXE-02): `git hash-object -t tree --stdin` on empty
@@ -1572,17 +1572,25 @@ function unitsOf(section) {
   if (status === 'M' && kind === 'text') {
     const occurrences = new Map();
     const box = { total: 0 };
-    return hunks.map((hunk) => {
+    // CHG-17: the same lines also feed the file's whole-file hash (`M`, NUL, path, NUL, then
+    // every hunk's `-`/`+` lines, as a whole-file unit hashes), which the file's one unit
+    // takes if it turns out summary-only (`withBodyRules`).
+    const file = createHash('sha256').update(Buffer.from('M\0')).update(pathBytes).update(Buffer.from([NUL]));
+    const units = hunks.map((hunk) => {
       const identity = createHash('sha256').update(pathBytes).update(Buffer.from([NUL]));
-      const counts = hashHunk(hunk, identity, box);
+      const both = { update(bytes) { identity.update(bytes); file.update(bytes); return both; } };
+      const counts = hashHunk(hunk, both, box);
       const identityKey = identity.copy().digest('hex');
       const occurrence = occurrences.get(identityKey) ?? 0;
       occurrences.set(identityKey, occurrence + 1);
       const hash = identity.update(Buffer.from(`\0${occurrence}`)).digest('hex');
       return {
-        ...base, hash, identityKey, ...counts, range: rangeOf([hunk]), body: Buffer.concat(hunk.lines),
+        ...base, hash, identityKey, ...counts, range: rangeOf([hunk]), body: Buffer.concat(hunk.lines), blobs,
       };
     });
+    const fileHash = file.digest('hex');
+    const fileRange = rangeOf(hunks);
+    return units.map((unit) => ({ ...unit, fileHash, fileRange }));
   }
   const whole = createHash('sha256').update(Buffer.from(`${status}\0`));
   if (status === 'R') whole.update(oldPathBytes).update(Buffer.from([NUL]));
@@ -1615,7 +1623,7 @@ function unitsOf(section) {
   // batched `git cat-file` pass instead of spawning one per path.
   return [{
     ...base, hash, identityKey: hash, ...counts, range, body: Buffer.concat(hunks.flatMap((hunk) => hunk.lines)),
-    ...(binary ? { newOid: blobs.split(' ')[1] } : {}),
+    ...(binary ? { newOid: blobs.split(' ')[1] } : {}), blobs,
   }];
 }
 
@@ -1640,6 +1648,98 @@ function withScanLimit(units) {
   }
   if (total <= SCAN_LIMIT) return units;
   return units.map((unit) => ({ ...unit, addedLines: [], overScanLimit: true }));
+}
+
+// The body cap (CHG-17, C:summary-only-files, Q19): changed lines summed over the files that
+// are not summary-only, in path order.
+const BODY_CAP_LINES = 3000;
+const ZERO_OID = /^0+$/;
+
+// CHG-17 (C:summary-only-files, Q19, M10): M9 `summaryOnly` and the body cap over a unit
+// list sorted by path (one file's units are consecutive). A summary-only file becomes one
+// whole-file unit carrying `summaryOnly` (the reason): a content-only `M`'s hunk units fold
+// into its whole-file hash, range and summed counts; its `addedLines` stay for the scan
+// (C:summary-only-files: the scan ignores summary-only status), its `body` is dropped. Then,
+// in path order, the changed lines of the files that are not summary-only are summed: the
+// first file taking the sum over 3000 and every later one keep each unit (own hash, range,
+// counts, `addedLines`) with `capped: true` and the `body` dropped. `size` (the `size` rule)
+// is read only for a file no earlier rule already marks: off disk when the new side is the
+// worktree (`worktree`), else with one `cat-file --batch-check` over the blob IDs (the old
+// one for a deletion). The internal `blobs`, `fileHash` and `fileRange` are stripped.
+async function withBodyRules(units, { worktree, toplevel, env, now }) {
+  const files = [];
+  for (const unit of units) {
+    const last = files[files.length - 1];
+    if (last !== undefined && last.path === unit.path) last.units.push(unit);
+    else files.push({ path: unit.path, units: [unit] });
+  }
+  const sizeless = [];
+  for (const file of files) {
+    file.added = file.units.reduce((sum, unit) => sum + unit.added, 0);
+    file.deleted = file.units.reduce((sum, unit) => sum + unit.deleted, 0);
+    const stats = { added: file.added, deleted: file.deleted, generated: file.units[0].generated, size: 0 };
+    file.reason = summaryOnly(file.path, stats);
+    if (file.reason === null) sizeless.push(file);
+  }
+  await fileSizes(sizeless, { worktree, toplevel, env, now });
+  for (const file of sizeless) {
+    if (file.size !== undefined && summaryOnly(file.path, { ...file, generated: false }) === 'size') file.reason = 'size';
+  }
+  const out = [];
+  let sum = 0;
+  for (const file of files) {
+    const plain = file.units.map(({ blobs, fileHash, fileRange, ...unit }) => unit);
+    if (file.reason !== null) {
+      const { fileHash, fileRange } = file.units[0];
+      const folded = fileHash === undefined ? plain[0] : {
+        ...plain[0],
+        hash: fileHash,
+        identityKey: fileHash,
+        added: file.added,
+        deleted: file.deleted,
+        addedLines: plain.flatMap((unit) => unit.addedLines),
+        range: fileRange,
+      };
+      out.push({ ...folded, body: Buffer.alloc(0), summaryOnly: file.reason });
+      continue;
+    }
+    if (sum <= BODY_CAP_LINES) sum += file.added + file.deleted;
+    if (sum > BODY_CAP_LINES) out.push(...plain.map((unit) => ({ ...unit, body: Buffer.alloc(0), capped: true })));
+    else out.push(...plain);
+  }
+  return out;
+}
+
+// Sets `size` (bytes) on each file whose size can be read: the new content (off disk when
+// `worktree`, else its blob), the old blob for a deletion. A symlink, submodule or type
+// change, a missing side, or an unreadable file leaves it unset (the `size` rule then never
+// matches).
+async function fileSizes(files, { worktree, toplevel, env, now }) {
+  const byOid = [];
+  for (const file of files) {
+    const [unit] = file.units;
+    if (unit.status === 'T' || unit.kind === 'symlink' || unit.kind === 'submodule') continue;
+    if (unit.status !== 'D' && worktree) {
+      try {
+        const stat = lstatSync(join(toplevel, file.path));
+        if (stat.isFile()) file.size = stat.size;
+      } catch {
+        // Unreadable: no size.
+      }
+      continue;
+    }
+    const oid = typeof unit.blobs === 'string' ? unit.blobs.split(' ')[unit.status === 'D' ? 0 : 1] : null;
+    if (oid && !ZERO_OID.test(oid)) byOid.push({ file, oid });
+  }
+  if (byOid.length === 0) return;
+  const out = await gitOk(['cat-file', '--batch-check=%(objectsize)'], {
+    cwd: toplevel, env, now, readOnly: true, input: Buffer.from(byOid.map(({ oid }) => `${oid}\n`).join('')),
+  });
+  const lines = out.toString('utf8').split('\n');
+  byOid.forEach(({ file }, i) => {
+    const size = Number(lines[i]);
+    if (/^\d+$/.test(lines[i] ?? '')) file.size = size;
+  });
 }
 
 // A type change's one whole-file unit (CHG-09, Q11 pass 8 amendment), `kind` its

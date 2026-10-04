@@ -290,9 +290,11 @@ test('plan: an over-limit hidden file is scan skipped; neither it nor a bigFileT
   assert.equal(result.exitCode, 0, detail);
   const entries = result.json.hunks.hunks.map(({ path: p, kind, body, scan }) => ({ path: p, kind, body, scan }));
   assert.deepEqual(entries, [
-    { path: 'big.bin', kind: 'binary', body: 'none', scan: 'skipped' },
     { path: 'big.txt', kind: 'binary', body: 'none', scan: undefined },
   ], detail);
+  // CHG-17: over 256 KB, big.bin is a `size` summary-only entry, still scan skipped.
+  const summary = result.json.hunks.summaryOnly.map(({ path: p, reason, scan }) => ({ path: p, reason, scan }));
+  assert.deepEqual(summary, [{ path: 'big.bin', reason: 'size', scan: 'skipped' }], detail);
   assert.deepEqual(textPasses, []);
 });
 
@@ -570,9 +572,12 @@ test('plan --reword: three attribute-hidden files cost two cat-file calls in all
   assert.deepEqual(hunks, [
     { path: 'a.bin', kind: 'text', body: 'none', scan: undefined },
     { path: 'b.bin', kind: 'binary', body: 'none', scan: undefined },
-    { path: 'big.bin', kind: 'binary', body: 'none', scan: undefined },
     { path: 'm.bin', kind: 'text', body: 'none', scan: undefined },
   ], detail);
+  // CHG-17: over 256 KB, big.bin is a `size` summary-only entry.
+  assert.deepEqual(result.json.hunks.summaryOnly.map((e) => [e.path, e.reason]), [['big.bin', 'size']], detail);
+  // The hidden-binary resolution's two calls (`--batch-check`, then `--batch`), plus CHG-17's
+  // one `--batch-check` sizing every file for the `size` rule: constant, however many files.
   const catFiles = entries.filter((e) => Array.isArray(e.args) && e.args.includes('cat-file'));
-  assert.equal(catFiles.length, 2, JSON.stringify(catFiles));
+  assert.equal(catFiles.length, 3, JSON.stringify(catFiles));
 });

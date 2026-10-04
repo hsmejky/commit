@@ -93,6 +93,7 @@ async function plan(c, options = {}) {
   return {
     stdout: result.stdout,
     hunks: result.json.hunks.hunks,
+    summaryOnly: result.json.hunks.summaryOnly,
     state: JSON.parse(read('state.json')),
     planJson: JSON.parse(read('plan.json')),
     hunksTxt: read('hunks.txt'),
@@ -206,7 +207,10 @@ test('a new file with a hit loses its whole body', async (t) => {
   assert.equal(hunksTxt.includes(githubToken('b')), false);
 });
 
-test('two ~600 KB hunks of one file, over 1 MB together: both units flagged, path skipped once, no hit', async (t) => {
+// CHG-17: a file with over 1 MB of added content is always summary-only too (over 1000 lines
+// or 256 KB), so its two hunk units fold into one whole-file unit, which still carries the
+// flag the per-file limit set across both hunks.
+test('two ~600 KB hunks of one file, over 1 MB together: the folded unit is flagged, path skipped once, no hit', async (t) => {
   const c = createCase(t);
   const lines = numbered(20);
   seed(c, { 'data/big.txt': lines });
@@ -216,13 +220,12 @@ test('two ~600 KB hunks of one file, over 1 MB together: both units flagged, pat
   c.writeFile('data/big.txt', `${kept[0]}\n${first}${kept.slice(1, 19).join('\n')}\n${second}${kept[19]}\n`);
 
   const units = await snapshot(c, ['data/big.txt']);
-  assert.equal(units.length, 2);
-  assert.deepEqual(units.map((u) => u.overScanLimit), [true, true]);
+  assert.deepEqual(units.map((u) => [u.summaryOnly, u.overScanLimit, u.addedLines.length]), [['lines', true, 0]]);
 
-  const { hunks, state, planJson } = await plan(c);
-  assert.equal(hunks.length, 2);
-  assert.deepEqual(hunks.map((h) => h.scan), ['skipped', 'skipped']);
-  assert.deepEqual(state.scanned, { [hunks[0].id]: 'skipped', [hunks[1].id]: 'skipped' });
+  const { hunks, summaryOnly, state, planJson } = await plan(c);
+  assert.deepEqual(hunks, []);
+  assert.deepEqual(summaryOnly.map((h) => [h.reason, h.scan]), [['lines', 'skipped']]);
+  assert.deepEqual(state.scanned, { [summaryOnly[0].id]: 'skipped' });
   assert.deepEqual(planJson.scan.skipped, [{ path: 'data/big.txt', reason: SKIP_REASON }]);
   assert.deepEqual(planJson.scan.hits, []);
 });
@@ -274,18 +277,18 @@ test('added content of exactly 1,048,576 bytes is scanned; one byte more is flag
 // SCN-15 AC2: a 2 MB untracked candidate is reported skipped, not scanned — the same rule a
 // tracked file gets (the two tests above), proved here through a brand-new, never-added
 // file (C:plan `scan.skipped`). Unlike a pattern hit, a skipped file "may be included"
-// (Q10's table), so its body still reaches `hunks.txt`; only `scan.hits` and `scan.skipped`
-// themselves never carry a matched value.
+// (Q10's table), so it still reaches the index (CHG-17: as a `size` summary-only entry, so
+// without a block); only `scan.hits` and `scan.skipped` themselves never carry a matched value.
 test('a 2 MB untracked candidate is reported skipped, not scanned', async (t) => {
   const c = createCase(t);
   seed(c, { 'README.md': 'readme\n' });
   c.writeFile('new/big-secret.txt', addedContent(2 * 1024 * 1024, 'h'));
 
-  const { hunks, state, planJson } = await plan(c);
+  const { summaryOnly, state, planJson } = await plan(c);
 
   assert.deepEqual(planJson.scan.skipped, [{ path: 'new/big-secret.txt', reason: SKIP_REASON }]);
   assert.deepEqual(planJson.scan.hits, []);
-  const entry = hunks.find((h) => h.path === 'new/big-secret.txt');
+  const entry = summaryOnly.find((h) => h.path === 'new/big-secret.txt');
   assert.equal(entry.scan, 'skipped');
   assert.equal(state.scanned[entry.id], 'skipped');
 });

@@ -100,6 +100,16 @@ fixed, delete it here; IDs are never reused.
   need the fault preload's basename match widened to a path, a seam-list change. Fix: either
   add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's), or
   rebuild these cases at Seam 1. Slice: none yet (needs the user's seam decision).
+- **KD-R87.** CHG-17's fourth criterion (a summary-only or cap file's hunk lines dropped
+  while streaming, retained memory bounded by the Q19 and Q10 caps) is neither met nor
+  testable. No seam in testing-seams.md observes retained memory. M10 also decides both
+  rules after the patch pass (`withBodyRules` in `change-set.mjs`): the `size` rule needs a
+  size read after the stream, and a file under 1000 changed lines can still turn out
+  summary-only by size, which takes it out of the cap sum. So every body is held until
+  `snapshot` returns and is dropped only then. Only the added lines stay bounded (1 MB per
+  file, CHG-16). Fix: read the sizes from a `--raw` pass before the patch pass, then decide
+  per file in the reader (`finishSection`), holding at most 1000 lines of one file at a
+  time. Or relax the criterion to "bodies dropped before M13". Slice: CHG-17 (criterion 4).
 
 ## Coverage
 
@@ -208,11 +218,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   CHG-20's `stage` commits only a group's own hunks, lift the gate as part of INT-18 (its
   criterion names this). Slices: CHG-20, INT-18, RUN-18.
 
-- **KD-R79.** CHG-16 leaves a scan-skipped file's (`scan.skipped`, over 1 MB added) whole
-  body in `hunks.txt` unscanned, interim: CHG-17's `size`/`lines` summary-only rule (256 KB /
-  1000 lines, which always catches a file with over 1 MB added) removes the block. Matches
-  C:plan-hunks and the Q10 table (review-CHG-16 finding 3). Fix: none needed beyond CHG-17
-  landing as scheduled. Slice: CHG-17.
 
 - **KD-R71.** A worker-plan parse failure echoes V8's raw `JSON.parse` message, which can
   quote a snippet of the invalid JSON text verbatim (e.g. a secret-shaped fragment next to the
