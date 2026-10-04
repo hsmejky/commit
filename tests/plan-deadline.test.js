@@ -6,6 +6,7 @@
 // the reply's tree-state read then runs under `cleanupDeadline` (the call's start plus 580 s)
 // and is not spawned past it. Seam 1 with the FND-05 stepping clock, plus M15's pure functions.
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -269,5 +270,92 @@ for (const [name, argv, elapsedMs] of [
     };
     const result = await workflows[name](argv, injected, { cwd: c.repoDir });
     assert.equal(result.failure?.kind, 'timeout', JSON.stringify(result));
+  });
+}
+
+// review-GIT-07 r2 finding Low-2 (C:cli-and-exit-codes: "exits 3-5 end the run"): a `check`
+// whose 540 s deadline passes after M12 `open` took the run ends `timeout` and releases the
+// run, lock and folder. The injected clock reads the deadline only once `call.lock` exists,
+// which `open` creates the moment it succeeds, so the timeout lands on the step after
+// `openRun`; before the fix only this call's `call.lock` went and the run was kept.
+test('check past its deadline after opening the run ends timeout and releases the lock and the run folder', async (t) => {
+  const c = dirtyCase(t);
+  const runDir = runDirOf(c);
+  const planId = crypto.randomUUID();
+  const folder = path.join(runDir, planId);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId, created: '2026-01-01T00:00:00.000Z' }));
+  fs.writeFileSync(path.join(folder, 'state.json'), JSON.stringify({ version: 1 }));
+  const start = Date.UTC(2026, 0, 1);
+  const callLock = path.join(folder, 'call.lock');
+  const injected = {
+    env: c.env,
+    now: () => (fs.existsSync(callLock) ? start + 540_000 : start),
+    claudeHome: c.claudeHome,
+    cwd: c.repoDir,
+    callStarted: start,
+  };
+
+  const result = await workflows.check({ plan: planId }, injected, { cwd: c.repoDir });
+
+  assert.equal(result.failure?.kind, 'timeout', JSON.stringify(result));
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(folder), false, 'the run folder is deleted');
+});
+
+// review-GIT-07 r2 finding Low-3: a git call that the deadline itself ends, while the injected
+// clock is still short of it, ends the workflow `timeout`, never `internal`. The clock reads
+// 10 ms before the deadline except when its direct caller is in M2 process-adapter.mjs (the
+// `run` budget read), where it reads the deadline: every pre-step clock check passes, and the
+// first deadline-scoped git call is skipped as spent, which marks the scope expired.
+// Deterministic: no real spawn has to outlast a timer. `spent` records that such a call
+// happened, so a case that stops reaching one fails instead of passing on the coarse check.
+function clockSpentInsideRun(deadlineAt) {
+  const clock = { spent: false };
+  clock.now = () => {
+    if (!new Error().stack.split('\n')[2].includes('process-adapter.mjs')) return deadlineAt - 10;
+    clock.spent = true;
+    return deadlineAt;
+  };
+  return clock;
+}
+
+// `infer`'s first scoped git call is M3 `head`, which throws on the skipped call's null exit
+// code: only `runStepsWithin`'s throw-after-expiry mapping turns that into `timeout` (the
+// part-1 bug review-GIT-07 r2 names).
+test('infer whose HEAD read the deadline ends ends timeout, not internal', async (t) => {
+  const c = dirtyCase(t);
+  const start = Date.UTC(2026, 0, 1);
+  const clock = clockSpentInsideRun(start + 540_000);
+  const injected = { env: c.env, now: clock.now, claudeHome: c.claudeHome, cwd: c.repoDir, callStarted: start };
+
+  const result = await workflows.infer({}, injected, { cwd: c.repoDir });
+
+  assert.equal(clock.spent, true, 'a deadline-scoped git call was reached');
+  assert.deepEqual(result.failure, { kind: 'timeout', message: '/commit passed its 540-second deadline' });
+});
+
+// `check` and `release` make their only scoped git call outside a working tree (M3
+// `classifyNoWorkTree`, inside `probeRepo`). The next step's `pastDeadline` sees the expired
+// scope with the clock still short of the deadline and ends the call `timeout` before the
+// KD-S78 throw; without that clause the throw's own mapping in `runStepsWithin` must. In a
+// working tree neither subcommand makes a scoped git call before M12 `open`/`releaseById`,
+// so no scope can expire there; `release`'s kept lock and folder past its deadline (user
+// decision on KD-R78) are pinned by the clock-driven Seam 1 case in
+// tests/plan-timeout-kill.test.js.
+for (const [name, elapsedMs, message] of [
+  ['check', 540_000, '/commit passed its 540-second deadline'],
+  ['release', 45_000, '/commit release passed its 45-second deadline'],
+]) {
+  test(`${name} outside a working tree whose git call the deadline ends ends timeout, not internal`, async (t) => {
+    const c = createCase(t, { repo: false });
+    const start = Date.UTC(2026, 0, 1);
+    const clock = clockSpentInsideRun(start + elapsedMs);
+    const injected = { env: c.env, now: clock.now, claudeHome: c.claudeHome, cwd: c.root, callStarted: start };
+
+    const result = await workflows[name]({ plan: crypto.randomUUID() }, injected, { cwd: c.root });
+
+    assert.equal(clock.spent, true, 'a deadline-scoped git call was reached');
+    assert.deepEqual(result.failure, { kind: 'timeout', message });
   });
 }
