@@ -170,6 +170,40 @@ test('a deleted attribute-hidden binary file stays kind binary in split mode', a
   assert.deepEqual(units.map((u) => [u.path, u.status, u.kind, u.added, u.deleted]), [['img.png', 'D', 'binary', 0, 0]]);
 });
 
+// review KD-R87 Medium 2: the main pass decides summary-only on a hidden file's binary counts
+// (zero); once the `--text` pass turns it into text, it is decided again on its text counts,
+// so a `-diff` text file over 1000 changed lines is summary-only `lines` (C:summary-only-files).
+test('a -diff text file of 1001 changed lines is summary-only lines in split and staged', async (t) => {
+  const c = createCase(t);
+  c.writeFile('x.bin', 'seed\n');
+  c.writeFile('.gitattributes', '*.bin -diff\n');
+  c.git(['add', '.']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('x.bin', `seed\n${Array.from({ length: 1001 }, (_, i) => `line ${i}\n`).join('')}`);
+
+  const expected = [['x.bin', 'text', 1001, 0, 'lines', 0]];
+  const shape = (units) => units.map((u) => [u.path, u.kind, u.added, u.deleted, u.summaryOnly, u.body.length]);
+  assert.deepEqual(shape(await snapshot(c, { tracked: ['x.bin'] })), expected);
+  c.git(['add', 'x.bin']);
+  assert.deepEqual(shape(await changeSet.snapshot({ mode: 'staged', toplevel: c.repoDir, env: c.env, now: NOW })), expected);
+});
+
+// A hidden text file's counts and added lines come from every hunk of its `--text` section,
+// not only the last one.
+test('a -diff text file with two hunks counts and scans both of them', async (t) => {
+  const c = createCase(t);
+  const lines = Array.from({ length: 40 }, (_, i) => `l${i}\n`);
+  c.writeFile('x.bin', lines.join(''));
+  c.writeFile('.gitattributes', '*.bin -diff\n');
+  c.git(['add', '.']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('x.bin', ['top\n', ...lines, 'bottom\n'].join(''));
+
+  const units = await snapshot(c, { tracked: ['x.bin'] });
+  assert.deepEqual(units.map((u) => [u.path, u.kind, u.added, u.deleted]), [['x.bin', 'text', 2, 0]]);
+  assert.deepEqual(units[0].addedLines, [{ line: 1, text: 'top' }, { line: 42, text: 'bottom' }]);
+});
+
 function reword(c, head) {
   return changeSet.snapshot({ mode: 'reword', head, root: false, toplevel: c.repoDir, env: c.env, now: NOW });
 }

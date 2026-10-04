@@ -29,7 +29,7 @@ const PINNED_DIFF_CALL = [
   '--ignore-submodules=dirty', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
   '--full-index', '-z', '--raw', '-p',
 ];
-// CHG-17 (KD-R87): the `size` rule's raw pass, the same pinned options and no pathspec,
+// CHG-17 (KD-R87): the `size` rule's size pass, the same pinned options and no pathspec,
 // run before the patch pass so its reader can drop a summary-only body while streaming.
 const PINNED_SIZE_CALL = [...PINNED_DIFF_CALL.slice(0, -3), '--no-abbrev', '-z', '--raw'];
 // CHG-05: the inventory's own staged-paths read, the only other `diff` call.

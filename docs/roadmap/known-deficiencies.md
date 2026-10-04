@@ -126,12 +126,16 @@ fixed, delete it here; IDs are never reused.
 - **KD-R87.** CHG-17's fourth criterion (a summary-only file's hunk lines dropped while
   streaming, retained memory bounded by the Q19 and Q10 caps) is met, but retained memory
   itself is not measured: no seam in testing-seams.md observes it, and the seam list is
-  user-confirmed. M10 reads the `size` rule's sizes in a `git diff -z --raw` pass before the
-  patch pass, and the reader (`finishSection`) decides summary-only as each file's section
-  closes and drops its hunk lines there. `tests/plan-summary-cap.test.js` observes only that
-  order and the call count at Seam 1 (the raw pass, at most one `cat-file --batch-check`,
-  then the patch pass) and the unchanged output. Fix: none planned (a memory seam would be a
-  user decision). Slice: none.
+  user-confirmed. M10 reads the `size` rule's sizes in a `git diff -z --raw` size pass before
+  the patch pass. The reader streams a file into its whole-file hash, counts and added lines
+  (`startFold`) once it is bound to be summary-only: at its first hunk for the name rules,
+  `generated` and `size`, at its 1001st changed line for `lines`; a `--text` pass streams
+  every kept file the same way. So no summary-only file buffers more than 1000 changed lines
+  (with their context), and its added lines stop at the 1 MB scan limit.
+  `tests/plan-summary-cap.test.js` observes only the call order and count at Seam 1 (the
+  size pass, at most one `cat-file --batch-check`, then the patch pass) and the unchanged
+  output. The size pass repeats the patch pass's `-M` rename detection (M10). Fix: none
+  planned (a memory seam would be a user decision). Slice: none.
 - **KD-R88.** CHG-17's review-Medium-2 case in `tests/plan-summary-cap.test.js` ("M10 keeps
   the body of a capped unit") calls `snapshot` in-process, outside testing-seams.md's
   user-confirmed seam list, the same gap KD-R77 names for M2/M11. Seam 1 cannot observe a

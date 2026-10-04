@@ -246,10 +246,10 @@ test('M10 keeps the body of a capped unit; only a summary-only file loses it', a
 // KD-R87 (CHG-17 criterion 4): M10 reads the `size` rule's sizes in a `git diff --raw` pass
 // before the patch pass, so the reader decides summary-only per file as each section closes
 // and drops that file's body there, never after the stream. Retained memory has no seam
-// (KD-R87); what is observable is the order and count of the git calls: the raw pass, then
+// (KD-R87); what is observable is the order and count of the git calls: the size pass, then
 // one `cat-file --batch-check` for every blob the size rule needs (none for a lockfile,
 // none off disk), then the patch pass, with the same summary-only output as before.
-test('the size rule is read before the patch pass: raw pass, one cat-file, then the patch', async (t) => {
+test('the size rule is read before the patch pass: size pass, one cat-file, then the patch', async (t) => {
   const c = createCase(t);
   const big = `${'z'.repeat(1023)}\n`.repeat(300);
   seed(c, { 'big.txt': `top\n${big}`, 'package-lock.json': '{}\n', 'small.txt': 'top\n' });

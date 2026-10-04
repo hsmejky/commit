@@ -662,7 +662,7 @@ export async function snapshot({
     const units = await diffUnits([from, head], opts, attrs, { sizeOf });
     const ctx = { mode: 'reword', toplevel, env, now, head };
     // review-CHG-11 finding 5: the text pass keeps `diffUnits`' own rediff step.
-    const runTextPass = (keep) => diffUnits([from, head, '--text'], opts, attrs, { keep });
+    const runTextPass = (keep) => diffUnits([from, head, '--text'], opts, attrs, { keep, wholeFiles: true });
     return withBodyCap(await resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf));
   }
   if (mode === 'staged') {
@@ -678,7 +678,7 @@ export async function snapshot({
     const sizeOf = await bodyRuleSizes(['--cached'], opts, attrs, false);
     const units = await diffUnits(['--cached'], opts, attrs, { sizeOf });
     const ctx = { mode: 'staged', toplevel, env, now };
-    const runTextPass = (keep) => diffUnits(['--cached', '--text'], opts, attrs, { keep });
+    const runTextPass = (keep) => diffUnits(['--cached', '--text'], opts, attrs, { keep, wholeFiles: true });
     return withBodyCap(await resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf));
   }
   if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not supported`);
@@ -701,7 +701,7 @@ export async function snapshot({
   // CHG-17 (KD-R87): the `size` rule's sizes, read before the patch pass, so the reader
   // decides summary-only per file as each section closes.
   const sizeOf = await bodyRuleSizes([], opts, attrs, true);
-  const reader = await pinnedDiff([], opts, attrs, null, sizeOf);
+  const reader = await pinnedDiff([], opts, attrs, { sizeOf });
   const units = reader.end();
   let all = units;
   if (reader.rediff.length > 0) {
@@ -709,16 +709,16 @@ export async function snapshot({
     // rename detection, is an `A` unit; the old path stays in `notUtf8` (review-CHG-12
     // finding 1). No pathspec (Q11: argv length), so the other paths' units are dropped.
     const rediff = new Set(reader.rediff);
-    const again = (await pinnedDiff(['--no-renames'], opts, attrs, null, sizeOf)).end().filter((unit) => rediff.has(unit.path));
+    const again = (await pinnedDiff(['--no-renames'], opts, attrs, { sizeOf })).end().filter((unit) => rediff.has(unit.path));
     all = [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
   }
   const ctx = { mode: 'split', toplevel, env, now };
   const runTextPass = async (keep) => {
-    const textReader = await pinnedDiff(['--text'], opts, attrs, keep);
+    const textReader = await pinnedDiff(['--text'], opts, attrs, { keep, wholeFiles: true });
     const textUnits = textReader.end();
     if (textReader.rediff.length === 0) return textUnits;
     // review-CHG-11 finding 5: the same `--no-renames` rediff as the main pass above.
-    return [...textUnits, ...(await pinnedDiff(['--text', '--no-renames'], opts, attrs, new Set(textReader.rediff))).end()];
+    return [...textUnits, ...(await pinnedDiff(['--text', '--no-renames'], opts, attrs, { keep: new Set(textReader.rediff), wholeFiles: true })).end()];
   };
   return withBodyCap(await resolveHiddenBinaries(all, attrs, runTextPass, ctx, sizeOf));
 }
@@ -747,7 +747,7 @@ export async function unstagedUnits({ toplevel, env, now }) {
   // `reword`/`staged`'s index-side diffs). `ctx.mode` is deliberately neither `reword` nor
   // `staged`, to take that disk-read branch in `resolveHiddenBinaries`.
   const ctx = { mode: 'unstaged', toplevel, env, now };
-  const runTextPass = (keep) => diffUnits(['--no-renames', '--text'], opts, attrs, { keep });
+  const runTextPass = (keep) => diffUnits(['--no-renames', '--text'], opts, attrs, { keep, wholeFiles: true });
   return withBodyCap(await resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf));
 }
 
@@ -975,7 +975,9 @@ async function streamCatFileBatch(units, opts) {
 // CHG-17 (KD-R87): the main pass's reader decided summary-only on the binary unit's own
 // counts (zero); a unit turned `text` here is decided again on its text counts with the same
 // `sizeOf`, as it would have been had its section been text. Its body is empty either way
-// (a binary section has no hunk lines), so nothing is held for this.
+// (a binary section has no hunk lines), so nothing is held for this. The `--text` pass's
+// reader is a `wholeFiles` one: each kept file is one bodiless unit whose counts and added
+// lines cover all its hunks (before, a multi-hunk file kept only its last hunk's).
 async function resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf) {
   const candidates = units.filter((unit) => (
     unit.kind === 'binary' && unit.status !== 'D' && attrs.get(unit.path)?.hidden === true
@@ -1011,8 +1013,8 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf) {
 // `openSection` so a `filter`-attributed path's section opens as `kind: "filtered"`. `keep`:
 // the reader's keep-set (`createDiffReader`), null for every path. `sizeOf`: the reader's
 // summary-only sizes (`bodyRuleSizes`), null for none (a `--text` pass).
-async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map(), keep = null, sizeOf = null) {
-  const reader = createDiffReader(attrs, { keep, sizeOf });
+async function pinnedDiff(extra, { toplevel, env, now, indexPath }, attrs = new Map(), { keep = null, sizeOf = null, wholeFiles = false } = {}) {
+  const reader = createDiffReader(attrs, { keep, sizeOf, wholeFiles });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...extra],
@@ -1097,23 +1099,27 @@ function existsInWorktree(toplevel, path) {
  * @param {Map<string, { filtered: boolean, generated: boolean }>} [attrs] the `check-attr`
  *   results (CHG-10), keyed by path: a `filtered` path's section opens with
  *   `entryKind: "filtered"` and every unit carries `generated`.
- * @param {{ keep?: Set<string> | null, sizeOf?: ((unit: object) => number | undefined) | null }} [options]
+ * @param {{ keep?: Set<string> | null, sizeOf?: ((unit: object) => number | undefined) | null, wholeFiles?: boolean }} [options]
  *   `keep` (CHG-11's `--text` pass): only
  *   these paths make units; every other section is still paired with its record, but its
  *   lines are discarded as they arrive, like a non-UTF-8 one's, and a rename from a non-UTF-8
  *   path goes to `rediff` only when its new path is kept. Null (the default): every path.
- *   `sizeOf` (CHG-17, KD-R87): the `size` rule's sizes from `bodyRuleSizes`, read before this
- *   pass; non-null, each file is decided summary-only (M9 `summaryOnly`) as its section
- *   closes, and a summary-only file's hunk lines and body are dropped right there
- *   (`summaryOnlyFile`), so no summary-only body outlives its own section. Null (the
+ *   `sizeOf` (CHG-17, KD-R87): the `size` rule's sizes from `bodyRuleSizes` (the size pass,
+ *   run before this one); non-null, each file is decided summary-only (M9 `summaryOnly`). A
+ *   file bound to be summary-only streams (`startFold`): at its first hunk when a size-free
+ *   rule or `size` marks it, at its 1001st changed line for `lines`; its lines are dropped
+ *   as they arrive, so a summary-only file never buffers more than 1000 changed lines. A
+ *   file decided only at its close (no hunk) goes through `summaryOnlyFile`. Null (the
  *   default): no decision (a `--text` pass, crafted bytes).
+ *   `wholeFiles` (KD-R87, a `--text` pass): every kept file with a hunk streams the same way
+ *   from its first hunk, as one whole-file unit with no body and no decision.
  * @returns {{ rediff: string[], push: (chunk: Buffer) => void, end: () => object[] }}
  *   `push` throws on the first pairing error and is not called again; `end` flushes the
  *   last line, checks the section count and returns the units in `snapshot`'s shape and
  *   order. `rediff`: the new paths of the renames whose old path is not UTF-8, in diff
  *   order (complete once `end` returns), which made no unit here.
  */
-export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null } = {}) {
+export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null, wholeFiles = false } = {}) {
   const records = [];
   const units = [];
   const rediff = [];
@@ -1132,9 +1138,48 @@ export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null
       throw new Error(`a type change (${typeChange.path}) has one patch section, not two`);
     }
     if (section === null) return;
+    if (section.fold !== undefined && section.fold !== null) {
+      const unit = foldedUnit(section);
+      section = null;
+      if (sizeOf === null) {
+        units.push(unit);
+        return;
+      }
+      const reason = summaryOnly(unit.path, { added: unit.added, deleted: unit.deleted, generated: unit.generated, size: sizeOf(unit) ?? 0 });
+      if (reason === null) throw new Error(`a streamed section is not summary-only (${unit.path})`);
+      units.push({ ...unit, summaryOnly: reason });
+      return;
+    }
     const made = withScanLimit(unitsOf(section));
     section = null;
     units.push(...(sizeOf === null ? made : summaryOnlyFile(made, sizeOf)));
+  };
+  // KD-R87: a section that may stream (`startFold`): with summary-only decisions or
+  // `wholeFiles`, any UTF-8 section but a submodule pointer (whose hash takes no hunk lines).
+  const foldable = (s) => (sizeOf !== null || wholeFiles) && s.notUtf8 !== true
+    && (s.status === 'T' || s.entryKind !== 'submodule');
+  // The summary-only rules on what is known so far: the name rules and `generated` at once,
+  // `size` once the `index` line is read (the first hunk), `lines` as changed lines arrive.
+  const bound = (s) => summaryOnly(s.path, {
+    added: s.changed,
+    deleted: 0,
+    generated: s.generated,
+    size: sizeOf({ path: s.path, status: s.status, kind: s.entryKind ?? (s.modes === null ? 'text' : 'mode'), blobs: s.blobs }) ?? 0,
+  }) !== null;
+  const hunkLine = (line) => {
+    if (!foldable(section)) {
+      sectionLine(section, line);
+      return;
+    }
+    if (section.fold !== null) {
+      foldLine(section, line);
+      return;
+    }
+    const before = section.changed;
+    const first = !section.checked && startsWith(line, HUNK_START);
+    sectionLine(section, line);
+    if (first) section.checked = true;
+    if (wholeFiles ? first : ((first || section.changed !== before) && bound(section))) startFold(section);
   };
   const onLine = (line) => {
     if (startsWith(line, SECTION_START)) {
@@ -1159,7 +1204,7 @@ export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null
       return;
     }
     if (section === null) throw new Error('the diff patch text does not start with a section');
-    sectionLine(section, line);
+    hunkLine(line);
   };
   const patch = (buf) => {
     let pos = 0;
@@ -1260,8 +1305,8 @@ export function matchIds(idMap, units, { exact = false } = {}) {
 // path; the re-diff keeps only the rediff paths. `sizeOf`: the reader's summary-only sizes
 // (`bodyRuleSizes` over the same `args`), null for none; the re-diff reuses them (its `A`
 // unit's new side is the rename's).
-async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null, sizeOf = null } = {}) {
-  const reader = createDiffReader(attrs, { keep, sizeOf });
+async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null, sizeOf = null, wholeFiles = false } = {}) {
+  const reader = createDiffReader(attrs, { keep, sizeOf, wholeFiles });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...args],
@@ -1271,7 +1316,7 @@ async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allo
   const units = reader.end();
   if (!allowRediff || reader.rediff.length === 0) return units;
   const rediff = new Set(reader.rediff);
-  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff, sizeOf }))
+  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff, sizeOf, wholeFiles }))
     .filter((unit) => rediff.has(unit.path));
   return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
 }
@@ -1541,6 +1586,12 @@ function openSection({ oldMode, newMode, status, pathBytes, oldPathBytes }, attr
     blobs: null,
     binary: false,
     hunks: [],
+    // KD-R87: the changed lines buffered so far (a gitlink side's not counted), whether the
+    // summary-only rules were checked at the first hunk, and the streamed state once the
+    // section is bound to be summary-only (`startFold`).
+    changed: 0,
+    checked: false,
+    fold: null,
   };
 }
 
@@ -1550,6 +1601,7 @@ function secondPart(section) {
   section.blobs = null;
   section.binary = false;
   section.hunks = [];
+  if (section.fold !== null) section.fold.inHunk = false;
 }
 
 // One patch line of an open section. The header lines before the first `@@` are dropped;
@@ -1559,19 +1611,114 @@ function secondPart(section) {
 function sectionLine(section, line) {
   if (section.notUtf8 === true) return;
   if (startsWith(line, HUNK_START)) {
-    const m = HUNK_HEADER.exec(line.toString('latin1'));
-    if (m === null) throw new Error(`an unreadable hunk header in ${section.path}`);
-    section.hunks.push({ old: side(m[1], m[2]), new: side(m[3], m[4]), lines: [Buffer.from(line)] });
+    section.hunks.push({ ...hunkHeader(section, line), lines: [Buffer.from(line)] });
     return;
   }
   const hunk = section.hunks[section.hunks.length - 1];
   if (hunk === undefined) {
-    if (startsWith(line, BINARY_PATCH)) section.binary = true;
-    const m = INDEX_LINE.exec(line.toString('latin1'));
-    if (m !== null) section.blobs = `${m[1]} ${m[2]}`;
+    headerLine(section, line);
     return;
   }
   hunk.lines.push(Buffer.from(line));
+  if ((line[0] === PLUS || line[0] === MINUS) && !section.gitlink[section.first === null ? 0 : 1]) section.changed += 1;
+}
+
+function hunkHeader(section, line) {
+  const m = HUNK_HEADER.exec(line.toString('latin1'));
+  if (m === null) throw new Error(`an unreadable hunk header in ${section.path}`);
+  return { old: side(m[1], m[2]), new: side(m[3], m[4]) };
+}
+
+// A section header line before its first `@@`: only a `Binary files` line and the `index`
+// line are noted.
+function headerLine(section, line) {
+  if (startsWith(line, BINARY_PATCH)) section.binary = true;
+  const m = INDEX_LINE.exec(line.toString('latin1'));
+  if (m !== null) section.blobs = `${m[1]} ${m[2]}`;
+}
+
+// KD-R87 (CHG-17, Q11, M10): a section bound to be summary-only, or every kept section of a
+// `wholeFiles` reader, stops buffering. Its buffered hunks (and a type change's first part)
+// are replayed into one running whole-file hash, the summed counts and the added lines (cut
+// at the 1 MB scan limit as `hashHunk` cuts them), then dropped; every later line goes
+// straight there (`foldLine`), so from here on only the first and last hunk headers are
+// held. The hash prefix is `unitsOf`'s whole-file one (a content-only `M`'s whole-file hash
+// is the same bytes) or `typeChangeUnit`'s; `foldedUnit` builds the unit at the close.
+function startFold(section) {
+  const hash = createHash('sha256');
+  const typeChange = section.status === 'T';
+  hash.update(Buffer.from(`${section.status}\0`));
+  if (section.status === 'R') hash.update(section.oldPathBytes).update(Buffer.from([NUL]));
+  hash.update(section.pathBytes).update(Buffer.from([NUL]));
+  if (section.modes !== null) hash.update(Buffer.from(`mode ${section.modes}\0`));
+  const fold = {
+    hash, box: { total: 0 }, counted: true, added: 0, deleted: 0, addedLines: [], newLine: 0, prevLead: null,
+    inHunk: false, hunks: 0, first: null, last: null, parts: [null, null],
+  };
+  section.fold = fold;
+  const part = section.first === null ? 0 : 1;
+  if (typeChange && part === 1) {
+    const { first } = section;
+    if (first.binary) {
+      if (first.blobs === null) throw new Error(`a binary section without an index line (${section.path})`);
+      hash.update(Buffer.from(`blob ${first.blobs}\0`));
+    }
+    for (const hunk of first.hunks) foldHunk(section, hunk, 0, hunk.lines.slice(1));
+    section.first = { blobs: first.blobs, binary: first.binary, hunks: [] };
+  }
+  const { hunks } = section;
+  section.hunks = [];
+  for (const hunk of hunks) foldHunk(section, hunk, part, hunk.lines.slice(1));
+}
+
+function foldHunk(section, { old, new: next }, part, lines) {
+  const { fold } = section;
+  const header = { old, new: next };
+  fold.hunks += 1;
+  fold.first ??= header;
+  fold.last = header;
+  fold.parts[part] ??= header;
+  fold.newLine = next.start;
+  fold.prevLead = null;
+  fold.counted = !section.gitlink[part];
+  fold.inHunk = true;
+  for (const line of lines) hashLine(fold, line);
+}
+
+// One patch line of a streamed section (`startFold`).
+function foldLine(section, line) {
+  if (startsWith(line, HUNK_START)) {
+    foldHunk(section, hunkHeader(section, line), section.first === null ? 0 : 1, []);
+  } else if (section.fold.inHunk) {
+    hashLine(section.fold, line);
+  } else {
+    headerLine(section, line);
+  }
+}
+
+// A streamed section's one unit, in the shape and key order `unitsOf` (or `typeChangeUnit`)
+// and `withScanLimit` give a whole-file unit, with no body.
+function foldedUnit(section) {
+  const { path, pathBytes, oldPath, status, entryKind, modes, generated, blobs, binary, fold } = section;
+  if (binary && blobs === null) throw new Error(`a binary section without an index line (${path})`);
+  if (status === 'T' && binary) fold.hash.update(Buffer.from(`blob ${blobs}\0`));
+  const hash = fold.hash.digest('hex');
+  const over = fold.box.total > SCAN_LIMIT;
+  const counts = { added: fold.added, deleted: fold.deleted, addedLines: over ? [] : fold.addedLines };
+  const limit = over ? { overScanLimit: true } : {};
+  if (status === 'T') {
+    const range = `-${fold.parts[0]?.old.text ?? '0,0'} +${fold.parts[1]?.new.text ?? '0,0'}`;
+    return {
+      path, pathBytes, oldPath, status, kind: entryKind, hash, identityKey: hash, ...counts, range,
+      generated, binary: section.first.binary || binary, body: Buffer.alloc(0), ...limit,
+    };
+  }
+  const kind = entryKind ?? (modes === null ? 'text' : 'mode');
+  const range = rangeOf(fold.hunks === 1 ? [fold.first] : [fold.first, fold.last]);
+  return {
+    path, pathBytes, oldPath, status, kind, generated, binary, hash, identityKey: hash, ...counts, range,
+    body: Buffer.alloc(0), blobs, ...limit,
+  };
 }
 
 // The units of a closed section (Q11 hash table, CHG-08). A content-only `M`: one unit per
@@ -1739,10 +1886,11 @@ function withBodyCap(units) {
   return out;
 }
 
-// The `size` rule's sizes (CHG-17, KD-R87), read in one `git diff -z --raw` pass over the
-// same `args` (and index) as the patch pass that follows, so the reader decides summary-only
-// per file while streaming instead of holding every body until a size read after the
-// stream. Only a file no size-free rule (lockfile, minified, sourcemap, generated) already
+// The `size` rule's sizes (CHG-17, KD-R87), read in the size pass: one `git diff -z --raw`
+// call over the same `args` (and index) as the patch pass that follows (not the raw records
+// at the head of the patch pass itself), so the reader decides summary-only per file while
+// streaming instead of holding every body until a size read after the stream. It repeats
+// the patch pass's `-M` rename detection (accepted, M10). Only a file no size-free rule (lockfile, minified, sourcemap, generated) already
 // marks is sized: its new content off disk when the new side is the worktree (`worktree`),
 // else its blob (the old one for a deletion), all through one `cat-file --batch-check`. A
 // type change, symlink or submodule, a missing side, a non-UTF-8 path or an unreadable file
@@ -1846,31 +1994,33 @@ function typeChangeUnit(section) {
 // (the two measures use the same per-line length, so a cut here is always confirmed by
 // `withScanLimit`'s own total).
 function hashHunk(hunk, hash, box = { total: 0 }) {
-  let added = 0;
-  let deleted = 0;
-  const addedLines = [];
-  let newLine = hunk.new.start;
-  let prevLead = null;
-  for (const line of hunk.lines.slice(1)) {
-    const lead = line[0];
-    if (lead === PLUS || lead === MINUS) {
-      hash.update(line);
-      if (lead === MINUS) deleted += 1;
-      if (lead === PLUS) {
-        added += 1;
-        const end = line[line.length - 1] === LF ? line.length - 1 : line.length;
-        if (box.total <= SCAN_LIMIT) {
-          addedLines.push({ line: newLine, text: LOSSY_UTF8.decode(line.subarray(1, end)) });
-        }
-        box.total += end;
+  const state = { hash, box, counted: true, added: 0, deleted: 0, addedLines: [], newLine: hunk.new.start, prevLead: null };
+  for (const line of hunk.lines.slice(1)) hashLine(state, line);
+  return { added: state.added, deleted: state.deleted, addedLines: state.addedLines };
+}
+
+// One hunk line into `state` (`hashHunk`'s loop body, shared with a streamed section's
+// `foldLine`): `hash`, `box`, the running `added`/`deleted`/`addedLines`, and the hunk's
+// `newLine`/`prevLead`. `counted: false` (a type change's gitlink side) hashes the line but
+// neither counts nor collects it.
+function hashLine(state, line) {
+  const lead = line[0];
+  if (lead === PLUS || lead === MINUS) {
+    state.hash.update(line);
+    if (state.counted && lead === MINUS) state.deleted += 1;
+    if (state.counted && lead === PLUS) {
+      state.added += 1;
+      const end = line[line.length - 1] === LF ? line.length - 1 : line.length;
+      if (state.box.total <= SCAN_LIMIT) {
+        state.addedLines.push({ line: state.newLine, text: LOSSY_UTF8.decode(line.subarray(1, end)) });
       }
-    } else if (lead === BACKSLASH && (prevLead === PLUS || prevLead === MINUS)) {
-      hash.update(line);
+      state.box.total += end;
     }
-    if (lead === PLUS || lead === SPACE) newLine += 1;
-    prevLead = lead;
+  } else if (lead === BACKSLASH && (state.prevLead === PLUS || state.prevLead === MINUS)) {
+    state.hash.update(line);
   }
-  return { added, deleted, addedLines };
+  if (lead === PLUS || lead === SPACE) state.newLine += 1;
+  state.prevLead = lead;
 }
 
 // One side of a hunk header: `start[,len]`, the length 1 when git leaves it out.
