@@ -22,8 +22,9 @@
 // or `binary`, CHG-11's `--text` pass, tests/change-set-attribute-hidden.test.js already
 // covers the `-diff` half through `plan`) and a brand-new symlink (CHG-09, the target scanned
 // as an added line) both reach `scan.hits`, and a `GIT_ATTR_SOURCE` decoy exported pointing
-// at a tree with no hiding attribute does not change the result: CHG-10's `check-attr` call
-// pins its own attribute source and never reads the decoy's (change-set.mjs:676).
+// at a tree with no hiding attribute does not change the result: `run`'s GIT_* hygiene
+// (GIT-05) strips every inherited `GIT_*` outside the keep-set before any git call runs, so
+// the decoy never reaches `check-attr` in the first place.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -337,7 +338,15 @@ test('SCN-15: osUser null (fault, USER/USERNAME cleared) skips the OS-user-segme
 const NO_SYMLINKS = process.platform === 'win32' && 'no symlinks without privileges';
 
 // SCN-16 AC1 (second half): the `-diff` half already reaches `plan`'s scan in
-// tests/change-set-attribute-hidden.test.js; this is the `binary`-attributed half.
+// tests/change-set-attribute-hidden.test.js; this is the `binary`-attributed half. (The
+// macro also unsets `diff`, so this exercises change-set.mjs's `diff`-unset hiding branch
+// alongside the `binary`-set one; review-SCN-16 Low finding: the `binary`-set branch alone
+// has no reachable unit test — `x.bin binary diff` resolves to `diff: set`, and `x.bin binary
+// !diff` to `diff: unspecified`, both verified live with `git check-attr`, and in either case
+// git's own main diff pass never renders the no-NUL content as binary, so the hiding branch
+// never runs; a real NUL byte would make the independent content resniff in
+// `resolveHiddenBinaries` keep it binary regardless of the attribute flag. No standalone test
+// is added for that line; it is redundant by construction given the `diff`-unset check above.)
 test('plan: a secret added to a binary-attributed text file is found by the scan', async (t) => {
   const c = createCase(t);
   c.writeFile('x.bin', 'one\n');
@@ -356,7 +365,9 @@ test('plan: a secret added to a binary-attributed text file is found by the scan
 
 // SCN-16 AC2: a brand-new symlink is picked up as an untracked candidate (no `git add`
 // needed, same as a plain new file above) and its target is scanned as one added line
-// (Q11), so a home-path target is a `local-path` hit on that unit.
+// (Q11), so a home-path target is a `local-path` hit on that unit. Skipped on every
+// Windows run (no symlink privilege without one); proven on the ubuntu and macOS CI jobs
+// and the git-2.34 container instead — confirm green there before closing this AC.
 test('plan: a new symlink whose target is a home path hits local-path', { skip: NO_SYMLINKS }, async (t) => {
   const c = createCase(t);
   seed(c, { 'README.md': 'readme\n' });
@@ -375,25 +386,37 @@ test('plan: a new symlink whose target is a home path hits local-path', { skip: 
 
 // SCN-16 AC3: a GIT_ATTR_SOURCE decoy exported pointing at the seed commit, whose tree has
 // no .gitattributes at all, must not stop the hidden file from being recognised and read as
-// text: CHG-10's check-attr call pins its own attribute source (change-set.mjs:676), so the
-// classification and the hit are exactly what the undecoyed case gets (mirrors the `filter`
-// decoy of tests/change-set-filtered.test.js's GIT-05, for the `diff`/`binary` hiding
-// attributes instead).
+// text: `run`'s GIT_* hygiene (GIT-05) strips every inherited `GIT_*` outside the keep-set
+// before any git call runs, so the decoy never reaches `check-attr` in the first place
+// (mirrors the `filter` decoy of tests/change-set-filtered.test.js's GIT-05, for the
+// `diff`/`binary` hiding attributes instead). A second, secret-free `-diff` file (`y.bin`)
+// pins the hiding itself rather than just the secret's own body suppression: any hunk with a
+// scan hit loses its body regardless, so that alone cannot tell an honored decoy from a
+// stripped one (review-SCN-16 High finding) — the plain file is what flips from `body: 'none'`
+// to `body: 'file'` if the decoy were honored. On the git-2.34 CI job `GIT_ATTR_SOURCE` does
+// not exist (git >= 2.40), so this test is a no-op there. A kept `GIT_CONFIG_GLOBAL` file's
+// `attr.tree` (git >= 2.42) is another attribute-source decoy that is not stripped, but every
+// call including `git commit` honors it consistently, so no scan miss is expected from it.
 test('plan: a GIT_ATTR_SOURCE decoy pointing at an attribute-free tree does not change the hidden-file hit', async (t) => {
   const c = createCase(t);
   c.writeFile('x.bin', 'one\n');
-  c.git(['add', 'x.bin']);
+  c.writeFile('y.bin', 'one\n');
+  c.git(['add', 'x.bin', 'y.bin']);
   c.git(['commit', '-q', '-m', 'seed']);
   const noAttrHead = c.git(['rev-parse', 'HEAD']).trim();
-  c.writeFile('.gitattributes', 'x.bin -diff\n');
+  c.writeFile('.gitattributes', 'x.bin -diff\ny.bin -diff\n');
   c.git(['add', '.gitattributes']);
   c.git(['commit', '-q', '-m', 'attr']);
   c.writeFile('x.bin', `one\n${tokenLine('q')}`);
+  c.writeFile('y.bin', 'one\ntwo\n');
 
   const { hunks, planJson } = await plan(c, { env: { GIT_ATTR_SOURCE: noAttrHead } });
 
-  const entry = hunks.find((h) => h.path === 'x.bin');
-  assert.equal(entry.kind, 'text');
-  assert.equal(entry.body, 'none');
+  const secretEntry = hunks.find((h) => h.path === 'x.bin');
+  assert.equal(secretEntry.kind, 'text');
+  assert.equal(secretEntry.body, 'none');
+  const plainEntry = hunks.find((h) => h.path === 'y.bin');
+  assert.equal(plainEntry.kind, 'text');
+  assert.equal(plainEntry.body, 'none');
   assert.deepEqual(planJson.scan.hits, [{ path: 'x.bin', line: 2, pattern: 'github-token' }]);
 });
