@@ -56,28 +56,28 @@ committed as planned, without a trailer (MSG-07 adds it); `plan` runs no scan wi
 **Blocked by:** PRE-01, PRE-08, PRE-09, INT-01, GIT-02, CFG-02, CHG-04, CHG-05, PLN-01,
 RUN-06, EXE-02, RPL-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Further Notes "First slice", M18, C:plan, C:check, C:commit-release,
 C:run-folder, C:reply-and-handback, stories 40, 70, 194.
 
-- [ ] Seam 1: `plan --split` on two modified tracked files exits 0 with one JSON object
+- [x] Seam 1: `plan --split` on two modified tracked files exits 0 with one JSON object
       (`version: 1`), a lowercase UUID v4 `planId`, the hunk index listing two whole-file
       units, and a run folder holding `state.json`, `plan.json` and `hunks.txt` plus the lock
-- [ ] Seam 1: that `plan`'s `runDir` is absolute, `path.resolve`d from the toplevel, and uses
+- [x] Seam 1: that `plan`'s `runDir` is absolute, `path.resolve`d from the toplevel, and uses
       forward slashes even on Windows (C:run-folder; RUN-05's criterion, asserted there only
       in-process, KD-R63).
-- [ ] Parser oracle: per-file added and removed counts in the hunk index equal
+- [x] Parser oracle: per-file added and removed counts in the hunk index equal
       `git diff --numstat -z` on the fixture
-- [ ] The real index is byte-identical before and after `plan` (story 70)
-- [ ] `check --plan` with a one-group worker plan exits 0 without a confirmation step; HEAD
+- [x] The real index is byte-identical before and after `plan` (story 70)
+- [x] `check --plan` with a one-group worker plan exits 0 without a confirmation step; HEAD
       gains exactly one commit whose message is the planned header byte for byte (no
       trailer), holding exactly the two files
-- [ ] The `check` output carries `groups`, `notIncluded`, `notices` merged into the
+- [x] The `check` output carries `groups`, `notIncluded`, `notices` merged into the
       `commit --all` output, and a `reply` with `status: "committed"`, the `sha subject` line,
       the base `callerRule` and "working tree clean"
-- [ ] After the commit the lock and the run folder are gone (story 194)
-- [ ] The EXE-16 budget-stop `continue` handback, built by M16 `commitAll` as an interim
+- [x] After the commit the lock and the run folder are gone (story 194)
+- [x] The EXE-16 budget-stop `continue` handback, built by M16 `commitAll` as an interim
       top-level `handback` field (C:commit-release), moves into `reply.handback` here,
       merged the same way `notices` already is
 

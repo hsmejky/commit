@@ -76,6 +76,11 @@ test('one stored group of two modified files → exit 0 with one commit and the 
   assert.deepEqual(result.json.remaining, []);
   assert.equal(result.json.error, null);
   assert.equal(result.json.gitOutput, null);
+  // review-INT-02 N1: `commitGroups`' own `kept` field must not leak into direct
+  // `commit --all` output (C:commit-release's output shape has no `kept`).
+  assert.deepEqual(Object.keys(result.json).sort(), [
+    'commits', 'error', 'failed', 'gitOutput', 'notices', 'ok', 'remaining', 'unstaged', 'version',
+  ].sort());
 });
 
 test("the commit's tree holds both files' working-tree content, its message is the stored one byte for byte, and HEAD is sha", async (t) => {

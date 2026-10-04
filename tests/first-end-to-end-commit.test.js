@@ -26,10 +26,12 @@ const HEADER = 'feat: change both files';
 let BASE_CALLER_RULE;
 let scriptCall;
 let workflows;
+let lockKeptNotice;
 beforeEach(async () => {
   ({ BASE_CALLER_RULE } = await loadLib('reply'));
   scriptCall = await loadLib('script-call');
   workflows = await loadLib('workflows');
+  ({ lockKeptNotice } = await loadLib('run'));
 });
 
 function detail(result) {
@@ -245,10 +247,16 @@ test('a budget stop after group 1 under check: the continue handback moves into 
 // `callBudget` finds no scope to read `now()` from at all (`deadlineScope.getStore()` is
 // `undefined`), the call-stack-keyed reading never gates anything, and the single group
 // commits for real.
-function clockAtDeadlineInsideM2(callStarted, deadlineAt) {
+// review-INT-02 N8: `counter` is incremented every time the stack match fires, so the test
+// can assert the clock actually exercised the `process-adapter.mjs` branch at least once —
+// without it, a frame-depth or module-rename change that silently stops the match from ever
+// firing would still pass the test under the pre-fix shape too.
+function clockAtDeadlineInsideM2(callStarted, deadlineAt, counter) {
   return () => {
     const caller = new Error().stack.split('\n')[2] ?? '';
-    return caller.includes('process-adapter.mjs') ? deadlineAt : callStarted;
+    if (!caller.includes('process-adapter.mjs')) return callStarted;
+    counter.hits += 1;
+    return deadlineAt;
   };
 }
 
@@ -262,9 +270,10 @@ test('review-INT-02 Medium-1: check commits a one-group plan even though a deadl
 
   const callStarted = Date.UTC(2026, 0, 1);
   const deadlineAt = callStarted + 540_000; // M15 DEADLINE_MS, matches run-policy.deadline().
+  const counter = { hits: 0 };
   const injected = {
     env: c.env,
-    now: clockAtDeadlineInsideM2(callStarted, deadlineAt),
+    now: clockAtDeadlineInsideM2(callStarted, deadlineAt, counter),
     claudeHome: c.claudeHome,
     cwd: c.repoDir,
     callStarted,
@@ -282,14 +291,15 @@ test('review-INT-02 Medium-1: check commits a one-group plan even though a deadl
   assert.equal(result.output.reply.status, 'committed');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is gone');
   assert.equal(fs.existsSync(lockPath(c)), false, 'the lock is gone');
+  assert.equal(counter.hits > 0, true, 'the clock actually exercised the M2 call-stack branch');
 });
 
 // review-INT-02 Low-3 (C:reply-and-handback: `planId` is `null` "when no run folder is
 // kept"): `releaseOpen`'s `busy` outcome (the lock rename hit a file-in-use error) keeps the
 // folder and reports `kept: true`; `committedOutput` must then keep `reply.planId` instead of
-// nulling it. Forced by injecting a `release` that always reports `kept: true`, standing in
-// for a locked-file rename failure (the real failure is OS/timing-dependent, Seam 1 cannot
-// force it directly).
+// nulling it. Forced by patching `fs.renameSync` to throw `EBUSY` for the lock's own rename
+// target, standing in for a locked-file rename failure (the real failure is OS/timing-
+// dependent, Seam 1 cannot force it directly).
 test('review-INT-02 Low-3: a committed reply keeps planId when release could not remove the lock', async (t) => {
   const c = twoModifiedFiles(t);
   const planned = await runCommit(c, ['plan', '--split']);
@@ -324,4 +334,7 @@ test('review-INT-02 Low-3: a committed reply keeps planId when release could not
   assert.equal(result.output.reply.status, 'committed');
   assert.equal(result.output.reply.planId, planId, 'planId is kept, not nulled, since the run folder is still held');
   assert.equal(fs.existsSync(runDir), true, 'the run folder is still kept (release could not remove the lock)');
+  assert.equal(fs.existsSync(lockFile), true, 'the lock itself is still kept too');
+  assert.equal(result.output.notices.includes(lockKeptNotice(planId)), true,
+    'the busy release notice reaches reply.notices');
 });

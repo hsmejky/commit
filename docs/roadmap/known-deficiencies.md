@@ -85,6 +85,21 @@ fixed, delete it here; IDs are never reused.
   these cases at Seam 1. Slice: none yet (needs the user's seam decision). Status:
   accepted (user decision, 2026-10-04): the in-process cases stay, and the seam list in
   testing-seams.md stays as confirmed.
+- **KD-R84.** INT-02's two `workflows.check` in-process cases in
+  `tests/first-end-to-end-commit.test.js` (review-INT-02 Medium-1's stack-sniffing-clock
+  case and Low-3's `fs.renameSync` patch) call `check` directly, outside testing-seams.md's
+  user-confirmed seam list, the same gap KD-R77 names for M2/M11. Two earlier M18 cases have
+  the same unrecorded gap: `tests/plan-deadline.test.js` (around lines 201 and 299) and
+  `tests/plan-run-folder.test.js` (around line 344), both also calling `workflows.plan` or
+  `workflows.check` in-process. They pin what Seam 1 cannot reach without a dedicated
+  preload addition: Medium-1's stack-depth-keyed clock reading (no Seam 1 clock-preload step
+  is keyed to an M2 call frame) and Low-3's locked-rename simulation (the fault preload's
+  `fs.renameSync` fault matches a target basename, not the lock's exact path, and the real
+  `EBUSY` is OS/timing-dependent). Medium-1 can very likely move to Seam 1 with a
+  clock-preload step keyed to a path `commitAll` creates before `git commit`; Low-3 would
+  need the fault preload's basename match widened to a path, a seam-list change. Fix: either
+  add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's), or
+  rebuild these cases at Seam 1. Slice: none yet (needs the user's seam decision).
 
 ## Coverage
 
@@ -95,6 +110,24 @@ fixed, delete it here; IDs are never reused.
   commit --amend` and `git --unknown commit --amend`, are in `tests/guard-global-options.test.js`).
 - **KD-R32.** EXE-20 has only the negative reword case; add a `post-commit` hook commit that
   fires the mismatch notice.
+- **KD-R86.** `checkRefusalEnding`'s review-INT-02 N2 fix (`workflows.mjs`: release the run on
+  a `timed-out` refusal only when `facts.commits === undefined`) has no Seam 1 or in-process
+  case: today `commitAll` never returns a `timed-out` refusal, so the branch it guards
+  (`commits` present alongside `timed-out`) is unreachable, and the fix is verified by code
+  reading only (the two reachable `timed-out` sources — the pre-step check and `CHECK_STEPS`'
+  own `runStepsWithin` — never set `commits`, so the fixed condition is equivalent to the old
+  one for every case Seam 1 can build today). EXE-17 (a hung `git commit` killed at the
+  deadline) is expected to be the first slice giving `commitAll` a timeout-shaped outcome
+  with earlier groups already committed; its Seam 1 cases should add one through `check
+  --plan` asserting the run stays open (lock and folder kept) rather than being released out
+  from under `commitAll`'s own kept staging. Slice: EXE-17.
+- **KD-R85.** INT-02's first end-to-end commit has no Seam 1 case exercising FND-10's
+  `osUser` fault preload (`os.userInfo()` throwing, `USER=jdoe1`) over a passing `check`'s
+  own state writes, so that coverage of `osUser` never being stored is lost for this path
+  (review-INT-02 r1 Low-2, deferred as optional). Fix: once EXE-16's stepping-clock preload
+  is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
+  `check --plan --all` that commits, asserting the commit's author/committer carry no
+  `osUser` artifact. Slice: INT-02 follow-up or FND-10.
 
 ## Design sync
 
@@ -170,10 +203,10 @@ Plan text that depends on a design fix; fix the design and the slice together.
   run with the pre-INT-02 output, whenever any group has a hunk-level file entry
   (`hunks !== null`): M16's (c) apply stages whole paths today, so routing a hunk-level group
   through it would also commit the file's other hunks, `notIncluded` ones included
-  (review-INT-02 Medium-2). The gate has no owner to remove it once that is no longer true.
-  Where: `plugin/scripts/lib/workflows.mjs` `commitCheckedGroups`. Fix: once CHG-20's `stage`
-  commits only a group's own hunks, lift the gate as part of INT-18 (its criterion names
-  this). Slices: CHG-20, INT-18, RUN-18.
+  (review-INT-02 Medium-2). Removal is owned by INT-18's criterion, after CHG-20's hunk
+  `stage` lands. Where: `plugin/scripts/lib/workflows.mjs` `commitCheckedGroups`. Fix: once
+  CHG-20's `stage` commits only a group's own hunks, lift the gate as part of INT-18 (its
+  criterion names this). Slices: CHG-20, INT-18, RUN-18.
 
 - **KD-R79.** CHG-16 leaves a scan-skipped file's (`scan.skipped`, over 1 MB added) whole
   body in `hunks.txt` unscanned, interim: CHG-17's `size`/`lines` summary-only rule (256 KB /

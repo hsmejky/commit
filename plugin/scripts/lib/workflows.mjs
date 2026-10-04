@@ -1058,8 +1058,8 @@ async function validateWorkerPlan(ctx) {
  * own output and the run kept: the release and the `nothing` reply are RUN-18's. So does a
  * plan with any hunk-level file entry (`hunks` not `null`): INT-02 is the whole-file path
  * only, and M16's (c) apply stages whole paths today, so a hunk-level group would also commit
- * the file's other hunks, `notIncluded` ones included (KD-R83: this gate has no owner yet to
- * remove it).
+ * the file's other hunks, `notIncluded` ones included (KD-R83: removal owned by INT-18's
+ * criterion, after CHG-20's hunk `stage`).
  */
 async function commitCheckedGroups(ctx) {
   const { groups, notIncluded, notices } = ctx.checked;
@@ -1367,7 +1367,12 @@ export async function commit(values, injected, { cwd }) {
     // EXE-09: `gitOutput` too, git's verbatim output on a `git-failed` exit 4 (`null` on
     // every other refusal), so that failure never reads as success.
     if (facts.refusal !== undefined) return commitAllFailure(facts);
-    return { output: facts };
+    // review-INT-02 N1: `commitGroups`' own `kept` (Low-3, review-INT-02 r2) is read by
+    // `check`'s `committedOutput`, not reported here — C:commit-release's output shape has
+    // no `kept` field, so a direct `commit --all` strips it the same way `committedOutput`
+    // already does.
+    const { kept, ...output } = facts;
+    return { output };
   } finally {
     // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
     // `ended`, `busy`) leaves no `call.lock` of this call's own to close.
@@ -1455,7 +1460,12 @@ export async function check(values, injected, { cwd }) {
 // `commitAllFailure`, not a bare refusal. Returns `undefined` when `facts` holds no refusal.
 function checkRefusalEnding(facts, ctx, values) {
   if (facts.refusal === undefined) return undefined;
-  if (ctx.opened && facts.refusal.code === 'timed-out') {
+  // review-INT-02 N2: release only a `timed-out` with no `commits` (the pre-step or
+  // `CHECK_STEPS` timeout) — one carrying `commits` is `commitAll`'s own outcome, and
+  // `commitGroups` already decided whether to release (its own rule, matching `commit()`);
+  // double-releasing here would delete the run folder out from under staging `commitAll`
+  // deliberately kept (EXE-16's budget stop, a mid-loop `taken-over`/`busy`).
+  if (ctx.opened && facts.refusal.code === 'timed-out' && facts.commits === undefined) {
     releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
   }
   if (facts.commits !== undefined) return commitAllFailure(facts);

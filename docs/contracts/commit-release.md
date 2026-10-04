@@ -17,8 +17,9 @@ read, and `release`) take the time left before `cleanupDeadline`, never the spen
 600-second tool timeout (`plan`'s own pre-`acquire` calls use only `deadline`, since
 nothing has run yet to clean up; [plan --hunks](plan-hunks.md) takes `deadline` for its own
 work and `cleanupDeadline` for a refusal's tree-state read and the release; INT-02's `check`
-takes it the same way for the `committed` reply's tree-state read after the last group, a
-reporting call once the run is already released). A cleanup call
+takes it the same way for the `committed` and `continue` replies' tree-state read after the
+commit loop, a reporting call that runs whether the run was already released (`committed`)
+or is kept (`continue`). A cleanup call
 whose `timeoutMs` (`cleanupDeadline` minus the time it starts) is ≤ 0 is not spawned at all
 and counts as timed out, the same as a git call that ran out of time. Each group runs the steps
 below; per group, three phases in `split`, the real index touched only in (c). Every check

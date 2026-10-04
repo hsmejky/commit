@@ -445,6 +445,10 @@ item 3; its Seam 1 case, which needs `staged` mode and the FND-10 preload, is IN
       `unstaged: null`, the notice "group 1 staging may remain, the next /commit repairs
       it", the lock and run folder kept with `indexReset` set, `call.lock` gone; the next
       `plan --take-over <planId>` resets the staging (EXE-01 item 2).
+- [ ] Seam 1, through `check --plan`: once `commitAll` can end a group `timed-out` with an
+      earlier group already committed, INT-02's `checkRefusalEnding` keeps the run (lock and
+      folder kept) instead of releasing it out from under that kept staging (review-INT-02
+      N2, KD-R86).
 
 
 ## EXE-18: `index.lock` after a timed-out plain commit is left with a notice
