@@ -23,6 +23,8 @@
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 //
 // RUN-13 adds `resolveMode`, without a takeover (`killedLeftover: false`; RUN-24 adds it).
+//
+// RUN-16 adds `onLintFailure`, the lint-failure counter that ends the worker's retries.
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });
@@ -253,4 +255,25 @@ export const NEXT_GROUP_FLOOR_MS = 480_000;
 export function nextStep({ now, deadline, groupIndex }) {
   if (groupIndex === 0 || deadline - now >= NEXT_GROUP_FLOOR_MS) return { go: true, deadline };
   return { go: false };
+}
+
+/**
+ * M15 `onLintFailure` (RUN-16, C:check "Lint failure", Q18, Q20): whether a `check` lint
+ * failure ends the worker's retries. The second failure since the last `plan --hunks`, or
+ * the first when `plan.groups.json` has `"source": "user"` (the worker must not rewrite
+ * dictated text unseen), is `lintFailed`; any other is `fix` (exit 2, no `reply`, the worker
+ * fixes the plan and runs `check` again). A shape failure counts like any other; `kind` only
+ * shapes the `lintFailed` handback, which offers no `edit` when every error is a shape error
+ * (story 214, C:reply-and-handback; RPL builds the answers).
+ *
+ * @param {{ lintFailures?: number }} runState the state `check` read; `lintFailures` counts
+ *   the failures before this one since the last `plan --hunks` (absent: none).
+ * @param {'worker' | 'user' | undefined} source the worker plan's `source` (`undefined` when
+ *   the plan never parsed, which reads as `worker`).
+ * @param {'shape' | 'plan'} kind `shape` when every error is a shape error.
+ * @returns {'fix' | 'lintFailed'}
+ */
+export function onLintFailure(runState, source, kind) {
+  if (source === 'user') return 'lintFailed';
+  return (runState.lintFailures ?? 0) >= 1 ? 'lintFailed' : 'fix';
 }

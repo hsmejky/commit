@@ -200,6 +200,6 @@ for (const [label, value, reason] of [
 
     const result = validatePlan(bytes, { mode: 'split', units: UNITS });
 
-    assert.deepEqual(result, { ok: false, code: 'lint', errors: [{ group: null, reason }] });
+    assert.deepEqual(result, { ok: false, code: 'lint', kind: 'shape', source: undefined, errors: [{ group: null, reason }] });
   });
 }

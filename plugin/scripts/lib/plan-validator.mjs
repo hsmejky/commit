@@ -11,7 +11,8 @@
 // ID or by a `hunks: null` path entry), real-change paths in `files` and `notIncluded`, a
 // rename named by its new path only, and zero groups. A shape failure is always the only
 // error of its result: the plan rules run on a parsed plan only, so a shape error is never
-// mixed with plan-rule errors; RUN-16 still adds the shape marker. PLN-03 adds the hunk-level
+// mixed with plan-rule errors; RUN-16 marks the failure itself (`kind: 'shape'`, else
+// `kind: 'plan'`) and carries the plan's `source`, for M15 `onLintFailure`. PLN-03 adds the hunk-level
 // slice: group `hunks` IDs exist and are used once (a second naming, also in the same group or
 // the same `notIncluded` entry, is a placement error), are never mixed with `files` (an ID in
 // `notIncluded[].hunks` counts as `hunks`), and a `notIncluded` ID belongs to the entry's
@@ -97,10 +98,13 @@ function spansByPattern(hits) {
  *   Q10 as amended by EXE-01).
  * @returns {{ ok: true, groups: object[], notIncluded: object[], notices: string[],
  *   stored: Array<{ n: number, units: string[], header: string, body: string | null }> }
- *   | { ok: false, code: 'lint', errors: Array<{ group: number | null, reason: string,
+ *   | { ok: false, code: 'lint', kind: 'shape' | 'plan', source: 'worker' | 'user' | undefined,
+ *   errors: Array<{ group: number | null, reason: string,
  *   spans?: Array<{ patternId: string, start: number, end: number }> }> }}
  *   `groups`/`notIncluded`/`notices` are `check`'s output fields (C:check); `stored` is what
- *   `check` writes into `state.json` per group (with `committed: false`).
+ *   `check` writes into `state.json` per group (with `committed: false`). A failure's `kind`
+ *   is `shape` when the plan is missing or not the C:worker-plan shape (its one error), else
+ *   `plan`; `source` is the plan's own (`undefined` for a shape failure or none given).
  * @throws {Error} for a part of the worker plan no slice has built yet (a mode other than
  *   `split`).
  */
@@ -109,7 +113,7 @@ export function validatePlan(planBytes, runState, options = {}) {
     throw new Error(`check in ${runState.mode} mode is not built yet (PLN-05)`);
   }
   const parsed = parseWorkerPlan(planBytes);
-  if (!parsed.ok) return lintFailure([{ group: null, reason: parsed.reason }]);
+  if (!parsed.ok) return lintFailure([{ group: null, reason: parsed.reason }], 'shape', undefined);
   const workerPlan = parsed.value;
 
   const table = unitTable(runState.units);
@@ -207,7 +211,7 @@ export function validatePlan(planBytes, runState, options = {}) {
     const places = new Set(ids.filter((id) => placement.has(id)).map((id) => placement.of(id)));
     if (places.size > 1) errors.push({ group: null, reason: `${listOf(ids)} are identical; place them together` });
   }
-  if (errors.length > 0) return lintFailure(errors);
+  if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source);
   return { ok: true, groups, notIncluded: [...workerPlan.notIncluded], notices: [], stored };
 }
 
@@ -314,13 +318,13 @@ function describePlace(group) {
   return group === null ? 'notIncluded' : `group ${group}`;
 }
 
-function lintFailure(errors) {
-  return { ok: false, code: 'lint', errors };
+function lintFailure(errors, kind, source) {
+  return { ok: false, code: 'lint', kind, source, errors };
 }
 
 // Parses the plan bytes into the C:worker-plan shape, or names the first way it fails. Every
-// failure here is a shape error (`group: null`), which M15 `onLintFailure` later tells apart
-// from the other lint errors (RUN-16). The bytes go through M6 `normalise` (MSG-06, Q9)
+// failure here is a shape error (`group: null`, the failure marked `kind: 'shape'`), which
+// M15 `onLintFailure` tells apart from the other lint errors (RUN-16). The bytes go through M6 `normalise` (MSG-06, Q9)
 // before `JSON.parse`: a UTF-8 BOM is stripped, a UTF-16 BOM selects that decoder, and
 // invalid UTF-8 fails here with `normalise`'s own reason (`message not UTF-8`) instead of a
 // generic "not valid UTF-8".
@@ -349,6 +353,7 @@ function parseWorkerPlan(planBytes) {
         hunks: group.hunks ?? [],
       })),
       notIncluded: value.notIncluded ?? [],
+      source: value.source,
     },
   };
 }

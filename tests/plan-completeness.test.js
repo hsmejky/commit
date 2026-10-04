@@ -264,6 +264,8 @@ test('validatePlan: notIncluded[].hunks that is not null or an ID array is a sha
   assert.deepEqual(result, {
     ok: false,
     code: 'lint',
+    kind: 'shape',
+    source: undefined,
     errors: [{ group: null, reason: 'plan.groups.json: notIncluded[0].hunks must be null or an array of hunk IDs' }],
   });
 });

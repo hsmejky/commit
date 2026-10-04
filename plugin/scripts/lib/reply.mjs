@@ -8,7 +8,9 @@
 // the refusal's own message, then the tree state); `committed` and `handback` replies, the
 // handback rule, notices and the trailer line are later slices'. CHG-04 adds the "N files
 // left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers,
-// `ifNoUser` and handback rule are INT-13's.
+// `ifNoUser` and handback rule are INT-13's. RUN-16 adds the `lintFailed` handback's question
+// and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
+// run's `planId`; its answers, `ifNoUser` and the quoted rejected messages are RPL's.
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -59,6 +61,15 @@ const NOTHING_LINES = Object.freeze({
 });
 
 // The `modeChoice` counts question (C:plan `mode`, Q9): counts only, never file names.
+// The `lintFailed` question (C:reply-and-handback handback table), fixed text.
+export const LINT_FAILED_QUESTION = 'Lint failed. Let a new worker fix it, or stop? To dictate the '
+  + 'message, type it under Other.';
+
+// A lint failure's errors as `check` gives them (C:check), one per line.
+function renderErrors(errors) {
+  return errors.map((error) => (error.group === null ? error.reason : `group ${error.group}: ${error.reason}`));
+}
+
 function modeChoiceQuestion({ staged, other }) {
   const files = staged === 1 ? '1 file is' : `${staged} files are`;
   const changes = other === 1 ? '1 other change' : `${other} other changes`;
@@ -73,7 +84,10 @@ function modeChoiceQuestion({ staged, other }) {
  *   notices?: string[] } | { status: 'failed', message: string,
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'handback', kind: 'modeChoice', staged: number,
- *   other: number, treeState, notices?: string[] }} facts
+ *   other: number, treeState, notices?: string[] } | { status: 'handback', kind: 'lintFailed',
+ *   planId: string, errors: object[], treeState, notices?: string[] }} facts
+ *   `errors` (a `lintFailed`, or a `failed` lint failure with `--no-user`): C:check's lint
+ *   errors, listed in `text` after the first line. `planId`: the kept run's (default `null`).
  *   `notices`: the call's notices (RUN-05: a provisional run
  *   folder `plan` could not remove); RPL-05 repeats them in `text`.
  *   `treeState`: `undefined` when it was never read (`release` past its 45 s
@@ -93,14 +107,18 @@ export function reply(facts) {
     firstLine = facts.message;
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
     firstLine = modeChoiceQuestion(facts);
+  } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
+    firstLine = LINT_FAILED_QUESTION;
   } else {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
-  const text = facts.treeState === undefined ? firstLine : `${firstLine}\n${renderTreeState(facts.treeState)}`;
+  const lines = [firstLine, ...renderErrors(facts.errors ?? [])];
+  if (facts.treeState !== undefined) lines.push(renderTreeState(facts.treeState));
+  const text = lines.join('\n');
   return {
     version: 1,
     status: facts.status,
-    planId: null,
+    planId: facts.planId ?? null,
     text,
     commits: [],
     notices: facts.notices === undefined ? [] : [...facts.notices],

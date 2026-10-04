@@ -73,7 +73,9 @@ import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
-import { cleanupDeadline, deadline, planRefusal, releaseDeadline, resolveMode } from './run-policy.mjs';
+import {
+  cleanupDeadline, deadline, onLintFailure, planRefusal, releaseDeadline, resolveMode,
+} from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig, readLayers } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
@@ -750,6 +752,10 @@ async function renderHunkIndex(ctx) {
     ctx.units,
   );
   ctx.run.write('hunks.txt', hunksTxt);
+  // RUN-16 (C:plan step 8, C:plan-hunks): `plan --hunks` resets `lintFailures`, rewriting
+  // `state.json` from the state it read so the stored notices survive.
+  const run = { toplevel: ctx.toplevel, planId: ctx.provisional.planId };
+  writeState(run, { ...readState(run), lintFailures: 0 });
   return { hunks: stdoutObj };
 }
 
@@ -867,8 +873,9 @@ async function checkRefusals(ctx) {
  * `check` step 4 (PLN-01): clears the stored groups and `awaitingConfirm` before anything is
  * validated (C:check), so a failed `check` leaves no group that `commit` would accept, then
  * M14 `validatePlan` over `plan.groups.json` and the run state. A lint failure ends the call
- * with exit 2 and the `errors` (the first failure, no `reply`; M15 `onLintFailure` and the
- * `lintFailed` handback are RUN-16's). On success the validated groups are stored with
+ * with exit 2 and the `errors`; RUN-16 counts it in `lintFailures` and asks M15
+ * `onLintFailure` whether it ends the worker's retries (`lintEnding`, which `check` turns into
+ * a `reply`), passing on the run's `interactive`. On success the validated groups are stored with
  * `committed: false`; the output is `groups`, `notIncluded` and `notices` only, with the
  * lock kept: M15 `checkGate` (RUN-19), `computeConfirm` and the routing to `commit --all`
  * arrive with their own slices (RUN-17, RUN-18, EXE-02, INT-02).
@@ -882,7 +889,11 @@ async function validateWorkerPlan(ctx) {
     writeState(run, state);
   }
   const validated = validatePlan(readWorkerPlan(run), state, { osUser: ctx.injected.osUser });
-  if (!validated.ok) return { lint: validated.errors };
+  if (!validated.ok) {
+    const lintEnding = onLintFailure(state, validated.source, validated.kind);
+    writeState(run, { ...state, lintFailures: (state.lintFailures ?? 0) + 1 });
+    return { lint: validated.errors, lintEnding, interactive: state.interactive };
+  }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
   return { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
 }
@@ -1132,27 +1143,44 @@ export async function commit(values, injected, { cwd }) {
  * @param {object} injected the injected environment.
  * @param {{ cwd: string }} call the call's working directory.
  * @returns {Promise<{ output: object } | { failure: { kind: string, message: string,
- *   errors?: object[] } }>} a lint failure carries C:check's `errors`.
+ *   errors?: object[], reply?: object } }>} a lint failure carries C:check's `errors`, and a
+ *   `reply` when it ends the worker's retries (RUN-16).
  */
 export async function check(values, injected, { cwd }) {
   const ctx = { injected, cwd, values, opened: false };
   try {
     const facts = await runSteps(CHECK_STEPS, ctx);
     if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
-    if (facts.lint !== undefined) {
-      const count = facts.lint.length;
-      return {
-        failure: {
-          kind: kindForDomainCode('lint'),
-          message: `${count} ${count === 1 ? 'error' : 'errors'}`,
-          errors: facts.lint,
-        },
-      };
-    }
+    if (facts.lint !== undefined) return await lintFailureOf(facts, ctx);
     return { output: facts };
   } finally {
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
+}
+
+// RUN-16 (C:check "Lint failure", Q18): a `fix` is exit 2 with the `errors` and no `reply`.
+// A `lintFailed` adds one: interactive, the `lintFailed` handback, keeping the run for its
+// `resume`; with `--no-user` (`interactive: false`), the run ends here (M12 `releaseOpen`:
+// the lock and the folder go, so the `finally`'s `close` finds nothing) and the reply is
+// `failed` with the errors. M15 `runEnd` replaces this branch when RUN-27 builds it.
+async function lintFailureOf(facts, ctx) {
+  const count = facts.lint.length;
+  const message = `${count} ${count === 1 ? 'error' : 'errors'}`;
+  const failure = { kind: kindForDomainCode('lint'), message, errors: facts.lint };
+  if (facts.lintEnding === 'fix') return { failure };
+  const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
+  if (facts.interactive !== false) {
+    failure.reply = await finalReply({ status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint }, ctx);
+    return { failure };
+  }
+  const released = releaseOpen(run);
+  failure.reply = await finalReply({
+    status: 'failed',
+    message: `Lint failed: ${message}`,
+    errors: facts.lint,
+    notices: released.notice === null ? [] : [released.notice],
+  }, ctx);
+  return { failure };
 }
 
 /**
