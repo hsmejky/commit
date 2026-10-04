@@ -399,20 +399,20 @@ starts; a later one only while at least 480 s remain before `deadline`; else exi
 
 **Blocked by:** EXE-04, EXE-07, FND-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, M15 `nextStep`, C:commit-release, testing seams (stepping clock), stories
 172, 173.
 
-- [ ] Seam 1, stepping clock at 61 s elapsed after group 1 → exit 0, `commits` [1],
+- [x] Seam 1, stepping clock at 61 s elapsed after group 1 → exit 0, `commits` [1],
       `remaining` [2, 3], a `continue` handback, the run kept.
-- [ ] Seam 1: the `continue` call commits groups 2 and 3 and releases.
-- [ ] Seam 1: at exactly 60 s elapsed (480 s left) group 2 starts.
-- [ ] Seam 1: a budget stop after group 1 followed by a manual `git add` of another file
+- [x] Seam 1: the `continue` call commits groups 2 and 3 and releases.
+- [x] Seam 1: at exactly 60 s elapsed (480 s left) group 2 starts.
+- [x] Seam 1: a budget stop after group 1 followed by a manual `git add` of another file
       before the `continue` call → group 1 kept, group 2 refused `index-changed` (EXE-07),
       `failed: 2`.
-- [ ] Seam 1: the first group starts even at 539 s elapsed.
-- [ ] Seam 1: the `continue` handback carries `ifNoUser: { answer: "continue" }`
+- [x] Seam 1: the first group starts even at 539 s elapsed.
+- [x] Seam 1: the `continue` handback carries `ifNoUser: { answer: "continue" }`
       (`reply-and-handback.md`), so a `--no-user` caller runs it without asking.
 
 
