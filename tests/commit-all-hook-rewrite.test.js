@@ -146,6 +146,29 @@ test('a pre-commit hook rewrites group 2\'s file during group 1\'s commit → gr
     'b\nrewritten-by-hook\n',
     "the hook's rewrite is left in the worktree, never committed",
   );
+
+  // L4 (review-EXE-15 r2): the AC's literal scenario — group 1 committed and group 2 refused
+  // in the *same* reply, the flag read back from in-memory state rather than a reloaded run —
+  // is only covered indirectly above (the budget-stop call reports group 1, the follow-up
+  // `continue` call reports the refusal). Re-run the whole thing as a single call on a fresh
+  // run to cover that literal case too.
+  const { c: oneCallCase, planId: oneCallPlanId, seed: oneCallSeed } = await twoGroupRun(t);
+  installRewriteHook(oneCallCase);
+
+  const oneCall = await runCommit(oneCallCase, ['commit', '--plan', oneCallPlanId, '--all']);
+
+  assert.equal(oneCall.exitCode, 6, detail(oneCall));
+  assert.equal(oneCall.json.error.kind, 'diff-changed', detail(oneCall));
+  assert.equal(oneCall.json.error.message, hookRewriteText(1), detail(oneCall));
+  const oneCallShas = oneCallCase.git(['rev-list', '--reverse', `${oneCallSeed}..HEAD`]).trim().split('\n');
+  assert.equal(oneCallShas.length, 1, 'only group 1 was committed');
+  assert.deepEqual(
+    oneCall.json.commits,
+    [{ n: 1, sha: oneCallShas[0], header: 'feat: change a' }],
+    "group 1 is reported in the same reply as group 2's refusal",
+  );
+  assert.equal(oneCall.json.failed, 2);
+  assert.deepEqual(oneCall.json.remaining, [2]);
 });
 
 test('two groups and no hook, group 2 edited after plan → the generic text, not the hook-rewrite variant (treeChangedDuringCommit never set)', async (t) => {
@@ -296,6 +319,18 @@ test('AC3: no snapshot git calls on the temporary index follow the last group\'s
   );
   const betweenGroups = gitCalls.slice(afterGroup1 + 1, afterGroup2).filter(onTempIndex);
   const afterLastGroup = gitCalls.slice(afterGroup2 + 1).filter(onTempIndex);
-  assert.ok(betweenGroups.length > 0, "group 1 (not the last group) still gets its after-commit diagnosis snapshot");
+  // L5 (review-EXE-15 r2): `betweenGroups` also holds group 2's own phase-(b) match, so a
+  // plain `length > 0` would hold even with group 1's after-commit diagnosis removed. Each
+  // `snapshot()` call rebuilds the temporary index with exactly one `git reset -q -- .`
+  // (change-set.mjs buildTemporaryIndex) before any diff/check-attr call on it, so counting
+  // those is a count of snapshot *rounds*: group 1's after-commit diagnosis and group 2's own
+  // phase-(b) match, two rounds, never collapsing into one even if either were dropped.
+  const resetRounds = (calls) => calls.filter((e) => e.args[0] === 'reset');
+  assert.equal(
+    resetRounds(betweenGroups).length,
+    2,
+    "group 1's after-commit diagnosis snapshot and group 2's own phase-(b) snapshot each "
+      + `rebuild the temporary index once: ${JSON.stringify(betweenGroups)}`,
+  );
   assert.deepEqual(afterLastGroup, [], 'the last group spawns no snapshot git calls after its own commit');
 });
