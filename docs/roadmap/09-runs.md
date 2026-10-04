@@ -415,14 +415,14 @@ after the mode decision and only when it resolves to `split` (C:plan step 4); ke
 
 **Blocked by:** RUN-05, GIT-03, GIT-04, GIT-09, CFG-03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q20, Q21, M15 `planRefusal`, C:plan, domain-code table.
 
-- [ ] Seam 1: invalid config and an in-progress merge together → `config` (exit 1).
-- [ ] Seam 1: an in-progress merge alone → exit 6 `state`, and no `.commit-plan` is
+- [x] Seam 1: invalid config and an in-progress merge together → `config` (exit 1).
+- [x] Seam 1: an in-progress merge alone → exit 6 `state`, and no `.commit-plan` is
       created.
-- [ ] Seam 1: `plan --reword` on a pushed merge commit → `state` ("HEAD is a merge
+- [x] Seam 1: `plan --reword` on a pushed merge commit → `state` ("HEAD is a merge
       commit"), not `pushed`. On a pushed ordinary commit → exit 6 `pushed`.
 
 
