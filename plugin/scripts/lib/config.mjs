@@ -1,5 +1,6 @@
 // M4 Config loader (docs/spec/modules-m1-m9.md, Q6, C:plan): reads the config layers.
-// Effectful (reads the repo layer's file from the worktree); it spawns nothing.
+// Effectful: reads the layer files directly, and spawns one read-only `git show` for the
+// repo layer's `scanIgnore` at HEAD (CFG-07).
 //
 // CFG-02 builds the tracer: only the repo layer, read straight from the worktree (never git),
 // and only its JSON parseability. Unparseable JSON is a `config` error naming the repo layer
@@ -14,15 +15,32 @@
 // never depends on being inside a worktree, unlike the repo layer: `toplevel` is nullable so
 // a caller outside a usable repo still gets the user-layer check (C:plan step 2 puts
 // `config` ahead of `state`). CFG-05 adds the per-key override, `effectiveConfig` and its
-// `DEFAULT_VALUES` (repo beats user beats default, arrays replaced whole). Later CFG slices
-// add warnings for unknown keys and values (CFG-06) and the `scanIgnore` machinery read at
-// HEAD (M7, Q6, Q10, CFG-07).
+// `DEFAULT_VALUES` (repo beats user beats default, arrays replaced whole). CFG-06 adds
+// warnings for unknown keys and values and for a repo-only key in the user layer. CFG-07
+// adds `scanIgnore`: `validateLayer` compiles each pattern with M7 `compileGlob` (so the
+// worktree layer refuses a bad one), but the effective value is read from the repo config
+// at HEAD only (`git show`, none when unborn), sourced `repo@HEAD`; an invalid value there
+// is `[]` plus a warning, never a refusal (Q6, Q10 as amended by CFG-01).
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { compileGlob } from './glob-matcher.mjs';
+import { run } from './process-adapter.mjs';
 
 /** The repo config layer's path under the toplevel (Q6). */
 export const REPO_CONFIG_PATH = '.claude/commit.json';
+
+/**
+ * Whether a repo-relative path (forward slashes) is the repo config layer's file, so M8 and
+ * M18 never spell the path themselves (M4). Exact, case-sensitive equality: only the
+ * toplevel's `.claude/commit.json` is the repo layer.
+ *
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+export function isRepoConfigPath(filePath) {
+  return filePath === REPO_CONFIG_PATH;
+}
 
 /** The user config layer's filename, directly under the Claude home (Q5, Q6, public surface). */
 export const USER_CONFIG_FILENAME = 'commit.json';
@@ -41,7 +59,7 @@ const STRING_KEYS = ['scope', 'body', 'subjectCase'];
  * The allowed values of a known, well-typed key whose string value can still be unknown
  * (Q6, CFG-06): a future `body: "required"` is the motivating case. `types` and
  * `maxSubjectLength` have no such list (their CFG-03 range/shape check is the only one);
- * `scanIgnore`'s values are CFG-07's (M7 `compileGlob`).
+ * `scanIgnore`'s patterns are checked by M7 `compileGlob` in `validateLayer` (CFG-07).
  */
 const ENUM_VALUES = Object.freeze({
   scope: Object.freeze(['forbidden', 'optional', 'required']),
@@ -51,6 +69,21 @@ const ENUM_VALUES = Object.freeze({
 
 /** Keys allowed only in the repo layer (Q6): a personal file cannot silence a team's scan. */
 const REPO_ONLY_KEYS = Object.freeze(['scanIgnore']);
+
+/**
+ * The tail of a glob error's message (C:scanignore-globs): M7 `compileGlob` reports only
+ * `config`, so the message lists the rules a pattern must meet.
+ */
+const GLOB_RULES = "is not a supported glob: no braces, classes, '!', '\\', '..' or empty "
+  + "segments, '**' only as a whole segment, and at least one literal character";
+
+/** A shallow copy of a layer object without `REPO_ONLY_KEYS` (CFG-07, `readLayer`). */
+function withoutRepoOnlyKeys(obj) {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return obj;
+  const copy = { ...obj };
+  for (const key of REPO_ONLY_KEYS) delete copy[key];
+  return copy;
+}
 
 /**
  * Computes CFG-06's warnings for one already-validated (error-free) layer object, and a
@@ -116,12 +149,15 @@ function describeValue(value) {
  * `types` array. Pure: no file reads, no ambient state, so a caller that already has a
  * layer's parsed value (M19 `configFor`) can validate it without going through `loadConfig`.
  * Unknown keys, an unknown value of a known key, and a key in the wrong layer are CFG-06's
- * warnings, not this function's errors; `scanIgnore` is CFG-07's (M7 `compileGlob`, folded
- * into this function then).
+ * warnings, not this function's errors. `scanIgnore` must be an array of strings, each
+ * compiled by M7 `compileGlob` here (CFG-07, C:scanignore-globs), so a caller validating a
+ * layer directly also catches a bad glob: one error per failing pattern, naming it. The
+ * user layer is validated without `scanIgnore` (`readLayer`), since there it is CFG-06's
+ * wrong-layer warning whatever its value.
  *
  * Collects every applicable error in one pass rather than stopping at the first, so a
- * caller that reports more than one problem at once (M19 `configFor`, and CFG-07's glob
- * errors alongside these) can do so without a second pass over the same layer
+ * caller that reports more than one problem at once (M19 `configFor`, and the glob errors
+ * alongside the others) can do so without a second pass over the same layer
  * (review-CFG-03 finding 2; shape matches `docs/contracts/infer.md`'s `{ errors }`).
  *
  * @param {unknown} obj the parsed JSON value of a config layer.
@@ -164,6 +200,19 @@ export function validateLayer(obj, layer) {
   for (const key of STRING_KEYS) {
     if (Object.hasOwn(obj, key) && typeof obj[key] !== 'string') {
       errors.push(`the ${layer} ${key} must be a string, not ${JSON.stringify(obj[key])}`);
+    }
+  }
+
+  if (Object.hasOwn(obj, 'scanIgnore')) {
+    const value = obj.scanIgnore;
+    if (!Array.isArray(value) || !value.every((entry) => typeof entry === 'string')) {
+      errors.push(`the ${layer} scanIgnore must be an array of strings, not ${JSON.stringify(value)}`);
+    } else {
+      for (const pattern of value) {
+        if (!compileGlob(pattern).ok) {
+          errors.push(`the ${layer} scanIgnore pattern ${JSON.stringify(pattern)} ${GLOB_RULES}`);
+        }
+      }
     }
   }
 
@@ -250,7 +299,10 @@ function readLayer(filePath, layer, kind) {
   // finding 5: CFG-02 was JSON-parseability only). `validateLayer` collects every error it
   // finds; this reports the first, same as `loadConfig` did before CFG-03 collected every
   // error (review-CFG-03 finding 2).
-  const result = validateLayer(parsed, layer);
+  // CFG-07 (review-CFG-06 finding 6): outside the repo layer a repo-only key is CFG-06's
+  // wrong-layer warning whatever its value, so it is left out of validation here (a bad
+  // user-layer `scanIgnore` must not refuse) but kept for `collectConfigWarnings` below.
+  const result = validateLayer(kind === 'repo' ? parsed : withoutRepoOnlyKeys(parsed), layer);
   if (result) return { error: result.errors[0] };
   // CFG-06: unknown keys, an unknown value of a known key, and a known, repo-only key given
   // in the wrong layer warn and fall back instead of refusing (Q6); `sanitized` is `parsed`
@@ -286,8 +338,9 @@ export const DEFAULT_VALUES = Object.freeze({
  * Computes the effective config values and their sources (CFG-05, Q6): per key, the repo
  * layer wins over the user layer wins over the default; arrays are replaced whole, never
  * merged. Pure: no file reads, so a caller with already-parsed layers (M19 `configFor`)
- * could use it without going through `loadConfig`. `scanIgnore`'s `repo@HEAD` source and its
- * HEAD-vs-worktree read are CFG-07's; here it is just another repo-or-user-or-default key.
+ * could use it without going through `loadConfig`. Here `scanIgnore` is just another
+ * repo-or-user-or-default key; `loadConfig` then replaces its value and source with the
+ * read at HEAD (CFG-07), so the worktree's copy is validated but never effective.
  *
  * @param {{ user: object | null, repo: object | null }} layers the parsed, already-validated
  *   layer objects (`null` when that layer is absent).
@@ -318,20 +371,24 @@ export function effectiveConfig({ user, repo }) {
  * from `.claude/commit.json` under it (CFG-02); on success, folds both into the effective
  * values and sources (CFG-05 `effectiveConfig`), over each layer already sanitized of
  * CFG-06's warned keys (unknown key, unknown value of a known key, a known repo-only key
- * given in the user layer). No `scanIgnore` at HEAD yet (CFG-07).
+ * given in the user layer). CFG-07: `scanIgnore`'s value and source then come from the repo
+ * config at HEAD only (`readScanIgnoreAtHead`), never from the worktree copy (Q10).
  *
- * @param {{ toplevel: string | null, claudeHome: string }} options `toplevel`: the working
- *   tree's toplevel (M3), or `null` when `plan` is not inside one (the user layer is still
- *   read and validated: C:plan step 2 puts `config` ahead of `state`). `claudeHome`: the
- *   Claude home the entry point resolved once and injected (`CLAUDE_CONFIG_DIR`, else
- *   `.claude` in the OS home, Q5).
- * @returns {{ error: string } | { values: object, sources: object, warnings: string[] }}
- *   `error` names whichever layer errored first (user, then repo, matching Q6's layer order)
- *   (C:cli-and-exit-codes); otherwise the effective config (CFG-05), even with neither layer
- *   present (every source `default`), plus every CFG-06 warning from either layer, user
- *   first (`plan.warnings`, C:plan).
+ * @param {{ toplevel: string | null, claudeHome: string, unborn?: boolean, env?: object,
+ *   now?: () => number }} options `toplevel`: the working tree's toplevel (M3), or `null`
+ *   when `plan` is not inside one (the user layer is still read and validated: C:plan step 2
+ *   puts `config` ahead of `state`). `claudeHome`: the Claude home the entry point resolved
+ *   once and injected (`CLAUDE_CONFIG_DIR`, else `.claude` in the OS home, Q5). `unborn`
+ *   (M3 `headState`): no HEAD to read `scanIgnore` from. `env`, `now`: for the HEAD read's
+ *   git call (M2 `run`), required when `toplevel` is set and `unborn` is not.
+ * @returns {Promise<{ error: string } | { values: object, sources: object,
+ *   warnings: string[], scanIgnore: object[] }>} `error` names whichever layer errored first
+ *   (user, then repo, matching Q6's layer order) (C:cli-and-exit-codes); otherwise the
+ *   effective config (CFG-05), even with neither layer present (every source `default`),
+ *   plus every warning from either layer, user first, then the HEAD read's (`plan.warnings`,
+ *   C:plan), and `scanIgnore`: the M7 matchers compiled from `values.scanIgnore`.
  */
-export function loadConfig({ toplevel, claudeHome }) {
+export async function loadConfig({ toplevel, claudeHome, unborn = false, env, now }) {
   const userResult = readLayer(path.join(claudeHome, USER_CONFIG_FILENAME), USER_LAYER, 'user');
   if (userResult.error !== undefined) return { error: userResult.error };
 
@@ -345,5 +402,74 @@ export function loadConfig({ toplevel, claudeHome }) {
   }
 
   const { values, sources } = effectiveConfig({ user: userResult.value, repo: repoValue });
-  return { values, sources, warnings: [...userResult.warnings, ...repoWarnings] };
+  const head = toplevel !== null && toplevel !== undefined && !unborn
+    ? await readScanIgnoreAtHead({ toplevel, env, now })
+    : NO_HEAD_PATTERNS;
+  // The worktree copy (validated above) never reaches the effective value; with no valid
+  // value read at HEAD, the default applies, sourced `default` like any key no layer sets.
+  values.scanIgnore = head.patterns ?? DEFAULT_VALUES.scanIgnore;
+  sources.scanIgnore = head.patterns === null ? 'default' : 'repo@HEAD';
+  const warnings = [...userResult.warnings, ...repoWarnings];
+  if (head.warning !== null) warnings.push(head.warning);
+  return { values, sources, warnings, scanIgnore: head.matchers };
+}
+
+/** The HEAD read's result when there is nothing to read (no worktree, unborn, no file or key). */
+const NO_HEAD_PATTERNS = Object.freeze({ patterns: null, matchers: Object.freeze([]), warning: null });
+
+/** The repo config at HEAD's display label, for the HEAD read's warnings. */
+const HEAD_LAYER = `repo config at HEAD (${REPO_CONFIG_PATH})`;
+
+/**
+ * Reads `scanIgnore` from the repo config at HEAD (CFG-07, Q10 as amended by CFG-01): one
+ * read-only `git show HEAD:.claude/commit.json` (C:plan `config.sources`). The file at HEAD is
+ * not validated as a layer: only its `scanIgnore` is read, decoded the same way `readLayer`
+ * decodes a layer file (fatal UTF-8, BOM stripped, Q6). A file or key absent at HEAD is no
+ * patterns, silently; an invalid one (over `CONFIG_MAX_BYTES`, not UTF-8, not valid JSON,
+ * not an object, not an array of strings, or a pattern M7 `compileGlob` rejects) is no
+ * patterns plus a warning naming the repo config at HEAD, never a `config` refusal: `[]`
+ * exempts nothing (fail-closed), and the worktree copy is still validated as a layer.
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<{ patterns: string[] | null, matchers: object[], warning: string | null }>}
+ *   `patterns: null` when no valid `scanIgnore` was read (the default `[]` applies).
+ */
+async function readScanIgnoreAtHead({ toplevel, env, now }) {
+  const result = await run('git', ['show', `HEAD:${REPO_CONFIG_PATH}`], {
+    cwd: toplevel, env, now, readOnly: true,
+  });
+  // Not at HEAD yet (or no HEAD to read): no layer at all, like an absent file (Q6).
+  if (result.code !== 0) return NO_HEAD_PATTERNS;
+
+  const invalid = (problem) => ({
+    patterns: null,
+    matchers: Object.freeze([]),
+    warning: `the ${problem}; its scanIgnore is ignored ([] used)`,
+  });
+  if (result.stdout.length > CONFIG_MAX_BYTES) {
+    return invalid(`${HEAD_LAYER} is larger than ${CONFIG_MAX_BYTES} bytes`);
+  }
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(result.stdout);
+  } catch {
+    return invalid(`${HEAD_LAYER} is not valid UTF-8`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    return invalid(`${HEAD_LAYER} is not valid JSON: ${err.message}`);
+  }
+  const isObject = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+  if (isObject && !Object.hasOwn(parsed, 'scanIgnore')) return NO_HEAD_PATTERNS;
+  // `validateLayer`'s own messages, over `scanIgnore` alone (or the non-object top level);
+  // each starts with "the ", which `invalid` adds back.
+  const errors = validateLayer(isObject ? { scanIgnore: parsed.scanIgnore } : parsed, HEAD_LAYER);
+  if (errors) return invalid(errors.errors[0].slice('the '.length));
+  return {
+    patterns: parsed.scanIgnore,
+    matchers: Object.freeze(parsed.scanIgnore.map((pattern) => compileGlob(pattern).matcher)),
+    warning: null,
+  };
 }

@@ -12,10 +12,13 @@ const assert = require('node:assert/strict');
 
 const { loadLib } = require('./helpers/load-lib.js');
 const { Q6_DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
+const { createCase } = require('./helpers/process-seam.js');
 
 let config;
+let compileGlob;
 beforeEach(async () => {
   config = await loadLib('config');
+  ({ compileGlob } = await loadLib('glob-matcher'));
 });
 
 function tempToplevel(t) {
@@ -27,16 +30,18 @@ function tempToplevel(t) {
 // CFG-04: every `loadConfig` call now also needs a `claudeHome`. Most of these tests are
 // about the repo layer only, so they get a fresh, empty Claude home (no user `commit.json`
 // at all): `loadConfig`'s own CFG-04 coverage further below uses a populated one.
+// CFG-07: these temp toplevels are not git repos, so the calls pass `unborn: true` (no
+// `scanIgnore` read at HEAD, no git spawned); the HEAD read has its own tests further below.
 function tempClaudeHome(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'commit-claude-home-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   return dir;
 }
 
-test('loadConfig returns the effective defaults when neither layer has a config file at all', (t) => {
+test('loadConfig returns the effective defaults when neither layer has a config file at all', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
   assert.deepEqual(result.values, Q6_DEFAULT_VALUES);
   assert.deepEqual(result.sources, {
     types: 'default',
@@ -48,24 +53,24 @@ test('loadConfig returns the effective defaults when neither layer has a config 
   });
 });
 
-test('loadConfig returns the repo layer\'s types as effective, sourced to repo', (t) => {
+test('loadConfig returns the repo layer\'s types as effective, sourced to repo', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": ["feat", "fix"] }');
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
   assert.deepEqual(result.values.types, ['feat', 'fix']);
   assert.equal(result.sources.types, 'repo');
   assert.equal(result.sources.scope, 'default');
 });
 
-test('loadConfig reports an error naming the repo layer on unparseable JSON', (t) => {
+test('loadConfig reports an error naming the repo layer on unparseable JSON', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": [');
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -74,20 +79,20 @@ test('loadConfig reports an error naming the repo layer on unparseable JSON', (t
 
 // review-CFG-02 finding 3: the parser's own message, which carries the position, is appended
 // so a typo is easier to find (story 110).
-test('loadConfig appends the JSON parser error, including its position, to the message', (t) => {
+test('loadConfig appends the JSON parser error, including its position, to the message', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{"a": 1,}');
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.match(result.error, /position/i);
 });
 
 // review-CFG-02 finding 2, Q6 (amended): a leading UTF-8 BOM is stripped, matching Node's own
 // JSON file parsing, so a file saved by Windows PowerShell 5.1 or Notepad still parses.
-test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
+test('loadConfig strips a leading UTF-8 BOM before parsing', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
@@ -97,7 +102,7 @@ test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
     Buffer.concat([bom, Buffer.from('{ "types": ["feat"] }', 'utf8')]),
   );
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
   assert.deepEqual(result.values.types, ['feat']);
   assert.equal(result.sources.types, 'repo');
 });
@@ -105,14 +110,14 @@ test('loadConfig strips a leading UTF-8 BOM before parsing', (t) => {
 // review-CFG-02 finding 4, Q6 (amended): invalid UTF-8 is treated as unparseable (a `config`
 // refusal), detected cheaply through a fatal-mode decoder rather than Node's default silent
 // U+FFFD replacement.
-test('loadConfig reports an error naming the repo layer on invalid UTF-8', (t) => {
+test('loadConfig reports an error naming the repo layer on invalid UTF-8', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   // 0xFF is never valid anywhere in a UTF-8 byte sequence.
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), Buffer.from([0x7b, 0xff, 0x7d]));
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -122,13 +127,13 @@ test('loadConfig reports an error naming the repo layer on invalid UTF-8', (t) =
 // CFG-03 (roadmap "a repo layer whose top level is not a JSON object"): CFG-02 was
 // JSON-parseability only; a non-object top level now fails `validateLayer` and so
 // `loadConfig` too, naming the repo layer.
-test('loadConfig reports an error naming the repo layer for a non-object top level', (t) => {
+test('loadConfig reports an error naming the repo layer for a non-object top level', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   for (const body of ['[]', 'null', '42', '"x"']) {
     fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), body);
-    const result = config.loadConfig({ toplevel, claudeHome });
+    const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
     assert.notEqual(result, null, body);
     assert.match(result.error, /repo config/, body);
     assert.match(result.error, /\.claude[/\\]commit\.json/, body);
@@ -138,12 +143,12 @@ test('loadConfig reports an error naming the repo layer for a non-object top lev
 // review-CFG-02 finding 1(a): a read error other than ENOENT/ENOTDIR (here EISDIR, from the
 // repo layer's path being a directory) is a `config` refusal naming the layer, not an
 // uncaught throw that ends as `internal`.
-test('loadConfig reports an error naming the repo layer when the path is a directory', (t) => {
+test('loadConfig reports an error naming the repo layer when the path is a directory', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, config.REPO_CONFIG_PATH), { recursive: true });
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -151,7 +156,7 @@ test('loadConfig reports an error naming the repo layer when the path is a direc
 
 // review-CFG-02 finding 10: a regular-file check plus a size cap (same style as the run-lock
 // read) closes a self-DoS where a cloned repo commits an oversized `.claude/commit.json`.
-test('loadConfig reports an error naming the repo layer for an oversized file, never reading it', (t) => {
+test('loadConfig reports an error naming the repo layer for an oversized file, never reading it', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
@@ -165,7 +170,7 @@ test('loadConfig reports an error naming the repo layer for an oversized file, n
     fs.closeSync(fd);
   }
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /repo config/);
@@ -183,55 +188,55 @@ test('USER_CONFIG_FILENAME is commit.json (Q5, Q6, public surface)', () => {
   assert.equal(config.USER_CONFIG_FILENAME, 'commit.json');
 });
 
-test('loadConfig returns the effective defaults when the user config is absent, even with no toplevel at all', (t) => {
+test('loadConfig returns the effective defaults when the user config is absent, even with no toplevel at all', async (t) => {
   const claudeHome = tempClaudeHome(t);
-  const result = config.loadConfig({ toplevel: null, claudeHome });
+  const result = await config.loadConfig({ toplevel: null, claudeHome });
   assert.deepEqual(result.values, Q6_DEFAULT_VALUES);
   assert.equal(result.sources.types, 'default');
 });
 
-test('loadConfig returns the user layer\'s types as effective, sourced to user, when valid JSON', (t) => {
+test('loadConfig returns the user layer\'s types as effective, sourced to user, when valid JSON', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": ["feat", "fix"] }');
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
   assert.deepEqual(result.values.types, ['feat', 'fix']);
   assert.equal(result.sources.types, 'user');
 });
 
-test('loadConfig reports an error naming the user layer on unparseable JSON, with no toplevel', (t) => {
+test('loadConfig reports an error naming the user layer on unparseable JSON, with no toplevel', async (t) => {
   const claudeHome = tempClaudeHome(t);
   fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": [');
 
-  const result = config.loadConfig({ toplevel: null, claudeHome });
+  const result = await config.loadConfig({ toplevel: null, claudeHome });
 
   assert.notEqual(result, null);
   assert.match(result.error, /user config/);
   assert.match(result.error, /commit\.json/);
 });
 
-test('loadConfig reports an error naming the user layer for a bad value, even with a valid repo layer', (t) => {
+test('loadConfig reports an error naming the user layer for a bad value, even with a valid repo layer', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": ["feat"] }');
   fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "maxSubjectLength": 0 }');
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /user config/);
   assert.match(result.error, /maxSubjectLength/);
 });
 
-test('loadConfig reports the user-layer error even when the repo layer is also invalid', (t) => {
+test('loadConfig reports the user-layer error even when the repo layer is also invalid', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), '{ "types": [');
   fs.writeFileSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), '{ "types": [');
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /user config/);
@@ -240,18 +245,18 @@ test('loadConfig reports the user-layer error even when the repo layer is also i
 // review-CFG-04 finding 6: the shared pipeline's label threading (`readLayer`'s early-return
 // paths) was pinned for the repo layer only; these parametrise the same checks for the user
 // layer, naming it instead of the repo layer.
-test('loadConfig reports an error naming the user layer when the path is a directory', (t) => {
+test('loadConfig reports an error naming the user layer when the path is a directory', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(claudeHome, config.USER_CONFIG_FILENAME), { recursive: true });
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /user config/);
 });
 
-test('loadConfig reports an error naming the user layer for an oversized file, never reading it', (t) => {
+test('loadConfig reports an error naming the user layer for an oversized file, never reading it', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   const configPath = path.join(claudeHome, config.USER_CONFIG_FILENAME);
@@ -264,7 +269,7 @@ test('loadConfig reports an error naming the user layer for an oversized file, n
     fs.closeSync(fd);
   }
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.notEqual(result, null);
   assert.match(result.error, /user config/);
@@ -422,7 +427,7 @@ test('the purity check fails on a validateLayer-shaped body that calls fs.readFi
 // known key, and a key in the wrong layer warn and fall back instead of refusing `plan`
 // (Q6). Unit-level coverage of `loadConfig`'s warnings; Seam 1 coverage (stdout/stderr,
 // `plan.warnings`) lives in tests/plan-config-warnings.test.js.
-test('loadConfig warns and ignores an unknown key in the repo layer, with no effect on other keys', (t) => {
+test('loadConfig warns and ignores an unknown key in the repo layer, with no effect on other keys', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
@@ -431,7 +436,7 @@ test('loadConfig warns and ignores an unknown key in the repo layer, with no eff
     JSON.stringify({ workerModel: 'haiku', types: ['feat'] }),
   );
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.deepEqual(result.values.types, ['feat']);
   assert.equal(result.warnings.length, 1);
@@ -443,14 +448,14 @@ test('loadConfig warns and ignores an unknown key in the repo layer, with no eff
   );
 });
 
-test('loadConfig warns and falls back to the user layer when the repo layer has an unknown value for a known key', (t) => {
+test('loadConfig warns and falls back to the user layer when the repo layer has an unknown value for a known key', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
   fs.writeFileSync(claudeHomeConfigPath(claudeHome), JSON.stringify({ body: 'optional' }));
   fs.writeFileSync(path.join(toplevel, config.REPO_CONFIG_PATH), JSON.stringify({ body: 'required' }));
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.equal(result.values.body, 'optional');
   assert.equal(result.sources.body, 'user');
@@ -461,12 +466,12 @@ test('loadConfig warns and falls back to the user layer when the repo layer has 
   );
 });
 
-test('loadConfig warns and ignores scanIgnore given in the user layer (repo only)', (t) => {
+test('loadConfig warns and ignores scanIgnore given in the user layer (repo only)', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.writeFileSync(claudeHomeConfigPath(claudeHome), JSON.stringify({ scanIgnore: ['*.log'] }));
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.deepEqual(result.values.scanIgnore, []);
   assert.equal(result.sources.scanIgnore, 'default');
@@ -483,7 +488,7 @@ test('loadConfig warns and ignores scanIgnore given in the user layer (repo only
 // and strips scanIgnore in every layer, repo included) passed the whole suite before this
 // test existed. Every other known key is included too, each with a valid value, so this
 // also covers finding 7 (the previous version of this test wrote no layers at all).
-test('loadConfig returns an empty warnings array when every key is known, valid and in the right layer', (t) => {
+test('loadConfig returns an empty warnings array when every key is known, valid and in the right layer', async (t) => {
   const toplevel = tempToplevel(t);
   const claudeHome = tempClaudeHome(t);
   fs.mkdirSync(path.join(toplevel, '.claude'), { recursive: true });
@@ -499,13 +504,162 @@ test('loadConfig returns an empty warnings array when every key is known, valid 
     }),
   );
 
-  const result = config.loadConfig({ toplevel, claudeHome });
+  const result = await config.loadConfig({ toplevel, claudeHome, unborn: true });
 
   assert.deepEqual(result.warnings, []);
-  assert.deepEqual(result.values.scanIgnore, ['a/**']);
-  assert.equal(result.sources.scanIgnore, 'repo');
+  // CFG-07: the worktree's scanIgnore is validated but never used; the effective value is
+  // read at HEAD only, and this toplevel has none (no git repo, passed as unborn).
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
 });
 
 function claudeHomeConfigPath(claudeHome) {
   return path.join(claudeHome, config.USER_CONFIG_FILENAME);
+}
+
+// CFG-07 (docs/roadmap/04-config-and-attribution.md, Q6, Q10 as amended by CFG-01,
+// C:scanignore-globs): `validateLayer` compiles every `scanIgnore` pattern with M7
+// `compileGlob` itself, `loadConfig` reads `scanIgnore` at HEAD only, and M4 exports
+// `isRepoConfigPath`. Seam 1 coverage lives in tests/plan-config-scanignore.test.js.
+
+const REPO_LAYER_LABEL = 'repo config (.claude/commit.json)';
+
+test('validateLayer, called directly, rejects a scanIgnore glob error, naming the pattern', () => {
+  for (const pattern of ['**', '**/*', 'src/{a,b}.js', 'a**b', '../x', '!x', '']) {
+    const result = config.validateLayer({ scanIgnore: [pattern] }, REPO_LAYER_LABEL);
+    assert.notEqual(result, null, JSON.stringify(pattern));
+    assert.equal(result.errors.length, 1, JSON.stringify(pattern));
+    assert.ok(
+      result.errors[0].startsWith(`the ${REPO_LAYER_LABEL} scanIgnore pattern ${JSON.stringify(pattern)} `),
+      result.errors[0],
+    );
+  }
+});
+
+test('validateLayer reports every bad scanIgnore pattern, one error each', () => {
+  const result = config.validateLayer({ scanIgnore: ['**', 'ok/**', '[ab]'] }, REPO_LAYER_LABEL);
+  assert.equal(result.errors.length, 2);
+  assert.match(result.errors[0], /"\*\*"/);
+  assert.match(result.errors[1], /"\[ab\]"/);
+});
+
+test('validateLayer rejects a scanIgnore that is not an array of strings, naming the key', () => {
+  for (const value of ['dist/**', ['dist/**', 3], null, {}]) {
+    const result = config.validateLayer({ scanIgnore: value }, REPO_LAYER_LABEL);
+    assert.notEqual(result, null, JSON.stringify(value));
+    assert.equal(result.errors.length, 1, JSON.stringify(value));
+    assert.equal(
+      result.errors[0],
+      `the ${REPO_LAYER_LABEL} scanIgnore must be an array of strings, not ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test('validateLayer accepts valid scanIgnore patterns, and an empty array', () => {
+  assert.equal(config.validateLayer({ scanIgnore: ['dist/**', '/build/', '*.log', 'a/?.txt'] }, REPO_LAYER_LABEL), null);
+  assert.equal(config.validateLayer({ scanIgnore: [] }, REPO_LAYER_LABEL), null);
+});
+
+// review-CFG-06 finding 6 (forward note): a repo-only key in the user layer is CFG-06's
+// warn-and-ignore, never a `config` refusal, even when its value would not validate.
+test('loadConfig warns, never refuses, for an invalid scanIgnore given in the user layer', async (t) => {
+  for (const value of ['dist/**', ['**'], ['x', 3]]) {
+    const claudeHome = tempClaudeHome(t);
+    fs.writeFileSync(claudeHomeConfigPath(claudeHome), JSON.stringify({ scanIgnore: value }));
+
+    const result = await config.loadConfig({ toplevel: null, claudeHome });
+
+    assert.equal(result.error, undefined, JSON.stringify(value));
+    assert.deepEqual(result.values.scanIgnore, [], JSON.stringify(value));
+    assert.deepEqual(result.warnings, [
+      "the user config (commit.json) key 'scanIgnore' is only valid in the repo layer; ignored",
+    ], JSON.stringify(value));
+  }
+});
+
+test('isRepoConfigPath is true only for the exact repo config path', () => {
+  assert.equal(config.REPO_CONFIG_PATH, '.claude/commit.json');
+  assert.equal(config.isRepoConfigPath('.claude/commit.json'), true);
+  assert.equal(config.isRepoConfigPath('sub/.claude/commit.json'), false);
+  assert.equal(config.isRepoConfigPath('.claude/commit.JSON'), false);
+});
+
+// The HEAD read, against a real temp repo (createCase: fixed author and dates, isolated env).
+
+function headCase(t, headText, worktreeText) {
+  const c = createCase(t);
+  c.writeFile('.claude/commit.json', headText);
+  c.git(['add', '--', '.claude/commit.json']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  if (worktreeText !== undefined) c.writeFile('.claude/commit.json', worktreeText);
+  return c;
+}
+
+function loadAtHead(c, unborn = false) {
+  return config.loadConfig({
+    toplevel: c.repoDir, claudeHome: c.claudeHome, unborn, env: c.env, now: () => 0,
+  });
+}
+
+test('loadConfig reads scanIgnore at HEAD, sourced to repo@HEAD, with compiled matchers', async (t) => {
+  const c = headCase(t, JSON.stringify({ scanIgnore: ['dist/**', '*.log'] }), JSON.stringify({ scanIgnore: ['other/**'] }));
+
+  const result = await loadAtHead(c);
+
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.values.scanIgnore, ['dist/**', '*.log']);
+  assert.equal(result.sources.scanIgnore, 'repo@HEAD');
+  assert.equal(result.scanIgnore.length, 2);
+  assert.deepEqual(result.scanIgnore[0], compileGlob('dist/**').matcher);
+});
+
+test('loadConfig ignores a scanIgnore present only in the worktree (not yet committed)', async (t) => {
+  const c = headCase(t, JSON.stringify({ types: ['feat'] }), JSON.stringify({ types: ['fix'], scanIgnore: ['dist/**'] }));
+
+  const result = await loadAtHead(c);
+
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.deepEqual(result.scanIgnore, []);
+  assert.deepEqual(result.values.types, ['fix']);
+});
+
+test('loadConfig spawns no HEAD read when unborn: worktree keys apply, scanIgnore is []', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.claude/commit.json', JSON.stringify({ types: ['feat'], scanIgnore: ['dist/**'] }));
+
+  const result = await loadAtHead(c, true);
+
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.values.types, ['feat']);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+});
+
+const HEAD_INVALID = [
+  ['unparseable JSON', '{ "scanIgnore": ['],
+  ['a non-object top level', '[]'],
+  ['a bare string', JSON.stringify({ scanIgnore: 'dist/**' })],
+  ['a non-string entry', JSON.stringify({ scanIgnore: ['dist/**', 3] })],
+  ['a glob error', JSON.stringify({ scanIgnore: ['dist/**', '**/*'] })],
+];
+
+for (const [label, headText] of HEAD_INVALID) {
+  test(`loadConfig uses [] and warns, naming the repo config at HEAD, for ${label} at HEAD`, async (t) => {
+    const c = headCase(t, headText, JSON.stringify({ scanIgnore: ['dist/**'] }));
+
+    const result = await loadAtHead(c);
+
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.values.scanIgnore, []);
+    assert.deepEqual(result.scanIgnore, []);
+    assert.equal(result.sources.scanIgnore, 'default');
+    assert.equal(result.warnings.length, 1);
+    assert.ok(
+      result.warnings[0].startsWith('the repo config at HEAD (.claude/commit.json) '),
+      result.warnings[0],
+    );
+    assert.match(result.warnings[0], /scanIgnore is ignored \(\[\] used\)$/);
+  });
 }

@@ -173,13 +173,18 @@ async function readHeadState(ctx) {
  * M5's warnings, onto `ctx.notices` and `ctx.warnings`; each is also written to stderr as it
  * is queued (the entry point injects the real stream as `ctx.injected.stderr`, read only
  * here, so a direct `workflows.plan` call with no `stderr` injected is unaffected,
- * `?.`-guarded).
+ * `?.`-guarded). CFG-07: `loadConfig` also reads `scanIgnore` at HEAD (one read-only git
+ * call), so it gets `readHeadState`'s `unborn` (none to read) and the injected `env`/`now`;
+ * its HEAD warning is queued like the others, and its compiled matchers are not stored.
  */
 async function loadConfigLayers(ctx) {
   const toplevel = ctx.probe.repo !== null && ctx.probe.repo.kind === 'worktree'
     ? ctx.probe.repo.toplevel
     : null;
-  const configResult = loadConfig({ toplevel, claudeHome: ctx.injected.claudeHome });
+  const configResult = await loadConfig({
+    toplevel, claudeHome: ctx.injected.claudeHome, unborn: ctx.state?.unborn ?? false,
+    env: ctx.injected.env, now: ctx.injected.now,
+  });
   if (configResult.error !== undefined) {
     ctx.config = configResult;
   } else {
