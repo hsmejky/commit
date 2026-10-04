@@ -732,7 +732,17 @@ export async function unstagedUnits({ toplevel, env, now }) {
     ['diff', '--no-ext-diff', '--no-renames', '--name-only', '-z'],
     { cwd: toplevel, env, now, readOnly: true },
   )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
-  return diffUnits(['--no-renames'], opts, await checkAttrs(names, opts));
+  const attrs = await checkAttrs(names, opts);
+  const units = await diffUnits(['--no-renames'], opts, attrs);
+  // review-CHG-14 finding 5: this diffs the real index against the worktree, same as
+  // `split`'s pinned diff; an attribute-hidden text file's new content is therefore the
+  // worktree file, so the NUL sniff reads it straight off disk (`hiddenBinaryFacts`), never
+  // the batch `cat-file` path (`newOid` is all-zero on an uncomputed worktree side, unlike
+  // `reword`/`staged`'s index-side diffs). `ctx.mode` is deliberately neither `reword` nor
+  // `staged`, to take that disk-read branch in `resolveHiddenBinaries`.
+  const ctx = { mode: 'unstaged', toplevel, env, now };
+  const runTextPass = (keep) => diffUnits(['--no-renames', '--text'], opts, attrs, { keep });
+  return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
 }
 
 /**

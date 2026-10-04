@@ -101,6 +101,19 @@ test('plan --staged on a git add -p style file: units from the index only, unsta
   assert.deepEqual(state.indexOnly, [{ path: 'a.txt', blob: c.git(['rev-parse', ':a.txt']).trim(), ignored: false }]);
 });
 
+test('plan --staged reports an unstaged attribute-hidden text file in tracked with real counts, not binary 0/0', async (t) => {
+  const c = createCase(t);
+  seed(c, { '.gitattributes': '*.dat -diff\n', 'x.dat': 'line 1\n', 'a.txt': 'a\n' });
+  c.writeFile('a.txt', 'a2\n');
+  c.git(['add', '--', 'a.txt']);
+  c.writeFile('x.dat', 'line 1\nline 2\n');
+
+  const { planJson } = await plan(c, ['--staged']);
+
+  const entry = planJson.tracked.find((e) => e.path === 'x.dat');
+  assert.deepEqual(entry && [entry.added, entry.deleted], [1, 0]);
+});
+
 test('plan --split keeps unstagedLeft null', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n' });
