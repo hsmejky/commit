@@ -464,7 +464,7 @@ never writes the map and ends the run (C:cli-and-exit-codes). It builds the sepa
 
 **Blocked by:** CHG-05, CHG-06, RUN-04, RUN-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q11, C:plan-hunks, stories 58, 64, 76, M10.
 
@@ -473,11 +473,11 @@ own 540 s deadline from its own start") is pinned at M15 level there; the Seam 1
 separate `plan --hunks --plan <id>` call whose own clock crosses its own 540 s deadline —
 has no owner until this slice builds that call, so it lands here (KD-R22).
 
-- [ ] Seam 1: a file edited between `plan` and a separate `plan --hunks` → exit 6 `diff-changed`, run ended (the lock and the run folder gone, C:cli-and-exit-codes), nothing committed.
-- [ ] Seam 1: a manual commit between `plan` and a separate `plan --hunks` → exit 6 `head-moved`, run ended.
-- [ ] Seam 1: a stored untracked path deleted after `plan` → `diff-changed`; a new untracked file created after `plan` → ignored (same IDs).
-- [ ] Seam 1: a force-added gitignored file is still a unit on the re-snapshot (stored lists, not recomputed).
-- [ ] Seam 1: a separate `plan --hunks --plan <id>` call's own clock crosses its own 540 s deadline (M15 `deadline`, independent of the original `plan` call that minted the run) → exit 5 `timeout`.
+- [x] Seam 1: a file edited between `plan` and a separate `plan --hunks` → exit 6 `diff-changed`, run ended (the lock and the run folder gone, C:cli-and-exit-codes), nothing committed.
+- [x] Seam 1: a manual commit between `plan` and a separate `plan --hunks` → exit 6 `head-moved`, run ended.
+- [x] Seam 1: a stored untracked path deleted after `plan` → `diff-changed`; a new untracked file created after `plan` → ignored (same IDs).
+- [x] Seam 1: a force-added gitignored file is still a unit on the re-snapshot (stored lists, not recomputed).
+- [x] Seam 1: a separate `plan --hunks --plan <id>` call's own clock crosses its own 540 s deadline (M15 `deadline`, independent of the original `plan` call that minted the run) → exit 5 `timeout`.
 
 
 ## CHG-20: Hunk staging into the real index
