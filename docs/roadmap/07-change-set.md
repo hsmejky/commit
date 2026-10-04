@@ -272,18 +272,18 @@ attribute stays binary.
 
 **Blocked by:** CHG-10.
 
-**Note (review-CHG-08 finding 2):** until this slice lands, such a file is reported
-`kind: "binary"` (git's own classification wins), `body: "none"`, hashed over blob IDs,
-instead of `kind: "text"` with its added lines scanned (KD-R70, interim only).
+**Note (review-CHG-08 finding 2):** resolved by this slice: such a file is now reported
+`kind: "text"` with its added lines scanned, instead of the interim `kind: "binary"`
+(git's own classification), `body: "none"`, hashed over blob IDs (KD-R70, closed).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10 (as amended), Q11 (pass 5), C:plan (binary rule), story 212, M10.
 
-- [ ] Seam 1: a text file marked `-diff` in `.gitattributes` → one `kind: "text"` unit, `body: "none"`, its added lines passed to the scan (secret found once CHG-16 is wired).
-- [ ] Seam 1: an attribute-hidden file over 1 MB → `scan.skipped` entry with the size reason.
-- [ ] Seam 1: a NUL-free file over a lowered `core.bigFileThreshold` with no attribute → stays binary, no `--text` pass run.
-- [ ] Seam 1: an attribute-hidden text file and a file→symlink change (CHG-09's `T` unit), both in the same inventory so they share the one `--text` pass → each still gets exactly one unit, no `internal` (Q11).
+- [x] Seam 1: a text file marked `-diff` in `.gitattributes` → one `kind: "text"` unit, `body: "none"`, its added lines passed to the scan (secret found once CHG-16 is wired).
+- [x] Seam 1: an attribute-hidden file over 1 MB → `scan.skipped` entry with the size reason.
+- [x] Seam 1: a NUL-free file over a lowered `core.bigFileThreshold` with no attribute → stays binary, no `--text` pass run.
+- [x] Seam 1: an attribute-hidden text file and a file→symlink change (CHG-09's `T` unit), both in the same inventory so they share the one `--text` pass → each still gets exactly one unit, no `internal` (Q11).
 
 
 ## CHG-12: Raw bytes and non-UTF-8 paths
