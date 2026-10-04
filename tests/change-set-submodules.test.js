@@ -137,6 +137,8 @@ test('dirt without a pointer change is in dirtySubmodules, no unit, and the tree
   const result = await runCommit(c, ['plan']);
   assert.equal(result.exitCode, 0, result.stdout + result.stderr);
   assert.equal(result.json.reply.status, 'nothing');
+  // RUN-15 (C:plan `clean`): dirtySubmodules-only is named in the reply, Seam 1.
+  assert.equal(result.json.reply.text.split('\n')[0], 'nothing to commit: dirty submodule: `libs/x`');
 });
 
 test('a submodule with only inner dirt next to an edit: listed in dirtySubmodules, no unit of its own', async (t) => {
@@ -319,6 +321,8 @@ test('an untracked embedded repository is no candidate and no unit; alone it lea
   const result = await runCommit(c, ['plan']);
   assert.equal(result.exitCode, 0, result.stdout + result.stderr);
   assert.equal(result.json.reply.status, 'nothing');
+  // RUN-15 (C:plan `clean`): embeddedRepos-only is named in the reply, Seam 1.
+  assert.equal(result.json.reply.text.split('\n')[0], 'nothing to commit: embedded repository: `nested`');
 });
 
 test('an untracked embedded repository next to an edit is stored in embeddedRepos, never planned', async (t) => {

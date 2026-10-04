@@ -150,6 +150,40 @@ test('caps (split): a force-added hidden staged-new file goes to stagedExcluded 
   assert.deepEqual(plan.untracked.collapsed, []);
 });
 
+// RUN-15 (docs/roadmap/09-runs.md, C:plan `clean`): the post-cap breakdown M15 `planRefusal`
+// names when every untracked candidate collapses and nothing else is dirty — Seam 1 (real
+// git + the shipped entry point), unlike `run-policy-clean-tree.test.js`'s pure unit tests
+// of the same message from crafted facts.
+test('caps: a collapsed-only tree leaves the tree clean, named in the reply', async (t) => {
+  const c = createCase(t);
+  buildFixture(c, { untracked: { pkg: 51 }, modify: false });
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.reply.status, 'nothing', detail(result));
+  assert.equal(result.json.reply.text.split('\n')[0], 'nothing to commit: `pkg` (51 collapsed)');
+});
+
+// RUN-15: a staged-new hidden path alone (the `stagedExcluded`/`hidden` breakdown), Seam 1.
+test('caps: a staged, hidden-only new file leaves the tree clean, named in the reply', async (t) => {
+  const c = createCase(t);
+  c.writeFile('seed.txt', 'seed\n');
+  c.git(['add', 'seed.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('.idea/workspace.xml', '<x/>\n');
+  c.git(['add', '.idea/workspace.xml']);
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.reply.status, 'nothing', detail(result));
+  assert.equal(
+    result.json.reply.text.split('\n')[0],
+    'nothing to commit: staged but hidden: `.idea/workspace.xml`',
+  );
+});
+
 // CHG-13 moved the caps out of M10 `inventory` into the workflow's own step (review-CHG-13
 // findings 2/3): `inventory` never caps, whatever `mode` is, so the mode gate now lives only
 // in that workflow step, exercised through the real `plan` pipeline below, on an unborn HEAD

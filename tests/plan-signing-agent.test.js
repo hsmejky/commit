@@ -219,6 +219,9 @@ test('a passphrase key file not in any agent refuses exit 6 signing with the rec
     const result = await plan(c, sshShim(c, { sshAdd }));
     assert.equal(result.exitCode, 6, `${label}\n${detail(result)}`);
     assertSigningLocked(result);
+    // RUN-15 (C:plan step 6): the clean-tree check runs before the signing probe, but a
+    // dirty tree's own refusal still leaves no run folder or lock behind (RUN-05).
+    assert.deepEqual(fs.readdirSync(path.join(c.repoDir, '.commit-plan')), [], label);
   }
 });
 
