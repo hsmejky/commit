@@ -107,12 +107,13 @@ test('two bad check calls in a row → exit 2, then the lintFailed handback; the
   assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
 });
 
-test('plan --hunks between two bad check calls → exit 2 both times', async (t) => {
+test('check honours a lint counter reset to 0, as the separate plan --hunks call leaves it', async (t) => {
   const { c, planId, runDir } = await plannedRun(t);
 
   assertPlainLintFailure(await check(c, planId, runDir, unplaced()));
-  // The separate `plan --hunks` call is INT-12's; what it does to the counter is this reset
-  // of its own field in the state it read (C:plan-hunks, C:plan step 8).
+  // The separate `plan --hunks` call and its reset are INT-12's own (C:plan-hunks, C:plan
+  // step 8); this writes only the counter's resulting value to prove `check` treats it as a
+  // fresh start, not that `plan --hunks` performs the reset.
   fs.writeFileSync(statePath(runDir), `${JSON.stringify({ ...storedState(runDir), lintFailures: 0 })}\n`);
   assertPlainLintFailure(await check(c, planId, runDir, unplaced()));
 });
@@ -121,6 +122,23 @@ test('a source: user plan with a lint error → lintFailed on the first failure'
   const { c, planId, runDir } = await plannedRun(t);
 
   assertLintFailedHandback(await check(c, planId, runDir, unplaced('user')), planId);
+});
+
+// Medium 2 (review-RUN-16): a shape error elsewhere in the plan must not drop a valid
+// `source: "user"` (Q20: dictated text is never rewritten unseen), even though the failure's
+// own `kind` stays `shape`.
+test('a source: user plan with a shape error elsewhere → lintFailed on the first failure', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t);
+
+  const bytes = JSON.stringify({
+    version: 1,
+    source: 'user',
+    groups: [],
+    notIncluded: [{ path: 'src/a.js', hunks: 'not-an-array' }],
+  });
+  const result = await check(c, planId, runDir, bytes);
+  assertLintFailedHandback(result, planId);
+  assert.match(result.json.errors[0].reason, /notIncluded\[0\]\.hunks must be null or an array of hunk IDs/);
 });
 
 test('a worker plan that is not valid JSON, twice → a lintFailed ending', async (t) => {

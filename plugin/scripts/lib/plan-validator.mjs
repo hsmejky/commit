@@ -104,7 +104,9 @@ function spansByPattern(hits) {
  *   `groups`/`notIncluded`/`notices` are `check`'s output fields (C:check); `stored` is what
  *   `check` writes into `state.json` per group (with `committed: false`). A failure's `kind`
  *   is `shape` when the plan is missing or not the C:worker-plan shape (its one error), else
- *   `plan`; `source` is the plan's own (`undefined` for a shape failure or none given).
+ *   `plan`; `source` is the plan's own, carried through even on a shape failure when the
+ *   parsed JSON has `source: "user"` elsewhere valid (Q20: dictated text must not be
+ *   rewritten unseen), else `undefined`.
  * @throws {Error} for a part of the worker plan no slice has built yet (a mode other than
  *   `split`).
  */
@@ -113,7 +115,7 @@ export function validatePlan(planBytes, runState, options = {}) {
     throw new Error(`check in ${runState.mode} mode is not built yet (PLN-05)`);
   }
   const parsed = parseWorkerPlan(planBytes);
-  if (!parsed.ok) return lintFailure([{ group: null, reason: parsed.reason }], 'shape', undefined);
+  if (!parsed.ok) return lintFailure([{ group: null, reason: parsed.reason }], 'shape', parsed.source);
   const workerPlan = parsed.value;
 
   const table = unitTable(runState.units);
@@ -342,7 +344,9 @@ function parseWorkerPlan(planBytes) {
     return { ok: false, reason: `${WORKER_PLAN} is not valid JSON: ${err.message}` };
   }
   const shapeError = workerPlanShapeError(value);
-  if (shapeError !== null) return { ok: false, reason: `${WORKER_PLAN}: ${shapeError}` };
+  if (shapeError !== null) {
+    return { ok: false, reason: `${WORKER_PLAN}: ${shapeError}`, source: isObject(value) && value.source === 'user' ? 'user' : undefined };
+  }
   return {
     ok: true,
     value: {

@@ -476,8 +476,10 @@ above needs to tell them apart, so `onLintFailure` needs a marker on the lint re
 example `kind: 'shape'` per error, or on the overall failure) added here, not retrofitted
 onto PLN-01.
 
-- [ ] Seam 1: two bad `check` calls in a row → exit 2 and then `lintFailed`. Running
-      `plan --hunks` between them → exit 2 both times.
+- [ ] Seam 1: two bad `check` calls in a row → exit 2 and then `lintFailed`. `plan --hunks`
+      resets the counter, so a bad `check` after it is a fresh exit 2, not `lintFailed`; the
+      separate `plan --hunks` call is asserted by INT-12 instead of here, as RUN-17 does for
+      its `resumed` row.
 - [ ] Seam 1: a `source: user` plan with a lint error → `lintFailed` on the first failure.
 - [ ] Seam 1: a worker plan that is not valid JSON, twice → a `lintFailed` ending (the
       handback's `retry`/`no`-only shape, with no `edit` answer, is RPL's).
@@ -836,4 +838,8 @@ CHG-03b built, so every subcommand's `internal` ending goes through it.
       group reaches the reply, not just the lock/folder outcome: a busy lock rename
       (`kept: true`) and a folder-removal error each surface their notice text (review-EXE-02
       finding 3; no slice currently asserts this — INT-02 asserts only the `committed` reply,
-      and this slice's own criterion above asserts only lock/folder presence).
+      and this slice's own criterion above asserts only lock/folder presence). `check`'s
+      `--no-user` lint ending (RUN-16) has the same gap: a busy lock rename there keeps the
+      run but its reply says `failed` with `planId: null`, with only the notice telling the
+      caller the run is kept (review-RUN-16 finding Low-2); assert that `releaseOpen` result
+      reaches the reply there too.

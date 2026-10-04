@@ -875,7 +875,9 @@ async function checkRefusals(ctx) {
  * M14 `validatePlan` over `plan.groups.json` and the run state. A lint failure ends the call
  * with exit 2 and the `errors`; RUN-16 counts it in `lintFailures` and asks M15
  * `onLintFailure` whether it ends the worker's retries (`lintEnding`, which `check` turns into
- * a `reply`), passing on the run's `interactive`. On success the validated groups are stored with
+ * a `reply`), passing on the run's `interactive`; it also carries `shapeOnly` (RPL-08 reads
+ * it to drop the `edit` answer when the plan's one error is a shape error) into the
+ * `lintFailed` reply facts, unused until then. On success the validated groups are stored with
  * `committed: false`; the output is `groups`, `notIncluded` and `notices` only, with the
  * lock kept: M15 `checkGate` (RUN-19), `computeConfirm` and the routing to `commit --all`
  * arrive with their own slices (RUN-17, RUN-18, EXE-02, INT-02).
@@ -892,7 +894,7 @@ async function validateWorkerPlan(ctx) {
   if (!validated.ok) {
     const lintEnding = onLintFailure(state, validated.source, validated.kind);
     writeState(run, { ...state, lintFailures: (state.lintFailures ?? 0) + 1 });
-    return { lint: validated.errors, lintEnding, interactive: state.interactive };
+    return { lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape' };
   }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
   return { groups: validated.groups, notIncluded: validated.notIncluded, notices: validated.notices };
@@ -1183,7 +1185,10 @@ async function lintFailureOf(facts, ctx) {
   if (facts.lintEnding === 'fix') return { failure };
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   if (facts.interactive !== false) {
-    failure.reply = await finalReply({ status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint }, ctx);
+    failure.reply = await finalReply(
+      { status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint, shapeOnly: facts.shapeOnly },
+      ctx,
+    );
     return { failure };
   }
   const released = releaseOpen(run);

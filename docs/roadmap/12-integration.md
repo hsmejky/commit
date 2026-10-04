@@ -193,7 +193,8 @@ group; the `one` answer's respawn is offered only in `split` with several groups
 95, 181, 222.
 
 - [ ] Seam 1: `plan --hunks --plan` as a separate call keeps the unit IDs and every stored
-      notice, and resets the lint counter
+      notice, and resets the lint counter; a bad `check` after it → exit 2 with no `reply`
+      (RUN-16)
 - [ ] A following `check` with one tracked group returns a `confirm` whose reason is the edited
       plan (story 95)
 - [ ] The `one` answer is absent from a single-group and from a `staged` confirmation (story
