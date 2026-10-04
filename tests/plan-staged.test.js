@@ -232,6 +232,18 @@ test('plan --staged refuses a scan hit in the index diff with staged-hit', async
   assert.equal(result.json.error.message, 'unstage `t.js` and run `/commit` again, or commit by hand');
 });
 
+test('plan --staged: a scan hit only in unstaged content does not refuse --staged', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n', 't.js': 'clean\n' });
+  c.writeFile('a.txt', 'a2\n');
+  c.git(['add', '--', 'a.txt']);
+  c.writeFile('t.js', `const token = "${'gh' + 'p_' + 'a'.repeat(36)}";\n`);
+
+  const { planJson } = await plan(c, ['--staged']);
+
+  assert.equal(planJson.mode, 'staged');
+});
+
 test('plan --staged on a staged 60-file new directory scans 60 units, no collapse', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n' });
