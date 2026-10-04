@@ -378,14 +378,14 @@ rewrote them; run /commit again".
 
 **Blocked by:** EXE-09, EXE-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, story 164.
 
-- [ ] Seam 1: a `pre-commit` hook that rewrites a file of group 2 while group 1 commits →
+- [x] Seam 1: a `pre-commit` hook that rewrites a file of group 2 while group 1 commits →
       group 1 kept, group 2 exit 6 `diff-changed` with that text naming group 1.
-- [ ] Seam 1: two groups and no hook → `treeChangedDuringCommit` never set.
-- [ ] Seam 1: the last group → the worktree-hash git calls are not spawned before or after
+- [x] Seam 1: two groups and no hook → `treeChangedDuringCommit` never set.
+- [x] Seam 1: the last group → the worktree-hash git calls are not spawned before or after
       `git commit`, observed through the PATH git shim that logs its argv
       (`docs/spec/testing-modules.md`).
 
