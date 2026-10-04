@@ -248,7 +248,13 @@ export async function main(argv, env) {
   }
 
   const workflow = WORKFLOWS[subcommand];
-  const result = await workflow(parsed.values, env, { cwd: env.cwd });
+  // GIT-07 (RUN-03): the call's start, read once here at dispatch and threaded through
+  // `injected.callStarted`, so no workflow reads its own (M15 `deadline` and its siblings).
+  // (Destructured: `env` here is the injected environment, not `process.env`, and
+  // cli-argv.test.js's env-var scan reads any `env.<name>` as a variable read.)
+  const { now } = env;
+  const callStarted = now();
+  const result = await workflow(parsed.values, { ...env, callStarted }, { cwd: env.cwd });
   if (result.failure !== undefined) {
     // EXE-06: `commit`'s mid-run refusals (`head-moved`; `taken-over`/`busy` from EXE-04's
     // `touch`) carry extra fields beyond `kind`/`message`/`errors`/`reply`

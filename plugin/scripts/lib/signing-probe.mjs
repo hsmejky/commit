@@ -4,8 +4,13 @@
 // never runs a signing program, so it never pops up a prompt.
 //
 // GIT-10 builds the enabled flag and the non-SSH formats: openpgp → `"prompt"`, x509 or a
-// custom openpgp program → `"unknown"`, a custom `gpg.ssh.program` → `"prompt"`. The git
-// calls' per-call timeout from `deadline` is GIT-07's.
+// custom openpgp program → `"unknown"`, a custom `gpg.ssh.program` → `"prompt"`.
+//
+// GIT-07: the git calls take their timeout from the call's deadline through M2's deadline
+// scope (`withDeadline`, set by `plan`), not from an argument: a probe git call that times
+// out (`TIMED_OUT`) ends as `"unknown"` rather than a throw (M11), a timed-out
+// `git --exec-path` means the `ssh-add -L` check was not run on every platform, and `ssh-add`
+// takes the smaller of its fixed 5 s and the scope's budget (M2).
 //
 // GIT-11 resolves `user.signingKey` through the key-source table of C:plan (unset, a literal
 // key, a `.pub` path, any other path; `~/` against the injected OS home, `~user/` unknown,
@@ -26,8 +31,13 @@ import path from 'node:path';
 // it is not custom.
 const DEFAULT_PROGRAMS = Object.freeze({ openpgp: 'gpg', x509: 'gpgsm', ssh: 'ssh-keygen' });
 
+// A probe git call that timed out (M2 `timedOut`, GIT-07): the probe cannot decide.
+const TIMED_OUT = Symbol('timed-out');
+
+// A `git config` read: its output, `null` when the key is unset (exit 1), or `TIMED_OUT`.
 async function gitConfig(args, { toplevel, env, now }) {
   const result = await run('git', ['config', ...args], { cwd: toplevel, env, now, readOnly: true });
+  if (result.timedOut) return TIMED_OUT;
   if (result.code === 1) return null;
   if (result.code !== 0) {
     throw new Error(`git config ${args.join(' ')} failed (${result.code}): ${result.stderr}`);
@@ -292,10 +302,11 @@ async function listAgentKeys(file, { toplevel, env, now }) {
   return lines.map(parsePublicKey).filter((key) => key !== null);
 }
 
-// `git --exec-path`, trimmed, or `null` when git cannot say.
+// `git --exec-path`, trimmed, `TIMED_OUT`, or `null` when git cannot say.
 async function gitExecPath({ toplevel, env, now }) {
   try {
     const result = await run('git', ['--exec-path'], { cwd: toplevel, env, now, readOnly: true });
+    if (result.timedOut) return TIMED_OUT;
     const value = result.stdout.toString('utf8').trim();
     return result.code === 0 && value !== '' ? value : null;
   } catch {
@@ -308,9 +319,11 @@ async function gitExecPath({ toplevel, env, now }) {
 // where the locator's first step depends on it — an exec path that could not be read: with
 // no `usr/bin` step to try, the locator would otherwise fall through to a `PATH` search,
 // which can land on Windows OpenSSH and its own agent, a probe step that never finished
-// deciding `false` on Q18's say (review-GIT-12 finding 1)).
+// deciding `false` on Q18's say (review-GIT-12 finding 1)); and, on every platform, an exec
+// path read that timed out (GIT-07: the check was not run, review-GIT-12 finding 2).
 async function agentKeys(context) {
   const execPath = context.execPath !== undefined ? context.execPath : await gitExecPath(context);
+  if (execPath === TIMED_OUT) return null;
   if (execPath === null && process.platform === 'win32') return null;
   const sshAdd = locateSshAdd({ execPath, env: context.env });
   return sshAdd === null ? null : listAgentKeys(sshAdd, context);
@@ -348,7 +361,8 @@ async function keySource(signingKey, context) {
 async function sshReadiness(format, values, context) {
   if (isCustom(values.get('gpg.ssh.program'), format)) return 'prompt';
   const raw = await gitConfig(['--get', 'user.signingKey'], context);
-  if (raw === null) return 'unknown'; // unset, with or without gpg.ssh.defaultKeyCommand
+  // Unset (with or without gpg.ssh.defaultKeyCommand), or a read that timed out (GIT-07).
+  if (raw === null || raw === TIMED_OUT) return 'unknown';
   const source = await keySource(raw.replace(/\r?\n$/, ''), context);
   if (source === null) return 'unknown'; // ~user/
   const { publicKey, fileReady } = source;
@@ -385,7 +399,9 @@ async function readiness(format, values, entries, context) {
  *   A `commit.gpgsign` value that is not a boolean is a case the probe cannot decide either:
  *   `{ enabled: true, ready: "unknown" }` (`git commit` reports git's own error, same as a
  *   `gpg.format` git does not know). `ready` is `false` only for an SSH key with a
- *   passphrase (or no private key file) that a trusted `ssh-add -L` does not list.
+ *   passphrase (or no private key file) that a trusted `ssh-add -L` does not list. A probe
+ *   git call that times out (GIT-07, inside `plan`'s deadline scope) gives `"unknown"`: on
+ *   `commit.gpgsign` or `gpg.*`, `{ enabled: true, ready: "unknown" }`.
  * @throws {Error} when the `gpg.*` config read exits other than 0 or 1.
  */
 export async function probeSigning({ toplevel, env, now, osHome, execPath }) {
@@ -396,8 +412,11 @@ export async function probeSigning({ toplevel, env, now, osHome, execPath }) {
   } catch {
     return { enabled: true, ready: 'unknown' };
   }
+  if (enabled === TIMED_OUT) return { enabled: true, ready: 'unknown' };
   if (enabled === null || enabled.trim() !== 'true') return { enabled: false };
-  const entries = parseEntries(await gitConfig(['-z', '--get-regexp', '^gpg\\.'], at));
+  const gpgConfig = await gitConfig(['-z', '--get-regexp', '^gpg\\.'], at);
+  if (gpgConfig === TIMED_OUT) return { enabled: true, ready: 'unknown' };
+  const entries = parseEntries(gpgConfig);
   const values = lastValues(entries);
   const format = values.get('gpg.format') ?? 'openpgp';
   if (!Object.hasOwn(DEFAULT_PROGRAMS, format)) return { enabled: true, ready: 'unknown' };

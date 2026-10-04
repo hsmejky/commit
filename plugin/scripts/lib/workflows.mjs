@@ -71,7 +71,7 @@ import {
 import { INDEX_CHANGED_TEXT, commitAll } from './commit-executor.mjs';
 import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
-import { gitPath } from './process-adapter.mjs';
+import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import { cleanupDeadline, deadline, planRefusal, releaseDeadline, resolveMode } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
@@ -916,9 +916,10 @@ const DEADLINE_TEXT = '/commit passed its 540-second deadline';
 // (only `plan` so far) is checked before every step that makes git calls, and before step 7's
 // re-reads once the lock is held (`storeAndLock`): past it the call ends as `timed-out` (exit 5
 // `timeout`) and `plan`'s own cleanup discards or releases the run. The steps after the
-// sweep make no git call, so a clock past the deadline there no longer ends the run. The
-// per-call `timeoutMs = deadline - now()` of each M2 call inside a step is GIT-07's
-// (docs/roadmap/06-git-adapters.md).
+// sweep make no git call, so a clock past the deadline there no longer ends the run. Inside
+// a step, GIT-07 bounds each M2 call by `deadline - now()` at its own start (`plan` runs its
+// step table inside M2 `withDeadline`); a call that deadline ends or skips marks the scope
+// `expired`, and `plan` then ends `timed-out` the same way.
 function pastDeadline(ctx) {
   if (ctx.deadline === undefined || ctx.injected.now() < ctx.deadline) return undefined;
   return { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
@@ -948,9 +949,10 @@ async function runSteps(steps, ctx) {
  *   shape and exit code.
  */
 export async function plan(values, injected, { cwd }) {
-  // RUN-12: the call's start, read once and first (as `release`'s, RUN-03), so M15
-  // `deadline` and `cleanupDeadline` bound the whole call.
-  const callStarted = injected.now();
+  // RUN-12: the call's start, so M15 `deadline` and `cleanupDeadline` bound the whole call;
+  // GIT-07: read once at dispatch (`cli.mjs`'s `main`, `injected.callStarted`), here only
+  // for a direct call that did not pass one.
+  const callStarted = injected.callStarted ?? injected.now();
   // Only bare `plan`, `plan --split`, `plan --reword` (RUN-06: the lock on a clean tree;
   // its reword facts GIT-09's, its snapshot CHG-15's) and `plan --staged` (RUN-13: its mode
   // decision; its index-only snapshot is CHG-14's) are built: every other flag changes the
@@ -967,14 +969,24 @@ export async function plan(values, injected, { cwd }) {
   };
   let facts;
   let thrown;
+  // GIT-07: every M2 call of the steps takes `deadline - now()` at its own start (M2
+  // `withDeadline`); `run` marks the scope `expired` when that deadline ended or skipped one.
+  const scope = { deadline: ctx.deadline, now: injected.now };
   try {
-    facts = await runSteps(PLAN_STEPS, ctx);
+    facts = await withDeadline(scope, () => runSteps(PLAN_STEPS, ctx));
   } catch (err) {
     // KD-R64 (RUN-12): an unexpected throw ends `plan` as `internal` here, with the reply and
     // the notices collected so far (the cleanup's own below included), instead of reaching
     // `commit.cjs`'s backstop, which has neither.
     thrown = { error: err };
   } finally {
+    // GIT-07: a git call the deadline ended (its step then threw, or went on with what it
+    // had, such as M11's `"unknown"`) ends `plan` as `timeout` (C:plan), whatever the steps
+    // returned; the cleanup below then discards or releases the run.
+    if (scope.expired) {
+      facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
+      thrown = undefined;
+    }
     // Every outcome but the hunk index ends without the lock (C:run-folder), a thrown
     // `internal` included: a throw after `acquire` (`ctx.run`) releases the lock first, one
     // before it has no lock to release. Neither `release` nor `discard` throws: a removal
@@ -1005,7 +1017,7 @@ export async function plan(values, injected, { cwd }) {
       runDir: null,
       // The resolved mode (a clean tree's), or `null` with a `modeChoice` (C:plan `mode`).
       mode: ctx.mode ?? null,
-      reply: await finalReply({ ...facts, notices: ctx.notices }, ctx),
+      reply: await finalReply({ ...facts, notices: ctx.notices }, ctx, { deadline: ctx.deadline }),
       hunks: null,
     },
   };
@@ -1020,13 +1032,12 @@ export async function plan(values, injected, { cwd }) {
  * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
  */
 export async function release(values, injected, { cwd }) {
-  // The call's start (RUN-03): read once, first, so it precedes every other clock read the
-  // call makes and `releaseDeadline` bounds the whole call, not just the part after it.
-  // M15 says `deadline`/`cleanupDeadline` are computed once when a call starts, for every
-  // subcommand (docs/spec/modules-m14-m19.md); once GIT-07 lands that read moves to dispatch
-  // (`cli.mjs`'s `main`, which already calls each M18 workflow with `injected`) and is
-  // threaded through `injected`/`ctx` instead of being re-read here (review-RUN-03 finding 3).
-  const callStarted = injected.now();
+  // The call's start (RUN-03), so `releaseDeadline` bounds the whole call, not just the part
+  // after it. GIT-07: read once at dispatch (`cli.mjs`'s `main`) and threaded through
+  // `injected.callStarted` (review-RUN-03 finding 3); read here only for a direct call that
+  // did not pass one. `release`'s own steps run outside any deadline scope (KD-R78); only
+  // the reply's tree-state read is bounded, by `releaseDeadline` (`finalReply`).
+  const callStarted = injected.callStarted ?? injected.now();
   const ctx = { injected, cwd, values };
   const facts = await runSteps(RELEASE_STEPS, ctx);
   if (facts.refusal !== undefined) return refusalFailure(facts.refusal);
@@ -1063,9 +1074,10 @@ export async function release(values, injected, { cwd }) {
  * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
  */
 export async function commit(values, injected, { cwd }) {
-  // EXE-16: the call's start, read once and first (as `plan`'s own, RUN-12), so M15
-  // `deadline` bounds M16 `commitAll`'s budget check (`nextStep`) across every group.
-  const callStarted = injected.now();
+  // EXE-16: the call's start (as `plan`'s own, RUN-12), so M15 `deadline` bounds M16
+  // `commitAll`'s budget check (`nextStep`) across every group; read once at dispatch
+  // (GIT-07, `injected.callStarted`), here only for a direct call that did not pass one.
+  const callStarted = injected.callStarted ?? injected.now();
   const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
   try {
     const facts = await runSteps(COMMIT_STEPS, ctx);
@@ -1165,12 +1177,12 @@ function refusalFailure(refusal) {
 // `plan()` (it is set from step 2), so the usable-worktree check below is done on
 // `ctx.probe.repo` directly and passed to the shared `finalReply` as its `toplevel`.
 //
-// RUN-12: past `plan`'s 540 s `deadline` (`timed-out`), the reply's tree-state read runs
-// against `cleanupDeadline` (C:plan), so a read past 580 s is not spawned; every other refusal
-// keeps an unbounded read until GIT-07.
+// RUN-12, GIT-07: the reply's tree-state read is a reporting call after a failure, so it runs
+// against `cleanupDeadline` (M15, C:plan) for every refusal, `timed-out` included: a read
+// past 580 s is not spawned, and one that times out omits the tree state.
 async function planRefusalFailure(refusal, ctx) {
   const toplevel = usableToplevel(ctx);
-  const replyDeadline = refusal.code === 'timed-out' ? ctx.cleanupDeadline : undefined;
+  const replyDeadline = ctx.cleanupDeadline;
   return {
     failure: {
       kind: kindForDomainCode(refusal.code),
@@ -1236,20 +1248,28 @@ function holderFields(holder) {
 // caught by the `readDeadline` check below instead, not by this one), or no git at all,
 // C:reply-and-handback) skips the read the same way a spent `readDeadline` does.
 //
-// GIT-07 (docs/roadmap/06-git-adapters.md): once M2 calls take `timeoutMs` from a deadline,
-// this read's own `timeoutMs` must come from `deadline - now()` too, and a read that times out
-// must land here as `treeState: undefined` (the line below only skips a read that hasn't
-// started), not as a thrown `internal` failure from `change-set.mjs`'s `treeState`.
+// GIT-07 (docs/roadmap/06-git-adapters.md): a read that starts runs inside M2 `withDeadline`,
+// so its `timeoutMs` is `readDeadline - now()` at its own start; one that deadline ends (the
+// scope `expired`, `change-set.mjs`'s `treeState` then throws) lands here as
+// `treeState: undefined`, the same as a read skipped outright, never as a thrown `internal`
+// failure. Any other failure of the read still throws.
 //
-// The option is named `deadline` at every call site (`release`'s own, `planRefusalFailure`'s
-// `replyDeadline`, `planInternalFailure`'s `ctx.cleanupDeadline`); read into `readDeadline`
-// here only, so it never shadows the M15 `deadline()` function this module imports
-// (review-RUN-12 finding 2).
+// The option is named `deadline` at every call site (`plan`'s success reply's `ctx.deadline`,
+// `release`'s own, `planRefusalFailure`'s `replyDeadline`, `planInternalFailure`'s
+// `ctx.cleanupDeadline`); read into `readDeadline` here only, so it never shadows the M15
+// `deadline()` function this module imports (review-RUN-12 finding 2).
 async function finalReply(facts, ctx, { deadline: readDeadline, toplevel = ctx.toplevel } = {}) {
   const { env, now } = ctx.injected;
   if (toplevel === undefined || (readDeadline !== undefined && now() >= readDeadline)) {
     return reply({ ...facts, treeState: undefined });
   }
-  const finalTree = await treeState({ toplevel, env, now });
-  return reply({ ...facts, treeState: finalTree });
+  if (readDeadline === undefined) return reply({ ...facts, treeState: await treeState({ toplevel, env, now }) });
+  const scope = { deadline: readDeadline, now };
+  let finalTree;
+  try {
+    finalTree = await withDeadline(scope, () => treeState({ toplevel, env, now }));
+  } catch (err) {
+    if (!scope.expired) throw err;
+  }
+  return reply({ ...facts, treeState: scope.expired ? undefined : finalTree });
 }

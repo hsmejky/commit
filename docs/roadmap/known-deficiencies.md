@@ -76,6 +76,14 @@ fixed, delete it here; IDs are never reused.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R29.** FND-10's ESM check does not import `node:fs/promises`; add it.
+- **KD-R77.** GIT-07's M2 and M11 cases (`tests/git-timeout-tree-kill.test.js`,
+  `tests/signing-probe-deadline.test.js`), like GIT-05's and GIT-12's own M2 cases, call
+  `run`/`withDeadline`/`probeSigning` in-process, outside testing-seams.md's user-confirmed
+  seam list (M2 and M11 are neither Seam 1 nor a Seam 3 table module). They pin what Seam 1
+  cannot reach without a wall-clock wait: a per-call budget scripted call by call, a spent
+  budget never spawning, and the probe's `"unknown"` mapping of each timed-out read. Fix:
+  either add an "in-process adapter" seam to testing-seams.md (a user decision), or rebuild
+  these cases at Seam 1. Slice: none yet (needs the user's seam decision).
 
 ## Coverage
 
@@ -216,6 +224,14 @@ Plan text that depends on a design fix; fix the design and the slice together.
   Where: `plugin/scripts/lib/commit-executor.mjs` `budgetStop`. Fix: none needed in EXE-16;
   RPL-08's `env` refusal runs before any group starts, so this stops being reachable once
   RPL-08 lands. Slice: RPL-08 (closes this row).
+- **KD-R78.** `release`'s own steps (probe, M12 `releaseById`, sweep) run outside any deadline
+  scope (GIT-07): only its reply's tree-state read is bounded, by `releaseDeadline`. M2's
+  spec bounds every call of every subcommand by the call's `deadline`, but `release`'s
+  540 s `deadline` is far past its 60 s tool timeout (M17), so a scope on it would never
+  bind, and no contract says what a `release` past its deadline returns. Where:
+  `plugin/scripts/lib/workflows.mjs` `release`. Fix: a user decision on `release`'s budget
+  (`releaseDeadline` for the whole call, or `deadline`) and its outcome when spent, then
+  wrap `RELEASE_STEPS` in `withDeadline`. Slice: none yet.
 
 ## Bookkeeping
 
