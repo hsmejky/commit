@@ -115,6 +115,10 @@ export async function indexLockExists({ toplevel, env, now }) {
  *   entries that are not staged-new (a rename's old path is its own deletion). The pin
  *   matches the pinned diff, so a submodule's `ignore=all` setting hides no pointer change
  *   and dirt alone is no entry.
+ * - unstagedTracked (RUN-13, KD-R75): the `tracked` paths whose status entry's worktree
+ *   column (`xy[1]`) is not blank, i.e. a tracked change outside the index. A `git add -p`
+ *   style `MM` file is both staged (in `preStaged`) and here, so M15's mode decision counts
+ *   it as staged and as another change.
  * - dirtySubmodules (CHG-09): the submodules with dirt inside but no pointer change, in byte
  *   order (`dirtySubmodulePaths`); not units, and dirt alone leaves the tree `clean`.
  * - caps (CHG-13): not this function's job. `collapsed` is always `[]` and `stagedExcluded`
@@ -126,7 +130,7 @@ export async function indexLockExists({ toplevel, env, now }) {
  * `A`, as C:untracked-files asks.
  *
  * @param {{ toplevel: string, env: object, now?: () => number }} options
- * @returns {Promise<{ clean: boolean, tracked: string[], preStaged: string[],
+ * @returns {Promise<{ clean: boolean, tracked: string[], unstagedTracked: string[], preStaged: string[],
  *   candidates: Array<{ path: string, size: number, binary: boolean }>,
  *   collapsed: Array<{ dir: string, count: number, bytes: number }>,
  *   hidden: { count: number, sample: string[] },
@@ -228,9 +232,15 @@ export async function inventory({ toplevel, env, now }) {
   const tracked = status
     .filter((entry) => entry.path !== null && !notTracked.has(entry.path))
     .map((entry) => entry.path);
+  // `tracked` paths with a worktree (unstaged) change too, read from the same status entries'
+  // `xy[1]` (RUN-13, KD-R75): a `git add -p`-style `MM` file is both staged and unstaged at
+  // once, so the mode decision's `indexState` must count it in `other` as well as `staged`.
+  const unstagedTracked = status
+    .filter((entry) => entry.path !== null && !notTracked.has(entry.path) && entry.xy[1] !== ' ')
+    .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
-    tracked, preStaged, candidates, collapsed: [], hidden, stagedNew, stagedExcluded,
+    tracked, unstagedTracked, preStaged, candidates, collapsed: [], hidden, stagedNew, stagedExcluded,
     notUtf8: notUtf8List(notUtf8), dirtySubmodules, embeddedRepos,
   };
 }

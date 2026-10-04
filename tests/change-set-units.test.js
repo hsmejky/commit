@@ -49,7 +49,7 @@ function inventory(c) {
 }
 
 const EMPTY_INVENTORY = Object.freeze({
-  clean: true, tracked: [], preStaged: [], candidates: [], collapsed: [], hidden: { count: 0, sample: [] },
+  clean: true, tracked: [], unstagedTracked: [], preStaged: [], candidates: [], collapsed: [], hidden: { count: 0, sample: [] },
   stagedNew: [], stagedExcluded: [], notUtf8: [], dirtySubmodules: [], embeddedRepos: [],
 });
 
@@ -98,7 +98,7 @@ test('inventory: a clean tree is clean, a modified tracked file is listed', asyn
   assert.deepEqual(await inventory(c), EMPTY_INVENTORY);
 
   c.writeFile('a.txt', 'b\n');
-  assert.deepEqual(await inventory(c), { ...EMPTY_INVENTORY, clean: false, tracked: ['a.txt'] });
+  assert.deepEqual(await inventory(c), { ...EMPTY_INVENTORY, clean: false, tracked: ['a.txt'], unstagedTracked: ['a.txt'] });
 });
 
 // CHG-05: candidates after `hideFilter` with size and NUL-sniffed `binary`, the hidden count
@@ -123,6 +123,7 @@ test('inventory: untracked candidates, hidden files, staged-new and pre-staged p
   assert.deepEqual(await inventory(c), {
     clean: false,
     tracked: ['b.txt'],
+    unstagedTracked: [],
     preStaged: ['.env.local', 'b.txt', 'ign.txt', 'staged.txt'],
     candidates: [{ path: 'bin.dat', size: 3, binary: true }, { path: 'new.txt', size: 2, binary: false }],
     collapsed: [],
@@ -186,6 +187,7 @@ test('inventory: a tracked file renamed to a hidden name keeps its deletion (mv 
     ...EMPTY_INVENTORY,
     clean: false,
     tracked: ['a.txt'],
+    unstagedTracked: ['a.txt'],
     stagedExcluded: [{ path: '.env', reason: 'hidden' }],
   });
 });

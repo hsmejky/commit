@@ -127,6 +127,16 @@ test('one staged file plus one unstaged tracked edit is a modeChoice with counts
   assert.doesNotMatch(result.json.reply.text.split('\n')[0], /a\.txt|b\.txt/);
 });
 
+test('a file staged then edited again (git add -p style MM) alone is a modeChoice', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('a.txt', 'a2\n');
+  c.git(['add', '--', 'a.txt']);
+  c.writeFile('a.txt', 'a3\n');
+
+  await assertModeChoice(c, `1 file is staged, 1 other change${QUESTION_TAIL}`);
+});
+
 test('the modeChoice question uses the plural for counts above one', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n', 'b.txt': 'b\n', 'c.txt': 'c\n' });
@@ -157,6 +167,42 @@ test('a fully staged index beside hidden files only plans split', async (t) => {
   c.writeFile('.env', 'SECRET=1\n');
 
   await assertPlans(c, 'split');
+});
+
+test('an intent-to-add path beside a staged edit is a modeChoice with other counted', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('a.txt', 'a2\n');
+  c.git(['add', '--', 'a.txt']);
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', '-N', 'new.txt']);
+
+  await assertModeChoice(c, `1 file is staged, 1 other change${QUESTION_TAIL}`);
+});
+
+test('an intent-to-add path alone with --staged refuses staged-empty', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', '-N', 'new.txt']);
+
+  const result = await runCommit(c, ['plan', '--staged']);
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.error.kind, 'usage');
+  assert.equal(result.json.error.message, runPolicy.STAGED_EMPTY_MESSAGE);
+  assert.deepEqual(runFolders(c), []);
+});
+
+test('a force-added hidden file beside an unstaged edit is a modeChoice', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('a.txt', 'a2\n');
+  c.writeFile('.env', 'SECRET=1\n');
+  c.git(['add', '-f', '.env']);
+
+  await assertModeChoice(c, `1 file is staged, 1 other change${QUESTION_TAIL}`);
 });
 
 test('plan --staged with an empty index refuses staged-empty (exit 1 usage)', async (t) => {

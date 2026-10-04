@@ -197,15 +197,15 @@ Plan text that depends on a design fix; fix the design and the slice together.
   the stored `kind` instead of a fresh call) if this is wanted, then land the code change
   and a seam test for the probe above. Slice: CHG-10 (done; this is accepted interim
   behavior, fails safe, until revisited).
-- **KD-R75.** RUN-13 counts `resolveMode`'s `indexState` per file from M10's inventory,
-  which has no unstaged column: a file both staged and edited again (`MM`) counts as staged
-  only, so a bare `plan` whose only other change is such a file plans `split` instead of
-  asking `modeChoice` (C:plan `mode`: "index plus other changes"). Also, `plan --staged`
-  now reaches step 5, whose snapshot is still the `split` one (worktree, candidates
-  included) until CHG-14 builds the index-only snapshot. Where:
-  `plugin/scripts/lib/workflows.mjs` `indexState` and `snapshotUnits`. Fix: CHG-14 (blocked
-  by RUN-13) exposes the unstaged changes per path; count them in `indexState` and add a
-  Seam 1 case for a partly staged file.
+- **KD-R75.** `plan --staged` reaches step 5, whose snapshot is still the `split` one
+  (worktree, candidates included, uncapped — `collapseCandidates` and the case-rename check
+  skip modes other than `split`) until CHG-14 builds the index-only snapshot (review-RUN-13
+  finding 3; the per-file mode-count gap this row used to cover was fixed in RUN-13 itself,
+  `indexState` now reads the worktree column too). No commit can come of the interim
+  snapshot: `check` and `commit` both refuse any mode other than `split`. Where:
+  `plugin/scripts/lib/workflows.mjs` `collapseCandidates`, `refuseCaseRenames` and
+  `snapshotUnits`. Fix: CHG-14 (blocked by RUN-13) builds the index-only snapshot for
+  `staged` mode, removing untracked candidates from it instead of capping them.
 
 ## Bookkeeping
 

@@ -282,12 +282,13 @@ async function resolveRunMode(ctx) {
 // M15 `resolveMode`'s `indexState` from M10's pre-cap inventory (C:plan step 4: candidates
 // counted after the hidden rule and before the caps). `staged`: every path the index changes
 // against HEAD (`preStaged`, a hidden staged-new path included: its content is staged).
-// `other`: the tracked changes not in `preStaged`, the candidates, and the intent-to-add
-// staged-new paths (`git add -N` stages no content). Per file: a file both staged and
-// edited again counts as staged only, until CHG-14 reads the unstaged column (KD-R75).
+// `other`: the tracked changes not in `preStaged`, plus the ones that are (a `git add -p`
+// style `MM` file, read from `unstagedTracked`, RUN-13, KD-R75), the candidates, and the
+// intent-to-add staged-new paths (`git add -N` stages no content).
 function indexState(inv) {
   const staged = new Set(inv.preStaged);
-  const other = inv.tracked.filter((p) => !staged.has(p)).length
+  const unstaged = new Set(inv.unstagedTracked);
+  const other = inv.tracked.filter((p) => !staged.has(p) || unstaged.has(p)).length
     + inv.candidates.length
     + inv.stagedNew.filter((entry) => !staged.has(entry.path)).length;
   return { staged: staged.size, other };

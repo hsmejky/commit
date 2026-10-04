@@ -145,8 +145,11 @@ export function planRefusal(facts) {
   return null;
 }
 
-/** `staged-empty`'s text (RUN-13, Q9): `plan --staged` with nothing staged. */
-export const STAGED_EMPTY_MESSAGE = 'nothing is staged: --staged commits only what the index holds';
+// `staged-empty`'s text (RUN-13, Q9, Q16; review-RUN-13 finding 4): `plan --staged` with
+// nothing staged, the typical case being the index emptied between a `modeChoice` answer of
+// "staged" and the respawn. Worded for the user who picked "commit only the staged ones" and
+// never typed `--staged` themselves, with a next step, not CLI vocabulary.
+export const STAGED_EMPTY_MESSAGE = 'nothing is staged any more: stage the changes again, or run /commit to group all changes';
 
 /**
  * M15 `resolveMode(flags, indexState, killedLeftover)` (RUN-13, C:plan `mode`, Q9, Q16):
