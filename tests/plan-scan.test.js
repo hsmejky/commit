@@ -210,6 +210,7 @@ test('added content of exactly 1,048,576 bytes is scanned; one byte more is flag
       const units = await snapshot(c, ['edge.txt']);
       assert.equal(units.length, 1);
       assert.equal(units[0].overScanLimit === true, flagged);
+      if (!flagged) assert.equal(units[0].addedLines.length, units[0].added);
 
       const { planJson } = await plan(c);
       if (flagged) {
