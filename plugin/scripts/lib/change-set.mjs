@@ -11,11 +11,16 @@
 // a plain `commitGuarded` (CHG-19 to CHG-23 widen them).
 
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, lstatSync, openSync, readSync, rmSync, statSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, rmSync, statSync } from 'node:fs';
 import { copyFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hideFilter } from './path-classifier.mjs';
 import { gitPath, run } from './process-adapter.mjs';
+
+// `snapshotBlob`'s (SCN-14) record of the last `snapshot()` call's `mode`/`toplevel`/`env`/
+// `now`, so it can read the repo config's content "on the snapshot side" afterward without
+// its own copy of the caller's context.
+let lastSnapshotContext = null;
 
 // Q11's pinned options, every one of them, for every diff the script runs. Only M10 holds
 // them (M10: "the only owner of the pinned diff options").
@@ -561,6 +566,7 @@ function byteOrder(a, b) {
 export async function snapshot({
   mode, storedLists, tracked, indexPath, unborn, head, root, toplevel, env, now,
 }) {
+  lastSnapshotContext = { mode, toplevel, env, now };
   if (mode === 'reword') {
     // CHG-15 (Q20, C:plan-hunks "what is diffed"): HEAD's own diff against its single
     // parent, or the empty tree for a root commit (`root`, GIT-09's `rewordFacts.root`,
@@ -619,6 +625,34 @@ export async function snapshot({
   const rediff = new Set(reader.rediff);
   const again = (await pinnedDiff(['--no-renames'], opts, attrs)).end().filter((unit) => rediff.has(unit.path));
   return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
+}
+
+/**
+ * Reads the repo config's content "on the snapshot side of the last `snapshot()` call"
+ * (SCN-14, M10, C:plan-hunks): the working-tree file in `split` mode (staged changes to it
+ * are not reflected, since `split` units carry only the real tree's edits against HEAD).
+ * `staged` mode (CHG-14) would read the index entry instead; not built yet.
+ *
+ * @param {string} repoRelativePath path relative to the repo root (M4 `REPO_CONFIG_PATH`).
+ * @returns {Buffer | null} the file's raw bytes, or `null` when it is absent on the snapshot
+ *   side.
+ * @throws {Error} when called before any `snapshot()` call this process, or in a mode other
+ *   than `split`/`reword` (`staged`, CHG-14, is not built yet).
+ */
+export function snapshotBlob(repoRelativePath) {
+  if (lastSnapshotContext === null) {
+    throw new Error('snapshotBlob called before any snapshot (M10)');
+  }
+  const { mode, toplevel } = lastSnapshotContext;
+  if (mode === 'split') {
+    try {
+      return readFileSync(join(toplevel, repoRelativePath));
+    } catch (err) {
+      if (err.code === 'ENOENT' || err.code === 'ENOTDIR' || err.code === 'EISDIR') return null;
+      throw err;
+    }
+  }
+  throw new Error(`snapshotBlob in ${mode} mode is not built yet (CHG-14)`);
 }
 
 // One `git check-attr --stdin -z filter linguist-generated` call (CHG-10, Q11): paths go on
