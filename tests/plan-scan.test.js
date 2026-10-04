@@ -16,6 +16,14 @@
 // `local-path`'s fixed shapes (Q10) still fire. "Cleared" means set to the empty string, not
 // left unset: on Windows, libuv re-inserts `USERNAME` into every spawned child regardless
 // (tests/process-seam.test.js), and commit.cjs:38-44 treats an empty value the same as unset.
+//
+// SCN-16 (docs/roadmap/05-scanner.md): the Seam 1 proof that `plan` reads what history would
+// get, not what the working tree shows on its face — an attribute-hidden text file (`-diff`
+// or `binary`, CHG-11's `--text` pass, tests/change-set-attribute-hidden.test.js already
+// covers the `-diff` half through `plan`) and a brand-new symlink (CHG-09, the target scanned
+// as an added line) both reach `scan.hits`, and a `GIT_ATTR_SOURCE` decoy exported pointing
+// at a tree with no hiding attribute does not change the result: CHG-10's `check-attr` call
+// pins its own attribute source and never reads the decoy's (change-set.mjs:676).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -324,4 +332,68 @@ test('SCN-15: osUser null (fault, USER/USERNAME cleared) skips the OS-user-segme
     { path: 'src/paths.js', line: 1, pattern: 'local-path' },
     { path: 'src/paths.js', line: 2, pattern: 'local-path' },
   ]);
+});
+
+const NO_SYMLINKS = process.platform === 'win32' && 'no symlinks without privileges';
+
+// SCN-16 AC1 (second half): the `-diff` half already reaches `plan`'s scan in
+// tests/change-set-attribute-hidden.test.js; this is the `binary`-attributed half.
+test('plan: a secret added to a binary-attributed text file is found by the scan', async (t) => {
+  const c = createCase(t);
+  c.writeFile('x.bin', 'one\n');
+  c.writeFile('.gitattributes', 'x.bin binary\n');
+  c.git(['add', '.']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('x.bin', `one\n${tokenLine('m')}`);
+
+  const { hunks, planJson } = await plan(c);
+
+  const entry = hunks.find((h) => h.path === 'x.bin');
+  assert.equal(entry.kind, 'text');
+  assert.equal(entry.body, 'none');
+  assert.deepEqual(planJson.scan.hits, [{ path: 'x.bin', line: 2, pattern: 'github-token' }]);
+});
+
+// SCN-16 AC2: a brand-new symlink is picked up as an untracked candidate (no `git add`
+// needed, same as a plain new file above) and its target is scanned as one added line
+// (Q11), so a home-path target is a `local-path` hit on that unit.
+test('plan: a new symlink whose target is a home path hits local-path', { skip: NO_SYMLINKS }, async (t) => {
+  const c = createCase(t);
+  seed(c, { 'README.md': 'readme\n' });
+  // Built at run time (split across a concatenation), so this file holds no fixed-shape
+  // local-path text of its own (see tests/scanner.test.js's same trick) — the privacy guard
+  // scans test sources.
+  const homeTarget = '/Users/' + 'charlie/secret.txt';
+  fs.symlinkSync(homeTarget, path.join(c.repoDir, 'link'));
+
+  const { hunks, planJson } = await plan(c);
+
+  const entry = hunks.find((h) => h.path === 'link');
+  assert.equal(entry.kind, 'symlink');
+  assert.deepEqual(planJson.scan.hits, [{ path: 'link', line: 1, pattern: 'local-path' }]);
+});
+
+// SCN-16 AC3: a GIT_ATTR_SOURCE decoy exported pointing at the seed commit, whose tree has
+// no .gitattributes at all, must not stop the hidden file from being recognised and read as
+// text: CHG-10's check-attr call pins its own attribute source (change-set.mjs:676), so the
+// classification and the hit are exactly what the undecoyed case gets (mirrors the `filter`
+// decoy of tests/change-set-filtered.test.js's GIT-05, for the `diff`/`binary` hiding
+// attributes instead).
+test('plan: a GIT_ATTR_SOURCE decoy pointing at an attribute-free tree does not change the hidden-file hit', async (t) => {
+  const c = createCase(t);
+  c.writeFile('x.bin', 'one\n');
+  c.git(['add', 'x.bin']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const noAttrHead = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('.gitattributes', 'x.bin -diff\n');
+  c.git(['add', '.gitattributes']);
+  c.git(['commit', '-q', '-m', 'attr']);
+  c.writeFile('x.bin', `one\n${tokenLine('q')}`);
+
+  const { hunks, planJson } = await plan(c, { env: { GIT_ATTR_SOURCE: noAttrHead } });
+
+  const entry = hunks.find((h) => h.path === 'x.bin');
+  assert.equal(entry.kind, 'text');
+  assert.equal(entry.body, 'none');
+  assert.deepEqual(planJson.scan.hits, [{ path: 'x.bin', line: 2, pattern: 'github-token' }]);
 });
