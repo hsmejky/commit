@@ -62,7 +62,7 @@ import {
   oldMessage, probe, recentSubjects, rewordFacts,
 } from './repo-probe.mjs';
 import {
-  assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, trackedDirectories,
+  assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, snapshotBlob, trackedDirectories,
   treeState, unplannableCaseRenames,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
@@ -79,7 +79,7 @@ import {
   cleanupDeadline, deadline, onLintFailure, planRefusal, releaseDeadline, resolveMode,
 } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
-import { loadConfig, readLayers } from './config.mjs';
+import { loadConfig, readLayers, scanIgnoreChanged, isRepoConfigPath, REPO_CONFIG_PATH } from './config.mjs';
 import { resolveAttribution } from './attribution.mjs';
 import { scanUnits } from './scanner.mjs';
 import { probeSigning } from './signing-probe.mjs';
@@ -522,19 +522,31 @@ function buildScanMap(units, { hits, skipped }) {
  * own diff against its single parent (CHG-15): content already committed, not a change the
  * run is about to make, so Q20 ("no content changes, so no content scan") applies and this
  * step scans nothing in `reword` mode either.
+ *
+ * SCN-14: also reads the repo config's content on the snapshot side (M10 `snapshotBlob`) and
+ * compares it against the `scanIgnore` read at HEAD (`ctx.config.values.scanIgnore`, M4's own
+ * "headPatterns") with M4's pure `scanIgnoreChanged`. The flag and the repo-config units it
+ * marks (M8's `scanIgnoreUnits`, by `isRepoConfigPath`) are stored as `ctx.scanIgnoreChanged`
+ * and `ctx.scanIgnoreUnits`, both `false`/`[]` in the clean/`reword` short-circuit above.
  */
 async function scanDiff(ctx) {
   if (ctx.units === undefined || ctx.mode === 'reword') {
     ctx.scan = { hits: [], skipped: [] };
     ctx.scanMap = {};
+    ctx.scanIgnoreChanged = false;
+    ctx.scanIgnoreUnits = [];
     return undefined;
   }
-  const { hits, skipped } = scanUnits(ctx.units, {
+  ctx.scanIgnoreChanged = scanIgnoreChanged(ctx.config.values.scanIgnore, snapshotBlob(REPO_CONFIG_PATH));
+  const { hits, skipped, scanIgnoreUnits } = scanUnits(ctx.units, {
     scanIgnore: ctx.scanIgnoreMatchers,
     osUser: ctx.injected.osUser,
+    scanIgnoreChanged: ctx.scanIgnoreChanged,
+    isRepoConfigPath,
   });
   ctx.scan = { hits, skipped };
   ctx.scanMap = buildScanMap(ctx.units, { hits, skipped });
+  ctx.scanIgnoreUnits = scanIgnoreUnits;
   return undefined;
 }
 
@@ -625,6 +637,9 @@ async function storeAndLock(ctx) {
     // CHG-16 (C:plan-hunks "scan map"): every scan hit and skipped path mapped to the unit
     // that holds it, cut from the very diff `scanDiff` (step 5) scanned.
     scanned: ctx.scanMap,
+    // SCN-14 (C:plan-hunks "scan map"): the repo-config units `scanDiff` flagged when its
+    // `scanIgnore` changed on the snapshot side.
+    scanIgnoreUnits: ctx.scanIgnoreUnits,
     // GIT-09: `reword` only (C:run-folder): HEAD's message, and whether HEAD is a root
     // commit, which CHG-15's snapshot diffs against the empty tree.
     ...(ctx.mode === 'reword' ? { oldMessage: ctx.oldMessage, rootCommit: ctx.reword.root } : {}),
@@ -681,12 +696,12 @@ async function storeAndLock(ctx) {
     stagedExcluded: stagedExcludedOf(ctx),
     dirtySubmodules: dirtySubmodulesOf(ctx),
     // CHG-16 (C:plan `scan`): hits (M8's `patternId` as C:plan's `pattern`, never the
-    // matched value) and skips from `scanDiff` (step 5). `scanIgnoreChanged` is SCN-14's;
-    // `false` is a stand-in until that slice computes it.
+    // matched value) and skips from `scanDiff` (step 5). `scanIgnoreChanged` is SCN-14's:
+    // whether the repo config's `scanIgnore` differs on the snapshot side from HEAD.
     scan: {
       hits: ctx.scan.hits.map(({ path, line, patternId }) => ({ path, line, pattern: patternId })),
       skipped: ctx.scan.skipped,
-      scanIgnoreChanged: false,
+      scanIgnoreChanged: ctx.scanIgnoreChanged,
     },
     // CFG-05 (C:plan `config.sources`): the effective values, repo over user over default.
     config: ctx.config,
