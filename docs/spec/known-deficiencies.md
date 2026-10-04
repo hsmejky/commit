@@ -188,6 +188,14 @@ Other test gaps ([testing-modules.md](testing-modules.md), [testing-seams.md](te
   key edited → false, invalid JSON → true, multi-hunk config, config renamed away,
   attribute-hidden `--text`. Fix: add them to the M4 and M6-M9 rows. Disposition: accepted
   for 0.1.0.
+- **KD-S87. The `pastDeadline` scope-expired clause is untested.** `workflows.mjs`'s
+  `pastDeadline` also checks `ctx.scope?.expired !== true`, alongside the clock; no scoped
+  M2 git call precedes `releaseById` or `openRun` in a working tree today, so no test can
+  reach that branch without a module mock, which stretches the user-confirmed seam list
+  (GIT-07 review r3, open question). Where: `plugin/scripts/lib/workflows.mjs`
+  `pastDeadline`. Fix: the slice that adds the first in-scope git call before
+  `release`/`open` in a working tree also adds a Seam 1 case for it (a slow git shim).
+  Disposition: accepted for 0.1.0.
 
 ## Performance
 

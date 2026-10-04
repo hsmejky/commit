@@ -1037,6 +1037,10 @@ const RELEASE_DEADLINE_TEXT = '/commit release passed its 45-second deadline';
 // (`runStepsWithin`) also stop before the next step once their scope is `expired`, even with
 // the clock still short of the deadline, so `release` never removes a lock after a timed-out
 // git call (KD-R78 decision).
+//
+// KD-S87: the `ctx.scope?.expired` clause below is untested today, because no scoped M2 git
+// call precedes `releaseById` or `openRun` in a working tree; the slice that adds the first
+// such call must add a Seam 1 test for it.
 function pastDeadline(ctx) {
   if (ctx.deadline === undefined) return undefined;
   if (ctx.injected.now() < ctx.deadline && ctx.scope?.expired !== true) return undefined;

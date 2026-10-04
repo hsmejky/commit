@@ -269,7 +269,9 @@ the reply with M17.
 - **Every call with `--plan`** holds the run's `call.lock` for its whole duration (M12
   `open`, removed by M12 `run.close()` in M18's `finally`), so two calls on one run never
   overlap (`busy`).
-- **`check`.** M12 `open`; M15 `checkGate`; clear stored groups and `awaitingConfirm`; M14 `validatePlan(planBytes,
+- **`check`.** Takes its own M15 `deadline` (540 s from its start) for every M2 call of its
+  work, the same as `plan`; past it after `open`, `check` ends `timed-out` (exit 5 `timeout`)
+  and releases the run the same way `plan` does (C:cli-and-exit-codes). M12 `open`; M15 `checkGate`; clear stored groups and `awaitingConfirm`; M14 `validatePlan(planBytes,
   runState, { osUser })`; on lint errors M15
   `onLintFailure` and `runEnd` (an interactive `lintFailed` keeps the run for its `resume`;
   with `--no-user` the failure that ends the retries releases the lock and deletes the

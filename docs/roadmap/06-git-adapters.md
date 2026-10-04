@@ -151,7 +151,7 @@ identities still work), but it would break dogfooding and any user's hooks once 
 
 **Blocked by:** GIT-05, FND-05, RUN-12.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q18, M2, M15 `deadline`, testing-seams "Clock at Seam 1", story 43.
 
@@ -163,27 +163,27 @@ arrived (a stall before the child's first write), so `run` blocked with nothing 
 test harness today (case timeout, after-hook kill, self-exiting fixtures), not in production;
 (a) is closed once every call carries a deadline-derived `timeoutMs`.
 
-- [ ] Seam 1: a clean filter that sleeps, with the clock stepped to 535 s elapsed at start → `plan` ends exit 5 `timeout` within about 10 s, no run folder left, no lock left.
-- [ ] Seam 1 (POSIX and Windows): the sleeping filter's child process is gone after the call returns (tree kill, not only the direct child).
-- [ ] A cleanup call whose `timeoutMs` is at or below 0 is not spawned and reports `timed-out`.
-- [ ] Seam 1: `release`'s M10 `treeState` read (M18 `finalReply`, `workflows.mjs`) takes its
+- [x] Seam 1: a clean filter that sleeps, with the clock stepped to 535 s elapsed at start → `plan` ends exit 5 `timeout` within about 10 s, no run folder left, no lock left.
+- [x] Seam 1 (POSIX and Windows): the sleeping filter's child process is gone after the call returns (tree kill, not only the direct child).
+- [x] A cleanup call whose `timeoutMs` is at or below 0 is not spawned and reports `timed-out`.
+- [x] Seam 1: `release`'s M10 `treeState` read (M18 `finalReply`, `workflows.mjs`) takes its
       `timeoutMs` from M15 `releaseDeadline` (RUN-03), not a fixed short timeout; with the
       clock near 45 s elapsed since the call's start and a slow `git status`, the read times
       out and the reply omits the tree-state line (`treeState: undefined`), the same as a read
       skipped outright past the deadline — `release` exits 0, never `internal` (review-RUN-03
       finding 1).
-- [ ] `callStarted` (RUN-03) is read once at dispatch (`cli.mjs`'s `main`) and threaded through
+- [x] `callStarted` (RUN-03) is read once at dispatch (`cli.mjs`'s `main`) and threaded through
       `injected`/`ctx`, rather than each M18 workflow reading it itself (review-RUN-03
       finding 3).
-- [ ] An M11 `probeSigning` git read (`git config`, `git --exec-path`) runs under its own
+- [x] An M11 `probeSigning` git read (`git config`, `git --exec-path`) runs under its own
       fixed 5 s timeout, like `ssh-add` (the smaller of that and `deadline - now()`); a read
       that times out on that cap ends as `ready: "unknown"` (per M11; for `--exec-path`, the
       `ssh-add -L` check not run) and `plan` goes on, not a `plan` `timeout` refusal
       (review-GIT-10 finding 2; user decision on review-GIT-07 finding 1).
-- [ ] Replace GIT-12's child-only `SIGKILL` path in `run` with the tree kill; M11's
+- [x] Replace GIT-12's child-only `SIGKILL` path in `run` with the tree kill; M11's
       `ssh-add` takes the smaller of its fixed 5 s and `deadline - now()`; an M11
       `git --exec-path` timeout means the check was not run (review-GIT-12 finding 2).
-- [ ] The `onStdout`-throw kill in `run` (`abandon()`, process-adapter.mjs) becomes the same
+- [x] The `onStdout`-throw kill in `run` (`abandon()`, process-adapter.mjs) becomes the same
       tree kill as the timeout path above, not the child-only `SIGKILL` it uses today (416153b;
       review-process-adapter-hang finding L2): the Git for Windows `cmd\git.exe` launcher case
       the commit describes is exactly a surviving process the direct kill misses. `abandon()`'s
