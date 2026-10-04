@@ -17,6 +17,10 @@ const { assertPureSource } = require('./helpers/assert-pure-source.js');
 // Q6 defaults (docs/decisions/q06-config-layers-and-keys.md), mirroring M4 `config.mjs`'s
 // `DEFAULT_VALUES`: these direct `validatePlan` calls build their own runState (CFG-05).
 const { Q6_DEFAULT_VALUES: DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
+// INT-27 (Q23): no heartbeat is set up in this case's Claude home, so `plan`'s guard notice
+// carries into `check`'s own `notices`.
+const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PATH, plugin hooks '
+  + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
 
 let validatePlan;
 beforeEach(async () => {
@@ -80,7 +84,7 @@ test('a plan with one group naming both modified files validates into groups[0]'
     newFiles: [],
   }]);
   assert.deepEqual(checked.json.notIncluded, []);
-  assert.deepEqual(checked.json.notices, []);
+  assert.deepEqual(checked.json.notices, [GUARD_NOTICE]);
   // INT-02: the stored group goes straight on to `commit --all` in the same process, so it
   // shows as the commit (both files, the planned header) and the run is released
   // (tests/first-end-to-end-commit.test.js covers that path in full).

@@ -51,7 +51,7 @@ for (const toolName of ['Bash', 'PowerShell']) {
     const c = dirtyCase(t);
     const command = scriptCall.build({ scriptPath: COMMIT_ENTRY, subcommand: 'plan' });
 
-    const guarded = await runGuard(c, { command, toolName });
+    const guarded = await runGuard(c, { command, toolName, agentType: 'commit:commit-worker' });
 
     assert.equal(guarded.exitCode, 0, detail(guarded));
     assert.notEqual(guarded.heartbeat, null, 'the heartbeat file was written');

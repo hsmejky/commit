@@ -1059,14 +1059,13 @@ async function validateWorkerPlan(ctx) {
     return { lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape' };
   }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
-  // INT-27 (Q23): the guard notice `plan` stored in `state.json`'s `notices` (GRD-17) carries
-  // into `check`'s own output, ahead of its own notices (the same order `plan` itself uses,
-  // step 8): a `check --plan` after a heartbeat-less `plan` must still tell the caller the
-  // guard did not run, since the worker only ever surfaces the final reply. Only the guard
-  // notice carries forward; `plan`'s other, plan-time-only notices (detached HEAD, the
-  // sweep's cleanup errors) are not repeated here.
-  const guardNotice = Array.isArray(state.notices) ? state.notices.filter((n) => n === GUARD_NOTICE) : [];
-  ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: [...guardNotice, ...validated.notices] };
+  // INT-27 (Q23, C:plan `notices`, C:reply-and-handback): every notice `plan` stored in
+  // `state.json`'s `notices` (GRD-17: the guard notice, the signing `prompt` note,
+  // the detached-HEAD warning, `warnings`, and the sweep's cleanup errors) carries into
+  // `check`'s own output, ahead of its own notices (the same order `plan` itself uses,
+  // step 8), since the worker only ever surfaces the final reply.
+  const storedNotices = Array.isArray(state.notices) ? state.notices : [];
+  ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: [...storedNotices, ...validated.notices] };
   // Terminates `CHECK_STEPS` with a defined value (`runSteps` throws on falling off the end).
   // `check()` runs `commitCheckedGroups` itself, in a separate, unscoped `runSteps` call
   // (review-INT-02 Medium-1) rather than as a further step here.
