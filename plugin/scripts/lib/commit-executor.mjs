@@ -31,8 +31,19 @@
 // phase (a): not a refusal, so a stop ends the call with the groups committed so far kept
 // and this group's own `n` the first of `remaining`, plus the `continue` handback for a
 // later call to pick the rest up, S2 `build()` over the injected `scriptPath`
-// (C:reply-and-handback). The failure paths (EXE-09 to
-// EXE-13), the parent and tree checks (EXE-14, EXE-15), trailers
+// (C:reply-and-handback).
+// EXE-15 adds hook-rewrite detection: while a later group is still pending, the worktree
+// diff's hash set right before this group's own `git commit` call is `current`, already
+// computed moments earlier for (b) (nothing between then and the commit call touches the
+// worktree, only the real index and tree objects), and a fresh snapshot right after is
+// `after`. When `after` is not exactly `current` minus this group's own committed hashes (a
+// successful commit always takes those out, so comparing the raw sets would flag every
+// multi-group run), the state file's `treeChangedDuringCommit` is set to this group's `n`; a
+// clean `after` clears it instead. The next group's own (b) `unmatched` refusal then reads
+// it: when set, its text names that group as the likely cause of a repo hook (lint-staged, a
+// formatter) rewriting files during its commit, instead of "files changed since plan".
+// The failure paths (EXE-10 to
+// EXE-13), the parent and tree check (EXE-14), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
 
@@ -80,6 +91,35 @@ export const INDEX_LOCK_TEXT = 'another git process is running in this repo';
  * that group; until then this is the only text).
  */
 export const UNMATCHED_TEXT = 'files changed since plan, run /commit again';
+
+/**
+ * The hook-rewrite variant of `UNMATCHED_TEXT` (EXE-15, Q18, C:commit-release): used instead
+ * when the state file's `treeChangedDuringCommit` names the group whose own `git commit`
+ * left the worktree diff different from what it held right before that call, its own
+ * committed hashes aside — the likely sign of a repo hook (lint-staged, a formatter)
+ * rewriting other files while it ran.
+ *
+ * @param {number} n
+ * @returns {string}
+ */
+function hookRewriteText(n) {
+  return `files changed during the commit of group ${n} — a repo hook (lint-staged, a `
+    + 'formatter) likely rewrote them; run /commit again';
+}
+
+// EXE-15: true when `units`' hash set is exactly `hashes` (order-independent). Comparing the
+// worktree diff's hash set right after a group's own `git commit` against what it held right
+// before that call, its own committed hashes taken out first (a successful commit always
+// takes those out of the diff; comparing the raw sets would flag every multi-group run).
+function sameHashSet(units, hashes) {
+  const a = new Set(units.map((unit) => unit.hash));
+  const b = new Set(hashes);
+  if (a.size !== b.size) return false;
+  for (const hash of a) {
+    if (!b.has(hash)) return false;
+  }
+  return true;
+}
 
 // EXE-06: the notice when a hook or another process committed during group `n`, so that
 // group's own commit landed but is not HEAD's first parent any more.
@@ -188,7 +228,8 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *   `index-locked` when `index.lock` exists, checked last in phase (a) (EXE-08). Phase (b)
  *   (EXE-09): `git-failed` with `gitOutput` when a `git add -N` rebuilding the temporary
  *   index exits non-zero; `unmatched` when a stored unit's hash is missing from the fresh
- *   snapshot.
+ *   snapshot, its text naming the previous group as the likely hook-rewrite cause when the
+ *   state file's `treeChangedDuringCommit` names it (EXE-15), else the generic text.
  *   `notices` holds any "another commit was made during group `<n>`" notices from groups
  *   this call already committed before a `head-moved` refusal (EXE-06), `[]` otherwise.
  *   `no-groups`/`taken-over`/`busy` (`usage`/`lock`, M18's call) keep the run; the caller
@@ -295,7 +336,12 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
     // is `unmatched`, CLI kind `diff-changed`; the real index was never touched by (b).
     const matched = matchIds(Object.fromEntries(units.map((unit) => [unit.id, unit.hash])), current);
     if (!matched.ok) {
-      return refused(state, group, commits, { code: 'unmatched', message: UNMATCHED_TEXT }, notices);
+      // EXE-15: the previous group's own commit may have left this behind (the hook-rewrite
+      // notice), which explains an otherwise-generic "files changed since plan".
+      const message = typeof state.treeChangedDuringCommit === 'number'
+        ? hookRewriteText(state.treeChangedDuringCommit)
+        : UNMATCHED_TEXT;
+      return refused(state, group, commits, { code: 'unmatched', message }, notices);
     }
 
     // (c) Apply on the real index.
@@ -317,6 +363,41 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
         args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group), ...git,
       });
       if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+
+      // EXE-15: only while a later group is still pending — nothing after this one would
+      // ever read the diagnosis. `current` (phase (b), moments earlier) already is the
+      // worktree diff's hash set right before this `git commit` call; a fresh snapshot right
+      // after is compared against it, this group's own hashes taken out first.
+      if (groupIndex < pending.length - 1) {
+        let afterUnits;
+        try {
+          afterUnits = await snapshot({
+            mode: 'split',
+            storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
+            tracked: state.units.map((unit) => unit.path),
+            indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
+            unborn: state.head === null,
+            ...git,
+          });
+        } catch (err) {
+          // EXE-09: the same rebuild failure (a stored candidate turned ignored, for
+          // example) surfaces properly as the next group's own phase-(b) `git-failed`
+          // refusal; this group already committed, so skip the diagnosis instead of
+          // turning its success into a throw, and leave `treeChangedDuringCommit` as it was
+          // (unknown, not asserted clean).
+          if (err.domainCode !== 'git-failed') throw err;
+          afterUnits = null;
+        }
+        if (afterUnits !== null) {
+          const ownHashes = new Set(units.map((unit) => unit.hash));
+          const expected = current.map((unit) => unit.hash).filter((hash) => !ownHashes.has(hash));
+          if (sameHashSet(afterUnits, expected)) {
+            delete state.treeChangedDuringCommit;
+          } else {
+            state.treeChangedDuringCommit = group.n;
+          }
+        }
+      }
     } catch (err) {
       await resetIndex(git);
       throw err;
