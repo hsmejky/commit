@@ -55,6 +55,20 @@ function stageRaw(c, bytes, content) {
   return blob;
 }
 
+// The `-z` form of `stageRaw` above (`git update-index -z --index-info`, path NUL-terminated
+// on stdin), needed when `bytes` holds a control character: the LF-terminated form above
+// cannot carry an embedded LF. `core.protectNTFS` (on by default) blocks a path holding a
+// control character on Windows only; set it off unconditionally, since it changes nothing on
+// Linux or macOS (review-RUN-15-r2 Medium 1).
+function stageRawZ(c, bytes, content) {
+  c.git(['config', 'core.protectNTFS', 'false']);
+  const blob = gitInput(c, ['hash-object', '-w', '--stdin'], Buffer.from(content));
+  gitInput(c, ['update-index', '-z', '--index-info'], Buffer.concat([
+    Buffer.from(`100644 ${blob}\t`), bytes, Buffer.from('\0'),
+  ]));
+  return blob;
+}
+
 async function plan(c, flags) {
   const result = await runCommit(c, ['plan', ...flags]);
   assert.equal(result.exitCode, 0, detail(result));
@@ -218,6 +232,41 @@ test('plan --staged refuses a staged non-UTF-8 path that is not hidden with stag
   const result = await refused(c, ['--staged']);
 
   assert.equal(result.json.error.message, '`t\\xe9.txt`: path is not UTF-8 — unstage it or commit by hand');
+});
+
+// RUN-15 (review-RUN-15-r2 Medium 1): `stagedHitOf` (workflows.mjs:621) maps `escapePath`
+// over `notUtf8`, which is already in its `\xNN` form (M10 `escapeNonUtf8`); `escapePath` is
+// idempotent on that text, so a remaining valid-UTF-8 control character (here a literal LF
+// and ESC byte) is escaped too, without double-escaping the `\xe9` byte.
+test('plan --staged refuses a staged non-UTF-8 path holding a control character, escaped in the message', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  stageRawZ(c, Buffer.from('t\xe9\n\x1bx.txt', 'latin1'), 'b\n');
+  c.writeFile('a.txt', 'a2\n');
+
+  const result = await refused(c, ['--staged']);
+
+  assert.equal(
+    result.json.error.message,
+    '`t\\xe9\\x0a\\x1bx.txt`: path is not UTF-8 — unstage it or commit by hand',
+  );
+});
+
+// RUN-15 (review-RUN-15-r2 Medium 1): `cleanBreakdownOf` (workflows.mjs:601) escapes
+// `notUtf8` the same way for the `nothing` reply, on a tree that is otherwise clean.
+test('plan names a staged non-UTF-8 path holding a control character, escaped, as nothing to commit', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  stageRawZ(c, Buffer.from('t\xe9\n\x1bx.txt', 'latin1'), 'b\n');
+
+  const result = await runCommit(c, ['plan']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.reply.status, 'nothing', detail(result));
+  assert.equal(
+    result.json.reply.text.split('\n')[0],
+    'nothing to commit: path not UTF-8: `t\\xe9\\x0a\\x1bx.txt`',
+  );
 });
 
 test('plan --staged refuses a scan hit in the index diff with staged-hit', async (t) => {
