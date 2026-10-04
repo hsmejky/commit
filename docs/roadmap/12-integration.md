@@ -181,9 +181,11 @@ stories 88, 152, 153.
 
 ## INT-12: Resumed runs always confirm; `one` re-plans as one group
 
-**What to build:** a separate `plan --hunks --plan` call re-renders the hunk index, resets the
-lint counter and marks the run `resumed`, so the next `check` confirms even a single tracked
-group; the `one` answer's respawn is offered only in `split` with several groups.
+**What to build:** CHG-19 already builds the separate `plan --hunks --plan` call that
+re-renders the hunk index, resets the lint counter and marks the run `resumed`; INT-12 asserts
+that end to end (Seam 1 below) and builds the consumer, so the next `check` confirms even a
+single tracked group; the `one` answer's respawn is offered only in `split` with several
+groups.
 
 **Blocked by:** CHG-19, INT-09, RUN-16, PLN-05.
 

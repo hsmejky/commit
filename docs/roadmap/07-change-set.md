@@ -459,7 +459,8 @@ index goes to `hunks.json` (one entry per line) and stdout carries `hunksIndexFi
 **What to build:** a separate `plan --hunks` (and later `check`/`commit`) rebuilds the
 temporary index from the **stored** lists, re-diffs and runs `matchIds(idMap, units)`
 (typed, `unmatched`): the same hash set → `plan`'s IDs, any difference → `diff-changed`, which
-never writes the map and ends the run (C:cli-and-exit-codes). It builds the separate `plan --hunks --plan <id>` workflow.
+never writes the map and ends the run (C:cli-and-exit-codes). It builds the separate
+`plan --hunks --plan <id>` workflow.
 
 **Blocked by:** CHG-05, CHG-06, RUN-04, RUN-06.
 

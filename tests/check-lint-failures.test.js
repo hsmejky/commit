@@ -111,9 +111,10 @@ test('check honours a lint counter reset to 0, as the separate plan --hunks call
   const { c, planId, runDir } = await plannedRun(t);
 
   assertPlainLintFailure(await check(c, planId, runDir, unplaced()));
-  // The separate `plan --hunks` call and its reset are INT-12's own (C:plan-hunks, C:plan
-  // step 8); this writes only the counter's resulting value to prove `check` treats it as a
-  // fresh start, not that `plan --hunks` performs the reset.
+  // The separate `plan --hunks` call and its reset are CHG-19's own code (C:plan-hunks,
+  // C:plan step 8; INT-12 only asserts it end to end); this writes only the counter's
+  // resulting value to prove `check` treats it as a fresh start, not that `plan --hunks`
+  // performs the reset.
   fs.writeFileSync(statePath(runDir), `${JSON.stringify({ ...storedState(runDir), lintFailures: 0 })}\n`);
   assertPlainLintFailure(await check(c, planId, runDir, unplaced()));
 });

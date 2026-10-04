@@ -87,6 +87,10 @@ function dirtyCase(t) {
 test('an unchanged tree: the separate call emits plan\'s own IDs and marks the run resumed', async (t) => {
   const c = dirtyCase(t);
   const minted = await mint(c);
+  // Seed a nonzero counter so the reset below is observed, not just restated (plan already
+  // stored 0).
+  const statePath = path.join(runDirOf(c), minted.planId, 'state.json');
+  fs.writeFileSync(statePath, `${JSON.stringify({ ...readState(c, minted.planId), lintFailures: 1 })}\n`);
   const before = readState(c, minted.planId);
 
   const result = await hunks(c, minted.planId);
@@ -205,6 +209,48 @@ test('AC5: a separate plan --hunks call whose own clock crosses its own 540 s de
   assertRefused(result, 5, 'timeout');
   assert.match(result.json.error.message, /540-second deadline/);
   assertRunEnded(c);
+});
+
+// review-CHG-19 finding 5: a stored candidate ignored since `plan` (no tracked change, no
+// index change) makes the rebuild's plain `git add -N` (no `-f`, the stored flag says not
+// ignored) exit non-zero, the same way as `plan`'s own temporary index (tests/plan-temporary-
+// index.test.js) and `commit`'s phase-(b) rebuild (tests/commit-all.test.js).
+test('a stored candidate ignored since plan → the separate call\'s git add -N fails, exit 4 git-failed, run ended', async (t) => {
+  const c = dirtyCase(t);
+  const minted = await mint(c);
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'exclude'), '\nnew.txt\n');
+  const head = c.git(['rev-parse', 'HEAD']);
+
+  const result = await hunks(c, minted.planId);
+
+  assertRefused(result, 4, 'git');
+  assert.match(result.json.error.message, /git add failed/, detail(result));
+  assertRunEnded(c);
+  assert.equal(c.git(['rev-parse', 'HEAD']), head, 'nothing committed');
+});
+
+// review-CHG-19 finding 5: `reword`'s separate call re-diffs HEAD against its single parent
+// (CHG-15, C:plan-hunks "what is diffed"), not the stored candidate/tracked lists, and reads
+// `oldMessage` back from `state.json` rather than the repo (Q20: a message changed by hand
+// between `plan --reword` and the separate call is not observed here).
+test('plan --reword: the separate call re-emits HEAD\'s own diff and oldMessage, marks the run resumed', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'two\n');
+  c.git(['commit', '-q', '-am', 'fix: reword me']);
+  const minted = await mint(c, ['plan', '--reword']);
+  const before = readState(c, minted.planId);
+
+  const result = await hunks(c, minted.planId);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.ok, true);
+  assert.equal(result.json.mode, 'reword');
+  assert.equal(result.json.oldMessage, minted.hunks.oldMessage);
+  assert.deepEqual(idsAndPaths(result.json), idsAndPaths(minted.hunks));
+  const after = readState(c, minted.planId);
+  assert.equal(after.resumed, true);
+  assert.equal(after.oldMessage, before.oldMessage, 'oldMessage carried from stored state, not re-read');
 });
 
 test('a planId whose run has ended → lock refusal, nothing created', async (t) => {

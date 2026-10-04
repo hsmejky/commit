@@ -102,7 +102,9 @@ and of the real index.
   `null` when the path is absent there), which M18 passes to M4 `scanIgnoreChanged`. M18
   always passes M4's `REPO_CONFIG_PATH`, never a unit's path, so a rename away from the repo
   config reads `null` (no patterns) at that path.
-- `assignIds(units)`, `matchIds(idMap, units)` (typed, `unmatched`).
+- `assignIds(units)`, `matchIds(idMap, units, { exact })` → `{ ok: true, units }` with the
+  current units under their stored IDs, or `{ ok: false, unmatched, extra }` (`extra` only in
+  exact mode, for a current unit whose hash no ID names).
 - Backstop reads (M16): `writeTree() → treeId` records the real index's tree
   (`git write-tree`); `treeDiffUnits(fromTree, toTree) → units` diffs two trees (`fromTree` the
   expected HEAD, or `null` for the empty tree when unborn) with the same pinned options,
