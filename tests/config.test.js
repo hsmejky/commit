@@ -810,3 +810,52 @@ test('loadConfig warns when the repo config at HEAD is a gitlink', async (t) => 
     'the repo config at HEAD (.claude/commit.json) is not a regular file; its scanIgnore is ignored ([] used)',
   ]);
 });
+
+// SCN-14 (docs/roadmap/05-scanner.md, M4): pure `scanIgnoreChanged(headPatterns,
+// snapshotBlob)`, compared against M10 `snapshotBlob`'s result on the snapshot side.
+
+test('scanIgnoreChanged: equal patterns (both empty, or both the same list) is false', async () => {
+  assert.equal(config.scanIgnoreChanged([], null), false);
+  assert.equal(config.scanIgnoreChanged([], Buffer.from('{}')), false);
+  assert.equal(
+    config.scanIgnoreChanged(['dist/**'], Buffer.from(JSON.stringify({ scanIgnore: ['dist/**'] }))),
+    false,
+  );
+});
+
+test('scanIgnoreChanged: a different list, order included, is true', async () => {
+  assert.equal(
+    config.scanIgnoreChanged(['a/**'], Buffer.from(JSON.stringify({ scanIgnore: ['b/**'] }))),
+    true,
+  );
+  assert.equal(
+    config.scanIgnoreChanged(
+      ['a/**', 'b/**'],
+      Buffer.from(JSON.stringify({ scanIgnore: ['b/**', 'a/**'] })),
+    ),
+    true,
+  );
+  assert.equal(config.scanIgnoreChanged([], Buffer.from(JSON.stringify({ scanIgnore: ['a/**'] }))), true);
+  assert.equal(config.scanIgnoreChanged(['a/**'], null), true);
+});
+
+test('scanIgnoreChanged: a missing file or key on the snapshot side is no patterns, not invalid', async () => {
+  assert.equal(config.scanIgnoreChanged([], null), false);
+  assert.equal(config.scanIgnoreChanged([], Buffer.from(JSON.stringify({ types: ['feat'] }))), false);
+  assert.equal(config.scanIgnoreChanged([], Buffer.from(JSON.stringify(['a', 'b']))), false);
+});
+
+test('scanIgnoreChanged: unparseable JSON or a non-array scanIgnore on the snapshot side counts as changed', async () => {
+  assert.equal(config.scanIgnoreChanged([], Buffer.from('{ "scanIgnore": [')), true);
+  assert.equal(config.scanIgnoreChanged([], Buffer.from(JSON.stringify({ scanIgnore: 'dist/**' }))), true);
+  assert.equal(
+    config.scanIgnoreChanged([], Buffer.from(JSON.stringify({ scanIgnore: ['dist/**', 3] }))),
+    true,
+  );
+  // Even against HEAD's own `[]` (Q6, CFG-01 item 5): a fixed copy with patterns still
+  // counts as changed, so edits to an invalid-at-HEAD scanIgnore are not silently missed.
+  assert.equal(
+    config.scanIgnoreChanged([], Buffer.from(JSON.stringify({ scanIgnore: ['dist/**'] }))),
+    true,
+  );
+});

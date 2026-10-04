@@ -561,3 +561,50 @@ async function readScanIgnoreAtHead({ toplevel, env, now }) {
     warning: null,
   };
 }
+
+/**
+ * Parses the `scanIgnore` patterns out of the repo config's content on the snapshot side
+ * (M10 `snapshotBlob`), for `scanIgnoreChanged` (SCN-14). Unlike `readScanIgnoreAtHead`, a
+ * glob a pattern that fails `compileGlob` is not checked here (CFG-01 only settled the HEAD
+ * side's glob validation); only JSON validity and the `scanIgnore` value's shape matter.
+ *
+ * @param {Buffer | null} blob `null` when the path is absent on the snapshot side.
+ * @returns {{ patterns: string[] } | { invalid: true }} a missing file, a missing/absent
+ *   `scanIgnore` key, or a non-object top level is no patterns (`patterns: []`); content
+ *   that is not valid UTF-8 or JSON, or a `scanIgnore` that is not an array of strings, is
+ *   `invalid`.
+ */
+function parseSnapshotScanIgnore(blob) {
+  if (blob === null) return { patterns: [] };
+  const decoded = decodeLayerBytes(blob, 'the repo config snapshot');
+  if (decoded.problem !== undefined) return { invalid: true };
+  const parsed = decoded.value;
+  const isObject = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+  if (!isObject || !Object.hasOwn(parsed, 'scanIgnore')) return { patterns: [] };
+  const value = parsed.scanIgnore;
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === 'string')) {
+    return { invalid: true };
+  }
+  return { patterns: value };
+}
+
+/**
+ * Whether the repo config's `scanIgnore` differs between HEAD and the snapshot side (M10
+ * `snapshotBlob(REPO_CONFIG_PATH)`), pure so no other module parses the config (SCN-14, M4).
+ * Compared in order, element by element, so an edit to another key never counts; a snapshot
+ * blob that is not valid JSON, or whose `scanIgnore` is not an array of strings, counts as
+ * changed unconditionally (CFG-01 item 5: fail toward flagging, not toward silently skipping
+ * the repo-config units). A missing file or key, on either side, is no patterns.
+ *
+ * @param {string[]} headPatterns the patterns `loadConfig` read at HEAD (`[]` when the value
+ *   there was invalid or absent, e.g. `values.scanIgnore`).
+ * @param {Buffer | null} snapshotBlob the repo config's content on the snapshot side.
+ * @returns {boolean}
+ */
+export function scanIgnoreChanged(headPatterns, snapshotBlob) {
+  const snapshot = parseSnapshotScanIgnore(snapshotBlob);
+  if (snapshot.invalid === true) return true;
+  const head = headPatterns ?? [];
+  if (head.length !== snapshot.patterns.length) return true;
+  return head.some((pattern, index) => pattern !== snapshot.patterns[index]);
+}
