@@ -291,7 +291,10 @@ test('a stored body ending in blank lines is committed with exactly one trailing
 test('matchIds: every id whose hash a current unit carries → ok; a missing hash → unmatched', () => {
   const units = [{ hash: 'h1' }, { hash: 'h2' }];
 
-  assert.deepEqual(changeSet.matchIds({ u1: 'h1', u2: 'h2' }, units), { ok: true });
+  assert.deepEqual(changeSet.matchIds({ u1: 'h1', u2: 'h2' }, units), {
+    ok: true,
+    units: [{ id: 'u1', hash: 'h1' }, { id: 'u2', hash: 'h2' }],
+  });
   assert.deepEqual(
     changeSet.matchIds({ u1: 'h1', u3: 'h3' }, units),
     { ok: false, code: 'unmatched', unmatched: ['u3'] },

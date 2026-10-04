@@ -55,20 +55,22 @@
 // (`commit-executor.mjs`), releasing the run once no group remains, or on a `head-moved` or
 // `index-changed` refusal (EXE-06, EXE-07), which also ends the run.
 
+import path from 'node:path';
+
 import {
   HEAD_MOVED_TEXT, commitEncoding, head, headState, historyMessages, inProgressState, isTracked,
   oldMessage, probe, recentSubjects, rewordFacts,
 } from './repo-probe.mjs';
 import {
-  assignIds, indexFingerprint, inventory as takeInventory, snapshot, trackedDirectories, treeState,
-  unplannableCaseRenames,
+  assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, trackedDirectories,
+  treeState, unplannableCaseRenames,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
 import {
-  releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState, sweep,
-  RUN_DIR_NAME, STATE_VERSION,
+  releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState, writeRunFile,
+  sweep, insideRunDir, runDirOf, RUN_DIR_NAME, STATE_VERSION,
 } from './run.mjs';
-import { INDEX_CHANGED_TEXT, commitAll } from './commit-executor.mjs';
+import { INDEX_CHANGED_TEXT, UNMATCHED_TEXT, commitAll } from './commit-executor.mjs';
 import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath, withDeadline } from './process-adapter.mjs';
@@ -766,6 +768,76 @@ const PLAN_STEPS = Object.freeze([
   renderHunkIndex,
 ]);
 
+/** `plan --hunks` step 2 (CHG-19): see `subcommandRefusals`. */
+async function planHunksRefusals(ctx) {
+  return subcommandRefusals(ctx, 'plan --hunks');
+}
+
+/**
+ * `plan --hunks` step 4 (CHG-19, M18 "`plan --hunks`", C:plan-hunks), a separate call only:
+ * `head-moved` via M3 against the stored HEAD; M10 `snapshot` rebuilt from the **stored**
+ * lists (C:run-folder; a file created or force-added since is not recomputed, CHG-05), as
+ * `commit`'s phase (b) does, or HEAD's own diff in `reword`; then `matchIds` in exact mode:
+ * the same hash set → the current units under `plan`'s IDs, any difference → `unmatched`
+ * (CLI kind `diff-changed`). `staged` takes the same split-style snapshot `plan` itself
+ * takes for it today (RUN-13; its index-only snapshot is CHG-14's, KD-R75). On a match: M13
+ * `renderHunks`, `hunks.txt` through M12, and `state.json` rewritten from the state it read
+ * with only `lintFailures: 0` and `resumed: true` changed (the map, the scan map and the
+ * notices survive; `plan --hunks` never writes the map).
+ */
+async function resnapshotUnits(ctx) {
+  const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
+  const state = readState(run);
+  const { env, now } = ctx.injected;
+  if (await head({ cwd: ctx.toplevel, env, now }) !== state.head) {
+    return { refusal: { code: 'head-moved', message: HEAD_MOVED_TEXT } };
+  }
+  const folder = insideRunDir(runDirOf(ctx.toplevel), run.planId);
+  let current;
+  try {
+    current = await snapshot(state.mode === 'reword'
+      ? { mode: 'reword', head: state.head, root: state.rootCommit, toplevel: ctx.toplevel, env, now }
+      : {
+        mode: 'split',
+        storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
+        // CHG-10: the stored units' paths, so a filtered file is classified as `plan` did.
+        tracked: state.units.map((unit) => unit.path),
+        indexPath: path.join(folder, 'git-index'),
+        unborn: state.head === null,
+        toplevel: ctx.toplevel,
+        env,
+        now,
+      });
+  } catch (err) {
+    // C:plan: a non-zero `git add -N` into the temporary index is exit 4 `git`.
+    if (err.domainCode === 'git-failed') return { refusal: { code: 'git-failed', message: err.message } };
+    throw err;
+  }
+  const matched = matchIds(state.idMap, current, { exact: true });
+  if (!matched.ok) return { refusal: { code: 'unmatched', message: UNMATCHED_TEXT } };
+  const { stdoutObj, hunksTxt } = renderHunks(
+    {
+      runDir: folder.split(path.sep).join('/'),
+      mode: state.mode,
+      config: { values: state.config.values },
+      recentSubjects: state.recentSubjects,
+      oldMessage: state.oldMessage,
+      scanMap: state.scanned,
+    },
+    matched.units,
+  );
+  writeRunFile(run, 'hunks.txt', hunksTxt);
+  writeState(run, { ...state, lintFailures: 0, resumed: true });
+  return { hunks: stdoutObj };
+}
+
+const PLAN_HUNKS_STEPS = Object.freeze([probeRepo, planHunksRefusals, openRun, resnapshotUnits]);
+
+// CHG-19 (C:cli-and-exit-codes): the `plan --hunks` refusals that end the run — `head-moved`,
+// `diff-changed` (`unmatched`) and exits 3-5 — release the lock and delete the run folder;
+// a `lock` refusal (`taken-over`, `ended`, `busy`) keeps it.
+const PLAN_HUNKS_RUN_ENDING = new Set(['head-moved', 'unmatched', 'git-failed', 'timed-out']);
+
 /**
  * `release`/`commit` step 2: the probe's `env` refusal, the only refusal either shares with
  * `plan` (C:cli-and-exit-codes: `env` for any subcommand, `state` only for `plan` and
@@ -963,7 +1035,8 @@ async function runSteps(steps, ctx) {
 }
 
 /**
- * Runs `plan` (mint form).
+ * Runs `plan` (mint form), or the separate `plan --hunks --plan <planId>` form (CHG-19,
+ * `planHunks`).
  *
  * @param {object} values the parsed and validated `plan` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment (docs/spec/architectural-decisions.md
@@ -982,7 +1055,7 @@ export async function plan(values, injected, { cwd }) {
   // its reword facts GIT-09's, its snapshot CHG-15's) and `plan --staged` (RUN-13: its mode
   // decision; its index-only snapshot is CHG-14's) are built: every other flag changes the
   // mode or the clean-tree outcome (C:plan `mode`).
-  const unbuilt = ['dictated', 'take-over', 'hunks'].filter((f) => values[f] !== undefined);
+  const unbuilt = ['dictated', 'take-over'].filter((f) => values[f] !== undefined);
   if (unbuilt.length > 0) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
@@ -997,6 +1070,7 @@ export async function plan(values, injected, { cwd }) {
   // GIT-07: every M2 call of the steps takes `deadline - now()` at its own start (M2
   // `withDeadline`); `run` marks the scope `expired` when that deadline ended or skipped one.
   const scope = { deadline: ctx.deadline, now: injected.now };
+  if (values.hunks) return planHunks(values, injected, { cwd });
   try {
     facts = await withDeadline(scope, () => runSteps(PLAN_STEPS, ctx));
   } catch (err) {
@@ -1071,6 +1145,54 @@ export async function release(values, injected, { cwd }) {
 
 /**
  * Runs `commit --plan <planId> --all` (C:commit-release `commit`, M12 `open`).
+/**
+ * Runs the separate `plan --hunks --plan <planId>` (CHG-19, M18 "`plan --hunks`",
+ * C:plan-hunks): M12 `open`, then `resnapshotUnits`. The call takes its own M15 `deadline`
+ * (540 s from its own start) for every M2 call of its steps (exceeded → `timeout`) and
+ * `cleanupDeadline` for a refusal's tree-state read. `head-moved`, `diff-changed`, an
+ * exit 3-5 refusal and an `internal` throw end the run (C:cli-and-exit-codes: M12
+ * `releaseOpen`, its notice in the `failed` reply); a `lock` refusal keeps it. `close()`
+ * runs for every call that reached a successful `open`.
+ *
+ * @param {{ plan: string, hunks: true }} values
+ * @param {object} injected the injected environment.
+ * @param {{ cwd: string }} call the call's working directory.
+ * @returns {Promise<{ output: object } | { failure: object }>} on success the C:plan-hunks
+ *   output object itself.
+ */
+async function planHunks(values, injected, { cwd }) {
+  const callStarted = injected.callStarted ?? injected.now();
+  const ctx = {
+    injected, cwd, values, notices: [], opened: false,
+    deadline: deadline(callStarted), cleanupDeadline: cleanupDeadline(callStarted),
+  };
+  try {
+    // GIT-07: every M2 call of the steps takes `deadline - now()` at its own start; a call
+    // that deadline ended or skipped ends the call `timed-out`, whatever the steps did.
+    const scope = { deadline: ctx.deadline, now: injected.now };
+    let facts;
+    let thrown;
+    try {
+      facts = await withDeadline(scope, () => runSteps(PLAN_HUNKS_STEPS, ctx));
+    } catch (err) {
+      thrown = err;
+    }
+    if (scope.expired) {
+      facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
+      thrown = undefined;
+    }
+    if (ctx.opened && (thrown !== undefined || PLAN_HUNKS_RUN_ENDING.has(facts.refusal?.code))) {
+      const released = releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
+      if (released.notice !== null) ctx.notices.push(released.notice);
+    }
+    if (thrown !== undefined) return await planInternalFailure(thrown, ctx);
+    if (facts.refusal !== undefined) return await planRefusalFailure(facts.refusal, ctx);
+    return { output: facts.hunks };
+  } finally {
+    if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
+  }
+}
+
  *
  * `open` is the whole call's own lock check (RUN-04): `taken-over` (the lock holds another
  * `planId`, or its own lock/`call.lock`/folder vanishes mid-call with a late `ENOENT`) and

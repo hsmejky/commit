@@ -857,16 +857,28 @@ export function assignIds(units) {
 /**
  * M10 `matchIds` (EXE-02, C:commit-release phase (b)): every ID of `idMap` must name a hash
  * one of the current `units` (a fresh `snapshot` of the temporary index) carries.
+ * CHG-19 (C:plan-hunks, a separate `plan --hunks`): with `exact`, the two hash sets must be
+ * equal, so a current unit whose hash no ID names (a new hunk in a planned file) is listed
+ * in `extra` by path and fails the match too.
  *
+ * @template {{ hash: string }} T
  * @param {Record<string, string>} idMap unit ID → hash, as stored in `state.json`.
- * @param {Array<{ hash: string }>} units
- * @returns {{ ok: true } | { ok: false, code: 'unmatched', unmatched: string[] }} the IDs
- *   whose hash is missing, in `idMap` order.
+ * @param {T[]} units
+ * @param {{ exact?: boolean }} [options]
+ * @returns {{ ok: true, units: Array<T & { id: string }> }
+ *   | { ok: false, code: 'unmatched', unmatched: string[], extra?: string[] }} on a match,
+ *   the current units under their stored IDs, in `idMap` order (new objects); otherwise the
+ *   IDs whose hash is missing, in `idMap` order, plus `extra` in exact mode only.
  */
-export function matchIds(idMap, units) {
-  const current = new Set(units.map((unit) => unit.hash));
-  const unmatched = Object.keys(idMap).filter((id) => !current.has(idMap[id]));
-  return unmatched.length === 0 ? { ok: true } : { ok: false, code: 'unmatched', unmatched };
+export function matchIds(idMap, units, { exact = false } = {}) {
+  const byHash = new Map(units.map((unit) => [unit.hash, unit]));
+  const unmatched = Object.keys(idMap).filter((id) => !byHash.has(idMap[id]));
+  const named = new Set(Object.values(idMap));
+  const extra = exact ? units.filter((unit) => !named.has(unit.hash)).map((unit) => unit.path) : [];
+  if (unmatched.length > 0 || extra.length > 0) {
+    return { ok: false, code: 'unmatched', unmatched, ...(exact ? { extra } : {}) };
+  }
+  return { ok: true, units: Object.keys(idMap).map((id) => ({ id, ...byHash.get(idMap[id]) })) };
 }
 
 // One `git <args> -z --raw -p` diff with the pinned options, streamed through the patch-pass

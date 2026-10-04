@@ -458,8 +458,8 @@ index goes to `hunks.json` (one entry per line) and stdout carries `hunksIndexFi
 
 **What to build:** a separate `plan --hunks` (and later `check`/`commit`) rebuilds the
 temporary index from the **stored** lists, re-diffs and runs `matchIds(idMap, units)`
-(typed, `unmatched`): the same hash set → `plan`'s IDs, any difference → `diff-changed` with
-the map unchanged. It builds the separate `plan --hunks --plan <id>` workflow.
+(typed, `unmatched`): the same hash set → `plan`'s IDs, any difference → `diff-changed`, which
+never writes the map and ends the run (C:cli-and-exit-codes). It builds the separate `plan --hunks --plan <id>` workflow.
 
 **Blocked by:** CHG-05, CHG-06, RUN-04, RUN-06.
 
@@ -472,7 +472,7 @@ own 540 s deadline from its own start") is pinned at M15 level there; the Seam 1
 separate `plan --hunks --plan <id>` call whose own clock crosses its own 540 s deadline —
 has no owner until this slice builds that call, so it lands here (KD-R22).
 
-- [ ] Seam 1: a file edited between `plan` and a separate `plan --hunks` → exit 6 `diff-changed`, map unchanged, nothing committed.
+- [ ] Seam 1: a file edited between `plan` and a separate `plan --hunks` → exit 6 `diff-changed`, run ended (the lock and the run folder gone, C:cli-and-exit-codes), nothing committed.
 - [ ] Seam 1: a manual commit between `plan` and a separate `plan --hunks` → exit 6 `head-moved`, run ended.
 - [ ] Seam 1: a stored untracked path deleted after `plan` → `diff-changed`; a new untracked file created after `plan` → ignored (same IDs).
 - [ ] Seam 1: a force-added gitignored file is still a unit on the re-snapshot (stored lists, not recomputed).

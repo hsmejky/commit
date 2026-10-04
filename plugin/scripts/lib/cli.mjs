@@ -18,7 +18,7 @@ import { isValidPlanId } from './run.mjs';
 import * as workflows from './workflows.mjs';
 
 // The M18 workflow each subcommand routes to, as far as built. `plan --hunks` is its own
-// synopsis form and not built yet, so `workflows.plan` refuses it.
+// synopsis form, which `workflows.plan` routes to its separate workflow (CHG-19).
 const WORKFLOWS = Object.freeze({
   plan: workflows.plan,
   check: workflows.check,

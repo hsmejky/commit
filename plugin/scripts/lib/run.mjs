@@ -1184,6 +1184,19 @@ export function writeState({ toplevel, planId }, state) {
 }
 
 /**
+ * M12 `run.write(name, …)` on an open run (CHG-19): replaces `<planId>/<name>` atomically,
+ * as `writeState` does for `state.json`; a separate `plan --hunks` writes `hunks.txt` with it.
+ *
+ * @param {{ toplevel: string, planId: string }} run
+ * @param {string} name a file name inside the run's folder.
+ * @param {string} data
+ * @returns {void}
+ */
+export function writeRunFile({ toplevel, planId }, name, data) {
+  writeAtomic(insideRunDir(runDirOf(toplevel), planId), name, data);
+}
+
+/**
  * M12 `run.readWorkerPlan()` (PLN-01): the bytes of `<planId>/plan.groups.json`
  * (C:worker-plan), or `null` when there is no such regular file (missing, a link, a
  * directory, a FIFO), which M14 reports as a lint error. Other errors throw (`internal`).

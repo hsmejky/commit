@@ -38,8 +38,6 @@ fixed, delete it here; IDs are never reused.
   stdout"; four WRK-04 worker-behaviour bullets. Fix: a
   static spawn-options test plus a non-UTF-8 byte case; prompt-phrase checks for WRK-04,
   behaviour left to WRK-06.
-- **KD-R14.** CHG-19's "map unchanged" after `diff-changed` has no observable; say "run
-  ended".
 - **KD-R16.** CHG-03b's fault criteria say "no lock file"; a lock temp file may legitimately
   remain. Say "no `.commit-plan/lock`".
 - **KD-R17.** CHG-23's `index.lock` grep trips on M16's expected notice and on
@@ -64,7 +62,8 @@ fixed, delete it here; IDs are never reused.
 - **KD-R22.** RUN-12's first clock step fires before the provisional folder exists, so the
   discard is never exercised. Tie the step to "folder exists, no lock"; add setup and exit
   code. AC6 (a separate `plan --hunks` taking its own 540 s deadline from its own start) is
-  pinned at M15 level by RUN-12; the Seam 1 case lands with CHG-19.
+  pinned at M15 level by RUN-12; its Seam 1 case landed with CHG-19
+  (`tests/plan-hunks-resnapshot.test.js`, the clock step keyed on the call's own `call.lock`).
 - **KD-R23.** RUN-09 AC2 (a real `FileShare.None` holder on `state.json`, released inside the
   retry window → success) has no deterministic Seam 1 case: no call renames over an existing
   `state.json` at a moment a test can hold it (`commit` is still a stub, and `plan` writes it
@@ -226,8 +225,11 @@ Plan text that depends on a design fix; fix the design and the slice together.
   of the interim snapshot: `check` and `commit` both refuse any mode other than `split`.
   Where:
   `plugin/scripts/lib/workflows.mjs` `collapseCandidates`, `refuseCaseRenames` and
-  `snapshotUnits`. Fix: CHG-14 (blocked by RUN-13) builds the index-only snapshot for
-  `staged` mode, removing untracked candidates from it instead of capping them.
+  `snapshotUnits`; a separate `plan --hunks` on a `staged` run (CHG-19, `resnapshotUnits`)
+  re-snapshots with the same `split` snapshot, so its IDs still match the interim map. Fix:
+  CHG-14 (blocked by RUN-13) builds the index-only snapshot for `staged` mode, removing
+  untracked candidates from it instead of capping them, in `plan` and in the separate
+  `plan --hunks` alike.
 - **KD-R76.** A budget stop (EXE-16) builds its `continue` handback with S2 `build()`
   (`commit-executor.mjs`), which throws a `TypeError` for an install path holding `"`, `$`,
   a backtick, `!` or a control character. Until RPL-08 adds the up-front `env` refusal for

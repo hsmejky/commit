@@ -236,10 +236,10 @@ test('an internal throw writes the stack to stderr, like the commit.cjs backstop
   assert.match(chunks[0], /EIO: i\/o error, rename/);
 });
 
-// AC6 (`plan --hunks` takes its own deadline from its own start): the separate
-// `plan --hunks --plan <planId>` form is not built yet (`workflows.plan` refuses `--hunks`),
-// so this pins M15's half of it: `deadline`/`cleanupDeadline` are pure in the call's own start,
-// with no state shared between calls.
+// AC6 (`plan --hunks` takes its own deadline from its own start): this pins M15's half of it,
+// `deadline`/`cleanupDeadline` are pure in the call's own start, with no state shared between
+// calls. The Seam 1 half (a separate `plan --hunks --plan <planId>` call crossing its own
+// deadline) is CHG-19's, in tests/plan-hunks-resnapshot.test.js.
 test('M15 deadline and cleanupDeadline are the call\'s own start plus 540 s and 580 s', () => {
   assert.equal(runPolicy.DEADLINE_MS, 540_000);
   assert.equal(runPolicy.CLEANUP_DEADLINE_MS, 580_000);
