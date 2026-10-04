@@ -11,11 +11,14 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { loadLib } = require('./helpers/load-lib.js');
+
+const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 
 let changeSet;
 beforeEach(async () => {
@@ -943,4 +946,106 @@ test('group 2 hits git-failed rebuilding the temporary index after group 1 alrea
   assert.deepEqual(result.json.remaining, [2]);
   assert.deepEqual(result.json.unstaged, []);
   assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'nothing staged after the refusal');
+});
+
+// EXE-16 (docs/roadmap/10-commit-executor.md): M15 `nextStep`, the last step of phase (a).
+// The first group of the call always starts; a later one only while at least 480 s remain
+// before the 540 s `deadline`. A stop is not a failure: exit 0, `failed: null`, a non-empty
+// `remaining`, no `refusal`, and the run kept (the `continue` handback itself is RPL/INT's,
+// C:reply-and-handback).
+
+// A schedule whose single step holds from a marker file written before launch, so every
+// `Date.now()` after the call's own first read returns `callStarted + elapsedMs` from the
+// start (FND-05).
+function scheduleFromStart(c, elapsedMs) {
+  const marker = path.join(c.root, 'clock-marker');
+  fs.writeFileSync(marker, '');
+  const schedulePath = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedulePath, JSON.stringify([{ event: { type: 'path', path: marker }, elapsedMs }]));
+  return schedulePath;
+}
+
+function runCommitAtElapsed(c, planId, elapsedMs) {
+  return runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: scheduleFromStart(c, elapsedMs) },
+  });
+}
+
+test('61 s elapsed after group 1 stops the call: exit 0, commits [1], remaining [2, 3], run kept', async (t) => {
+  const { c, planId, runDir, seed } = await threeGroupRun(t);
+
+  const result = await runCommitAtElapsed(c, planId, 61_000);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.ok, true, detail(result));
+  assert.equal(result.json.refusal, undefined);
+  assert.equal(result.json.failed, null);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'only group 1 was committed');
+  assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
+  assert.equal(fs.existsSync(runDir), true, 'the run is kept, not released');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the lock is kept');
+});
+
+test('a `continue` call (a plain re-run of `commit --all` on the same plan) commits groups 2 and 3 and releases', async (t) => {
+  const { c, planId, runDir, seed } = await threeGroupRun(t);
+  const stopped = await runCommitAtElapsed(c, planId, 61_000);
+  assert.deepEqual(stopped.json.remaining, [2, 3], detail(stopped));
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.failed, null);
+  assert.deepEqual(result.json.remaining, []);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 3, 'groups 2 and 3 committed on top of group 1');
+  assert.deepEqual(result.json.commits, [
+    { n: 2, sha: shas[1], header: THREE_HEADERS[1] },
+    { n: 3, sha: shas[2], header: THREE_HEADERS[2] },
+  ]);
+  assert.equal(fs.existsSync(runDir), false, 'released after the last group');
+});
+
+test('at exactly 60 s elapsed (480 s left) group 2 starts: all three groups commit', async (t) => {
+  const { c, planId, seed } = await threeGroupRun(t);
+
+  const result = await runCommitAtElapsed(c, planId, 60_000);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.failed, null);
+  assert.deepEqual(result.json.remaining, []);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 3);
+  assert.deepEqual(result.json.commits, THREE_HEADERS.map((header, i) => ({ n: i + 1, sha: shas[i], header })));
+});
+
+test('a budget stop after group 1, then a manual `git add` before the `continue` call: group 1 kept, group 2 refused index-changed', async (t) => {
+  const { c, planId, seed } = await threeGroupRun(t);
+  const stopped = await runCommitAtElapsed(c, planId, 61_000);
+  assert.deepEqual(stopped.json.remaining, [2, 3], detail(stopped));
+  c.writeFile('extra.txt', 'extra\n');
+  c.git(['add', '--', 'extra.txt']);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2, 3]);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 1, 'only group 1 is committed, from before the budget stop');
+});
+
+test('the first group starts even at 539 s elapsed', async (t) => {
+  const { c, planId } = await groupedRun(t);
+
+  const result = await runCommitAtElapsed(c, planId, 539_000);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.failed, null);
+  assert.deepEqual(result.json.remaining, []);
+  assert.equal(result.json.commits.length, 1);
 });

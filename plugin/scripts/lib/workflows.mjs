@@ -716,7 +716,7 @@ async function openRun(ctx) {
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { env, now, osUser } = ctx.injected;
-  const outcome = await commitAll(run, { now, osUser, env });
+  const outcome = await commitAll(run, { now, osUser, env, deadline: ctx.deadline });
   // `remaining.length === 0` is also required for the no-refusal case (not just
   // `!outcome.refusal`): EXE-16's budget stop ends `commitAll` with no `refusal` but a
   // non-empty `remaining`, and that outcome must keep the run (EXE-16 AC1), same as a
@@ -954,7 +954,10 @@ export async function release(values, injected, { cwd }) {
  * @returns {Promise<{ output: object } | { failure: { kind: string, message: string } }>}
  */
 export async function commit(values, injected, { cwd }) {
-  const ctx = { injected, cwd, values, opened: false };
+  // EXE-16: the call's start, read once and first (as `plan`'s own, RUN-12), so M15
+  // `deadline` bounds M16 `commitAll`'s budget check (`nextStep`) across every group.
+  const callStarted = injected.now();
+  const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
   try {
     const facts = await runSteps(COMMIT_STEPS, ctx);
     // EXE-06 AC3: a mid-run refusal (`head-moved` or `index-changed` here (EXE-06, EXE-07);

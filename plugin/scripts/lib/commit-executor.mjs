@@ -27,8 +27,10 @@
 // runs on a path that throws.
 // EXE-08 adds the last phase (a) refusal, `index-lock`: M10 `indexLockExists`, checked right
 // before a group's (b)/(c) work ever touches the index (after `index-changed`, before the
-// budget check). The failure paths (EXE-09 to
-// EXE-13), the parent and tree checks (EXE-14, EXE-15), the budget stop (EXE-16), trailers
+// budget check). EXE-16 adds that budget check, M15 `nextStep`, as the actual last step of
+// phase (a): not a refusal, so a stop ends the call with the groups committed so far kept
+// and this group's own `n` the first of `remaining`. The failure paths (EXE-09 to
+// EXE-13), the parent and tree checks (EXE-14, EXE-15), trailers
 // (MSG-07) and the other modes (EXE-19, EXE-20, reached only past `no-groups`) are not built
 // yet: reaching one throws.
 
@@ -40,6 +42,7 @@ import {
 import { run } from './process-adapter.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
+import { nextStep } from './run-policy.mjs';
 
 function notBuilt(what, slice) {
   return new Error(`${what} is not built yet (${slice})`);
@@ -128,12 +131,30 @@ function refused(state, group, commits, refusal, notices, gitOutput = null) {
   };
 }
 
+// EXE-16: M15 `nextStep`'s budget stop, the last check of phase (a). Not a failure (no
+// `refusal`, `failed: null`): the call ends cleanly with the groups committed so far kept,
+// and `remaining` (never empty, since this group itself was not reached) for a later
+// `continue` call to pick up. C:commit-release's output shape, same as the no-refusal return
+// at the end of `commitAll`.
+function budgetStop(state, commits, notices) {
+  return {
+    commits,
+    failed: null,
+    remaining: state.groups.filter((stored) => !stored.committed).map((stored) => stored.n),
+    error: null,
+    gitOutput: null,
+    unstaged: state.indexReset === true ? [] : null,
+    notices,
+  };
+}
+
 /**
  * Commits the stored groups not yet committed, in order (M16 `commitAll`).
  *
  * @param {{ toplevel: string, planId: string }} run the run M12 `open` returned.
- * @param {{ now: () => number, osUser: string | null, env: object }} options the injected
- *   clock, the OS user for the backstop's M8 `scanUnits` (never stored), and the environment.
+ * @param {{ now: () => number, osUser: string | null, env: object, deadline: number }}
+ *   options the injected clock, the OS user for the backstop's M8 `scanUnits` (never
+ *   stored), the environment, and this call's M15 `deadline()` (EXE-16's budget stop).
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: string | null,
  *   unstaged: Array<object> | null, notices: string[],
@@ -156,7 +177,7 @@ function refused(state, group, commits, refusal, notices, gitOutput = null) {
  *   (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
-export async function commitAll(run, { now, osUser, env }) {
+export async function commitAll(run, { now, osUser, env, deadline }) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
   const state = readState(run);
@@ -184,7 +205,8 @@ export async function commitAll(run, { now, osUser, env }) {
   }
   const commits = [];
   const notices = [];
-  for (const group of state.groups.filter((stored) => !stored.committed)) {
+  const pending = state.groups.filter((stored) => !stored.committed);
+  for (const [groupIndex, group] of pending.entries()) {
     // (a) Again before each group (EXE-04): the lock must still hold this run's `planId`
     // and its mtime is refreshed, so a takeover between groups stops the call here with the
     // earlier groups kept (C:commit-release (a), Q22).
@@ -213,6 +235,14 @@ export async function commitAll(run, { now, osUser, env }) {
     // unmapped (exit 1) and could leave the index half staged.
     if (await indexLockExists(git)) {
       return refused(state, group, commits, { code: 'index-locked', message: INDEX_LOCK_TEXT }, notices);
+    }
+
+    // (a) EXE-16: the last check of phase (a), M15 `nextStep` — the first group of this call
+    // always goes; a later one only while at least 480 s of `deadline` remain. A stop is not
+    // a refusal: the loop ends here with the groups committed so far kept and this group (and
+    // every one after it) left in `remaining`, for a later `continue` call to pick up.
+    if (!nextStep({ now: now(), deadline, groupIndex }).go) {
+      return budgetStop(state, commits, notices);
     }
 
     // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`

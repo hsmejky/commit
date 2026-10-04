@@ -190,3 +190,32 @@ export function deadline(callStarted) {
 export function cleanupDeadline(callStarted) {
   return callStarted + CLEANUP_DEADLINE_MS;
 }
+
+/** The remaining-budget floor of M15 `nextStep` (EXE-16, C:commit-release, Q18, stories 172,
+ * 173): a later group of a `commit --all` call only starts while at least this much of the
+ * 540 s `deadline` is still left. */
+export const NEXT_GROUP_FLOOR_MS = 480_000;
+
+/**
+ * M15 `nextStep({ now, deadline, groupIndex })` (docs/spec/modules-m14-m19.md,
+ * C:commit-release): whether M16 `commitAll`'s per-group loop, the last check of phase (a),
+ * may start the next group. The first group of the call (`groupIndex === 0`) always starts,
+ * however little of `deadline` is left, so a single-group call (or one restarted right after
+ * a prior stop) still makes progress; a later group starts only while at least
+ * `NEXT_GROUP_FLOOR_MS` of the budget remain. A stop is not a failure: the caller ends the
+ * call with the groups committed so far kept, `failed: null` and a non-empty `remaining`
+ * (EXE-16); the `continue` handback for the rest is built by the reply layer
+ * (C:reply-and-handback), not here.
+ *
+ * @param {{ now: number, deadline: number, groupIndex: number }} facts `now` the current
+ *   instant (the injected clock's own value, read once per group by the caller); `deadline`
+ *   this call's M15 `deadline()`; `groupIndex` this group's position in the call's own loop
+ *   (0 for the first group this call processes, never the group's stored `n`, which may
+ *   already be past a group an earlier call committed).
+ * @returns {{ go: true, deadline: number } | { go: false }} `go: true` echoes `deadline`
+ *   back, so a caller holding only this result still has it.
+ */
+export function nextStep({ now, deadline, groupIndex }) {
+  if (groupIndex === 0 || deadline - now >= NEXT_GROUP_FLOOR_MS) return { go: true, deadline };
+  return { go: false };
+}
