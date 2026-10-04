@@ -279,10 +279,12 @@ test('plan refused by a live lock already in place exits 6 lock before any inven
   // `isTracked` calls, and the one `git status` call `treeState` makes afterward for the
   // `failed` reply's text (INT-01: every reply, refusal included, ends with it; a single
   // cheap call, unlike CHG-05's own multi-call scan, so it is not "inventory work" either).
-  // CFG-07 adds step 1's `loadConfig` read of `scanIgnore` at HEAD (`git show`).
+  // CFG-07 adds step 1's `loadConfig` read of `scanIgnore` at HEAD (`git ls-tree`, then
+  // `git cat-file blob` when the file is committed).
   const PRE_INVENTORY_CALLS = [
     / --version$/,
-    / show HEAD:\.claude\/commit\.json$/,
+    / ls-tree -l -z HEAD -- \.claude\/commit\.json$/,
+    / cat-file blob [0-9a-f]+$/,
     / rev-parse --show-toplevel$/,
     / status --porcelain=v2 --branch --untracked-files=no --ignore-submodules=all --no-ahead-behind$/,
     / rev-parse(?: --git-path \S+)+$/,

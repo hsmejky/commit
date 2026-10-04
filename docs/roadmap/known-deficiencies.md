@@ -40,8 +40,6 @@ fixed, delete it here; IDs are never reused.
   behaviour left to WRK-06.
 - **KD-R14.** CHG-19's "map unchanged" after `diff-changed` has no observable; say "run
   ended".
-- **KD-R15.** CFG-07's `isRepoConfigPath` and `REPO_CONFIG_PATH` criterion names no seam
-  (its inputs are listed); an in-process M4 call has the same problem as KD-R28.
 - **KD-R16.** CHG-03b's fault criteria say "no lock file"; a lock temp file may legitimately
   remain. Say "no `.commit-plan/lock`".
 - **KD-R17.** CHG-23's `index.lock` grep trips on M16's expected notice and on
@@ -77,8 +75,6 @@ fixed, delete it here; IDs are never reused.
   rename attempt, or add a "fail the first N calls" option to the preload.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
-- **KD-R28.** CFG-07's direct `validateLayer` call is an in-process test Seam 3 does not
-  allow. Drop it (INF-07 covers it) or add M4 to Seam 3 and amend group 04's header.
 - **KD-R29.** FND-10's ESM check does not import `node:fs/promises`; add it.
 
 ## Coverage
@@ -214,7 +210,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 
 1. KD-R1 (on both critical paths).
 2. KD-R34 (a design sync before RUN-12 or EXE-17), then KD-R35.
-3. KD-R28, then KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
+3. KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
 4. The CHG-03b area: KD-R60.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R47;

@@ -2,9 +2,10 @@
 
 M4, the config loader (user and repo layers, validation, warnings, defaults, sources,
 `scanIgnore` at HEAD compiled through M7, `isRepoConfigPath`), and M5, the attribution
-resolver over the Claude settings layers. Both are tested at Seam 1 only, first through
+resolver over the Claude settings layers. Both are tested at Seam 1, first through
 `plan`'s pre-folder `config` refusal, then through `plan`'s `config`, `attribution` and
-`warnings` fields. Main sources: M4, M5, Q5, Q6, Q10, C:plan, stories 105-119, 148, 150.
+`warnings` fields; M4 also at Seam 3 (`validateLayer`, `isRepoConfigPath` and `loadConfig`
+called in-process, `docs/spec/testing-seams.md`). Main sources: M4, M5, Q5, Q6, Q10, C:plan, stories 105-119, 148, 150.
 CFG-01 (a human decision) settles the `scanIgnore` open items before CFG-07 and the scan and
 commit slices that use the flag.
 

@@ -625,12 +625,38 @@ test('loadConfig ignores a scanIgnore present only in the worktree (not yet comm
   assert.deepEqual(result.values.types, ['fix']);
 });
 
+// A trace2 `normalTarget` in a global config of its own (copied from
+// tests/plan-step7.test.js): `commands()` lists the argv of every git process started, one
+// `start` line each. Works from git 2.34 on all three OSes.
+function traceGit(c) {
+  const log = path.join(c.root, 'trace2.log');
+  const traceConfig = path.join(c.root, 'trace.gitconfig');
+  fs.writeFileSync(traceConfig, `[trace2]\n\tnormalTarget = ${log.split(path.sep).join('/')}\n`);
+  return {
+    env: { ...c.env, GIT_CONFIG_GLOBAL: traceConfig },
+    commands() {
+      if (!fs.existsSync(log)) return [];
+      return fs.readFileSync(log, 'utf8').split('\n').filter((line) => / start /.test(line));
+    },
+  };
+}
+
+function loadTraced(c, trace, unborn = false) {
+  return config.loadConfig({
+    toplevel: c.repoDir, claudeHome: c.claudeHome, unborn, env: trace.env, now: () => 0,
+  });
+}
+
+// review-CFG-07 finding 5: on a born repo with a valid `scanIgnore` at HEAD, `unborn: true`
+// alone must keep the HEAD read from running (an unborn repo would fail the read anyway, so
+// the result alone cannot tell), checked on the git calls actually started.
 test('loadConfig spawns no HEAD read when unborn: worktree keys apply, scanIgnore is []', async (t) => {
-  const c = createCase(t);
-  c.writeFile('.claude/commit.json', JSON.stringify({ types: ['feat'], scanIgnore: ['dist/**'] }));
+  const c = headCase(t, JSON.stringify({ scanIgnore: ['other/**'] }), JSON.stringify({ types: ['feat'], scanIgnore: ['dist/**'] }));
+  const trace = traceGit(c);
 
-  const result = await loadAtHead(c, true);
+  const result = await loadTraced(c, trace, true);
 
+  assert.deepEqual(trace.commands(), []);
   assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.values.types, ['feat']);
   assert.deepEqual(result.values.scanIgnore, []);
@@ -663,3 +689,83 @@ for (const [label, headText] of HEAD_INVALID) {
     assert.match(result.warnings[0], /scanIgnore is ignored \(\[\] used\)$/);
   });
 }
+
+// review-CFG-07 finding 3: only the file being absent at HEAD is silent. Checked end to end
+// against real git, through the HEAD read's own calls, on a born repo where the file was
+// never committed.
+test('loadConfig is silent when the repo config was never committed (file absent at HEAD)', async (t) => {
+  const c = createCase(t);
+  c.writeFile('README.md', 'readme\n');
+  c.git(['add', '--', 'README.md']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('.claude/commit.json', JSON.stringify({ scanIgnore: ['dist/**'] }));
+
+  const result = await loadAtHead(c);
+
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.deepEqual(result.scanIgnore, []);
+});
+
+// review-CFG-07 finding 4: like `readLayer`'s stat-before-read, an oversized blob at HEAD is
+// refused on its size alone, its content never read.
+test('loadConfig warns for an oversized repo config at HEAD, never reading its content', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.claude/commit.json', `${' '.repeat(1024 * 1024)}{}`);
+  c.git(['add', '--', '.claude/commit.json']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('.claude/commit.json', '{}');
+  const trace = traceGit(c);
+
+  const result = await loadTraced(c, trace);
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.deepEqual(result.warnings, [
+    'the repo config at HEAD (.claude/commit.json) is larger than 65536 bytes; its scanIgnore is ignored ([] used)',
+  ]);
+  const contentReads = trace.commands().filter((line) => / show | cat-file blob /.test(line));
+  assert.deepEqual(contentReads, []);
+});
+
+// review-CFG-07 finding 3: a HEAD read that fails for any other reason than the file being
+// absent (here a corrupt blob) warns instead of silently falling back to [] (still
+// fail-closed, never a `config` refusal).
+test('loadConfig warns, never refuses, when the repo config blob at HEAD is corrupt', async (t) => {
+  const c = headCase(t, JSON.stringify({ scanIgnore: ['dist/**'] }));
+  const sha = c.git(['rev-parse', 'HEAD:.claude/commit.json']).trim();
+  const objectPath = path.join(c.repoDir, '.git', 'objects', sha.slice(0, 2), sha.slice(2));
+  fs.chmodSync(objectPath, 0o600);
+  fs.writeFileSync(objectPath, 'not a valid zlib stream, deliberately corrupted'.padEnd(64, 'x'));
+
+  const result = await loadAtHead(c);
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.equal(result.warnings.length, 1);
+  assert.ok(
+    result.warnings[0].startsWith('the repo config at HEAD (.claude/commit.json) could not be read'),
+    result.warnings[0],
+  );
+});
+
+// review-CFG-07 finding 3: a path at HEAD that is not a file (here a directory) warns.
+test('loadConfig warns when the repo config at HEAD is not a regular file', async (t) => {
+  const c = createCase(t);
+  c.writeFile('.claude/commit.json/inner.txt', 'x\n');
+  c.git(['add', '--', '.claude/commit.json/inner.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.rmSync(path.join(c.repoDir, '.claude', 'commit.json'), { recursive: true });
+
+  const result = await loadAtHead(c);
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.values.scanIgnore, []);
+  assert.equal(result.sources.scanIgnore, 'default');
+  assert.deepEqual(result.warnings, [
+    'the repo config at HEAD (.claude/commit.json) is not a regular file; its scanIgnore is ignored ([] used)',
+  ]);
+});

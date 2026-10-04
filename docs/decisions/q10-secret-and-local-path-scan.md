@@ -33,7 +33,7 @@
     sources whose license does not restrict who may use them; every pattern has one
     positive and one negative fixture.
   - Exceptions: `scanIgnore` globs only, read from the repo config **at HEAD**
-    (`git show HEAD:.claude/commit.json`), not the working tree. The glob dialect is fixed in
+    (`HEAD:.claude/commit.json`), not the working tree. The glob dialect is fixed in
     [contracts](../contracts/scanignore-globs.md) (the matcher is hand-written, zero deps).
     Matching is case-sensitive on every OS. A diff that changes `scanIgnore` is flagged.
     A pattern with no literal character (`**`, `**/?*`, `*/**` and the like) is a `config`

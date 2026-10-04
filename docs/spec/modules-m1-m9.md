@@ -72,10 +72,14 @@ defaults; `sources` per key. Every `scanIgnore` pattern is compiled by M7 `compi
 inside `validateLayer` itself (not only via `loadConfig`), whose `config` errors (including a
 pattern with no literal character) M4 reports as layer errors, so a caller that validates a
 layer's text directly (M19 `configFor`) also catches a bad glob. The repo layer at HEAD is
-not validated as a layer: only its `scanIgnore` is read, and when it is invalid (the file at
-HEAD is not valid JSON, the value is not an array of strings, or a pattern fails M7
-`compileGlob`) `loadConfig` uses `[]` and adds a warning naming the repo config at HEAD, not
-a `config` error (fail-closed: `[]` exempts nothing); the worktree layer, its `scanIgnore`
+not validated as a layer: only its `scanIgnore` is read (`git ls-tree` for the entry's type
+and size, then `git cat-file blob` only for a regular file within the size cap), and when it
+is invalid (the path at HEAD is not a regular file, is oversized or unreadable, is not valid
+JSON, the value is not an array of strings, or a pattern fails M7 `compileGlob`)
+`loadConfig` uses `[]` and adds a warning naming the repo config at HEAD, not a `config`
+error (fail-closed: `[]` exempts nothing). A file or key absent at HEAD is no patterns,
+silently. Whenever no valid `scanIgnore` was read at HEAD (absent, unborn, or invalid, with
+the warning) its source is `default`; the worktree layer, its `scanIgnore`
 included, is validated as usual, so a copy still invalid there is a `config` error and a
 fixed copy is committable (Q6, Q10 as amended by CFG-01). Returns compiled
 `scanIgnore` matchers (via M7) and exports

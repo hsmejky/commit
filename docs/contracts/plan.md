@@ -283,10 +283,13 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
 - `attribution`: `null` when no trailer is added. `source`: `managed`, `project-local`,
   `project`, `user`, `default`.
 - `config.sources` values: `default`, `user`, `repo`, and `repo@HEAD` (only `scanIgnore`,
-  read from `git show HEAD:.claude/commit.json`, Q10). A `scanIgnore` that is invalid at
-  HEAD (not valid JSON, not an array of strings, or a glob error) is not a `config`
-  refusal: `config.values.scanIgnore` is `[]` and `warnings` names the repo config at HEAD
-  (Q6, Q10 as amended by CFG-01); the worktree layer is still validated.
+  read from the `.claude/commit.json` blob in HEAD's tree, Q10). A `scanIgnore` that is
+  invalid at HEAD (not a regular file, oversized or unreadable, not valid JSON, not an
+  array of strings, or a glob error) is not a `config` refusal: `config.values.scanIgnore`
+  is `[]` and `warnings` names the repo config at HEAD (Q6, Q10 as amended by CFG-01); the
+  worktree layer is still validated. `scanIgnore`'s source is `default` whenever no valid
+  value was read at HEAD (the file or key absent there, an unborn HEAD, or an invalid value,
+  with the warning).
 - `scan.scanIgnoreChanged`: the result of the `scanIgnore` change test
   ([scan map](plan-hunks.md)); an output field, the scan map carries the flagged units.
 - Scan hits never carry the matched value. In `split` mode the scan runs over the diff

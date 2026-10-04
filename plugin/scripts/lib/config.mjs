@@ -1,6 +1,6 @@
 // M4 Config loader (docs/spec/modules-m1-m9.md, Q6, C:plan): reads the config layers.
-// Effectful: reads the layer files directly, and spawns one read-only `git show` for the
-// repo layer's `scanIgnore` at HEAD (CFG-07).
+// Effectful: reads the layer files directly, and spawns two read-only git calls (`git ls-tree`,
+// then `git cat-file blob`) for the repo layer's `scanIgnore` at HEAD (CFG-07).
 //
 // CFG-02 builds the tracer: only the repo layer, read straight from the worktree (never git),
 // and only its JSON parseability. Unparseable JSON is a `config` error naming the repo layer
@@ -19,7 +19,8 @@
 // warnings for unknown keys and values and for a repo-only key in the user layer. CFG-07
 // adds `scanIgnore`: `validateLayer` compiles each pattern with M7 `compileGlob` (so the
 // worktree layer refuses a bad one), but the effective value is read from the repo config
-// at HEAD only (`git show`, none when unborn), sourced `repo@HEAD`; an invalid value there
+// at HEAD only (`git ls-tree`, then `git cat-file blob`; none when unborn), sourced
+// `repo@HEAD`; an invalid value there
 // is `[]` plus a warning, never a refusal (Q6, Q10 as amended by CFG-01).
 
 import fs from 'node:fs';
@@ -226,6 +227,36 @@ export function validateLayer(obj, layer) {
 const CONFIG_MAX_BYTES = 65536;
 
 /**
+ * Decodes a config file's raw bytes into its parsed JSON value, shared by `readLayer` and the
+ * HEAD read (review-CFG-07 finding 6). Does not check the value's shape: that is each
+ * caller's next step.
+ *
+ * @param {Buffer} buffer the file's raw bytes.
+ * @param {string} label the file's display label, named in `problem`.
+ * @returns {{ value: unknown } | { problem: string }} `problem`: a message naming `label`.
+ */
+function decodeLayerBytes(buffer, label) {
+  let text;
+  try {
+    // A fatal-mode decoder catches invalid UTF-8 cheaply and rejects it as unparseable,
+    // instead of Node's default `readFileSync(..., 'utf8')`, which silently replaces bad
+    // bytes with U+FFFD (Q6, review-CFG-02 finding 4). It also strips a leading UTF-8 BOM
+    // (U+FEFF) the same way Node's own JSON file parsing does, so a file saved with a BOM by
+    // Windows PowerShell 5.1 or Notepad still parses (Q6, review-CFG-02 finding 2).
+    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return { problem: `the ${label} is not valid UTF-8` };
+  }
+  try {
+    return { value: JSON.parse(text) };
+  } catch (err) {
+    // The parser's own message carries the position, which helps find the typo (story 110,
+    // review-CFG-02 finding 3).
+    return { problem: `the ${label} is not valid JSON: ${err.message}` };
+  }
+}
+
+/**
  * Reads and validates one config layer's file: the read/decode/parse/`validateLayer`
  * pipeline shared by the user and repo layers (CFG-04), each named only by their path and
  * display label. A missing file is no layer at all, not an error (Q6).
@@ -274,26 +305,9 @@ function readLayer(filePath, layer, kind) {
     return { error: `the ${layer} cannot be read (${err.code})` };
   }
 
-  let text;
-  try {
-    // A fatal-mode decoder catches invalid UTF-8 cheaply and rejects it as unparseable,
-    // instead of Node's default `readFileSync(..., 'utf8')`, which silently replaces bad
-    // bytes with U+FFFD (Q6, review-CFG-02 finding 4). It also strips a leading UTF-8 BOM
-    // (U+FEFF) the same way Node's own JSON file parsing does, so a file saved with a BOM by
-    // Windows PowerShell 5.1 or Notepad still parses (Q6, review-CFG-02 finding 2).
-    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-  } catch {
-    return { error: `the ${layer} is not valid UTF-8` };
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    // The parser's own message carries the position, which helps find the typo (story 110,
-    // review-CFG-02 finding 3).
-    return { error: `the ${layer} is not valid JSON: ${err.message}` };
-  }
+  const decoded = decodeLayerBytes(buffer, layer);
+  if (decoded.problem !== undefined) return { error: decoded.problem };
+  const parsed = decoded.value;
   // CFG-03: a non-object top level, a wrong JSON type, an out-of-range number or a bad
   // `types` array is a `config` error naming the layer and the key (Q6, review-CFG-02
   // finding 5: CFG-02 was JSON-parseability only). `validateLayer` collects every error it
@@ -421,11 +435,16 @@ const NO_HEAD_PATTERNS = Object.freeze({ patterns: null, matchers: Object.freeze
 const HEAD_LAYER = `repo config at HEAD (${REPO_CONFIG_PATH})`;
 
 /**
- * Reads `scanIgnore` from the repo config at HEAD (CFG-07, Q10 as amended by CFG-01): one
- * read-only `git show HEAD:.claude/commit.json` (C:plan `config.sources`). The file at HEAD is
- * not validated as a layer: only its `scanIgnore` is read, decoded the same way `readLayer`
- * decodes a layer file (fatal UTF-8, BOM stripped, Q6). A file or key absent at HEAD is no
- * patterns, silently; an invalid one (over `CONFIG_MAX_BYTES`, not UTF-8, not valid JSON,
+ * Reads `scanIgnore` from the repo config at HEAD (CFG-07, Q10 as amended by CFG-01): two
+ * read-only git calls (C:plan `config.sources`). `git ls-tree -l` first, so only the tree
+ * is read: an empty listing is a file absent at HEAD; otherwise its type and size are checked
+ * before the blob is read by its object name with `git cat-file blob`, so an oversized
+ * blob is never read, like `readLayer`'s stat before its read (review-CFG-07 finding 4).
+ * Both outputs are machine-readable, never git's localized messages (finding 3). The file
+ * at HEAD is not validated as a layer: only its `scanIgnore` is read, decoded the same way
+ * `readLayer` decodes a layer file (`decodeLayerBytes`). A file or key absent at HEAD is
+ * no patterns, silently (Q6); anything else that yields no valid value (not a regular file,
+ * over `CONFIG_MAX_BYTES`, a failed git call or corrupt blob, not UTF-8, not valid JSON,
  * not an object, not an array of strings, or a pattern M7 `compileGlob` rejects) is no
  * patterns plus a warning naming the repo config at HEAD, never a `config` refusal: `[]`
  * exempts nothing (fail-closed), and the worktree copy is still validated as a layer.
@@ -435,38 +454,52 @@ const HEAD_LAYER = `repo config at HEAD (${REPO_CONFIG_PATH})`;
  *   `patterns: null` when no valid `scanIgnore` was read (the default `[]` applies).
  */
 async function readScanIgnoreAtHead({ toplevel, env, now }) {
-  const result = await run('git', ['show', `HEAD:${REPO_CONFIG_PATH}`], {
-    cwd: toplevel, env, now, readOnly: true,
-  });
-  // Not at HEAD yet (or no HEAD to read): no layer at all, like an absent file (Q6).
-  if (result.code !== 0) return NO_HEAD_PATTERNS;
-
   const invalid = (problem) => ({
     patterns: null,
     matchers: Object.freeze([]),
-    warning: `the ${problem}; its scanIgnore is ignored ([] used)`,
+    warning: `${problem}; its scanIgnore is ignored ([] used)`,
   });
-  if (result.stdout.length > CONFIG_MAX_BYTES) {
-    return invalid(`${HEAD_LAYER} is larger than ${CONFIG_MAX_BYTES} bytes`);
+  const failed = (code) => invalid(`the ${HEAD_LAYER} could not be read (git exited ${code})`);
+
+  // `-z`: `<mode> SP <type> SP <object> SP+ <size> TAB <path> NUL`; `<size>` is `-` for a
+  // non-blob, and not a number when the blob cannot be read (a corrupt object).
+  const listing = await run('git', ['ls-tree', '-l', '-z', 'HEAD', '--', REPO_CONFIG_PATH], {
+    cwd: toplevel, env, now, readOnly: true,
+  });
+  if (listing.code !== 0) return failed(listing.code);
+  const entry = listing.stdout.toString('utf8');
+  // Not committed yet: no layer at all, like an absent file (Q6).
+  if (entry === '') return NO_HEAD_PATTERNS;
+  const fields = /^(\d+) (\S+) ([0-9a-f]+) +(\S+)\t/.exec(entry);
+  if (fields === null) {
+    return invalid(`the ${HEAD_LAYER} could not be read (unexpected git ls-tree output)`);
   }
-  let text;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(result.stdout);
-  } catch {
-    return invalid(`${HEAD_LAYER} is not valid UTF-8`);
+  const [, mode, type, object, size] = fields;
+  // A directory, a gitlink, or a symlink (its blob is the link target, not the file).
+  if (type !== 'blob' || mode === '120000') {
+    return invalid(`the ${HEAD_LAYER} is not a regular file`);
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    return invalid(`${HEAD_LAYER} is not valid JSON: ${err.message}`);
+  if (!/^\d+$/.test(size)) {
+    return invalid(`the ${HEAD_LAYER} could not be read (its blob is unreadable)`);
   }
+  if (Number(size) > CONFIG_MAX_BYTES) {
+    return invalid(`the ${HEAD_LAYER} is larger than ${CONFIG_MAX_BYTES} bytes`);
+  }
+
+  // By object name, so the blob read is the one just listed even if HEAD moves meanwhile.
+  const blob = await run('git', ['cat-file', 'blob', object], {
+    cwd: toplevel, env, now, readOnly: true,
+  });
+  if (blob.code !== 0) return failed(blob.code);
+
+  const decoded = decodeLayerBytes(blob.stdout, HEAD_LAYER);
+  if (decoded.problem !== undefined) return invalid(decoded.problem);
+  const parsed = decoded.value;
   const isObject = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
   if (isObject && !Object.hasOwn(parsed, 'scanIgnore')) return NO_HEAD_PATTERNS;
-  // `validateLayer`'s own messages, over `scanIgnore` alone (or the non-object top level);
-  // each starts with "the ", which `invalid` adds back.
+  // `validateLayer`'s own messages, over `scanIgnore` alone (or the non-object top level).
   const errors = validateLayer(isObject ? { scanIgnore: parsed.scanIgnore } : parsed, HEAD_LAYER);
-  if (errors) return invalid(errors.errors[0].slice('the '.length));
+  if (errors) return invalid(errors.errors[0]);
   return {
     patterns: parsed.scanIgnore,
     matchers: Object.freeze(parsed.scanIgnore.map((pattern) => compileGlob(pattern).matcher)),
