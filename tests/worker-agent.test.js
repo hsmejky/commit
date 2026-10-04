@@ -11,6 +11,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseAgentFile } = require('./helpers/agent-frontmatter.js');
+const { assertDescriptionBudget } = require('./helpers/description-budget.js');
 
 const REPO_ROOT = path.join(__dirname, '..');
 const AGENT_PATH = path.join(REPO_ROOT, 'plugin', 'agents', 'commit-worker.md');
@@ -43,11 +44,7 @@ test('WRK-01: the commit-worker frontmatter carries the fixed runaway and identi
 // Q24, whatever the story's wording)"
 test('WRK-01: the description is at most 200 characters', () => {
   const { attrs } = readAgent();
-  assert.equal(typeof attrs.description, 'string');
-  assert.ok(
-    attrs.description.length <= 200,
-    `description is ${attrs.description.length} characters, budget is 200`,
-  );
+  assertDescriptionBudget(attrs);
 });
 
 // AC: "The description holds the six Q2 clauses in order, starting with 'follow the
