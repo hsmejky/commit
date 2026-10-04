@@ -112,6 +112,7 @@ test('INF-08: writes to both resolved target paths, reading an existing file fir
   assert.match(body, /\.claude\/commit\.json/);
   assert.match(body, /git rev-parse --show-toplevel/);
   assert.match(body, /CLAUDE_CONFIG_DIR/);
+  assert.match(body, /CLAUDE_CONFIG_DIR[\s\S]{0,40}~\/\.claude/);
   assert.match(body, /Read it first/i);
 });
 
