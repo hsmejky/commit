@@ -184,13 +184,14 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   `escapePath`; `notUtf8`'s bad-byte `\xNN` escapes, M10 `escapeNonUtf8`, are themselves
   escaped again for any remaining control character, since `escapePath` is idempotent on
   `\xNN` text):
-  - hidden: "N hidden file: `` `a` `` " / "N hidden files: `` `a`, `b` `` " (first 5, plus
-    "+N more" past that, M10's `hidden.sample` cap);
+  - hidden: "N hidden file: `` `a` ``" / "N hidden files: `` `a`, `b` ``" (first 5, plus
+    ", +N more" past that, M10's `hidden.sample` cap);
   - collapsed: "`` `dir` `` (N collapsed)", one per directory, joined with ", ";
-  - `stagedExcluded` reason `hidden`: "staged but hidden: `` `a` ``" (a clean tree's
-    staged-new hidden path is reported here, never refused: `staged-hit`'s own "is/are
-    staged but hidden" wording, [cli-and-exit-codes.md](cli-and-exit-codes.md), only fires
-    under `--staged`);
+  - `stagedExcluded` reason `hidden`: "`` `a` `` is staged but hidden — commit by hand" /
+    "`` `a`, `b` `` are staged but hidden — commit by hand" (Q16; a clean tree's staged-new
+    hidden path is reported here, never refused: `staged-hit`'s own "is/are staged but
+    hidden — unstage it/them or commit by hand" wording,
+    [cli-and-exit-codes.md](cli-and-exit-codes.md), only fires under `--staged`);
   - `stagedExcluded` reason `collapsed`: "`` `dir` `` (N staged, collapsed)", one per
     directory, joined with ", ";
   - `dirtySubmodules`: "dirty submodule: `` `a` ``" / "dirty submodules: `` `a`, `b` ``";

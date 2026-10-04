@@ -99,7 +99,7 @@ test('M15 planRefusal names a staged-but-hidden-only clean tree\'s path', async 
     git: OK_GIT, repo: WORKTREE,
     clean: { stagedExcluded: [{ path: '.env', reason: 'hidden' }] },
   });
-  assert.equal(refusal.message, 'nothing to commit: staged but hidden: `.env`');
+  assert.equal(refusal.message, 'nothing to commit: `.env` is staged but hidden — commit by hand');
 });
 
 test('M15 planRefusal names a staged-but-collapsed-only clean tree\'s directory and count', async () => {

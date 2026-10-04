@@ -190,7 +190,11 @@ function cleanTreeMessage(clean) {
   const collapsedDirs = collapsed.map(({ dir, count }) => `\`${dir}\` (${count} collapsed)`);
   if (collapsedDirs.length > 0) parts.push(collapsedDirs.join(', '));
   const stagedHidden = stagedExcluded.filter((e) => e.reason === 'hidden').map((e) => e.path);
-  if (stagedHidden.length > 0) parts.push(`staged but hidden: ${list(stagedHidden)}`);
+  if (stagedHidden.length > 0) {
+    parts.push(stagedHidden.length === 1
+      ? `${list(stagedHidden)} is staged but hidden — commit by hand`
+      : `${list(stagedHidden)} are staged but hidden — commit by hand`);
+  }
   const stagedCollapsed = stagedExcluded
     .filter((e) => e.reason === 'collapsed')
     .map(({ dir, count }) => `\`${dir}\` (${count} staged, collapsed)`);

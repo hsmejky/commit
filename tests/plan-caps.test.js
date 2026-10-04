@@ -180,7 +180,7 @@ test('caps: a staged, hidden-only new file leaves the tree clean, named in the r
   assert.equal(result.json.reply.status, 'nothing', detail(result));
   assert.equal(
     result.json.reply.text.split('\n')[0],
-    'nothing to commit: staged but hidden: `.idea/workspace.xml`',
+    'nothing to commit: `.idea/workspace.xml` is staged but hidden — commit by hand',
   );
 });
 
