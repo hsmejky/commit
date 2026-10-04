@@ -437,21 +437,21 @@ clean" case, hidden-only included.
 
 **Blocked by:** RUN-05, SCN-15, GIT-10, CHG-13, GIT-12, CHG-14.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q10, Q18, M15 `planRefusal`, C:plan, stories 156, 170, 219.
 
-- [ ] Seam 1: a clean tree on a locked SSH key → status `nothing`, not `signing`.
-- [ ] Seam 1: `plan --staged` with a staged secret on a locked key → `staged-hit`.
-- [ ] Seam 1: only a hidden file changed → `nothing`, and `text` names its count and path.
-- [ ] Seam 1: only collapsed directories changed (every change falls into
+- [x] Seam 1: a clean tree on a locked SSH key → status `nothing`, not `signing`.
+- [x] Seam 1: `plan --staged` with a staged secret on a locked key → `staged-hit`.
+- [x] Seam 1: only a hidden file changed → `nothing`, and `text` names its count and path.
+- [x] Seam 1: only collapsed directories changed (every change falls into
       `untracked.collapsed`) → `nothing`, named in the reply.
-- [ ] Seam 1: a dirty submodule with no pointer change (`dirtySubmodules` only, no unit) →
+- [x] Seam 1: a dirty submodule with no pointer change (`dirtySubmodules` only, no unit) →
       `nothing`, named in the reply.
-- [ ] Seam 1 (POSIX): only a path that is not UTF-8 changed (the inventory's `notUtf8`
+- [x] Seam 1 (POSIX): only a path that is not UTF-8 changed (the inventory's `notUtf8`
       only, CHG-12) → `nothing`, and `text` names it in its `\xNN` form (story 219;
       review-CHG-12 finding 3).
-- [ ] Seam 1: a modified file on a locked key → exit 6 `signing`, and no folder or lock
+- [x] Seam 1: a modified file on a locked key → exit 6 `signing`, and no folder or lock
       is left.
 
 
