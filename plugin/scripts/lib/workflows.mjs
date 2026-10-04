@@ -1587,8 +1587,14 @@ function refusalFailure(refusal) {
 // post-folder alike — every step of `PLAN_STEPS` that can end the run with one — so this is
 // `plan`'s single refusal→reply seam, not only the merge case. A lock refusal (`held`,
 // `EEXIST`) reaches it too: its error carries the holder fields (RUN-07, `holderFields`
-// below), and it gets this same plain `failed` reply with no handback until INT-05 and
-// RPL-05 add the documented `lock` handback. `release`,
+// below); one with a readable `planId` **and** a user to ask gets the `lock` handback
+// instead (INT-05, `lockHandbackFailure` below) — an unparseable or already-gone lock
+// (`holder.planId === null`) keeps this plain `failed` reply with no handback
+// (C:reply-and-handback "A `lock` refusal whose holder has no `planId`... carries no
+// handback"), and so does `--no-user` (Q22: "A run without a user gets a plain refusal and
+// returns it to its parent"; C:reply-and-handback marks the `lock` row `interactive`, the
+// same as `lintFailed`'s own `--no-user` skip in `lintFailureOf` below — unlike
+// `modeChoice`, which carries no such qualifier and never checks `--no-user`). `release`,
 // `commit`, `check` and `infer` keep `refusalFailure` above unchanged: their own `reply`
 // wiring (`infer` has no `reply` field at all, C:infer) is later slices' (INT-02 built
 // `check`'s success reply only; KD-R73 tracks the gap for `release`/`commit`). `ctx.toplevel` is not set yet this early in
@@ -1601,6 +1607,10 @@ function refusalFailure(refusal) {
 async function planRefusalFailure(refusal, ctx) {
   const toplevel = usableToplevel(ctx);
   const replyDeadline = ctx.cleanupDeadline;
+  if (refusal.code === 'held' && refusal.holder !== null && refusal.holder.planId !== null
+    && ctx.values['no-user'] !== true) {
+    return lockHandbackFailure(refusal, ctx, toplevel, replyDeadline);
+  }
   return {
     failure: {
       kind: kindForDomainCode(refusal.code),
@@ -1611,6 +1621,36 @@ async function planRefusalFailure(refusal, ctx) {
         { toplevel, deadline: replyDeadline },
       ),
       ...(refusal.code === 'held' ? { errorFields: holderFields(refusal.holder) } : {}),
+    },
+  };
+}
+
+// INT-05 (C:reply-and-handback `lock` row, Q22, docs/roadmap/12-integration.md): a live lock
+// with a readable `planId` (a `peek` refusal at step 3, or a lost race at step 7's `acquire`,
+// RUN-06/RUN-07), in an interactive run (the caller above already excluded `--no-user`),
+// becomes a `lock` handback: `take over` respawns `takeOver: <planId>` plus the refused
+// call's own mode flag (`--staged`/`--split`, Q9: bare `plan` repeats none), `wait` ends the
+// run, and `ifNoUser` waits and returns the text to the parent (reached only if a caller
+// built this handback for a run that turns out to have no user after all, never by `--no-
+// user` itself, which is filtered out before this function is called). The refused call
+// never held a lock of its own (`ctx.run` is never set before this point), so `plan`'s
+// `finally` only discards this call's provisional folder; the holder's own lock and folder
+// are never touched.
+async function lockHandbackFailure(refusal, ctx, toplevel, replyDeadline) {
+  const modeFlag = ctx.values.staged === true ? 'staged' : (ctx.values.split === true ? 'split' : null);
+  return {
+    failure: {
+      kind: kindForDomainCode(refusal.code),
+      message: refusal.message,
+      reply: await finalReply(
+        {
+          status: 'handback', kind: 'lock', holder: refusal.holder, modeFlag,
+          nowMs: ctx.injected.now(), notices: ctx.notices,
+        },
+        ctx,
+        { toplevel, deadline: replyDeadline },
+      ),
+      errorFields: holderFields(refusal.holder),
     },
   };
 }

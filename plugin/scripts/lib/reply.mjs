@@ -30,6 +30,21 @@ export const BASE_CALLER_RULE = 'Show text to the user verbatim; a subagent puts
   + 'UUID); otherwise run nothing and show the command to the user. Run a command with '
   + '--confirmed only as the answer the user picked, or as ifNoUser.answer without a user.';
 
+/**
+ * INT-05 (C:reply-and-handback "Handback rule, added when `handback` is set"): appended to
+ * `BASE_CALLER_RULE` for a `lock` handback only — the other handback kinds' own rule text is
+ * later slices' (`modeChoice` INT-13's, `lintFailed` and `continue` RPL's).
+ */
+export const HANDBACK_RULE = 'If question is null, run the only answer. Otherwise ask question '
+  + 'with AskUserQuestion; the answers without needsText are the options, and the user\'s own '
+  + 'words under Other pick the needsText answer ({text} = those words). Run a run verbatim '
+  + 'with its timeoutMs; its output holds a new reply: handle it the same way; if it holds no '
+  + 'reply, show it and run nothing more. For a respawn, spawn commit:commit-worker with it as '
+  + 'the prompt, model sonnet, plus the intent and reword lines of your first spawn, and '
+  + 'interactive: false if you cannot ask. An answer with neither ends the run. Without a '
+  + "user: take ifNoUser.answer if set; if returnToParent, return text verbatim to your parent. "
+  + 'Edit no files until the final reply.';
+
 const MAX_TREE_PATHS = 10;
 
 // Every C0 control character, DEL and C1 control character (C:reply-and-handback, RPL-06),
@@ -79,6 +94,26 @@ function renderErrors(errors) {
 // its full SHA and the header as committed. The 10-entry cap is RPL-05's.
 function renderCommits(commits) {
   return commits.map(({ sha, header }) => `${sha} ${header}`);
+}
+
+// INT-05 (Q22 "A lock refusal in an interactive run carries a lock handback"): the takeover
+// question, built from the holder's `created` (local HH:MM, like `heldMessage` in run.mjs)
+// and how long ago its lock was last touched, against `nowMs`.
+function lockQuestion(holder, nowMs) {
+  const date = new Date(Date.parse(holder.created));
+  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const idle = Math.max(0, Math.round((nowMs - holder.touched) / 1000));
+  return `A /commit run started at ${hhmm} holds the lock, last active ${idle} s ago. It may `
+    + 'still be running (a subagent committing in parallel); taking it over resets its index '
+    + 'mid-commit. Take it over?';
+}
+
+// INT-05 (C:reply-and-handback "respawn", Q9): `take over`'s respawn repeats the refused
+// call's own mode flag (if it had one) next to `takeOver`.
+function lockRespawn(planId, modeFlag) {
+  const lines = [`takeOver: ${planId}`];
+  if (modeFlag !== null) lines.push(`mode: ${modeFlag}`);
+  return lines.join('\n');
 }
 
 function modeChoiceQuestion({ staged, other }) {
@@ -141,6 +176,17 @@ export function reply(facts) {
   } else if (facts.status === 'handback' && facts.kind === 'continue') {
     firstLines = renderCommits(commits);
     handback = facts.handback;
+  } else if (facts.status === 'handback' && facts.kind === 'lock') {
+    firstLines = [lockQuestion(facts.holder, facts.nowMs)];
+    handback = {
+      kind: 'lock',
+      question: firstLines[0],
+      answers: [
+        { label: 'take over', respawn: lockRespawn(facts.holder.planId, facts.modeFlag ?? null) },
+        { label: 'wait' },
+      ],
+      ifNoUser: { answer: 'wait', returnToParent: true },
+    };
   } else {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
@@ -155,7 +201,10 @@ export function reply(facts) {
     text,
     commits: commits.map((commit) => ({ ...commit })),
     notices: facts.notices === undefined ? [] : [...facts.notices],
-    callerRule: BASE_CALLER_RULE,
+    // INT-05: only the `lock` handback adds the handback rule so far (above).
+    callerRule: facts.status === 'handback' && facts.kind === 'lock'
+      ? `${BASE_CALLER_RULE} ${HANDBACK_RULE}`
+      : BASE_CALLER_RULE,
     handback,
   };
 }
