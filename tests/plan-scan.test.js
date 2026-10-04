@@ -7,14 +7,24 @@
 // and flags every unit of that file `overScanLimit: true`, so M8 reports the path skipped
 // even when each hunk alone stays under the limit. This file's own text holds no literal
 // hit: tokens are built at run time.
+//
+// SCN-15 (docs/roadmap/05-scanner.md): the Seam 1 proof that `plan` wires this end to end —
+// an untracked candidate over the 1 MB limit is reported `skipped` (not scanned) the same
+// way a tracked file is, and the entry point's `osUser` derivation (FND-10's fault preload
+// making `os.userInfo()` throw, with neither `USER` nor `USERNAME` set) still lets `plan`
+// complete with `osUser: null`: the OS-user segment check then finds nothing, while
+// `local-path`'s fixed shapes (Q10) still fire.
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
+
+const PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 
 let changeSet;
 
@@ -64,8 +74,8 @@ function addedContent(bytes, fill) {
   return text;
 }
 
-async function plan(c) {
-  const result = await runCommit(c, ['plan']);
+async function plan(c, options = {}) {
+  const result = await runCommit(c, ['plan'], options);
   assert.equal(result.exitCode, 0, detail(result));
   const runDir = path.join(c.repoDir, '.commit-plan', result.json.planId);
   const read = (name) => fs.readFileSync(path.join(runDir, name), 'utf8');
@@ -222,4 +232,52 @@ test('added content of exactly 1,048,576 bytes is scanned; one byte more is flag
       }
     });
   }
+});
+
+// SCN-15 AC2: a 2 MB untracked candidate is reported skipped, not scanned — the same rule a
+// tracked file gets (the two tests above), proved here through a brand-new, never-added
+// file (C:plan `scan.skipped`). Unlike a pattern hit, a skipped file "may be included"
+// (Q10's table), so its body still reaches `hunks.txt`; only `scan.hits` and `scan.skipped`
+// themselves never carry a matched value.
+test('a 2 MB untracked candidate is reported skipped, not scanned', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'README.md': 'readme\n' });
+  c.writeFile('new/big-secret.txt', addedContent(2 * 1024 * 1024, 'h'));
+
+  const { hunks, state, planJson } = await plan(c);
+
+  assert.deepEqual(planJson.scan.skipped, [{ path: 'new/big-secret.txt', reason: SKIP_REASON }]);
+  assert.deepEqual(planJson.scan.hits, []);
+  const entry = hunks.find((h) => h.path === 'new/big-secret.txt');
+  assert.equal(entry.scan, 'skipped');
+  assert.equal(state.scanned[entry.id], 'skipped');
+});
+
+// SCN-15 AC3: the fault preload (FND-10) makes `os.userInfo()` throw; the harness's spawned
+// env never carries the host's `USER`/`USERNAME` (process-seam.js), so this reaches the
+// entry point's fallback chain with neither set either, landing on `osUser: null`. `plan`
+// still completes (it does not throw or refuse `internal`), `local-path`'s fixed shapes
+// (independent of `osUser`) still fire, and the OS-user segment rule (which only ever fires
+// when `osUserSegment` is non-null) finds nothing for a segment that is not one of those
+// fixed shapes.
+test('SCN-15: os.userInfo() throwing with no USER/USERNAME → osUser: null; plan completes, fixed local-path shapes still hit, no OS-user-segment hit', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'README.md': 'readme\n' });
+  // Built at run time, not a literal, so this file holds no fixed-shape local-path text of
+  // its own (see tests/scanner.test.js's same trick) — the privacy guard scans test sources.
+  const fixedPathLiteral = 'C:' + '\\Users\\charlie\\notes.txt';
+  c.writeFile('src/paths.js', [
+    `const fixed = "${fixedPathLiteral}";`,
+    'const other = "data/zz9plural/export.csv";',
+    '',
+  ].join('\n'));
+
+  const { planJson } = await plan(c, {
+    nodeArgs: ['--import', PRELOAD],
+    env: { COMMIT_TEST_FAULT_USERINFO: '1' },
+  });
+
+  assert.deepEqual(planJson.scan.hits, [
+    { path: 'src/paths.js', line: 1, pattern: 'local-path' },
+  ]);
 });
