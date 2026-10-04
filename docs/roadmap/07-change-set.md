@@ -371,7 +371,7 @@ empty tree for a root commit, with the same pinned options; IDs are never staged
 
 **Blocked by:** CHG-06, GIT-09.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q20, C:plan-hunks (what is diffed), story 177, M10.
 
@@ -389,8 +389,8 @@ reword on any shallow repo now fails instead of succeeding — not only a true o
 clone, almost always masked by `pushed`, but also an unpushed orphan-branch commit in a
 shallow clone (e.g. CI).
 
-- [ ] Seam 1: `plan --reword` → hunk index of HEAD's own changes; on a root commit, against the empty tree.
-- [ ] Seam 1: staged changes present during `plan --reword` → not in the units; real index untouched.
+- [x] Seam 1: `plan --reword` → hunk index of HEAD's own changes; on a root commit, against the empty tree.
+- [x] Seam 1: staged changes present during `plan --reword` → not in the units; real index untouched.
 
 
 ## CHG-16: Scan map wiring and withheld bodies
