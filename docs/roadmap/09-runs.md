@@ -390,19 +390,19 @@ are pre-cap for `resolveMode` to count here; do not move the caps call earlier t
 after the mode decision and only when it resolves to `split` (C:plan step 4); keep
 `resolveMode` before it, so `plan --staged` and a mixed index are never refused for it.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q16, C:plan (mode), M15 `resolveMode`, stories 81, 225.
 
-- [ ] Seam 1: every tracked change staged → `split`. Nothing staged → `split`.
-- [ ] Seam 1: one staged file plus one unstaged tracked edit → `modeChoice` with counts
+- [x] Seam 1: every tracked change staged → `split`. Nothing staged → `split`.
+- [x] Seam 1: one staged file plus one unstaged tracked edit → `modeChoice` with counts
       only, `planId: null`, and no folder left.
-- [ ] Seam 1: a fully staged index beside a large new directory → `modeChoice`. A fully
+- [x] Seam 1: a fully staged index beside a large new directory → `modeChoice`. A fully
       staged index beside hidden files only → `split`.
-- [ ] Seam 1: `plan --staged` with an empty index → exit 1 `usage` (`staged-empty`).
-- [ ] Seam 1: `--split` or `--staged` on a mixed index skips `modeChoice` (the flag wins,
+- [x] Seam 1: `plan --staged` with an empty index → exit 1 `usage` (`staged-empty`).
+- [x] Seam 1: `--split` or `--staged` on a mixed index skips `modeChoice` (the flag wins,
       as stated above) and plans directly in that mode.
-- [ ] Seam 1: with `core.ignorecase=true`, a staged case-only `git mv` beside an unstaged
+- [x] Seam 1: with `core.ignorecase=true`, a staged case-only `git mv` beside an unstaged
       edit → `modeChoice`, not `case-rename`; `plan --split` on it → `case-rename`
       (the `--staged` half is CHG-14's).
 
