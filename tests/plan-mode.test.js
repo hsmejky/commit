@@ -217,6 +217,24 @@ test('an intent-to-add path alone with --staged refuses staged-empty', async (t)
   assert.deepEqual(runFolders(c), []);
 });
 
+// review-RUN-13-r3 finding 1: an intent-to-add entry whose worktree copy is deleted (` D`)
+// still stages no content, so an index holding only it is still not pre-staged.
+test('an intent-to-add path deleted from the worktree alone with --staged refuses staged-empty', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', '-N', 'new.txt']);
+  fs.rmSync(path.join(c.repoDir, 'new.txt'));
+
+  const result = await runCommit(c, ['plan', '--staged']);
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.error.kind, 'usage');
+  assert.equal(result.json.error.message, runPolicy.STAGED_EMPTY_MESSAGE);
+  assert.deepEqual(runFolders(c), []);
+});
+
 test('a force-added hidden file beside an unstaged edit is a modeChoice', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'a\n' });

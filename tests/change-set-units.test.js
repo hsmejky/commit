@@ -257,6 +257,24 @@ test('inventory: an intent-to-add path is staged-new, not pre-staged', async (t)
   });
 });
 
+// review-RUN-13-r3 finding 1: an intent-to-add entry whose worktree copy is deleted (` D`)
+// still stages no content (the cached diff lists it as `A` via `--ita-visible-in-index`, but
+// its index column stays blank), so it stays staged-new, not pre-staged, and is not double
+// counted in `unstagedTracked` either.
+test('inventory: an intent-to-add path deleted from the worktree stays staged-new', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'a\n' });
+  c.writeFile('ita.txt', 'n\n');
+  c.git(['add', '-N', 'ita.txt']);
+  fs.rmSync(path.join(c.repoDir, 'ita.txt'));
+
+  assert.deepEqual(await inventory(c), {
+    ...EMPTY_INVENTORY,
+    clean: false,
+    stagedNew: [{ path: 'ita.txt', ignored: false }],
+  });
+});
+
 test('snapshot: two modified files become two sorted whole-file text units', async (t) => {
   const c = createCase(t);
   seed(c, { 'src/b.js': 'one\ntwo\nthree\n', 'a.md': 'x\n' });

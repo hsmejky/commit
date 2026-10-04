@@ -188,6 +188,10 @@ test('the ### line shows <old> -> <new> for a rename', async (t) => {
   seed(c, { 'old.txt': numbered(10).join('') });
   c.git(['mv', 'old.txt', 'new.txt']);
   c.writeFile('new.txt', ['1\n', '2\n', 'three\n', ...numbered(10).slice(3)].join(''));
+  // Stage the edit too: an unstaged edit on top of a staged rename is a mixed index, which
+  // now correctly asks a modeChoice question instead of planning (RUN-13). This test is
+  // about the `###` rename line, not the mode decision.
+  c.git(['add', 'new.txt']);
 
   const { hunks, hunksTxt } = await plan(c);
 

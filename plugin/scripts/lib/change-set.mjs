@@ -116,12 +116,13 @@ export async function indexLockExists({ toplevel, env, now }) {
  *   matches the pinned diff, so a submodule's `ignore=all` setting hides no pointer change
  *   and dirt alone is no entry.
  * - unstagedTracked (RUN-13, KD-R75): every status entry with a path and a non-blank
- *   worktree column (`xy[1]`), intent-to-add excluded (its worktree content is already
- *   counted once in `other`, through `stagedNew`). This is wider than `tracked`: a
- *   staged-new path edited again (`AM`, a force-added `.env` included) belongs here too,
- *   not only a tracked change outside the index. A `git add -p` style `MM` file, or such an
- *   `AM` one, is both staged (in `preStaged`) and here, so M15's mode decision counts it as
- *   staged and as another change.
+ *   worktree column (`xy[1]`), a genuine intent-to-add one excluded (a blank index column
+ *   whose path is also staged-new: its worktree content is already counted once in
+ *   `other`, through `stagedNew`). This is wider than `tracked`: a staged-new path edited
+ *   again (`AM`, a force-added `.env` included) belongs here too, not only a tracked
+ *   change outside the index. A `git add -p` style `MM` file, or such an `AM` one, is both
+ *   staged (in `preStaged`) and here, so M15's mode decision counts it as staged and as
+ *   another change.
  * - dirtySubmodules (CHG-09): the submodules with dirt inside but no pointer change, in byte
  *   order (`dirtySubmodulePaths`); not units, and dirt alone leaves the tree `clean`.
  * - caps (CHG-13): not this function's job. `collapsed` is always `[]` and `stagedExcluded`
@@ -203,14 +204,20 @@ export async function inventory({ toplevel, env, now }) {
   const status = await statusEntries({
     toplevel, env, now, untracked: 'no', renames: false, ignoreSubmodules: 'dirty', notUtf8,
   });
-  // An intent-to-add entry (` A`: nothing in the index column) stages no content, so it is
-  // staged-new but not pre-staged (C:plan). The full ` A` pair, not only a blank index
-  // column, since a tracked-but-unstaged deletion (` D`) or edit (` M`) is blank there too
-  // and is not intent-to-add (review-RUN-13-r2 finding 1).
+  // An intent-to-add entry (a blank index column, ` A` normally, ` D` once its worktree
+  // file is deleted, or even ` M`/others after further edits) stages no content, so it is
+  // staged-new but not pre-staged (C:plan). Git keeps its index column blank until it is
+  // `git add`ed for real, whatever the worktree does to it afterwards, so a blank index
+  // column alone identifies it here. This is wider than ` A`: a tracked-but-unstaged
+  // deletion (` D`) or edit (` M`) is blank there too, but neither ever appears in the
+  // cached diff below (only staged content, or an ita entry via `--ita-visible-in-index`,
+  // does), so the two never collide where this set is tested against that diff
+  // (review-RUN-13-r3 finding 1: an ita entry whose worktree copy was deleted, ` D`, was
+  // missed by the narrower ` A`-only check and fell through into `preStaged`).
   // Keyed by the path's bytes (`latin1` maps each byte to one character), so a non-UTF-8
   // intent-to-add entry is known too.
   const intentToAdd = new Set(
-    status.filter((entry) => entry.xy[0] === ' ' && entry.xy[1] === 'A').map((entry) => entry.bytes.toString('latin1')),
+    status.filter((entry) => entry.xy[0] === ' ').map((entry) => entry.bytes.toString('latin1')),
   );
   const cached = nulFields(await gitOk(
     ['diff', '--cached', '--ita-visible-in-index', '--no-renames', '--name-status', '-z'], opts,
@@ -244,10 +251,15 @@ export async function inventory({ toplevel, env, now }) {
   // `xy[1]` (RUN-13, KD-R75): a `git add -p`-style `MM` file is both staged and unstaged at
   // once, so the mode decision's `indexState` must count it in `other` as well as `staged`.
   // This is wider than `tracked`/`notTracked`: a staged-new path edited again (`AM`) still
-  // has a worktree change and belongs here too, filtered only by `intentToAdd` (its content
-  // is never staged, so it is already counted once in `other`, through `stagedNew`).
+  // has a worktree change and belongs here too. Excluded only when the entry is BOTH a
+  // blank-index-column one (`intentToAdd`) AND already in `notTracked`/`added` (a genuine
+  // ita entry, whose content is never staged and is already counted once in `other`,
+  // through `stagedNew`): `intentToAdd` alone is too wide here, since a plain
+  // tracked-but-unstaged deletion (` D`) or edit (` M`) has the same blank index column and
+  // must still be counted (review-RUN-13-r3 finding 1).
   const unstagedTracked = status
-    .filter((entry) => entry.path !== null && entry.xy[1] !== ' ' && !intentToAdd.has(entry.bytes.toString('latin1')))
+    .filter((entry) => entry.path !== null && entry.xy[1] !== ' '
+      && !(intentToAdd.has(entry.bytes.toString('latin1')) && notTracked.has(entry.path)))
     .map((entry) => entry.path);
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
@@ -753,7 +765,7 @@ export function createDiffReader(attrs = new Map()) {
     if (typeChange !== null) {
       throw new Error(`a type change (${typeChange.path}) has one patch section, not two`);
     }
-    if (section !== null) units.push(...unitsOf(section));
+    if (section !== null) units.push(...withScanLimit(unitsOf(section)));
     section = null;
   };
   const onLine = (line) => {
@@ -1238,6 +1250,29 @@ function unitsOf(section) {
   return [{
     ...base, hash, identityKey: hash, ...counts, range, body: Buffer.concat(hunks.flatMap((hunk) => hunk.lines)),
   }];
+}
+
+// The 1 MB scan limit (CHG-16, Q10, M10): a section's units are one file's. Its added
+// content is the raw bytes of its `+` lines without the `+`, plus one byte per line for the
+// `\n`, summed over all its units' bodies (a gitlink side's `Subproject commit` line is in
+// no body, so it does not count). Over the limit, collecting stops: every unit of the file
+// carries `overScanLimit: true` and its `addedLines` are emptied, so M8 reports the path
+// skipped even when each hunk alone stays under the limit.
+const SCAN_LIMIT = 1048576;
+
+function withScanLimit(units) {
+  let total = 0;
+  for (const { body } of units) {
+    let start = 0;
+    while (start < body.length && total <= SCAN_LIMIT) {
+      const lf = body.indexOf(LF, start);
+      const end = lf === -1 ? body.length : lf;
+      if (body[start] === PLUS) total += end - start;
+      start = end + 1;
+    }
+  }
+  if (total <= SCAN_LIMIT) return units;
+  return units.map((unit) => ({ ...unit, addedLines: [], overScanLimit: true }));
 }
 
 // A type change's one whole-file unit (CHG-09, Q11 pass 8 amendment), `kind` its
