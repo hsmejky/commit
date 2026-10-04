@@ -23,14 +23,32 @@ function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
 }
 
+// Win32-OpenSSH (`System32\OpenSSH\ssh-keygen.exe`, ahead of Git's MSYS one on a GitHub
+// Windows runner's PATH) exits 255 with no output at all when `ProgramData` is unset, and
+// the harness allowlist does not carry it. Passed through from the host, matched
+// case-insensitively, for every spawn that may reach `ssh-keygen`: key generation, and git
+// signing (`-Y sign`) and verifying (`-Y verify`). A system directory, not a home or agent.
+function sshKeygenHostEnv() {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.toUpperCase() === 'PROGRAMDATA') env[key] = value;
+  }
+  return env;
+}
+
 // `-Y sign` first exists in OpenSSH 8.1; an older ssh-keygen rejects `-Y` itself as an
 // unknown option before ever reaching the (missing) key file, so probing the error text,
 // not just ENOENT, also skips on a binary too old for what this slice needs.
 function sshKeygenMissing() {
-  // No host env beyond PATH: nothing here may reach the developer's own agent or home.
+  // No host env beyond PATH (and ProgramData, see sshKeygenHostEnv): nothing here may reach
+  // the developer's own agent or home.
   const probe = spawnSync(
     'ssh-keygen', ['-Y', 'sign', '-f', 'commit-exe23-missing-key-probe', '-n', 'test'],
-    { stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH }, encoding: 'utf8' },
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { PATH: process.env.PATH, ...sshKeygenHostEnv() },
+      encoding: 'utf8',
+    },
   );
   if (probe.error && probe.error.code === 'ENOENT') return 'ssh-keygen not on PATH';
   const output = `${probe.stdout || ''}${probe.stderr || ''}`;
@@ -49,14 +67,18 @@ function slashed(file) {
 // A fixture key without passphrase in the case root, and an `allowedSignersFile` naming
 // the case's committer for it. The case's own allowlisted env (not a hand-picked PATH/HOME
 // pair): on Windows, a native ssh-keygen ahead of Git's MSYS one on PATH also needs
-// SYSTEMROOT for its crypto/socket init, which `c.env` already carries.
+// SYSTEMROOT for its crypto/socket init, which `c.env` already carries, and ProgramData,
+// which signedRun adds to the case env.
 function fixtureKey(c) {
   const key = path.join(c.root, 'signing-key');
   const generated = spawnSync(
     'ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'fixture', '-f', key],
     { env: c.env, encoding: 'utf8' },
   );
-  assert.equal(generated.status, 0, `ssh-keygen: ${generated.stderr}`);
+  assert.equal(
+    generated.status, 0,
+    `ssh-keygen: ${generated.error || ''}\n${detail(generated)}`,
+  );
   // On Windows, OpenSSH's ssh-keygen/ssh-add default to the named pipe
   // `\\.\pipe\openssh-ssh-agent` even with no SSH_AUTH_SOCK set (never in the harness
   // allowlist), so a developer's own running agent could in principle be reachable here.
@@ -75,7 +97,7 @@ function fixtureKey(c) {
 // GIT_CONFIG_SYSTEM at the file, for `plan` and `commit` alike. The signing config is written
 // after the seed commit, so the harness's own `git commit` never signs.
 async function signedRun(t, { systemOnly = false } = {}) {
-  const c = createCase(t);
+  const c = createCase(t, { env: sshKeygenHostEnv() });
   c.writeFile('a.txt', 'one\n');
   c.git(['add', '--', 'a.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
