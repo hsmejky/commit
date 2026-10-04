@@ -9,15 +9,12 @@
 // tests/config.test.js; "a `scanIgnore` pattern committed at HEAD exempts a matching hit"
 // is already covered end to end by tests/plan-scan.test.js's own scanIgnore case.
 //
-// One Seam-1 AC from the roadmap is not exercised here: "snapshot content that is not valid
-// JSON, or a non-array `scanIgnore`, counts as changed". In `split` mode `snapshotBlob`
-// reads the exact same on-disk file `loadConfig`'s repo layer validates (both
-// `readFileSync(join(toplevel, REPO_CONFIG_PATH))`), and that validation (`validateLayer`
-// with the repo layer's `scanIgnore` included) refuses with a `config` error before
-// `scanDiff` ever runs whenever that file is unparseable JSON or has a non-array
-// `scanIgnore` — so the full `plan` entry point can never observe that content reach
-// `scanIgnoreChanged`. The Seam-3 pure-function test in tests/config.test.js is this AC's
-// only reachable coverage.
+// The roadmap AC "snapshot content that is not valid JSON, or a non-array `scanIgnore`,
+// counts as changed" cannot be reached in `split` mode: there `snapshotBlob` reads the same
+// on-disk file `loadConfig`'s repo layer validates, which refuses with a `config` error
+// first. In `staged` mode `snapshotBlob` reads the index entry, so a staged invalid copy next
+// to a valid worktree copy reaches `scanIgnoreChanged`: tests/plan-staged.test.js covers it
+// end to end (CHG-14, KD-R82), and tests/config.test.js covers the pure comparison.
 
 const fs = require('node:fs');
 const path = require('node:path');

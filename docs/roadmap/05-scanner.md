@@ -263,7 +263,7 @@ story 149.
       as changed; a missing file or key is no patterns. The `split`-mode half of this (an
       invalid file at the repo config's own path) cannot fire: `loadConfig` refuses before
       `scanDiff` runs, so it is covered instead at Seam 3; the `staged`-mode half (an
-      invalid staged copy with a valid worktree copy) is KD-R82, moved to CHG-14.
+      invalid staged copy with a valid worktree copy) moved to CHG-14 (tests/plan-staged.test.js).
 - [x] Seam 1: renaming or moving `.claude/commit.json` while also changing `scanIgnore` →
       the unit is flagged by its old path, since it is the repo config file (C:plan-hunks);
       a rename away with no edit, while HEAD holds patterns, → `true` too, since
@@ -310,12 +310,16 @@ blocked.
 
 **Blocked by:** SCN-15, CHG-11, CHG-09.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** testing-modules (scanner case list), Q10, Q11.
 
-- [ ] Seam 1: a token in a `-diff` text file and in a `binary`-attributed text file → hits.
-- [ ] Seam 1: a new symlink whose target is a home path → hit on that unit.
-- [ ] Seam 1: the same hits occur whether or not `GIT_ATTR_SOURCE` (or another
+- [x] Seam 1: a token in a `-diff` text file and in a `binary`-attributed text file → hits.
+- [x] Seam 1: a new symlink whose target is a home path → hit on that unit. Skipped on every
+      local Windows run (no symlink privilege); proven on the ubuntu and macOS CI jobs and
+      the git-2.34 container instead — confirm green there on the next CI run.
+- [x] Seam 1: the same hits occur whether or not `GIT_ATTR_SOURCE` (or another
       attribute-source decoy) is exported pointing elsewhere — the scan reads the real
-      repo's `.gitattributes`, not the decoy's.
+      repo's `.gitattributes`, not the decoy's. A second, secret-free hidden file pins the
+      hiding itself (review-SCN-16 High finding), mutation-verified against keeping
+      `GIT_ATTR_SOURCE` in `GIT_ENV_KEEP_SET`.

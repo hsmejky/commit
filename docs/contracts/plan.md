@@ -68,7 +68,9 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    it, and a mixed index gets its `modeChoice` first.
 5. Caps (`split` only), snapshot (a failed `git add` → exit 4 `git`, code `git-failed`, delete the
    folder), unit IDs, scan (not in `reword`, Q20).
-6. Post-scan refusals: `staged-hit`; a clean tree → `nothing`, except with `--reword`, which
+6. Post-scan refusals: `staged-hit` (`--staged` only: a staged-new path the hidden rule
+   excludes, a scan hit in the index diff, or a staged path that is not UTF-8, each named in
+   the message, the last as "path is not UTF-8 — unstage it or commit by hand"); a clean tree → `nothing`, except with `--reword`, which
    takes the lock on a clean tree too (Q9, Q20); then the signing probe
    (`ready: false` → `signing`). Each deletes the folder, so a clean tree on a locked key
    reports "nothing to commit".
@@ -310,7 +312,10 @@ the user needs (counts of hidden and collapsed files, `stagedExcluded`, `dirtySu
   `state.json` and the reply carry paths as strings. The hidden rule matches an untracked
   one in that `\xNN` form, and a hidden one is counted as hidden instead. The collapse rule
   does not apply: each such path needs the user's hand, so each is named. A staged one (not
-  intent-to-add) is also in `preStaged`, since the index holds its content. A rename from a
+  intent-to-add) is also in `preStaged`, since the index holds its content. The hidden rule
+  matches a staged-new one in the same `\xNN` form: a hidden one is in `stagedExcluded` as
+  hidden, not in this report. `plan --staged` refuses a staged one that is not hidden with
+  `staged-hit` ("path is not UTF-8 — unstage it or commit by hand"). A rename from a
   non-UTF-8 path to a UTF-8 one is split: the old path is reported as above, and the new
   path is an `A` unit, taken from a second pinned diff with `--no-renames` (still no pathspecs).
 - Binary is decided by attributes first, then content (Q10, Q11): for a path git reports as

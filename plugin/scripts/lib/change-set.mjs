@@ -102,8 +102,8 @@ export async function indexLockExists({ toplevel, env, now }) {
 }
 
 /**
- * The inventory (C:plan step 4, Q11). Read-only: four git calls (six when the tree can hold a
- * submodule), none writes the index.
+ * The inventory (C:plan step 4, Q11). Read-only: three to five git calls (two more when the
+ * tree can hold a submodule), none writes the index.
  * - candidates: `git ls-files --others --exclude-standard -z` after `hideFilter`, each with
  *   its `lstat` size and `binary` (a NUL in the first 8000 bytes; `.gitattributes` is not
  *   read here, CHG-08/CHG-11). An entry ending in `/` is an untracked embedded repository:
@@ -115,12 +115,19 @@ export async function indexLockExists({ toplevel, env, now }) {
  *   hides them). A hidden staged-new path goes to `stagedExcluded`, the rest to
  *   `stagedNew` with `ignored`: listed by `git ls-files --cached --ignored
  *   --exclude-standard` (index entries an ignore rule matches; `git check-ignore`
- *   refuses M2's `GIT_LITERAL_PATHSPECS=1`).
+ *   refuses M2's `GIT_LITERAL_PATHSPECS=1`; called only when there is a staged-new or an
+ *   `indexOnly` path). A staged-new non-UTF-8 path goes through the hidden rule in its `\xNN`
+ *   form: a hidden one is `stagedExcluded` (and not in `notUtf8`), the other staged non-UTF-8
+ *   paths are `stagedNotUtf8` (CHG-14: `plan --staged` refuses them with `staged-hit`).
+ * - indexOnly (CHG-14, C:run-folder): every status entry whose index content differs from
+ *   both HEAD and the worktree (index column `M`/`A`/`T`, non-blank worktree column), in byte
+ *   order, as `{ path, blob, ignored }`: the stage-0 blob ID from one `git ls-files --stage`
+ *   call (only when the list is not empty), a non-UTF-8 path in its `\xNN` form.
  * - tracked: the `git status --untracked-files=no --no-renames --ignore-submodules=dirty`
  *   entries that are not staged-new (a rename's old path is its own deletion). The pin
  *   matches the pinned diff, so a submodule's `ignore=all` setting hides no pointer change
  *   and dirt alone is no entry.
- * - unstagedTracked (RUN-13, KD-R75): every status entry with a path and a non-blank
+ * - unstagedTracked (RUN-13): every status entry with a path and a non-blank
  *   worktree column (`xy[1]`), a genuine intent-to-add one excluded (a blank index column
  *   whose path is also staged-new: its worktree content is already counted once in
  *   `other`, through `stagedNew`). This is wider than `tracked`: a staged-new path edited
@@ -146,7 +153,9 @@ export async function indexLockExists({ toplevel, env, now }) {
  *   hidden: { count: number, sample: string[] },
  *   stagedNew: Array<{ path: string, ignored: boolean }>,
  *   stagedExcluded: Array<{ path: string, reason: 'hidden' }
- *     | { dir: string, count: number, reason: 'collapsed' }>, notUtf8: string[],
+ *     | { dir: string, count: number, reason: 'collapsed' }>,
+ *   indexOnly: Array<{ path: string, blob: string, ignored: boolean }>,
+ *   stagedNotUtf8: string[], notUtf8: string[],
  *   dirtySubmodules: string[], embeddedRepos: string[] }>}
  *   `notUtf8` (CHG-12, Q11): every path of the three listings whose bytes are not valid
  *   UTF-8, left out of every other list (never a unit, never in the temporary index) and
@@ -229,21 +238,53 @@ export async function inventory({ toplevel, env, now }) {
   ));
   const preStaged = [];
   const added = [];
+  // CHG-14: the staged (not intent-to-add) non-UTF-8 paths, escaped, with whether the cached
+  // diff lists them as `A`: a staged-new one goes through the hidden rule in its `\xNN` form.
+  const stagedNonUtf8 = [];
   for (let i = 0; i + 1 < cached.length; i += 2) {
     const bytes = cached[i + 1];
     const path = utf8Path(bytes, notUtf8);
+    const isAdded = cached[i].toString('latin1') === 'A';
     // A staged non-UTF-8 path is no unit, but its staged content still counts for the mode
     // decision and the `unstaged` report: it is listed in its `\xNN` form (C:plan
     // `preStaged`, review-CHG-12 finding 2).
-    if (!intentToAdd.has(bytes.toString('latin1'))) preStaged.push(path ?? escapeNonUtf8(bytes));
-    if (path !== null && cached[i].toString('latin1') === 'A') added.push(path);
+    if (!intentToAdd.has(bytes.toString('latin1'))) {
+      preStaged.push(path ?? escapeNonUtf8(bytes));
+      if (path === null) stagedNonUtf8.push({ escaped: escapeNonUtf8(bytes), bytes: Buffer.from(bytes), isAdded });
+    }
+    if (path !== null && isAdded) added.push(path);
   }
   const split = hideFilter(added);
-  const stagedExcluded = split.hidden.map((path) => ({ path, reason: 'hidden' }));
-  const ignored = new Set(split.candidates.length === 0 ? [] : nulList(
+  // CHG-14 (C:plan): the hidden rule matches a staged-new non-UTF-8 path in its `\xNN` form,
+  // as it does an untracked one; a hidden one is `stagedExcluded` as hidden and leaves
+  // `notUtf8`. The rest are `stagedNotUtf8`, which `plan --staged` refuses with `staged-hit`
+  // (the staged set is committed as-is and cannot hold a path that is no unit).
+  const hiddenNonUtf8 = new Set(hideFilter(stagedNonUtf8.filter((entry) => entry.isAdded)
+    .map((entry) => entry.escaped)).hidden);
+  const hiddenBytes = new Set();
+  const stagedNotUtf8 = [];
+  for (const entry of stagedNonUtf8) {
+    if (entry.isAdded && hiddenNonUtf8.has(entry.escaped)) hiddenBytes.add(entry.bytes.toString('latin1'));
+    else stagedNotUtf8.push(entry.bytes);
+  }
+  const stagedExcluded = [
+    ...split.hidden,
+    ...stagedNonUtf8.filter((entry) => hiddenBytes.has(entry.bytes.toString('latin1'))).map((entry) => entry.escaped),
+  ].sort(byteOrder).map((path) => ({ path, reason: 'hidden' }));
+  // CHG-14: `indexOnly`, every status entry whose index content differs from both HEAD (a
+  // non-blank index column, `M`/`A`/`T`) and the worktree (a non-blank worktree column), in
+  // byte order, with its index blob ID (one `ls-files --stage` call, only when there is one).
+  const indexOnlyEntries = status
+    .filter((entry) => 'MAT'.includes(entry.xy[0]) && entry.xy[1] !== ' ')
+    .map((entry) => entry.bytes)
+    .sort(Buffer.compare);
+  const ignored = new Set(split.candidates.length === 0 && indexOnlyEntries.length === 0 ? [] : nulFields(
     await gitOk(['ls-files', '--cached', '--ignored', '--exclude-standard', '-z'], opts),
-  ));
-  const stagedNew = split.candidates.map((path) => ({ path, ignored: ignored.has(path) }));
+  ).map((bytes) => bytes.toString('latin1')));
+  const stagedNew = split.candidates.map((path) => ({
+    path, ignored: ignored.has(Buffer.from(path, 'utf8').toString('latin1')),
+  }));
+  const indexOnly = await indexOnlyBlobs(indexOnlyEntries, ignored, opts);
 
   const staged = [];
   for (let i = 1; i < cached.length; i += 2) staged.push(stringPath(cached[i]));
@@ -253,7 +294,7 @@ export async function inventory({ toplevel, env, now }) {
     .filter((entry) => entry.path !== null && !notTracked.has(entry.path))
     .map((entry) => entry.path);
   // Every status entry with a worktree (unstaged) change, read from the same status entries'
-  // `xy[1]` (RUN-13, KD-R75): a `git add -p`-style `MM` file is both staged and unstaged at
+  // `xy[1]` (RUN-13): a `git add -p`-style `MM` file is both staged and unstaged at
   // once, so the mode decision's `indexState` must count it in `other` as well as `staged`.
   // This is wider than `tracked`/`notTracked`: a staged-new path edited again (`AM`) still
   // has a worktree change and belongs here too. Excluded only when the entry is BOTH a
@@ -269,8 +310,28 @@ export async function inventory({ toplevel, env, now }) {
   return {
     clean: tracked.length === 0 && candidates.length === 0 && stagedNew.length === 0,
     tracked, unstagedTracked, preStaged, candidates, collapsed: [], hidden, stagedNew, stagedExcluded,
-    notUtf8: notUtf8List(notUtf8), dirtySubmodules, embeddedRepos,
+    indexOnly, stagedNotUtf8: notUtf8List(stagedNotUtf8),
+    notUtf8: notUtf8List(notUtf8.filter((bytes) => !hiddenBytes.has(bytes.toString('latin1')))),
+    dirtySubmodules, embeddedRepos,
   };
+}
+
+// CHG-14: `indexOnly`'s entries (`{ path, blob, ignored }`), the paths' stage-0 blob IDs
+// read from one `git ls-files --stage -z` call (records `<mode> <oid> <stage>\t<path>`),
+// matched by the path bytes; a non-UTF-8 path in its `\xNN` form. `ignored`: the latin1-keyed
+// set of index entries an ignore rule matches.
+async function indexOnlyBlobs(entries, ignored, opts) {
+  if (entries.length === 0) return [];
+  const blobs = new Map();
+  for (const record of nulFields(await gitOk(['ls-files', '--stage', '-z'], opts))) {
+    const tab = record.indexOf(0x09);
+    const [, oid, stage] = record.subarray(0, tab).toString('latin1').split(' ');
+    if (stage === '0') blobs.set(record.subarray(tab + 1).toString('latin1'), oid);
+  }
+  return entries.map((bytes) => {
+    const key = bytes.toString('latin1');
+    return { path: utf8Path(bytes) ?? escapeNonUtf8(bytes), blob: blobs.get(key) ?? null, ignored: ignored.has(key) };
+  });
 }
 
 // C:plan `dirtySubmodules` (CHG-09, Q11): the submodules whose own working tree has changes
@@ -603,7 +664,22 @@ export async function snapshot({
     const runTextPass = (keep) => diffUnits([from, head, '--text'], opts, attrs, { keep });
     return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
   }
-  if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not built yet (CHG-14)`);
+  if (mode === 'staged') {
+    // CHG-14 (C:plan-hunks "what is diffed"): the index against HEAD (the empty tree when
+    // unborn), `git diff --cached`, read-only: no temporary index, and the real index is
+    // never written. The `check-attr` pass runs over a `--name-only` pass of the same diff.
+    const opts = { toplevel, env, now };
+    const names = nulFields(await gitOk(
+      ['diff', '--cached', '--no-ext-diff', '--no-renames', '--name-only', '-z'],
+      { cwd: toplevel, env, now, readOnly: true },
+    )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
+    const attrs = await checkAttrs(names, opts);
+    const units = await diffUnits(['--cached'], opts, attrs);
+    const ctx = { mode: 'staged', toplevel, env, now };
+    const runTextPass = (keep) => diffUnits(['--cached', '--text'], opts, attrs, { keep });
+    return resolveHiddenBinaries(units, attrs, runTextPass, ctx);
+  }
+  if (mode !== 'split') throw new Error(`snapshot in ${mode} mode is not supported`);
   // review-CHG-10 finding 2: never defaulted. A caller that left the tracked paths out
   // would get a modified tracked filtered file as per-hunk `text` units, whose hashes never
   // match `plan`'s one `filtered` unit.
@@ -643,22 +719,40 @@ export async function snapshot({
 }
 
 /**
+ * The worktree's changes against the real index, as units (CHG-14, C:plan `tracked` in
+ * `staged` mode: "only the unstaged changes"): `git diff --no-renames` (no `--cached`), with
+ * the same `check-attr` pass over a `--name-only` run of that diff. Read-only.
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<Array<object>>} units shaped as `snapshot`'s.
+ */
+export async function unstagedUnits({ toplevel, env, now }) {
+  const opts = { toplevel, env, now };
+  const names = nulFields(await gitOk(
+    ['diff', '--no-ext-diff', '--no-renames', '--name-only', '-z'],
+    { cwd: toplevel, env, now, readOnly: true },
+  )).map((bytes) => utf8Path(bytes)).filter((path) => path !== null);
+  return diffUnits(['--no-renames'], opts, await checkAttrs(names, opts));
+}
+
+/**
  * Reads the repo config's content "on the snapshot side of the last `snapshot()` call"
  * (SCN-14, M10, C:plan-hunks): the working-tree file in `split` mode (staged changes to it
- * are not reflected, since `split` units carry only the real tree's edits against HEAD).
- * `staged` mode (CHG-14) would read the index entry instead; not built yet.
+ * are not reflected, since `split` units carry only the real tree's edits against HEAD);
+ * the index entry's blob in `staged` mode (CHG-14: `git ls-files --stage`, then `git
+ * cat-file blob`).
  *
  * @param {string} repoRelativePath path relative to the repo root (M4 `REPO_CONFIG_PATH`).
- * @returns {Buffer | null} the file's raw bytes, or `null` when it is absent on the snapshot
- *   side.
- * @throws {Error} when called before any `snapshot()` call this process, or in a mode other
- *   than `split` (`reword` and `staged`, CHG-14, are not built yet).
+ * @returns {Promise<Buffer | null>} the file's raw bytes, or `null` when it is absent on the
+ *   snapshot side.
+ * @throws {Error} (a rejection) when called before any `snapshot()` call this process, in
+ *   `reword` mode, or when a git call fails.
  */
-export function snapshotBlob(repoRelativePath) {
+export async function snapshotBlob(repoRelativePath) {
   if (lastSnapshotContext === null) {
     throw new Error('snapshotBlob called before any snapshot (M10)');
   }
-  const { mode, toplevel } = lastSnapshotContext;
+  const { mode, toplevel, env, now } = lastSnapshotContext;
   if (mode === 'split') {
     try {
       return readFileSync(join(toplevel, repoRelativePath));
@@ -667,7 +761,15 @@ export function snapshotBlob(repoRelativePath) {
       throw err;
     }
   }
-  throw new Error(`snapshotBlob in ${mode} mode is not built yet (CHG-14)`);
+  if (mode === 'staged') {
+    const opts = { cwd: toplevel, env, now, readOnly: true };
+    const record = nulFields(await gitOk(['ls-files', '--stage', '-z', '--', repoRelativePath], opts))
+      .find((field) => field.toString('latin1').split('\t')[0].endsWith(' 0'));
+    if (record === undefined) return null;
+    const oid = record.toString('latin1').split(' ')[1];
+    return gitOk(['cat-file', 'blob', oid], opts);
+  }
+  throw new Error(`snapshotBlob in ${mode} mode is not supported`);
 }
 
 // One `git check-attr --stdin -z filter linguist-generated diff binary` call (CHG-10,
@@ -858,7 +960,7 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx) {
     unit.kind === 'binary' && unit.status !== 'D' && attrs.get(unit.path)?.hidden === true
   ));
   if (candidates.length === 0) return units;
-  const facts = ctx.mode === 'reword'
+  const facts = ctx.mode === 'reword' || ctx.mode === 'staged'
     ? await hiddenBinaryFactsBatch(candidates, ctx)
     : new Map(candidates.map((unit) => [unit.path, hiddenBinaryFacts(unit.path, ctx)]));
   const overLimit = new Set([...facts].filter(([, f]) => f.overLimit).map(([p]) => p));

@@ -4,8 +4,11 @@
 and of the real index.
 - `inventory()` → the inventory lists (`stagedNew` and `indexOnly` carry `ignored`;
   `indexOnly` carries the blob ID; every candidate carries its size in bytes and `binary`,
-  which M9 `applyCaps` and M13 read; in `staged` mode it also counts `unstagedLeft`, `null`
-  in `split` and `reword`, C:plan).
+  which M9 `applyCaps` and M13 read; `stagedNotUtf8`: the staged non-UTF-8 paths the hidden
+  rule does not exclude, which `plan --staged` refuses with `staged-hit`, CHG-14).
+- `unstagedUnits()` → units of the worktree against the real index (CHG-14): M18 builds
+  `plan.json`'s `tracked` from them in `staged` mode and counts them as `unstagedLeft`
+  (`null` in `split` and `reword`, C:plan).
 - `unplannableCaseRenames({ stagedNew, tracked })` → `[{ oldPath, path }]`: the staged
   case-only renames (a staged-new path, hidden ones included, and a tracked path equal under
   `toLowerCase`) the temporary index cannot plan, because `core.ignorecase` is true or
@@ -22,7 +25,9 @@ and of the real index.
   single parent, or the empty tree for a root commit (a shallow repo's boundary commit diffs
   against `<head>^` instead, which always fails loudly rather than resolving, KD-R68); still
   runs the same `check-attr` call below,
-  over a `--name-only` pass of the same two trees. Builds the temporary index by
+  over a `--name-only` pass of the same two trees. In `staged` (CHG-14, no other argument):
+  likewise no temporary index, diffs the index against HEAD (`git diff --cached`, the empty
+  tree when unborn), `check-attr` over its `--name-only` pass. Builds the temporary index by
   copying the real index and running `git reset -q -- .` on the copy (no ref written;
   empty when unborn), then
   `git add -N` of the stored lists, skipping missing paths (Q11 steps 1-3); paths with
@@ -97,7 +102,7 @@ and of the real index.
   record owns two sections), and no path list on argv. Units come from git's
   diff, which already compares converted content, so `core.autocrlf` and `eol` attributes
   need no handling of their own; conversion warnings on stderr are not errors.
-- `snapshotBlob(path) → Buffer | null`: the repo config's content on the snapshot side of
+- `snapshotBlob(path) → Promise<Buffer | null>` (async): the repo config's content on the snapshot side of
   the last `snapshot` (the working-tree file in `split`, the index entry in `staged`;
   `null` when the path is absent there), which M18 passes to M4 `scanIgnoreChanged`. M18
   always passes M4's `REPO_CONFIG_PATH`, never a unit's path, so a rename away from the repo

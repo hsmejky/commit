@@ -106,7 +106,8 @@ function rewordRefusal(reword) {
  *   config?: { error: string } | { values: object, sources: object } | null,
  *   inProgress?: { kind: string } | null, unmerged?: boolean, commitEncoding?: string | null,
  *   reword?: { unborn: boolean, merge: boolean, root: boolean, pushed: boolean } | null,
- *   signing?: { enabled: boolean, format?: string, ready?: boolean|string } }}
+ *   signing?: { enabled: boolean, format?: string, ready?: boolean|string },
+ *   stagedHit?: { hidden?: string[], hits?: string[], notUtf8?: string[] } | null }}
  *   facts the M3 probe result, plus M4's `loadConfig` result under `config` (CFG-05: an
  *   `{ error }` object only when a layer error was found, else the effective `{ values,
  *   sources }`, which never refuses; `null` or omitted is also "no error" for callers that
@@ -119,7 +120,10 @@ function rewordRefusal(reword) {
  *   omitted outside a worktree, or when the key is unset), plus M3 `rewordFacts()`'s result
  *   under `reword` (GIT-09; `null` or omitted without `--reword`; a root commit refuses
  *   nothing), plus M11 `probeSigning()`'s result under `signing` (GIT-10; omitted at step 2,
- *   which runs before the probe; only `ready: false` refuses).
+ *   which runs before the probe; only `ready: false` refuses), plus, at step 6 of `plan
+ *   --staged` only, `stagedHit: { hidden, hits, notUtf8 }` (CHG-14: escaped paths of the
+ *   hidden staged-new paths, the scan-hit paths and the staged non-UTF-8 paths), which
+ *   refuses `staged-hit` ahead of the signing row.
  * @returns {{ code: string, message: string } | null} the refusal's domain code and
  *   message, or `null` when `plan` goes on.
  */
@@ -145,8 +149,28 @@ export function planRefusal(facts) {
   if (facts.git.status === 'timed-out' || (facts.repo !== null && facts.repo.kind === 'timed-out')) {
     return { code: 'timed-out', message: 'git did not answer its start-up call in time' };
   }
+  if (facts.stagedHit != null) return { code: 'staged-hit', message: stagedHitMessage(facts.stagedHit) };
   if (facts.signing?.ready === false) return { code: 'signing-locked', message: SIGNING_LOCKED_MESSAGE };
   return null;
+}
+
+// CHG-14 (Q10, C:plan step 6, C:cli-and-exit-codes `staged-hit`): one part per reason that
+// applies, joined with "; ", each naming its (already escaped) paths as "`a`, `b`".
+function stagedHitMessage({ hidden = [], hits = [], notUtf8 = [] }) {
+  const list = (paths) => paths.map((p) => `\`${p}\``).join(', ');
+  const parts = [];
+  if (hidden.length > 0) {
+    parts.push(hidden.length === 1
+      ? `${list(hidden)} is staged but hidden — unstage it or commit by hand`
+      : `${list(hidden)} are staged but hidden — unstage them or commit by hand`);
+  }
+  if (hits.length > 0) parts.push(`unstage ${list(hits)} and run \`/commit\` again, or commit by hand`);
+  if (notUtf8.length > 0) {
+    parts.push(notUtf8.length === 1
+      ? `${list(notUtf8)}: path is not UTF-8 — unstage it or commit by hand`
+      : `${list(notUtf8)}: paths are not UTF-8 — unstage them or commit by hand`);
+  }
+  return parts.join('; ');
 }
 
 // `staged-empty`'s text (RUN-13, Q9, Q16; review-RUN-13 finding 4): `plan --staged` with

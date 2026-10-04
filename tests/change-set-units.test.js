@@ -50,7 +50,7 @@ function inventory(c) {
 
 const EMPTY_INVENTORY = Object.freeze({
   clean: true, tracked: [], unstagedTracked: [], preStaged: [], candidates: [], collapsed: [], hidden: { count: 0, sample: [] },
-  stagedNew: [], stagedExcluded: [], notUtf8: [], dirtySubmodules: [], embeddedRepos: [],
+  stagedNew: [], stagedExcluded: [], indexOnly: [], stagedNotUtf8: [], notUtf8: [], dirtySubmodules: [], embeddedRepos: [],
 });
 
 // `git diff --numstat -z HEAD`, the parser oracle: `added\tdeleted\tpath\0` per file, or
@@ -130,7 +130,7 @@ test('inventory: untracked candidates, hidden files, staged-new and pre-staged p
     hidden: { count: 6, sample: ['.a', '.b', '.c', '.d', '.e'] },
     stagedNew: [{ path: 'ign.txt', ignored: true }, { path: 'staged.txt', ignored: false }],
     stagedExcluded: [{ path: '.env.local', reason: 'hidden' }],
-    notUtf8: [],
+    indexOnly: [], stagedNotUtf8: [], notUtf8: [],
     dirtySubmodules: [], embeddedRepos: [],
   });
 });
@@ -176,6 +176,7 @@ test('inventory: a staged-new file edited again (AM) is in unstagedTracked, not 
     ...EMPTY_INVENTORY,
     clean: false,
     unstagedTracked: ['new.txt'],
+    indexOnly: [{ path: 'new.txt', blob: c.git(['rev-parse', ':new.txt']).trim(), ignored: false }],
     preStaged: ['new.txt'],
     stagedNew: [{ path: 'new.txt', ignored: false }],
   });
@@ -193,6 +194,7 @@ test('inventory: a force-added hidden file edited again (AM) is in unstagedTrack
   assert.deepEqual(await inventory(c), {
     ...EMPTY_INVENTORY,
     unstagedTracked: ['.env'],
+    indexOnly: [{ path: '.env', blob: c.git(['rev-parse', ':.env']).trim(), ignored: false }],
     preStaged: ['.env'],
     stagedExcluded: [{ path: '.env', reason: 'hidden' }],
   });

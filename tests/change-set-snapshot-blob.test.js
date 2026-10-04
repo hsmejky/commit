@@ -2,8 +2,8 @@
 
 // SCN-14 (docs/roadmap/05-scanner.md, M10): `snapshotBlob(repoRelativePath)` reads the repo
 // config's content "on the snapshot side of the last `snapshot()` call" (C:plan-hunks) — in
-// `split` mode, the working-tree file, not the index or HEAD. `staged` mode (CHG-14) is not
-// built yet.
+// `split` mode, the working-tree file, not the index or HEAD; the index entry in `staged` mode
+// (CHG-14, end to end in tests/plan-staged.test.js). It is async.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -37,8 +37,8 @@ function snapshot(c, storedLists = { candidates: [], stagedNew: [] }) {
 // Runs first (node:test preserves declaration order within a file; `import()` caches the
 // module for the whole process, per tests/helpers/load-lib.js, so this must run before any
 // other test here calls `snapshot()`): no `snapshot()` call has reached this module yet.
-test('snapshotBlob throws when called before any snapshot() this process', async () => {
-  assert.throws(() => changeSet.snapshotBlob('.claude/commit.json'), /before any snapshot/);
+test('snapshotBlob rejects when called before any snapshot() this process', async () => {
+  await assert.rejects(changeSet.snapshotBlob('.claude/commit.json'), /before any snapshot/);
 });
 
 test('snapshotBlob reads the working-tree bytes of the path after a split snapshot', async (t) => {
@@ -47,7 +47,7 @@ test('snapshotBlob reads the working-tree bytes of the path after a split snapsh
   c.writeFile('.claude/commit.json', JSON.stringify({ scanIgnore: ['dist/**'] }));
   c.writeFile('src/a.js', 'one\ntwo\n');
   await snapshot(c);
-  const blob = changeSet.snapshotBlob('.claude/commit.json');
+  const blob = await changeSet.snapshotBlob('.claude/commit.json');
   assert.ok(Buffer.isBuffer(blob));
   assert.equal(blob.toString('utf8'), JSON.stringify({ scanIgnore: ['dist/**'] }));
 });
@@ -57,5 +57,5 @@ test('snapshotBlob returns null when the path is absent on the snapshot side', a
   seed(c, { 'src/a.js': 'one\n' });
   c.writeFile('src/a.js', 'one\ntwo\n');
   await snapshot(c);
-  assert.equal(changeSet.snapshotBlob('.claude/commit.json'), null);
+  assert.equal(await changeSet.snapshotBlob('.claude/commit.json'), null);
 });

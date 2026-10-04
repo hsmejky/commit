@@ -63,7 +63,7 @@ import {
 } from './repo-probe.mjs';
 import {
   assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, snapshotBlob, trackedDirectories,
-  treeState, unplannableCaseRenames,
+  treeState, unplannableCaseRenames, unstagedUnits,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
 import {
@@ -296,7 +296,7 @@ async function resolveRunMode(ctx) {
 // M15 `resolveMode`'s `indexState` from M10's pre-cap inventory (C:plan step 4: candidates
 // counted after the hidden rule and before the caps). `staged`: every path the index changes
 // against HEAD (`preStaged`, a hidden staged-new path included: its content is staged).
-// `other`: `unstagedTracked`'s length (RUN-13, KD-R75) — every path with a worktree change,
+// `other`: `unstagedTracked`'s length (RUN-13) — every path with a worktree change,
 // a `git add -p` style `MM` file and a staged-new one edited again (`AM`, a force-added
 // `.env` included) alike, since `unstagedTracked` is read straight off the status entries
 // and is not narrowed by the hidden rule the way `stagedNew`/`stagedExcluded` are — plus the
@@ -414,20 +414,17 @@ async function collapseCandidates(ctx) {
 async function snapshotUnits(ctx) {
   if (ctx.mode !== 'reword' && ctx.inventory.clean) return undefined;
   let units;
+  const { env, now } = ctx.injected;
   try {
     units = assignIds(ctx.mode === 'reword'
       // CHG-15 (Q20, C:plan-hunks "what is diffed"): HEAD's own diff against its single
       // parent, or the empty tree on a root commit (GIT-09's `rewordFacts.root`, read at
       // step 1). No temporary index, so staged changes never reach these units and the real
       // index is untouched (RUN-06).
-      ? await snapshot({
-        mode: 'reword',
-        head: ctx.expectedHead,
-        root: ctx.reword.root,
-        toplevel: ctx.toplevel,
-        env: ctx.injected.env,
-        now: ctx.injected.now,
-      })
+      ? await snapshot({ mode: 'reword', head: ctx.expectedHead, root: ctx.reword.root, toplevel: ctx.toplevel, env, now })
+      // CHG-14: the index against HEAD only, no temporary index.
+      : ctx.mode === 'staged'
+      ? await snapshot({ mode: 'staged', toplevel: ctx.toplevel, env, now })
       : await snapshot({
         mode: 'split',
         tracked: ctx.inventory.tracked,
@@ -454,11 +451,16 @@ async function snapshotUnits(ctx) {
   // An untracked candidate's `A` unit is listed under `untracked.candidates`, not `tracked`.
   // CHG-06: one `tracked` entry per file, summing its hunk-level units' counts. `reword`
   // has no candidates, so every unit counts (C:plan: "tracked lists every change").
+  // CHG-14 (C:plan): in `staged`, `tracked` lists only the unstaged changes (the worktree
+  // against the real index), one entry per file; `unstagedLeft` counts them.
   const candidatePaths = new Set(
-    ctx.mode === 'reword' ? [] : ctx.inventory.candidates.map((candidate) => candidate.path),
+    ctx.mode === 'split' ? ctx.inventory.candidates.map((candidate) => candidate.path) : [],
   );
+  const trackedUnits = ctx.mode === 'staged'
+    ? await unstagedUnits({ toplevel: ctx.toplevel, env, now })
+    : units;
   const byPath = new Map();
-  for (const { path, oldPath, status, added, deleted } of units) {
+  for (const { path, oldPath, status, added, deleted } of trackedUnits) {
     if (status === 'A' && candidatePaths.has(path)) continue;
     const entry = byPath.get(path);
     if (entry === undefined) {
@@ -543,7 +545,7 @@ async function scanDiff(ctx) {
   const hasConfigUnit = ctx.units.some((unit) => isRepoConfigPath(unit.path)
     || (unit.oldPath != null && isRepoConfigPath(unit.oldPath)));
   ctx.scanIgnoreChanged = hasConfigUnit
-    && scanIgnoreChanged(ctx.config.values.scanIgnore, snapshotBlob(REPO_CONFIG_PATH));
+    && scanIgnoreChanged(ctx.config.values.scanIgnore, await snapshotBlob(REPO_CONFIG_PATH));
   const { hits, skipped, scanIgnoreUnits } = scanUnits(ctx.units, {
     scanIgnore: ctx.scanIgnoreMatchers,
     osUser: ctx.injected.osUser,
@@ -563,6 +565,8 @@ async function scanDiff(ctx) {
  * `planRefusal` refuses its `ready: false` (`signing-locked`); `"prompt"` queues the note.
  */
 async function postScanRefusals(ctx) {
+  const stagedHit = stagedHitOf(ctx);
+  if (stagedHit !== null) return { refusal: planRefusal({ ...ctx.probe, stagedHit }) };
   if (ctx.inventory.clean === true && ctx.mode !== 'reword') return { status: 'nothing', reason: 'clean' };
   const { env, now, osHome } = ctx.injected;
   ctx.signing = await probeSigning({ toplevel: ctx.toplevel, env, now, osHome });
@@ -570,6 +574,21 @@ async function postScanRefusals(ctx) {
   if (refusal !== null) return { refusal };
   if (ctx.signing.ready === 'prompt') ctx.notices.push(SIGNING_PROMPT_NOTICE);
   return undefined;
+}
+
+// CHG-14 (Q10, Q11, C:plan step 6): `plan --staged` commits the index as-is, so it cannot
+// leave out a staged-new path the hidden rule excludes, a path the scan hit in the index
+// diff, or a staged path that is not UTF-8 (no unit can hold it). M15 `planRefusal`'s
+// `stagedHit` facts, paths escaped as in the reply (M17 `escapePath`), or `null`.
+function stagedHitOf(ctx) {
+  if (ctx.mode !== 'staged') return null;
+  const hidden = ctx.inventory.stagedExcluded
+    .filter((entry) => entry.reason === 'hidden').map((entry) => entry.path);
+  const hiddenSet = new Set(hidden);
+  const hits = [...new Set(ctx.scan.hits.map((hit) => hit.path))].filter((p) => !hiddenSet.has(p));
+  const notUtf8 = ctx.inventory.stagedNotUtf8;
+  if (hidden.length === 0 && hits.length === 0 && notUtf8.length === 0) return null;
+  return { hidden: hidden.map(escapePath), hits: hits.map(escapePath), notUtf8 };
 }
 
 /**
@@ -624,6 +643,9 @@ async function storeAndLock(ctx) {
     preStaged: ctx.inventory.preStaged,
     candidates: ctx.inventory.candidates.map((candidate) => candidate.path),
     stagedNew: ctx.inventory.stagedNew,
+    // CHG-14 (C:run-folder): the paths whose index content differs from both HEAD and the
+    // worktree, with their index blob IDs; `[]` in `reword`.
+    indexOnly: ctx.mode === 'reword' ? [] : ctx.inventory.indexOnly,
     // CHG-13 (C:run-folder state.json row): empty outside `split`, same as `plan.json`'s
     // `untracked.collapsed`.
     collapsed: ctx.inventory.collapsed,
@@ -691,6 +713,8 @@ async function storeAndLock(ctx) {
     state: ctx.state,
     clean: ctx.inventory.clean,
     preStaged: ctx.inventory.preStaged,
+    // CHG-14 (C:plan): the unstaged changes left by a `staged` commit; `null` in other modes.
+    unstagedLeft: ctx.mode === 'staged' ? (ctx.tracked ?? []).length : null,
     tracked: ctx.tracked,
     untracked: {
       candidates: ctx.inventory.candidates
@@ -800,8 +824,8 @@ async function planHunksRefusals(ctx) {
  * lists (C:run-folder; a file created or force-added since is not recomputed, CHG-05), as
  * `commit`'s phase (b) does, or HEAD's own diff in `reword`; then `matchIds` in exact mode:
  * the same hash set → the current units under `plan`'s IDs, any difference → `unmatched`
- * (CLI kind `diff-changed`). `staged` takes the same split-style snapshot `plan` itself
- * takes for it today (RUN-13; its index-only snapshot is CHG-14's, KD-R75). On a match: M13
+ * (CLI kind `diff-changed`). `staged` takes the same index-only snapshot `plan` itself takes
+ * for it (CHG-14: the index against HEAD, no temporary index). On a match: M13
  * `renderHunks`, `hunks.txt` through M12, and `state.json` rewritten from the state it read
  * with only `lintFailures: 0` and `resumed: true` changed (the map, the scan map and the
  * notices survive; `plan --hunks` never writes the map).
@@ -818,6 +842,8 @@ async function resnapshotUnits(ctx) {
   try {
     current = await snapshot(state.mode === 'reword'
       ? { mode: 'reword', head: state.head, root: state.rootCommit, toplevel: ctx.toplevel, env, now }
+      : state.mode === 'staged'
+      ? { mode: 'staged', toplevel: ctx.toplevel, env, now }
       : {
         mode: 'split',
         storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
