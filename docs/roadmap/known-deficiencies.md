@@ -148,6 +148,19 @@ fixed, delete it here; IDs are never reused.
   size pass, at most one `cat-file --batch-check`, then the patch pass) and the unchanged
   output. The size pass repeats the patch pass's `-M` rename detection (M10). Fix: none
   planned (a memory seam would be a user decision). Slice: none.
+- **KD-R100.** CHG-21's sed test (`tests/stage-whole-file.test.js`, "a sed clean filter file
+  is committed as its cleaned form, with the plan hash") checks the plan's stored hash only
+  indirectly: its last assert compares the committed blob to `git hash-object --path` run live
+  over the current working file, not the `unit.hash` `plan --split` actually stored
+  (`change-set.mjs`'s structured sha256 over the cleaned diff, CHG-10's hash table), and the
+  match is implied only by `stage`'s own internal verify having passed (review-CHG-21 L4). A
+  direct comparison would need the test to recompute that sha256 from the stored `state.json`
+  unit, which reaches past Seam 1 into M10's internal hash format from a test file whose own
+  header says it deliberately takes no in-process M10 seam (unlike the dedicated
+  `change-set-*.test.js` files). Fix: none planned; the indirect check already fails if the
+  committed blob differs from the cleaned form, which is what the criterion guards against.
+  Revisit only if a cheap Seam-1-safe way to expose the stored hash appears, or the user
+  accepts stretching this file's seam for one assert. Slice: none.
 
 ## Coverage
 
