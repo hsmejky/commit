@@ -44,8 +44,10 @@ Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
   every error of the ending failure is a shape error (the worker plan is not valid JSON or
   not the C:worker-plan shape), the `lintFailed` handback offers `retry` and `no` only:
   dictated text cannot fix a shape (story 214).
-- `computeConfirm(mode, groups, scanMap, { resumed, interactive }) → null | { reasons,
-  humanOnly }` per C:confirmation-triggers; a hit is never a trigger.
+- `computeConfirm(mode, groups, { resumed, interactive }) → null | { reasons,
+  humanOnly }` per C:confirmation-triggers; a hit is never a trigger. `groups` is M18's own
+  per-stored-group view (unit IDs already resolved to paths against `state.json`'s unit
+  table, scan map and `scanIgnoreUnits`), so this function never reads a scan map itself.
 - `afterCheck(confirm, groups, runState) → "commit" | "confirm" | "handedBack" |
   "releaseNothing"`.
 - `runEnd(event, runState) → "keep" | "release"`, for the events `refusal(code)`,
