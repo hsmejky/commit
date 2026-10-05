@@ -379,6 +379,10 @@ test('AC5 Seam 1: a non-UTF-8 untracked path becomes a notIncluded entry in its 
   c.writeFile('a.txt', 'a\n');
   c.git(['add', '--', 'a.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
+  // A real tracked edit alongside the untracked non-UTF-8 path: an untracked path alone is
+  // "clean" (nothing plannable), so `plan` would return `planId: null`/no run folder (same
+  // rule as AC2's collapsed-directory case above).
+  c.writeFile('a.txt', 'a2\n');
   const name = Buffer.from('b\xff.js', 'latin1');
   const filePath = Buffer.concat([Buffer.from(c.repoDir + path.sep), name]);
   try {
@@ -396,7 +400,10 @@ test('AC5 Seam 1: a non-UTF-8 untracked path becomes a notIncluded entry in its 
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
 
-  const checked = await check(c, planId, runDir, { groups: [], notIncluded: [] });
+  const checked = await check(c, planId, runDir, {
+    groups: [{ header: 'feat: x', body: null, files: ['a.txt'], hunks: [] }],
+    notIncluded: [],
+  });
 
   assert.equal(checked.exitCode, 0, detail(checked));
   assert.deepEqual(checked.json.notIncluded, [
