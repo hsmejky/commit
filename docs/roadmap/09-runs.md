@@ -498,11 +498,11 @@ own case around; RUN-17 asserts it too.
 
 **Blocked by:** RUN-16, CHG-13, PLN-04, SCN-14.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q16, C:confirmation-triggers, M15 `computeConfirm`, testing seams (Seam 1), stories 88, 90, 95.
 
-- [ ] Seam 1: every row of C:confirmation-triggers, including `resumed` (also asserted
+- [x] Seam 1: every row of C:confirmation-triggers, including `resumed` (also asserted
       separately by INT-12's own `plan --hunks` case), yields the `confirm` reasons and the
       `humanOnly` flag it lists, asserted in `check`'s output.
 
