@@ -450,13 +450,13 @@ index goes to `hunks.json` (one entry per line) and stdout carries `hunksIndexFi
 
 **Blocked by:** CHG-17, PRE-08.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q19, Q24, C:plan-hunks, story 228, testing-modules "Other checks" size fixtures.
 
-- [ ] Seam 1 size fixture: a diff whose index would exceed the budget → stdout ≤ 20 000 characters, `hunksIndexFile` absolute, `hunks.json` holds every entry.
-- [ ] Seam 1: `plan --hunks` stdout has no `scanIgnore` key in `config`.
-- [ ] Seam 1 size fixture: `plan`'s own fields ≤ 1 kB excluding `hunks` and `reply`.
+- [x] Seam 1 size fixture: a diff whose index would exceed the budget → stdout ≤ 20 000 characters, `hunksIndexFile` absolute, `hunks.json` holds every entry.
+- [x] Seam 1: `plan --hunks` stdout has no `scanIgnore` key in `config`.
+- [x] Seam 1 size fixture: `plan`'s own fields ≤ 1 kB excluding `hunks` and `reply`.
 
 
 ## CHG-19: Re-snapshot from stored lists and ID matching

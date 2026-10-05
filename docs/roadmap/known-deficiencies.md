@@ -349,6 +349,14 @@ Plan text that depends on a design fix; fix the design and the slice together.
   without reading `state.json` after the fact, or once RUN-18 routes a trigger to a kept run
   before committing, rebuild these cases at Seam 1 and drop this row. Slices: MSG-08, RUN-18,
   EXE-19.
+- **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
+  the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
+  (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose
+  message is itself over 20 000 characters, or an unusually long run of `recentSubjects`,
+  still prints stdout past the budget even after the spill. The implementation
+  (`hunk-index.mjs` `renderHunks`) follows the contract as written; this is a contract gap,
+  not a bug. Fix: amend C:plan-hunks (and Q9) to cap or spill `oldMessage` and
+  `recentSubjects` too, or accept the gap explicitly and drop this row.
 
 ## Bookkeeping
 
