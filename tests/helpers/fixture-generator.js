@@ -2,7 +2,9 @@
 
 // Table-driven fixture generator (docs/spec/testing-seams.md, Seam 1): one temp repo per table
 // row. CHG-13 drives it with directory shapes at, below and above each count cap of
-// C:untracked-files; RUN-17 and INT-16 reuse it for their own tables.
+// C:untracked-files; INT-16 is expected to reuse it for its own table. RUN-17's table
+// (C:confirmation-triggers) is hand-written per row instead (same Seam 1, different fixture
+// construction) — see RUN-17's roadmap text.
 //
 // A row:
 //   trackedDirs: directories that exist at HEAD (each seeded with a `keep.txt`);

@@ -407,8 +407,8 @@ export function checkGate(runState) {
  *   path flagged by a `scanIgnore` change, M8 `scanUnits`'s `scanIgnoreUnits`) are each `[]` in
  *   `reword`, which never scans, and both set `humanOnly` in `split` and `staged`.
  * @param {{ resumed: boolean, interactive: boolean }} run `resumed`: set only by a separate
- *   `plan --hunks` (Q16); interactive only, in every mode — normally asserted by INT-12's own
- *   separate call instead of here.
+ *   `plan --hunks` (Q16); interactive only, in every mode — also asserted by INT-12's own
+ *   separate `plan --hunks` case.
  * @returns {{ reasons: string[], humanOnly: boolean } | null} `null` when no trigger holds.
  */
 export function computeConfirm(mode, groups, { resumed, interactive }) {

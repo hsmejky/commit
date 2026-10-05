@@ -489,21 +489,22 @@ onto PLN-01.
 
 ## RUN-17: `check` computes the confirmation from its table
 
-**What to build:** M15 `computeConfirm` per C:confirmation-triggers, tested through the
-table-driven fixture generator (one repo and worker plan per table row: mode, groups, new
-files, scan items, `interactive`). A hit is never a trigger. The `humanOnly` row needs
-SCN-14's scan wiring. The `resumed` row needs the separate `plan --hunks` call that INT-12
-builds, so INT-12 asserts that row instead of here.
+**What to build:** M15 `computeConfirm` per C:confirmation-triggers, tested with one repo and
+worker plan per table row (mode, groups, new files, scan items, `interactive`), hand-written
+per row rather than through CHG-13's table-driven fixture generator (same Seam 1, different
+fixture construction). A hit is never a trigger. The `humanOnly` row needs SCN-14's scan
+wiring. The `resumed` row needs the separate `plan --hunks` call that INT-12 also builds its
+own case around; RUN-17 asserts it too.
 
 **Blocked by:** RUN-16, CHG-13, PLN-04, SCN-14.
 
 **Status:** ready-for-agent
 
-**Sources:** Q16, C:confirmation-triggers, M15 `computeConfirm`, testing seams (generator), stories 88, 90, 95.
+**Sources:** Q16, C:confirmation-triggers, M15 `computeConfirm`, testing seams (Seam 1), stories 88, 90, 95.
 
-- [ ] Seam 1: every row of C:confirmation-triggers except `resumed` (INT-12 covers it)
-      yields the `confirm` reasons and the `humanOnly` flag it lists, asserted in `check`'s
-      output.
+- [ ] Seam 1: every row of C:confirmation-triggers, including `resumed` (also asserted
+      separately by INT-12's own `plan --hunks` case), yields the `confirm` reasons and the
+      `humanOnly` flag it lists, asserted in `check`'s output.
 
 
 ## RUN-18: `check` routes on the confirmation
