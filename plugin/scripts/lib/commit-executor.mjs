@@ -184,7 +184,7 @@ function rewordMessageOf(group, state) {
   const raw = body === null ? header : `${header}\n\n${body}`;
   const approved = normaliseText(raw).text;
   const carried = carryOver(state.oldMessage);
-  const attribution = group.attribution ? state.attribution.trailer : null;
+  const attribution = group.attribution ? (state.attribution?.trailer ?? null) : null;
   return appendTrailers(approved, { carried, attribution });
 }
 

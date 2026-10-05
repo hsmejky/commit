@@ -411,26 +411,23 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `resumed` `staged` cases as Seam-1 rows now (the `confirm` route), and the no-trigger row
   once EXE-19 lands; then drop this row. Slices: INT-09 (confirm-route tests), EXE-19 (the
   no-trigger row).
-- **KD-R95.** PLN-07's `reword` attribution-flag cases (`tests/plan-attribution-flag.test.js`,
-  the three `reword:` tests) and its `staged` case (the `staged stores attribution: true`
-  test) call M14 `validatePlan` in-process over a real Seam-1 `plan --reword`/`state.json`,
-  not through `check`'s own output. The `split` case was rebuilt at Seam 1 (a hunk-level
-  worker plan: INT-02 routes only whole-file groups into `commit --all`, so a hunk-level
-  `check` stops at its validated `state.json` groups, nothing committed), but `reword` and
-  `staged` never produce a hunk-level `files` entry (`plan-validator.mjs`'s
-  `validateSingleGroupPlan` always stores `hunks: null`), so their `check` call is always
-  whole-file: with no trigger, `reword` (EXE-20 is done) commits for real and `check`
-  releases the run folder before `state.json`'s stored `attribution` could be read back, the
-  CLI's own JSON output never carries `attribution`, and `staged` throws `notBuilt` first
-  (KD-R94). RUN-18 (landed) gives both modes a kept run: an interactive run whose `confirm`
-  is set routes to M15 `afterCheck`'s `confirm`, storing `awaitingConfirm` without
-  committing. A `reword` run resumed by a separate `plan --hunks` call (`resumed`, CHG-19)
-  and a `staged` run with a skipped/`scanIgnore` file both get a `confirm` handback, so their
-  stored `attribution` is Seam-1-readable from `state.json` the way the `split` case already
-  reads it; this no longer needs MSG-08. Where: `tests/plan-attribution-flag.test.js`. Fix:
-  rebuild the three `reword:` cases and the `staged` case at Seam 1 through those triggers
-  (mechanism ready, out of RUN-18's own acceptance criteria) and drop this row. Slices: none
-  blocking.
+- **KD-R95.** PLN-07's `staged` attribution-flag case (`tests/plan-attribution-flag.test.js`,
+  the `staged stores attribution: true` test) calls M14 `validatePlan` in-process over a real
+  Seam-1 `plan`/`state.json` state, not through `check`'s own output. The `split` case was
+  rebuilt at Seam 1 (a hunk-level worker plan: INT-02 routes only whole-file groups into
+  `commit --all`, so a hunk-level `check` stops at its validated `state.json` groups, nothing
+  committed), and MSG-08 rebuilt the three `reword` cases at Seam 1 too
+  (`tests/commit-all-reword.test.js`: a real `check --plan` commits a whole-file reword for
+  real, so the committed message's trailer — not the released run's `state.json` — is the
+  observable oracle for the stored `attribution` flag). `staged` never produces a hunk-level
+  `files` entry (`plan-validator.mjs`'s `validateSingleGroupPlan` always stores `hunks:
+  null`), so its `check` call is always whole-file and throws `notBuilt` first (KD-R94)
+  before a real commit exists to observe. RUN-18 (landed) gives it a kept run instead: a
+  `staged` run with a skipped/`scanIgnore` file gets a `confirm` handback, so its stored
+  `attribution` is Seam-1-readable from `state.json` the way the `split` case already reads
+  it. Where: `tests/plan-attribution-flag.test.js`. Fix: rebuild the `staged` case at Seam 1
+  through that trigger (mechanism ready, out of RUN-18's own acceptance criteria) and drop
+  this row. Slices: none blocking.
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose

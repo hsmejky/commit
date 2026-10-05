@@ -7,7 +7,7 @@
 // (foreign trailers survive, an old Anthropic `Co-Authored-By` is dropped) are Q20's.
 // MSG-08 (docs/roadmap/03-message-grammar.md) adds the full generality: every foreign
 // trailer kept verbatim and in order, and conditional attribution driven by the group's own
-// stored `attribution` flag (PLN-07) rather than re-decided here. CHG-16: reword does no
+// stored `attribution` flag (PLN-07) rather than re-decided here. Q20:21: reword does no
 // content scan, so none of this reads file contents.
 
 const fs = require('node:fs');
@@ -21,16 +21,25 @@ function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
 }
 
+// A fresh guard heartbeat (C:guard "Heartbeat", Q23) so `plan`'s guard notice never joins
+// `notices`: these tests assert on `notices` for EXE-06's own "another commit" notice, not
+// the guard's.
+function freshHeartbeat(c) {
+  const dir = path.join(c.claudeHome, 'commit-guard');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'heartbeat.json'), JSON.stringify({
+    ts: Date.now(), cwd: c.repoDir, command: 'commit.cjs plan',
+  }));
+}
+
 // Seeds a repo with one commit (`oldMessage`), optionally after a parent commit (criterion 6:
-// the non-root case), runs `plan --reword`, then overwrites the stored single group's
-// header/body with the new message (bypassing the worker/`check`, same pattern as
-// tests/commit-all.test.js's `groupedRunWithMessage`).
-// `attribution` stands in for PLN-07's stored per-group flag (computed by `check` from the
-// run's resolved trailer, the plan's `source` and `hadAttributionTrailer(oldMessage)`; not
-// re-derived here since this helper bypasses `check`). Defaults to `true` so tests that don't
-// care about the conditional still see the trailer, matching a worker-authored reword.
-async function rewordRun(t, { oldMessage, header, body = null, stageFile, withParent = false, attribution = true } = {}) {
+// the non-root case), runs `plan --reword`, then writes the worker's own `plan.groups.json`
+// (`source`, one group `{ header, body, files: [], hunks: [] }`) for a real `check --plan` to
+// validate and commit (Seam 1: review-MSG-08 High finding — this must not stretch the seam by
+// writing `state.json`'s `attribution` directly, since `check` is the one that computes it).
+async function rewordRun(t, { oldMessage, header, body = null, stageFile, withParent = false, source = 'worker' } = {}) {
   const c = createCase(t);
+  freshHeartbeat(c);
   let parentSha = null;
   if (withParent) {
     c.writeFile('base.txt', 'base\n');
@@ -48,13 +57,20 @@ async function rewordRun(t, { oldMessage, header, body = null, stageFile, withPa
     c.writeFile(stageFile, 'staged content\n');
     c.git(['add', '--', stageFile]);
   }
-  const statePath = path.join(runDir, 'state.json');
-  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  state.groups = [
-    { n: 1, units: state.units.map((unit) => unit.id), header, body, committed: false, attribution },
-  ];
-  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
-  return { c, planId, runDir, state, parentSha };
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source,
+    groups: [{ header, body, files: [], hunks: [] }],
+    notIncluded: [],
+  }));
+  return { c, planId, runDir, parentSha };
+}
+
+// Runs the real `check --plan <planId>` that commits a whole-file reword for real (INT-02):
+// the committed message is the observable oracle for the stored `attribution` flag (PLN-07),
+// since `check` releases the run folder before any JSON output could carry it back (KD-R95).
+function checkRun(c, planId) {
+  return runCommit(c, ['check', '--plan', planId]);
 }
 
 test('reword commits the new message, keeps the same tree, and leaves a staged file staged', async (t) => {
@@ -64,7 +80,7 @@ test('reword commits the new message, keeps the same tree, and leaves a staged f
   const oldSha = c.git(['rev-parse', 'HEAD']).trim();
   const oldTree = c.git(['rev-parse', 'HEAD^{tree}']).trim();
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.ok, true);
@@ -85,7 +101,7 @@ test('reword runs no scan: an unstaged worktree modification stays unstaged, unt
   // `reword` never reads the worktree or the index, so this stays exactly as left.
   c.writeFile('file.txt', 'one\ntwo\n');
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.ok, true);
@@ -98,7 +114,7 @@ test('extra staging between plan and commit is not refused (index-changed skippe
   c.writeFile('untracked.txt', 'x\n');
   c.git(['add', 'untracked.txt']);
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.ok, true);
@@ -108,7 +124,7 @@ test('a manual commit made in between is refused head-moved', async (t) => {
   const { c, planId } = await rewordRun(t, { oldMessage: 'fix: old', header: 'fix: new' });
   c.git(['commit', '-q', '--allow-empty', '-m', 'someone else committed']);
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.error.kind, 'head-moved');
@@ -118,7 +134,7 @@ test('rewording a root commit keeps it a root commit with the new message, same 
   const { c, planId } = await rewordRun(t, { oldMessage: 'feat: first', header: 'feat: renamed first' });
   const oldTree = c.git(['rev-parse', 'HEAD^{tree}']).trim();
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.notices.length, 0, 'no "another commit was made" notice on a root reword');
@@ -138,7 +154,7 @@ test('rewording a non-root commit keeps its own parent, with no "another commit"
     oldMessage: 'fix: old message', header: 'fix: better message', withParent: true,
   });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.notices.length, 0, 'no "another commit was made" notice on a non-root reword');
@@ -152,7 +168,7 @@ test('a foreign trailer in the old message survives; the old Anthropic Co-Author
   const oldMessage = 'fix: old\n\nSigned-off-by: A <a@b.example>\nCo-Authored-By: Claude <noreply@anthropic.com>\n';
   const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message' });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;
@@ -172,7 +188,7 @@ test('every foreign trailer is kept verbatim and in order, after the new message
   const oldMessage = 'fix: old\n\nSigned-off-by: A <a@b>\nChange-Id: I1\nCo-Authored-By: Human <human@example.com>\n';
   const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', body: 'Closes #9' });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;
@@ -190,9 +206,9 @@ test('every foreign trailer is kept verbatim and in order, after the new message
 // the resolved attribution is appended once, after the (empty) carried trailers.
 test('an old Refs trailer is not carried; attribution is appended once since the old noreply trailer was present', async (t) => {
   const oldMessage = 'fix: old\n\nRefs: x\nCo-Authored-By: Claude <noreply@anthropic.com>\n';
-  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: true });
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message' });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;
@@ -206,9 +222,9 @@ test('an old Refs trailer is not carried; attribution is appended once since the
 // (PLN-07) rather than deciding this itself.
 test('a dictated reword with no old attribution trailer gets no attribution trailer', async (t) => {
   const oldMessage = 'fix: old\n\nSome body text.\n';
-  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: false });
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', source: 'user' });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;
@@ -221,9 +237,25 @@ test('a dictated reword with no old attribution trailer gets no attribution trai
 // (worker-authored text) — the attribution trailer is appended.
 test('the same reword with a worker-authored message gets the attribution trailer', async (t) => {
   const oldMessage = 'fix: old\n\nSome body text.\n';
-  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: true });
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message' });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  const message = raw.slice(raw.indexOf('\n\n') + 2);
+  assert.equal(message, 'fix: new message\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n');
+});
+
+// KD-R95 (docs/roadmap/known-deficiencies.md): a dictated reword (`source: 'user'`) of a
+// message that already carried an attribution trailer still gets one — `resolveAttributionFlag`
+// (PLN-07) reads whether the *old* message had the trailer, not only `source`.
+test('a dictated reword of an already-attributed message still gets the attribution trailer', async (t) => {
+  const oldMessage = 'fix: old\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n';
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', source: 'user' });
+
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;
@@ -236,9 +268,9 @@ test('the same reword with a worker-authored message gets the attribution traile
 // earlier paragraph merely looking footer-shaped does not count) — nothing is carried.
 test('an old message whose last paragraph is body carries nothing', async (t) => {
   const oldMessage = 'fix: old\n\nSigned-off-by: A <a@b>\n\nA trailing body paragraph, not a footer.\n';
-  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: true });
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message' });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  const result = await checkRun(c, planId);
 
   assert.equal(result.exitCode, 0, detail(result));
   const [{ sha }] = result.json.commits;

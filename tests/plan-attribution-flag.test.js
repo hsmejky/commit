@@ -6,13 +6,14 @@
 // otherwise always `true` in `split`/`staged` (the worker always writes the message there),
 // and in `reword` only when the worker wrote the new message (`source` is `worker`, the
 // default when absent) or the old message already carried an attribution trailer
-// (M6 `hadAttributionTrailer`). MSG-08 (not built yet) is the only module that reads this
-// flag to decide whether `commit` actually appends the trailer; this file only covers what
-// `check` stores.
+// (M6 `hadAttributionTrailer`). MSG-08 is the only module that reads this flag to decide
+// whether `commit` actually appends the trailer; this file only covers what `check` stores.
 //
-// AC1 (split, below) runs through a real Seam-1 `check`. The `reword` and `staged` cases
-// further down call M14 `validatePlan` in-process instead: KD-R95
-// (docs/roadmap/known-deficiencies.md) explains why a real `check` cannot reach their stored
+// AC1 (split, below) runs through a real Seam-1 `check`. MSG-08's own tests
+// (tests/commit-all-reword.test.js) now rebuild the `reword` cases at Seam 1 too, reading the
+// committed message's trailer as the oracle instead of the stored flag (KD-R95, narrowed).
+// The `staged` case below still calls M14 `validatePlan` in-process: KD-R95
+// (docs/roadmap/known-deficiencies.md) explains why a real `check` cannot reach its stored
 // `attribution` flag yet.
 
 const fs = require('node:fs');
@@ -25,7 +26,6 @@ const { loadLib } = require('./helpers/load-lib.js');
 const { Q6_DEFAULT_VALUES: DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
 
 const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
-const ATTRIBUTED_OLD_MESSAGE = `feat: old\n\n${DEFAULT_TRAILER}`;
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -82,68 +82,6 @@ test('Seam 1: attribution resolved to null stores attribution: false on every gr
   assert.equal(checked.json.commits, undefined);
   const state = readState(runDir);
   assert.deepEqual(state.groups.map((g) => g.attribution), [false, false]);
-});
-
-// --- AC2, reword: direct `validatePlan` over a real `plan --reword` state ------------------
-//
-// M16's `reword` commit execution (EXE-20) now lands for real, so a full `check` through the
-// CLI would amend HEAD and delete the run folder before this flag could be read; `check`'s
-// own M14 validation is mode-independent of M16, so calling it directly over the real state
-// a `plan --reword` run wrote reads the stored flag without ever reaching `commit` (same
-// pattern as the existing `staged`/`reword` direct cases in plan-staged-reword-group.test.js).
-
-async function rewordState(t, oldMessage) {
-  const c = createCase(t);
-  seed(c, { 'a.txt': 'one\n' });
-  c.writeFile('a.txt', 'one\nmore\n');
-  c.git(['add', '--', 'a.txt']);
-  c.git(['commit', '-q', '-m', oldMessage]);
-  const planned = await runCommit(c, ['plan', '--reword']);
-  assert.equal(planned.exitCode, 0, detail(planned));
-  const runDir = path.join(c.repoDir, '.commit-plan', planned.json.planId);
-  return readState(runDir);
-}
-
-function dictatedPlan(header, body = null) {
-  return Buffer.from(JSON.stringify({
-    version: 1,
-    source: 'user',
-    groups: [{ header, body, files: [], hunks: [] }],
-    notIncluded: [],
-  }));
-}
-
-test('reword: source "user" and an old message without the trailer stores attribution: false', async (t) => {
-  const { validatePlan } = await loadLib('plan-validator');
-  const state = await rewordState(t, 'feat: old');
-
-  const result = validatePlan(dictatedPlan('feat: new'), state);
-
-  assert.equal(result.ok, true);
-  assert.equal(result.stored[0].attribution, false);
-});
-
-test('reword: source "user" and an old message that is the worker\'s own (has the trailer) stores attribution: true', async (t) => {
-  const { validatePlan } = await loadLib('plan-validator');
-  const state = await rewordState(t, ATTRIBUTED_OLD_MESSAGE);
-
-  const result = validatePlan(dictatedPlan('feat: new'), state);
-
-  assert.equal(result.ok, true);
-  assert.equal(result.stored[0].attribution, true);
-});
-
-test('reword: source "worker" (the default) stores attribution: true regardless of the old message', async (t) => {
-  const { validatePlan } = await loadLib('plan-validator');
-  const state = await rewordState(t, 'feat: old');
-
-  const result = validatePlan(Buffer.from(JSON.stringify({
-    groups: [{ header: 'feat: new', body: null, files: [], hunks: [] }],
-    notIncluded: [],
-  })), state);
-
-  assert.equal(result.ok, true);
-  assert.equal(result.stored[0].attribution, true);
 });
 
 // --- `staged`: attribution always applies when a trailer is resolved -----------------------
