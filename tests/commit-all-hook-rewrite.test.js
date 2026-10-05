@@ -334,3 +334,48 @@ test('AC3: no snapshot git calls on the temporary index follow the last group\'s
   );
   assert.deepEqual(afterLastGroup, [], 'the last group spawns no snapshot git calls after its own commit');
 });
+
+// review-CHG-20 Medium-2 (KD-S84): `ownHashes` (commit-executor.mjs ~460-462) is the group's
+// own hashes, from `groupUnits` matched in the current snapshot — not derived from
+// whole-file units alone, which would miss a hunk-level group's hash entirely. One file,
+// two hunks in two groups, the first hunk adding a line so hunk 2's range shifts once group
+// 1 lands: without the fix, group 1's own (correctly excluded) hash would still look like an
+// unexplained diff and set `treeChangedDuringCommit` on a clean run with no repo hook at all.
+async function oneFileTwoHunkRun(t) {
+  const c = createCase(t);
+  const base = `${Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n')}\n`;
+  c.writeFile('f.txt', base);
+  c.git(['add', 'f.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const lines = base.split('\n');
+  lines[1] = 'two\ntwo-more';
+  lines[14] = 'fifteen';
+  c.writeFile('f.txt', lines.join('\n'));
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  const ids = state.units.filter((unit) => unit.path === 'f.txt').map((unit) => unit.id);
+  assert.equal(ids.length, 2, `expected two hunks of f.txt, got ${JSON.stringify(state.units)}`);
+  state.groups = ids.map((id, i) => ({
+    n: i + 1, units: [id], header: `feat: hunk ${i + 1}`, body: null, committed: false,
+  }));
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return { c, planId, runDir };
+}
+
+test("KD-S84: a file's own first hunk shifting its second hunk's range is not mistaken for a hook rewrite", async (t) => {
+  const { c, planId, runDir } = await oneFileTwoHunkRun(t);
+
+  const stopped = await runCommitAfterCommits(c, planId, 1, 61_000);
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.equal(stopped.json.refusal, undefined, detail(stopped));
+  assert.deepEqual(stopped.json.remaining, [2]);
+  assert.equal(fs.existsSync(runDir), true, 'a budget stop keeps the run');
+  assert.equal('treeChangedDuringCommit' in readState(runDir), false);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.commits.length, 1, detail(result));
+});

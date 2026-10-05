@@ -238,7 +238,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
   commits (a failure, a budget stop, or a takeover before it is reached), `unstaged` does
   not name it, because `unstagedAfterReset(preStaged, indexOnly)` is built only from those
   two — the i-t-a path is only in the stored `stagedNew` (review-CHG-05 r3 finding 1).
-  Where: C:commit-release `unstaged`, CHG-20's `unstagedAfterReset`, EXE-11's report,
+  Where: C:commit-release `unstaged`, EXE-11's `unstagedAfterReset` and report,
   RUN-23's repair. RUN-23 also needs a decision: if its "staged" check for the repair uses
   `--ita-visible-in-index`, a path that was intent-to-add before the run started reads as
   unstaged after the kill, falls outside the killed group's paths, and turns the repair

@@ -272,8 +272,8 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 
 ## EXE-11: the `unstaged` report
 
-**What to build:** `unstaged` on the output that ends a `split` run, from M10
-`unstagedAfterReset`, present only when the run state has `indexReset`.
+**What to build:** M10 `unstagedAfterReset(preStaged, indexOnly)`, and `unstaged` on the
+output that ends a `split` run from it, present only when the run state has `indexReset`.
 
 **Blocked by:** EXE-10, CHG-20.
 

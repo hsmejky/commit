@@ -490,7 +490,7 @@ has no owner until this slice builds that call, so it lands here (KD-R22).
 **What to build:** M10 `stage(groupUnits)`: reset the real index, build a patch from the
 **current** ranges reusing git's own per-file header lines verbatim followed by the group's
 raw hunk bytes, `git apply --cached --whitespace=nowarn`, then verify the staged hash set
-(`mismatch`); `unstagedAfterReset(preStaged, indexOnly)`.
+(`mismatch`).
 
 **Blocked by:** CHG-06, CHG-19, INT-02, EXE-04, GIT-05, CHG-07.
 

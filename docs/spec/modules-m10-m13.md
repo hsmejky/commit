@@ -147,8 +147,8 @@ and of the real index.
   stored unit; typed: `mismatch`, or `stage-failed` when `apply` or `add` fails after the reset;
   ignored whole-file paths go in a separate `git add -A -f` call, and a non-zero `git add`
   exit counts as `stage-failed` even when some paths were added). The built patch reuses,
-  per file, git's own header lines from the current diff verbatim (`diff --git`, mode,
-  rename, `index`, `---` and `+++` lines), followed by the group's hunks as raw bytes, so a
+  per file, git's own header lines from the current diff verbatim (`diff --git`, `index`,
+  `---` and `+++` lines), followed by the group's hunks as raw bytes, so a
   path with quotes, tabs, newlines or leading spaces is quoted exactly as git quotes it and
   `git apply` parses it back; the builder never formats a path itself.
   `verifyIndex(groupUnits)` for `staged`; `unstage()`; `indexLockExists()`;
