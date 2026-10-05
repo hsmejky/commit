@@ -134,6 +134,26 @@ test('a path git quotes, split into two groups, is committed through the built p
   assert.equal(show(c, 'HEAD~1', 'plain.txt'), 'P\n');
 });
 
+// review-CHG-20 High-1: a `-diff` text file (resolveHiddenBinaries turns its binary unit into
+// `kind: "text"` with no `fileHash`, change-set.mjs ~997-1008) must stay a whole-file unit in
+// `stage`, not be mistaken for a real per-hunk `M text` unit (`hunkLevel`, ~1363): re-diffing
+// it with `--text` dropped would make git call it binary again, failing the group with
+// `mismatch` (internal EXE-10). Its own group, beside a split plain file, so `commit --all`
+// exercises both the whole-file and the hunk-patch path in the same run.
+test('a hidden text file (-diff) in its own group is committed whole, not through a hunk patch', async (t) => {
+  const c = createCase(t);
+  const base = numbered(10);
+  seed(c, { 'h.txt': base, 'p.txt': 'p\n', '.gitattributes': 'h.txt -diff\n' });
+  c.writeFile('h.txt', edit(base, { 3: 'three changed' }));
+  c.writeFile('p.txt', 'P\n');
+
+  const result = await commitGroups(c, (units) => [ids(units, 'h.txt'), ids(units, 'p.txt')]);
+
+  assert.equal(result.json.commits.length, 2);
+  assert.equal(show(c, 'HEAD~1', 'h.txt'), edit(base, { 3: 'three changed' }));
+  assert.equal(show(c, 'HEAD', 'p.txt'), 'P\n');
+});
+
 // CHG-07's sparse-checkout fixture (tests/plan-units-config.test.js), now committed.
 test('a sparse checkout committed: out-of-cone and skip-worktree paths keep their HEAD content', async (t) => {
   const c = createCase(t);

@@ -1360,7 +1360,17 @@ function sameHashes(units, hashes) {
 export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   const reset = await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now });
   if (reset.code !== 0) throw new Error(`git reset failed (${reset.code}): ${reset.stderr}`);
-  const hunkLevel = (unit) => unit.status === 'M' && unit.kind === 'text' && unit.summaryOnly === undefined;
+  // review-CHG-20 High-1: an attribute-hidden binary file resolved to `kind: "text"`
+  // (`resolveHiddenBinaries`) keeps git's own raw binary bit (`binary: true`, review-CHG-11
+  // finding 4); a genuine per-hunk `M text` unit from `unitsOf` always has `binary` falsy (a
+  // `kind: "text"` unit there implies git itself did not call the diff binary). Re-diffing a
+  // hidden-binary-resolved file with `--text` dropped would make git call it binary again and
+  // fail the group with `mismatch`; it stays a whole-file unit, staged below with `git add -A`.
+  // `fileHash` cannot discriminate instead: `withBodyCap` strips it from every unit `snapshot`
+  // returns, including real hunk units, before `stage` ever sees them.
+  const hunkLevel = (unit) => (
+    unit.status === 'M' && unit.kind === 'text' && unit.summaryOnly === undefined && unit.binary !== true
+  );
   const hunks = units.filter(hunkLevel);
   if (hunks.length > 0) {
     const patch = await hunkPatch(hunks, { toplevel, env, now });
