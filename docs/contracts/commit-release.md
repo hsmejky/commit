@@ -80,8 +80,10 @@ created between groups are both caught:
   included, so git runs the filter) are staged with
   `git add -A --pathspec-from-file=- --pathspec-file-nul` (both paths for a rename; paths
   on stdin, NUL-separated, never on argv, Q11); whole-file paths with `ignored: true`, and a
-  gitlink whose working-tree `.gitmodules` sets `ignore = all` (git ≥ 2.5x skips it without
-  `-f`, CHG-21), go in a separate `git add -A -f` call, so no other ignored path is added. If
+  gitlink whose working-tree `.gitmodules`, or its index copy when the file is missing, sets
+  `ignore = all` (git 2.54 skips it without
+  `-f`, exit 0 with a hint; git 2.34 and 2.43 stage it regardless, CHG-21), go in a separate
+  `git add -A -f` call, so no other ignored path is added. If
   `git apply
   --cached` or `git add` exits non-zero after the reset (`core.safecrlf=true`, a required
   filter that is missing), even when some paths were added, exit 4 `git` (`stage-failed`,

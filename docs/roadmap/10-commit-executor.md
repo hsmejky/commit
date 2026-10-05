@@ -259,11 +259,12 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 
 **Sources:** Q18, C:commit-release (c), M16, stories 161, 163.
 
-- [ ] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger; the
-      safecrlf and missing-filter triggers are untested until this lands, KD-R97) → exit 4
-      `stage-failed`,
+- [ ] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger) →
+      exit 4 `stage-failed`,
       `gitOutput` holds git's output verbatim, M10 `unstage` runs so the index is reset, and
       `unstaged` is present.
+- [ ] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing (moved
+      from CHG-21, KD-R97) → `stage-failed`, index unstaged, run released.
 - [ ] Seam 1: a verify mismatch (a file changed between (b) and `git add`) → exit 6
       `diff-changed`, index reset. No hook runs in that window, so the slice settles a
       fixture technique first; if none exists at Seam 1, the slice records the case as
@@ -286,14 +287,13 @@ KD-R69: `unstaged` is built only from `preStaged` and `indexOnly`; a reset path'
 intent-to-add mark, dropped by `git reset -q -- .`, is not named here if its group never
 commits (it is only in the stored `stagedNew`).
 
-KD-R97: the force-added gitignored-path case this slice unblocks is untested until EXE-10,
-EXE-11 and EXE-19 all land; this slice's own criteria below do not assume it is covered.
-
 - [ ] Seam 1: a pre-staged file outside the planned groups → after a successful run it is
       listed with `blob: null` and the report text "your earlier staging was reset".
 - [ ] Seam 1: an index-only version (staged, then the working file changed back) → listed
       with its `blob`, and `git cat-file -p <blob>` returns the discarded content.
 - [ ] Seam 1: a pre-staged ignored path that `git status` no longer shows → `ignored: true`.
+- [ ] Seam 1: a force-added gitignored file committed in group 2 (moved from CHG-21,
+      KD-R97).
 - [ ] Seam 1: a refusal before any group reached (c) → `unstaged: null` and the report
       says the index is untouched.
 - [ ] Seam 1: group 1 sets `indexReset`, then group 2 hits a refusal in (a) or a
@@ -490,13 +490,12 @@ builds M10 `verifyIndex`.
 
 **Sources:** Q18, C:commit-release (`staged`), M16, story 162.
 
-KD-R97: the staged 60-file new-directory case this slice unblocks is untested until EXE-10,
-EXE-11 and EXE-19 all land; this slice's own criteria below do not assume it is covered.
-
 - [ ] Seam 1: `plan --staged` with a partly staged file → the commit holds the staged
       version only, the unstaged edit stays in the working tree.
 - [ ] Seam 1: a hunk staged by `git add -p` after `plan` → exit 6 (`index-changed` or
       `diff-changed`), the index unchanged, `unstaged: null`.
+- [ ] Seam 1: a staged 60-file new directory, committed as the index holds it (moved from
+      CHG-21, KD-R97).
 - [ ] Seam 1: the backstop runs in `staged` too.
 
 

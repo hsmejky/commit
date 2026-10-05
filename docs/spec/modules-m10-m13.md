@@ -145,8 +145,10 @@ and of the real index.
   `git apply --cached --whitespace=nowarn`, whole-file adds, then verify the staged hash
   set, with one `check-attr` call over the group's paths so a filtered file hashes as its
   stored unit; typed: `mismatch`, or `stage-failed` when `apply` or `add` fails after the reset;
-  ignored whole-file paths, and a gitlink whose working-tree `.gitmodules` sets `ignore = all`
-  (git ≥ 2.5x skips it without `-f`, CHG-21), go in a separate `git add -A -f` call, and a
+  ignored whole-file paths, and a gitlink whose working-tree `.gitmodules`, or its index copy
+  when the file is missing, sets `ignore = all` (git 2.54 skips it without `-f`, exit 0 with
+  a hint; git 2.34 and 2.43 stage it regardless, CHG-21), go in a separate `git add -A -f`
+  call, and a
   non-zero `git add` exit counts as `stage-failed` even when some paths were added). The built
   patch reuses,
   per file, git's own header lines from the current diff verbatim (`diff --git`, `index`,

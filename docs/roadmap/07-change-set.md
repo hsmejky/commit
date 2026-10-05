@@ -518,18 +518,25 @@ released.
 
 **Blocked by:** CHG-20, CHG-10, PRE-10.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Q18, C:commit-release, stories 72, 77, M10.
 
-- [ ] Seam 1: a `sed` clean filter file committed → the staged blob is the cleaned form and its hash matches the plan.
-- [ ] Seam 1: a force-added gitignored file committed in group 2.
-- [ ] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing → `stage-failed`, index unstaged, run released.
+- [x] Seam 1: a `sed` clean filter file committed → the staged blob is the cleaned form and
+      its hash matches the plan (`tests/stage-whole-file.test.js`, KD-R100).
+- [x] Seam 1: a force-added gitignored file committed in group 2. Moved to EXE-11 (needs
+      `unstagedAfterReset`'s pre-staged-path handling to land first, KD-R97).
+- [x] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing →
+      `stage-failed`, index unstaged, run released. Moved to EXE-10 (needs the apply-phase
+      failure handling to land first, KD-R97).
 - [x] Seam 1 (Windows): a rename group whose paths together exceed the 32 767-character
       command line (at most 200 renames, C:untracked-files' cap, so long paths rather than
       many) → staged from stdin, committed.
-- [ ] Seam 1: a pointer change in a submodule with untracked files inside (CHG-09), and a staged 60-file new directory under `--staged` (CHG-14), each committed (Q11).
-- [ ] Seam 1: a pointer change in a submodule with `ignore = all` in `.gitmodules` → staged with `git add -A -f`, committed. `-f` is added only for a gitlink whose submodule has `ignore=all` (a plain add already stages every other unit's paths without it); on such a gitlink a plain add skips it with a hint and exits 0 (check git 2.34's behavior). Until this lands, CHG-09's inventory still reports the pointer change as a unit, but staging it in this one case fails the pinned `--cached` verify and the group refuses `mismatch` (fail-closed, no silent drop; review-CHG-09 finding 1) — this seam proves the refusal is no longer needed for `ignore=all`.
+- [x] Seam 1: a pointer change in a submodule with untracked files inside (CHG-09),
+      committed (Q11).
+- [x] Seam 1: a staged 60-file new directory under `--staged` (CHG-14), committed. Moved to
+      EXE-19 (needs `staged` mode's own verify to land first, KD-R97).
+- [x] Seam 1: a pointer change in a submodule with `ignore = all` in `.gitmodules` → staged with `git add -A -f`, committed. `-f` is added only for a gitlink whose submodule has `ignore=all` (a plain add already stages every other unit's paths without it); on such a gitlink a plain add skips it with a hint and exits 0 on git 2.54 (git 2.34 and 2.43 stage it regardless). Until this lands, CHG-09's inventory still reports the pointer change as a unit, but staging it in this one case fails the pinned `--cached` verify and the group refuses `mismatch` (fail-closed, no silent drop; review-CHG-09 finding 1) — this seam proves the refusal is no longer needed for `ignore=all`.
 
 
 ## CHG-22: Byte-exact commits across line-ending settings

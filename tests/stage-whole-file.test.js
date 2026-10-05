@@ -76,6 +76,28 @@ test('a pointer change in a submodule with ignore = all in .gitmodules is commit
   assert.equal(c.git(['diff', '--ignore-submodules=none', '--name-only', 'HEAD~1', 'HEAD']), 'libs/x\n');
 });
 
+// review-CHG-21 L2/L3: the worktree `.gitmodules` is deleted but the real index (already
+// reset to HEAD by `stage`) still holds one, so git falls back to the index blob and still
+// skips the gitlink on git 2.54 (`git config --blob :.gitmodules`); without the fallback this
+// fails as `mismatch` on 2.54 (git 2.34 and 2.43 stage the gitlink either way, unaffected).
+test('a pointer change in a submodule with ignore = all survives a deleted worktree .gitmodules', async (t) => {
+  const c = createCase(t);
+  const sub = withSubmodule(c);
+  c.git(['config', '-f', '.gitmodules', 'submodule.libs/x.ignore', 'all']);
+  c.git(['add', '.gitmodules']);
+  c.git(['commit', '-q', '-m', 'ignore all']);
+  c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
+  fs.unlinkSync(path.join(c.repoDir, '.gitmodules'));
+
+  const result = await commitGroups(c, all);
+
+  assert.equal(result.json.commits.length, 1);
+  assert.equal(rev(c, 'HEAD:libs/x'), sub.prev);
+  // `.gitmodules` itself is also deleted by this scenario (plan sees the worktree deletion
+  // too); the pointer change is what proves the index fallback found `ignore = all`.
+  assert.equal(c.git(['diff', '--ignore-submodules=none', '--name-only', 'HEAD~1', 'HEAD']), '.gitmodules\nlibs/x\n');
+});
+
 // The plan hashes a filtered file in its cleaned form (CHG-10); `git add -A` runs the same
 // filter, so the verify finds the plan's hash and the commit holds the cleaned blob.
 test('a sed clean filter file is committed as its cleaned form, with the plan hash', async (t) => {

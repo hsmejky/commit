@@ -161,6 +161,17 @@ fixed, delete it here; IDs are never reused.
   committed blob differs from the cleaned form, which is what the criterion guards against.
   Revisit only if a cheap Seam-1-safe way to expose the stored hash appears, or the user
   accepts stretching this file's seam for one assert. Slice: none.
+- **KD-R101.** `tests/change-set-submodules.test.js`'s review-CHG-21 L3 case ("a malformed
+  .gitmodules makes stage return stage-failed, not throw") calls M10 `stage` in-process,
+  outside testing-seams.md's user-confirmed seam list (M10 is Seam 1 only,
+  testing-modules.md:9), the same gap KD-R77 and KD-R84 name for other modules. KD-R88 used
+  to record this file's in-process M10 calls (`snapshot`, `inventory`), but CHG-20 dropped
+  it once the capped-file split moved to Seam 1, and no row has covered the gap since; this
+  case adds `stage` to it. Seam 1 cannot reach a malformed `.gitmodules` through `stage`
+  until EXE-10 lands (`commitAll` turns `stage-failed` into `notBuilt`, KD-R97). Fix: either
+  add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's), or
+  rebuild this one case at Seam 1 once EXE-10 lands. Slice: none yet (needs the user's seam
+  decision; EXE-10 for the rebuild).
 
 ## Coverage
 
@@ -193,20 +204,23 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R97.** Three of CHG-21's Seam-1 criteria cannot run end to end yet, and M10 is in no
-  in-process seam, so they are untested: (1) the force-added gitignored file in group 2 is
-  pre-staged by `git add -f`, and `commitAll` throws `notBuilt('the unstaged report for
+- **KD-R97.** Three Seam-1 criteria for CHG-21's staging edge cases, moved into EXE-10,
+  EXE-11 and EXE-19 themselves (each is now the slice that unblocks its own case), cannot
+  run end to end until all three land: (1) EXE-11's force-added gitignored file in group 2
+  is pre-staged by `git add -f`, and `commitAll` throws `notBuilt('the unstaged report for
   pre-staged paths', 'EXE-11')` for any pre-staged path in `split` before the first group;
-  (2) the staged 60-file new directory under `--staged` hits `notBuilt('commit --all in
-  staged mode', 'EXE-19')` (in `split` it is pre-staged, EXE-11); (3) the `core.safecrlf=true`
-  rejection and the missing required filter make `stage` return `stage-failed`, which
-  `commitAll` turns into `notBuilt('the stage-failed failure', 'EXE-10')` instead of
-  unstaging the index and releasing the run. `stage`'s `-f` call for ignored paths and its
-  `stage-failed` result exist (CHG-14, CHG-20) but no test reaches them.
+  (2) EXE-19's staged 60-file new directory under `--staged` hits `notBuilt('commit --all in
+  staged mode', 'EXE-19')` (in `split` it is pre-staged, EXE-11); (3) EXE-10's
+  `core.safecrlf=true` rejection and the missing required filter make `stage` return
+  `stage-failed`, which `commitAll` turns into `notBuilt('the stage-failed failure',
+  'EXE-10')` instead of unstaging the index and releasing the run. `stage`'s `-f` call for
+  ignored paths exists (CHG-14, CHG-20) but no Seam 1 test reaches it; its `stage-failed`
+  result is reached only in-process, by review-CHG-21 L3's malformed-`.gitmodules` case
+  (KD-R101), not by these two triggers.
   Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`,
-  `tests/stage-whole-file.test.js`. Fix: once EXE-10, EXE-11 and EXE-19 land, add the three
-  cases to `tests/stage-whole-file.test.js` and drop this row. Slices: EXE-10, EXE-11,
-  EXE-19.
+  `tests/stage-whole-file.test.js`. Fix: once EXE-10, EXE-11 and EXE-19 land, each adds its
+  own case and drops its number from this row; once all three are gone, drop this row.
+  Slices: EXE-10, EXE-11, EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
   lists eight pairs as gaps because the code producing them is not built: `unconfirmed` via
   M16 (EXE-22), `env` via the entry point for an install path with a shell-special character

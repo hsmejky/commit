@@ -130,8 +130,10 @@
     the Windows command-line limit after the real index was reset, and a `-z` list carries
     any path byte for byte.
   - Whole-file units, staged with `git add -A` (literal pathspecs, Q9; both paths of a
-    rename; paths on stdin; ignored paths, and a gitlink whose working-tree `.gitmodules` sets
-    `ignore = all` (git ≥ 2.5x skips it without `-f`, CHG-21), in a separate `git add -A -f`
+    rename; paths on stdin; ignored paths, and a gitlink whose working-tree `.gitmodules`, or
+    its index copy when the file is missing, sets `ignore = all` (git 2.54 skips it without
+    `-f`, exit 0 with a hint; git 2.34 and 2.43 stage it regardless, CHG-21), in a separate
+    `git add -A -f`
     call, and a non-zero exit is `stage-failed` even when some paths were added) and never
     split across groups:
 

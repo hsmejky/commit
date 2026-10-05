@@ -1417,8 +1417,9 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
 // CHG-21: the paths of `stage`'s submodule units whose submodule `.gitmodules` sets to
 // `ignore = all`. A plain `git add -A` on such a gitlink skips it with a hint and exits 0 on
 // newer git (2.54; git 2.34 and 2.43 stage it), so the verify would refuse `mismatch`; they
-// join the `-f` call. Only the working-tree `.gitmodules` counts: on git 2.54 a local
-// `submodule.<name>.ignore` neither causes the skip nor lifts it. No submodule unit costs no
+// join the `-f` call. The working-tree `.gitmodules`, or its index copy when the file is
+// missing, is what counts: on git 2.54 a local `submodule.<name>.ignore` neither causes the
+// skip nor lifts it. No submodule unit costs no
 // git call. review-CHG-21 L2: a worktree `.gitmodules` deleted while the real index (already
 // reset to HEAD above) still holds one makes git fall back to that index copy and still skip
 // the gitlink (probed on 2.54), so a missing worktree file is read from the index blob
