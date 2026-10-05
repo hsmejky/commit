@@ -76,15 +76,20 @@ per `indexOnly` path.
 
 **Blocked by:** PLN-02, CHG-13, CHG-14, CHG-16, CHG-12.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, Q11, C:check (`notIncluded`, `notices`), C:worker-plan, stories 66, 80, 85, 96, M14.
 
-- [ ] Seam 1: a hit unit placed in a group → "h4 has scan hit `github-token`; move it to notIncluded"; left out → notice "src/b.js:14 github-token left out".
-- [ ] Seam 1: a collapsed `dist` → `notIncluded` entry "412 untracked files in dist/ — …"; a hidden staged-new `.env.local` → "… was staged but is hidden — commit by hand; committing this plan unstages it".
-- [ ] Seam 1: a gitignored staged-new unit left out → note plus "and .gitignore then hides it from `git status`"; with zero groups → no unstaging note.
-- [ ] Seam 1: a dirty submodule → "libs/x has uncommitted changes inside — …"; an `indexOnly` path → notice with `git cat-file -p <blob>`.
-- [ ] Seam 1 (POSIX): a non-UTF-8 path → "path is not UTF-8 — commit by hand" with `\xNN`.
+- [x] Seam 1: a hit unit placed in a group → "h4 has scan hit `github-token`; move it to notIncluded"; left out → notice "src/b.js:14 github-token left out".
+- [x] Seam 1: a collapsed `dist` → `notIncluded` entry "412 untracked files in dist/ — …"; a hidden staged-new `.env.local` → "… was staged but is hidden — commit by hand; committing this plan unstages it".
+- [x] Seam 1: a gitignored staged-new unit left out → note plus "and .gitignore then hides it from `git status`"; with zero groups → no unstaging note.
+- [x] Seam 1: a dirty submodule → "libs/x has uncommitted changes inside — …"; an `indexOnly` path → notice with `git cat-file -p <blob>`.
+- [x] Seam 1 (POSIX): a non-UTF-8 path → "path is not UTF-8 — commit by hand" with `\xNN`.
+
+**Note (review-PLN-04 r2):** the "with a group" variants of AC2-AC4 use a hunk-level group
+(KD-R83: `commitCheckedGroups` skips `commitAll` whenever a group has a hunk-level file
+entry), so they never exercise EXE-11's own pre-staged-paths report. Retire that reliance
+once INT-18 lifts KD-R83.
 
 
 ## PLN-05: `staged` and `reword`: exactly one group holding every unit
