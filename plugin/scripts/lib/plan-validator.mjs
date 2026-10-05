@@ -301,13 +301,11 @@ function banScanHits(units, n, scanned, errors) {
 // "Unstaging note", "one line per indexOnly path"); with zero groups nothing will be reset
 // or discarded by `commit`, so neither note applies.
 //
-// KD-R90: the left-out-hit notice omits the line number C:check's own example pins
-// ("src/b.js:14 github-token left out"): `state.json`'s `scanned` map (CHG-16
-// `buildScanMap`) keeps only the pattern IDs a unit's hit, never the `(path, line)` pair
-// that produced them, and a unit's own stored fields (`unitTable`, C:run-folder) carry no
-// `addedLines` either. Reproducing the line here would mean widening `scanned`'s stored
-// shape, which M13 `renderHunkIndex` also reads as `string[] | "skipped"` for the public
-// `hunks.json`/`hunks.txt` `"scan"` field (C:plan-hunks) — out of this slice's scope.
+// The left-out-hit notice's line number (C:check's own example: "src/b.js:14 github-token
+// left out") comes from `state.json`'s `scanLines` map (`buildScanMap`, workflows.mjs),
+// parallel to `scanned`'s pattern IDs and never widening `scanned` itself (read by M13
+// `renderHunkIndex` as `string[] | "skipped"` for the public `hunks.json`/`hunks.txt`
+// `"scan"` field, C:plan-hunks).
 function notIncludedResult(runState, workerPlan, placement, hasGroups) {
   const stagedNewIgnored = new Map((runState.stagedNew ?? []).map((entry) => [entry.path, entry.ignored]));
   const notIncluded = workerPlan.notIncluded.map((entry) => {
@@ -321,11 +319,11 @@ function notIncludedResult(runState, workerPlan, placement, hasGroups) {
     const hidden = entry.reason === 'hidden';
     const base = hidden
       ? `${entry.path} was staged but is hidden — commit by hand`
-      : `${entry.count} staged files in ${entry.dir}/ — add to .gitignore or commit by hand`;
+      : `${entry.count} staged new files in ${entry.dir}/ — commit by hand`;
     notIncluded.push({
       path: hidden ? entry.path : entry.dir,
       hunks: null,
-      reason: hasGroups ? `${base}${unstagingNote(false)}` : base,
+      reason: hasGroups ? `${base}${unstagingNote(false, !hidden)}` : base,
     });
   }
   for (const path of runState.dirtySubmodules ?? []) {
@@ -339,11 +337,19 @@ function notIncludedResult(runState, workerPlan, placement, hasGroups) {
   }
 
   const notices = [];
+  const seenNotices = new Set();
   const scanned = runState.scanned ?? {};
+  const scanLines = runState.scanLines ?? {};
   for (const unit of runState.units) {
     const hit = scanned[unit.id];
     if (Array.isArray(hit) && placement.of(unit.id) === null) {
-      for (const patternId of hit) notices.push(`${unit.path} ${patternId} left out`);
+      const lines = scanLines[unit.id] ?? [];
+      hit.forEach((patternId, index) => {
+        const notice = `${unit.path}:${lines[index]} ${patternId} left out`;
+        if (seenNotices.has(notice)) return;
+        seenNotices.add(notice);
+        notices.push(notice);
+      });
     }
   }
   if (hasGroups) {
@@ -354,12 +360,15 @@ function notIncludedResult(runState, workerPlan, placement, hasGroups) {
   return { notIncluded, notices };
 }
 
-// "; committing this plan unstages it" (C:check), plus the `.gitignore` clause when the
-// stored staged-new list marks the path `ignored`.
-function unstagingNote(ignored) {
+// "; committing this plan unstages it" (C:check; Q11), "unstages them" for a `stagedExcluded`
+// directory entry (`plural`), plus the `.gitignore` clause when the stored staged-new list
+// marks the path `ignored` (never set for a directory entry, so `plural` and the clause
+// never combine).
+function unstagingNote(ignored, plural = false) {
+  const pronoun = plural ? 'them' : 'it';
   return ignored
-    ? '; committing this plan unstages it and .gitignore then hides it from `git status`'
-    : '; committing this plan unstages it';
+    ? `; committing this plan unstages ${pronoun} and .gitignore then hides it from \`git status\``
+    : `; committing this plan unstages ${pronoun}`;
 }
 
 // C:check: a plan is file-level (`files`) or hunk-level (`hunks`), never both. A

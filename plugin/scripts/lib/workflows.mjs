@@ -42,7 +42,9 @@
 // over the snapshot's units, with `loadConfigLayers`' compiled `scanIgnore` matchers
 // (`ctx.scanIgnoreMatchers`, kept off `ctx.config`) and the injected `osUser`; `ctx.scan`
 // (`plan.json` `scan`) and `ctx.scanMap` (`state.json` `scanned`, read by `renderHunkIndex`
-// to withhold a hit's whole body) are stored. Later
+// to withhold a hit's whole body) are stored, alongside `ctx.scanLines` (`state.json`
+// `scanLines`, PLN-04: each hit's line, parallel to `scanned`, read by M14 `validatePlan`
+// for the left-out-hit notice's `path:line`, never by `renderHunkIndex`). Later
 // slices insert the other row (3 lock peek) in its place in
 // PLAN_STEPS, and widen these.
 //
@@ -481,7 +483,11 @@ async function snapshotUnits(ctx) {
 
 /**
  * Maps every scan hit and skipped path to the unit that holds it (C:plan-hunks "scan map"):
- * `{ h4: ["github-token"], h9: "skipped" }`. A hit's `(path, line)` belongs to exactly one
+ * `{ h4: ["github-token"], h9: "skipped" }`, plus (PLN-04) a parallel `scanLines` map of the
+ * same hits' line numbers (`{ h4: [14] }`, never `"skipped"`: a skipped unit has no hit to
+ * number), kept separate from `scanned` so `scanned`'s own shape (read by `renderHunkIndex`
+ * as `string[] | "skipped"` for the public `hunks.json`/`hunks.txt` "scan" field,
+ * C:plan-hunks) never widens. A hit's `(path, line)` belongs to exactly one
  * unit of that path (hunk-level units never share a line; a whole-file unit's one unit
  * holds every line of the file); a path appears in `skipped` once however many of its units
  * are over the limit, so every one of them is flagged. `scanIgnoreUnits` (SCN-14: a
@@ -500,18 +506,20 @@ function buildScanMap(units, { hits, skipped }) {
     }
   }
   const scanned = {};
+  const scanLines = {};
   for (const { patternId, path, line } of hits) {
     const id = unitByPathLine.get(`${path}\u0000${line}`);
     if (id === undefined) {
       throw new Error(`a scan hit at ${path}:${line} matches no unit's added lines`);
     }
     (scanned[id] ??= []).push(patternId);
+    (scanLines[id] ??= []).push(line);
   }
   const skippedPaths = new Set(skipped.map(({ path }) => path));
   for (const unit of units) {
     if (skippedPaths.has(unit.path)) scanned[unit.id] = 'skipped';
   }
-  return scanned;
+  return { scanned, scanLines };
 }
 
 /**
@@ -538,6 +546,7 @@ async function scanDiff(ctx) {
   if (ctx.units === undefined || ctx.mode === 'reword') {
     ctx.scan = { hits: [], skipped: [] };
     ctx.scanMap = {};
+    ctx.scanLines = {};
     ctx.scanIgnoreChanged = false;
     ctx.scanIgnoreUnits = [];
     return undefined;
@@ -553,7 +562,9 @@ async function scanDiff(ctx) {
     isRepoConfigPath,
   });
   ctx.scan = { hits, skipped };
-  ctx.scanMap = buildScanMap(ctx.units, { hits, skipped });
+  const { scanned, scanLines } = buildScanMap(ctx.units, { hits, skipped });
+  ctx.scanMap = scanned;
+  ctx.scanLines = scanLines;
   ctx.scanIgnoreUnits = scanIgnoreUnits;
   return undefined;
 }
@@ -695,6 +706,10 @@ async function storeAndLock(ctx) {
     // CHG-16 (C:plan-hunks "scan map"): every scan hit and skipped path mapped to the unit
     // that holds it, cut from the very diff `scanDiff` (step 5) scanned.
     scanned: ctx.scanMap,
+    // PLN-04: each hit's line, parallel to `scanned` (never `"skipped"`), for `check`'s
+    // left-out-hit notice (`path:line`); kept separate so `scanned`'s own shape, read by
+    // `renderHunkIndex` for the public hunk index, never widens.
+    scanLines: ctx.scanLines,
     // SCN-14 (C:plan-hunks "scan map"): the repo-config units `scanDiff` flagged when its
     // `scanIgnore` changed on the snapshot side.
     scanIgnoreUnits: ctx.scanIgnoreUnits,

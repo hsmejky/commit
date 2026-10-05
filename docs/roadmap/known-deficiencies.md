@@ -51,18 +51,19 @@ fixed, delete it here; IDs are never reused.
   lint/scan failures, still go through the plain `refusalFailure` with no `reply` at all. No
   roadmap criterion currently names this gap. Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
-- **KD-R90.** PLN-04's pinned example for a left-out scan hit ("src/b.js:14 github-token
-  left out") names a line number; the built notice omits it
-  (`plugin/scripts/lib/plan-validator.mjs` `notIncludedResult`, which emits
-  `` `${path} ${patternId} left out` ``). `state.json`'s `scanned` map (`buildScanMap`,
-  `plugin/scripts/lib/workflows.mjs`) stores only the pattern IDs a unit hit, never the
-  `(path, line)` pair that produced them; the stored unit table carries no `addedLines`
-  either. Widening `scanned`'s stored shape to carry a line would also reach
-  `plugin/scripts/lib/hunk-index.mjs` (`renderHunkIndex`), which reads `scanMap[id]` as
-  `string[] | "skipped"` for the public `hunks.json`/`hunks.txt` `"scan"` field
-  (C:plan-hunks) — out of PLN-04's scope to touch. Fix: store the line per hit alongside its
-  pattern ID in `buildScanMap`/`state.json`, and widen `hunk-index.mjs`'s read of it to
-  match. Slice: PLN-04 (criterion as pinned), M13.
+- **KD-R91.** A hidden staged-new path that is also gitignored (Q11's own example,
+  `git add -f .env.local` where `.env.local` is listed in `.gitignore`) never gets the
+  "and .gitignore then hides it from `git status`" clause on its `notIncluded` entry:
+  `state.json`'s `stagedExcluded` list (`plugin/scripts/lib/workflows.mjs`
+  `stagedExcludedOf`) carries no `ignored` flag, and `plan-validator.mjs`
+  `notIncludedResult` ties that clause only to the stored staged-new list (`stagedNew`),
+  which a hidden-and-excluded path is never on (it never became a unit). Decided for now:
+  no clause applies to an automatic `stagedExcluded` entry; only a worker-placed
+  `notIncluded` entry for a staged-new **unit** carries it (C:check). Fix: thread `ignored`
+  onto `stagedExcluded` entries too (`stagedExcludedOf`, workflows.mjs) and read it in
+  `notIncludedResult`, or decide in docs that the gap is permanent and narrow C:check's
+  wording instead. Slice: a later one touching `stagedExcludedOf`/C:check (none assigned
+  yet).
 - **KD-R92.** `lintFailureOf` (`plugin/scripts/lib/workflows.mjs`) drops `plan`'s stored
   notices on a lint failure: the interactive `lintFailed` handback's `finalReply` call
   carries no `notices` at all, and the `--no-user` `failed` reply's `notices` holds only the

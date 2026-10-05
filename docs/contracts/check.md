@@ -38,6 +38,7 @@ validates it, then:
     { "path": "src/b.js", "hunks": ["h5"], "reason": "scan: src/b.js:14 github-token" },
     { "path": "dist", "hunks": null, "reason": "412 untracked files in dist/ — add to .gitignore or commit by hand" },
     { "path": ".env.local", "hunks": null, "reason": ".env.local was staged but is hidden — commit by hand; committing this plan unstages it" },
+    { "path": "assets/gen", "hunks": null, "reason": "5 staged new files in assets/gen/ — commit by hand; committing this plan unstages them" },
     { "path": "libs/x", "hunks": null, "reason": "libs/x has uncommitted changes inside — commit inside the submodule first" }
   ],
   "notices": ["src/b.js:14 github-token left out"],
@@ -120,15 +121,18 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   temporary-index diff (Q11); `staged`: index diff, for the report only; `reword`: always
   `[]`.
 - `notIncluded`: the worker's entries plus every collapsed directory, every
-  `stagedExcluded` path or directory and every `dirtySubmodules` path (`split` only), and
-  every `embeddedRepos` path ("nested is an embedded git repository — add it as a
-  submodule by hand"), every path that is not valid UTF-8 ("path is not UTF-8 — commit by hand"), each
-  non-UTF-8 byte written as `\xNN` ([plan](plan.md)).
-  Unstaging note (`split`, at least one group): a `stagedExcluded` entry, and a worker
-  entry for a staged-new unit, gets "committing this plan unstages it", plus "and
-  .gitignore then hides it from `git status`" when the stored staged-new list marks it
-  `ignored`. The reset happens in `commit`, so the note describes what `yes` will do;
-  with zero groups, or after `no`, the index is untouched and there is no note.
+  `stagedExcluded` path or directory, every `dirtySubmodules` path, every `embeddedRepos`
+  path ("nested is an embedded git repository — add it as a submodule by hand") and every
+  path that is not valid UTF-8 ("path is not UTF-8 — commit by hand"), each non-UTF-8 byte
+  written as `\xNN` ([plan](plan.md)) — all `split` only (`staged` and `reword` leave
+  nothing out, PLN-05).
+  Unstaging note (`split`, at least one group): a `stagedExcluded` path entry, and a worker
+  entry for a staged-new unit, gets "committing this plan unstages it"; a `stagedExcluded`
+  directory entry gets "committing this plan unstages them" (Q11); either gets "and
+  .gitignore then hides it from `git status`" too when the stored staged-new list marks it
+  `ignored` (never set for a directory entry). The reset happens in `commit`, so the note
+  describes what `yes` will do; with zero groups, or after `no`, the index is untouched and
+  there is no note.
 - `notices`: every notice `plan` stored in `state.json`'s `notices` (GRD-17: the guard
   notice (Q23), the detached-HEAD warning (Q21), `warnings`, the takeover's notices (kept
   since step 3), the signing `prompt` note (Q18), and the sweep's cleanup errors), carried
