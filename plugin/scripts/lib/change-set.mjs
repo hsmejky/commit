@@ -1386,7 +1386,9 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
     }
   }
   const wholeFiles = units.filter((unit) => !hunkLevel(unit));
-  const ignored = new Set([...ignoredPaths, ...await ignoreAllGitlinks(wholeFiles, { toplevel, env, now })]);
+  const gitlinks = await ignoreAllGitlinks(wholeFiles, { toplevel, env, now });
+  if (gitlinks.paths === null) return { ok: false, code: 'stage-failed', gitOutput: gitlinks.gitOutput };
+  const ignored = new Set([...ignoredPaths, ...gitlinks.paths]);
   const paths = [...new Set(wholeFiles
     .flatMap((unit) => (unit.oldPath === null ? [unit.path] : [unit.oldPath, unit.path])))];
   for (const [list, flags] of [[paths.filter((p) => !ignored.has(p)), []], [paths.filter((p) => ignored.has(p)), ['-f']]]) {
@@ -1416,18 +1418,27 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
 // `ignore = all`. A plain `git add -A` on such a gitlink skips it with a hint and exits 0 on
 // newer git (2.54; git 2.34 and 2.43 stage it), so the verify would refuse `mismatch`; they
 // join the `-f` call. Only the working-tree `.gitmodules` counts: on git 2.54 a local
-// `submodule.<name>.ignore` neither causes the skip nor lifts it. No submodule unit or no
-// `.gitmodules` file costs no git call.
+// `submodule.<name>.ignore` neither causes the skip nor lifts it. No submodule unit costs no
+// git call. review-CHG-21 L2: a worktree `.gitmodules` deleted while the real index (already
+// reset to HEAD above) still holds one makes git fall back to that index copy and still skip
+// the gitlink (probed on 2.54), so a missing worktree file is read from the index blob
+// (`git config --blob :.gitmodules`) instead of an empty set; neither the worktree file nor the
+// index blob existing still costs no git call beyond the one read. review-CHG-21 L3: a
+// malformed `.gitmodules` (any exit other than "no match") is `stage-failed` like any other
+// staging failure, never an internal throw: `paths: null` signals that to the caller.
 async function ignoreAllGitlinks(units, { toplevel, env, now }) {
   const gitlinks = new Set(units.filter((unit) => unit.kind === 'submodule').map((unit) => unit.path));
-  if (gitlinks.size === 0 || !existsSync(join(toplevel, '.gitmodules'))) return [];
+  if (gitlinks.size === 0) return { paths: [] };
+  const source = existsSync(join(toplevel, '.gitmodules')) ? ['-f', '.gitmodules'] : ['--blob', ':.gitmodules'];
   const listed = await run(
     'git',
-    ['config', '-f', '.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.(path|ignore)$'],
+    ['config', ...source, '-z', '--get-regexp', '^submodule\\..*\\.(path|ignore)$'],
     { cwd: toplevel, env, now },
   );
-  if (listed.code === 1) return [];
-  if (listed.code !== 0) throw new Error(`git config failed (${listed.code}): ${listed.stderr}`);
+  if (listed.code === 1) return { paths: [] };
+  if (listed.code !== 0) {
+    return { paths: null, gitOutput: `${listed.stdout.toString('utf8')}${listed.stderr}` };
+  }
   const byName = new Map();
   for (const entry of listed.stdout.toString('utf8').split('\0')) {
     const newline = entry.indexOf('\n');
@@ -1438,9 +1449,11 @@ async function ignoreAllGitlinks(units, { toplevel, env, now }) {
     fields[key.slice(key.lastIndexOf('.') + 1)] = entry.slice(newline + 1);
     byName.set(name, fields);
   }
-  return [...byName.values()]
-    .filter((fields) => fields.ignore === 'all' && gitlinks.has(fields.path))
-    .map((fields) => fields.path);
+  return {
+    paths: [...byName.values()]
+      .filter((fields) => fields.ignore === 'all' && gitlinks.has(fields.path))
+      .map((fields) => fields.path),
+  };
 }
 
 // CHG-20: the patch for `stage`'s hunk units, or null when the current diff of the (reset)
