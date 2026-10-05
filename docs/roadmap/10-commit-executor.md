@@ -259,8 +259,9 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 
 **Sources:** Q18, C:commit-release (c), M16, stories 161, 163.
 
-- [ ] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger; CHG-21
-      criterion 3 covers the safecrlf and missing-filter triggers) → exit 4 `stage-failed`,
+- [ ] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger; the
+      safecrlf and missing-filter triggers are untested until this lands, KD-R97) → exit 4
+      `stage-failed`,
       `gitOutput` holds git's output verbatim, M10 `unstage` runs so the index is reset, and
       `unstaged` is present.
 - [ ] Seam 1: a verify mismatch (a file changed between (b) and `git add`) → exit 6
@@ -284,6 +285,9 @@ output that ends a `split` run from it, present only when the run state has `ind
 KD-R69: `unstaged` is built only from `preStaged` and `indexOnly`; a reset path's
 intent-to-add mark, dropped by `git reset -q -- .`, is not named here if its group never
 commits (it is only in the stored `stagedNew`).
+
+KD-R97: the force-added gitignored-path case this slice unblocks is untested until EXE-10,
+EXE-11 and EXE-19 all land; this slice's own criteria below do not assume it is covered.
 
 - [ ] Seam 1: a pre-staged file outside the planned groups → after a successful run it is
       listed with `blob: null` and the report text "your earlier staging was reset".
@@ -485,6 +489,9 @@ builds M10 `verifyIndex`.
 **Status:** ready-for-agent
 
 **Sources:** Q18, C:commit-release (`staged`), M16, story 162.
+
+KD-R97: the staged 60-file new-directory case this slice unblocks is untested until EXE-10,
+EXE-11 and EXE-19 all land; this slice's own criteria below do not assume it is covered.
 
 - [ ] Seam 1: `plan --staged` with a partly staged file → the commit holds the staged
       version only, the unstaged edit stays in the working tree.
