@@ -255,21 +255,21 @@ reset → exit 4 `stage-failed` with git's output in `gitOutput`; a verify misma
 
 **Blocked by:** EXE-02, CHG-21.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release (c), M16, stories 161, 163.
 
-- [ ] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger) →
+- [x] Seam 1: a non-zero `git apply --cached` or `git add` in phase (c) (any trigger) →
       exit 4 `stage-failed`,
       `gitOutput` holds git's output verbatim, M10 `unstage` runs so the index is reset, and
       `unstaged` is present.
-- [ ] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing (moved
+- [x] Seam 1: `core.safecrlf=true` rejection and a required filter that is missing (moved
       from CHG-21, KD-R97) → `stage-failed`, index unstaged, run released.
-- [ ] Seam 1: a verify mismatch (a file changed between (b) and `git add`) → exit 6
+- [x] Seam 1: a verify mismatch (a file changed between (b) and `git add`) → exit 6
       `diff-changed`, index reset. No hook runs in that window, so the slice settles a
       fixture technique first; if none exists at Seam 1, the slice records the case as
       uncovered instead of adding a test switch to the shipped CLI.
-- [ ] Seam 1: after an exit 4 `stage-failed`, the lock and the run folder are gone.
+- [x] Seam 1: after an exit 4 `stage-failed`, the lock and the run folder are gone.
 
 
 ## EXE-11: the `unstaged` report
