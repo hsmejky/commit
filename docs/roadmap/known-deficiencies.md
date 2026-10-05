@@ -326,11 +326,29 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `commitAll` throws `notBuilt('commit --all in staged mode', 'EXE-19')` before `check`'s
   real output (with `confirm`) can ever reach the caller, caught only by `commit.cjs`'s
   top-level handler as an `internal` failure with no `confirm` field. `split`'s and
-  `reword`'s rows (EXE-20 is done) run end to end; `staged`'s two rows
-  (no trigger despite a new file; a skipped/`scanIgnore` file) are pure-unit-tested only
+  `reword`'s rows (EXE-20 is done) run end to end; every `staged` row (no trigger despite a
+  new file; a skipped/`scanIgnore` file; the `resumed` "edited plan" row) is pure-unit-tested
+  only, labeled "pure fallback (KD-R94)" and not "Seam 1"
   (`tests/run-policy-confirm.test.js`'s `computeConfirm` cases), per the mode gate RUN-17
   added. Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`. Fix: once EXE-19 lands,
-  add the two `staged` Seam-1 rows to `tests/run-policy-confirm.test.js` and drop this row.
+  rebuild those `staged` cases as Seam-1 rows in `tests/run-policy-confirm.test.js` and drop
+  this row.
+- **KD-R95.** PLN-07's `reword` attribution-flag cases (`tests/plan-attribution-flag.test.js`,
+  the three `reword:` tests) and its `staged` case (the `staged stores attribution: true`
+  test) call M14 `validatePlan` in-process over a real Seam-1 `plan --reword`/`state.json`,
+  not through `check`'s own output. The `split` case was rebuilt at Seam 1 (a hunk-level
+  worker plan: INT-02 routes only whole-file groups into `commit --all`, so a hunk-level
+  `check` stops at its validated `state.json` groups, nothing committed), but `reword` and
+  `staged` never produce a hunk-level `files` entry (`plan-validator.mjs`'s
+  `validateSingleGroupPlan` always stores `hunks: null`), so their `check` call is always
+  whole-file: `reword` (EXE-20 is done) commits for real and `check` releases the run folder
+  before `state.json`'s stored `attribution` could be read back, and the CLI's own JSON
+  output never carries `attribution` (MSG-08 is the only reader, not built yet); `staged`
+  cannot even reach that point (KD-R94: `commitAll` throws `notBuilt` for staged mode first).
+  Fix: once MSG-08 lands and the stored flag is surfaced in a reply `check` can observe
+  without reading `state.json` after the fact, or once RUN-18 routes a trigger to a kept run
+  before committing, rebuild these cases at Seam 1 and drop this row. Slices: MSG-08, RUN-18,
+  EXE-19.
 
 ## Bookkeeping
 

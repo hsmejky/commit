@@ -146,14 +146,14 @@ for `check` to store with `committed: false`.
 
 **Blocked by:** PLN-05, PLN-06, CFG-08, MSG-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q5, Q20, C:check (stored per group), C:worker-plan (`source`), stories 55, 178, 180, M14.
 
-- [ ] Seam 1: attribution resolved to `null` → stored flag `false` on every group.
-- [ ] Seam 1: `reword` with `source: "user"` and an old message without the trailer → `false`; with the worker's own message → `true`.
-- [ ] Seam 1: the stored group message is the M6-normalised text (CRLF and trailing blank lines normalised), for both `header` and `body` (MSG-07, f8e0e06, landed the commit side: `commit-executor.mjs`'s own `messageOf` now runs `normaliseText` at commit time, so a CRLF or all-blank-body message commits the way lint approved it regardless of this criterion. This criterion is narrower now: it is only about `check` storing the already-normalised text in `state.json` groups, which it does not yet do — `stored` at plan-validator.mjs still pushes the raw `group.header`/`group.body`).
-- [ ] Seam 1: a CRLF body's scan span (and the redacted lint quote) index the *stored* normalised message, not just the lint-time one (review-MSG-06 finding 5's "against stored" half — the lint-time half is covered by a `tests/plan-message-lint.test.js` test already; this one needs the stored text normalised first, i.e. is blocked on the previous criterion).
+- [x] Seam 1: attribution resolved to `null` → stored flag `false` on every group.
+- [x] Seam 1: `reword` with `source: "user"` and an old message without the trailer → `false`; with the worker's own message → `true`. (The `reword`/`staged` cases are asserted on M14 `validatePlan` directly, not through a real `check` CLI call that returns without committing — KD-R95.)
+- [x] Seam 1: the stored group message is the M6-normalised text (CRLF and trailing blank lines normalised), for both `header` and `body` (MSG-07, f8e0e06, landed the commit side: `commit-executor.mjs`'s own `messageOf` now runs `normaliseText` at commit time, so a CRLF or all-blank-body message commits the way lint approved it regardless of this criterion. `check` now also stores the already-normalised text in `state.json` groups via `plan-validator.mjs`'s `normalisedParts`).
+- [x] Seam 1: a CRLF body's scan span (and the redacted lint quote) index the *stored* normalised message, not just the lint-time one (review-MSG-06 finding 5's "against stored" half — the lint-time half is covered by a `tests/plan-message-lint.test.js` test already; by construction `normalisedParts` derives `stored` from the exact text `lintMessage` scanned, splitting it at the first `\n\n`, so the span and the stored text always index the same string).
 - [x] Seam 1: a worker plan whose message has CRLF line ends commits with LF only (MSG-07, f8e0e06: `commit-executor.mjs`'s `messageOf` normalises CRLF before commit; `trailers-appended.test.js`'s AC6 CRLF case asserts the trailer lands in the `Closes #12` paragraph).
 
 **Note (review-MSG-06 finding 10, optional):** `plan-validator.mjs`'s `messageOf` and

@@ -321,23 +321,45 @@ test('MSG-06: a CRLF body\'s secret span indexes the normalised (LF) message, no
 // needed normalised first. Reassembling `stored.header + "\n\n" + stored.body` must equal
 // `messageOf`'s own normalised text byte for byte, so a span computed at lint time (the test
 // above) always indexes the stored message too.
-test('PLN-07: a CRLF body\'s stored header/body is the normalised (LF) text, not the raw one', async () => {
-  const { validatePlan } = await loadLib('plan-validator');
+//
+// Real Seam 1 (KD-R95's split route): a hunk-level group (`hunks: ['h1']` rather than
+// `files: ['a.txt']`) makes `check`'s `commitCheckedGroups` (INT-02) skip `commit --all`, so
+// the run folder is kept and `state.json`'s stored group can be read back uncommitted. A
+// user `commit.json` layer sets `body: "optional"` (the Q6 default is `forbidden`), and a
+// user `settings.json` layer resolves the trailer to `null` (so `attribution: false` below).
+test('PLN-07: a CRLF body\'s stored header/body is the normalised (LF) text, not the raw one', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'one\n');
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.writeFileSync(path.join(c.claudeHome, 'commit.json'), JSON.stringify({ body: 'optional' }));
+  fs.writeFileSync(path.join(c.claudeHome, 'settings.json'), JSON.stringify({ attribution: { commit: '' } }));
+  c.writeFile('a.txt', 'one\nmore\n');
+
+  const planned = await runCommit(c, ['plan']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
   const header = 'feat: x';
   const body = 'line one\r\nline two\r\n\r\n\r\n';
-  const units = [{ id: 'h1', path: 'a.txt', status: 'M' }];
-  const bytes = Buffer.from(JSON.stringify({ groups: [{ header, body, files: ['a.txt'] }] }));
-  const values = { ...DEFAULT_VALUES, body: 'optional' };
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: [{ header, body, files: [], hunks: ['h1'] }],
+    notIncluded: [],
+  }));
 
-  const result = validatePlan(bytes, { mode: 'split', units, config: { values } });
+  const checked = await runCommit(c, ['check', '--plan', planId]);
 
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.stored[0], {
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.commits, undefined);
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  assert.deepEqual(state.groups[0], {
     n: 1,
     units: ['h1'],
     header: 'feat: x',
     body: 'line one\nline two',
     attribution: false,
+    committed: false,
   });
 });
 

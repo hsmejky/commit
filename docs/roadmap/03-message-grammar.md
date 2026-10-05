@@ -195,7 +195,9 @@ verbatim and in order, drops the allowed tokens (the new message owns them) and 
 `Co-Authored-By: … <noreply@anthropic.com>`; `appendTrailers` then writes new footers,
 carried trailers, attribution. EXE-20 already built this base `carryOver` in
 `message-grammar.mjs` and calls it from the executor; this slice only adds the
-dictated-text/conditional-attribution behaviour below (Seams 3-4).
+dictated-text/conditional-attribution behaviour below (Seams 3-4). The executor appends the
+trailer only when the stored group's `attribution` is true (PLN-07): it reads that stored
+flag rather than re-deciding with `hadAttributionTrailer` itself, so the two never diverge.
 
 **Blocked by:** MSG-07, EXE-20, PLN-07.
 

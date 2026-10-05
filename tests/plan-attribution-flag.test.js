@@ -9,6 +9,11 @@
 // (M6 `hadAttributionTrailer`). MSG-08 (not built yet) is the only module that reads this
 // flag to decide whether `commit` actually appends the trailer; this file only covers what
 // `check` stores.
+//
+// AC1 (split, below) runs through a real Seam-1 `check`. The `reword` and `staged` cases
+// further down call M14 `validatePlan` in-process instead: KD-R95
+// (docs/roadmap/known-deficiencies.md) explains why a real `check` cannot reach their stored
+// `attribution` flag yet.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -38,30 +43,45 @@ function readState(runDir) {
 
 // --- AC1: a resolved-null attribution stores `false` on every group -----------------------
 //
-// Direct `validatePlan` call, like the other PLN-0x unit-level cases in this file and in
-// plan-staged-reword-group.test.js: `check`'s success path for a whole-file `split` plan
-// chains straight into `commit --all` in the same process (INT-02), which would commit for
-// real and delete the run folder before `state.json` could be read back.
+// Real Seam 1: `attribution.commit: ""` in the user settings layer resolves the run's
+// trailer to `null` (plan-attribution.test.js covers that resolution itself); a hunk-level
+// worker plan (one hunk ID per group, rather than a whole `files` path) makes `check`'s own
+// `commitCheckedGroups` (INT-02) skip `commit --all` — it only ever routes a whole-file plan
+// into a real commit — so the run folder is kept and `state.json`'s stored groups can be
+// read back without ever committing for real (same technique as PLN-03's
+// tests/plan-hunk-level.test.js).
 
-test('validatePlan: attribution resolved to null stores attribution: false on every group', () => {
-  const UNITS = [
-    { id: 'h1', path: 'a.txt', status: 'M' },
-    { id: 'h2', path: 'b.txt', status: 'M' },
-  ];
-  const state = { mode: 'split', units: UNITS, config: { values: DEFAULT_VALUES }, attribution: { trailer: null } };
+function writeUserSettings(c, value) {
+  fs.writeFileSync(path.join(c.claudeHome, 'settings.json'), JSON.stringify(value));
+}
 
-  return (async () => {
-    const { validatePlan } = await loadLib('plan-validator');
-    const result = validatePlan(Buffer.from(JSON.stringify({
-      groups: [
-        { header: 'feat: a', body: null, files: ['a.txt'], hunks: [] },
-        { header: 'feat: b', body: null, files: ['b.txt'], hunks: [] },
-      ],
-      notIncluded: [],
-    })), state);
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.stored.map((g) => g.attribution), [false, false]);
-  })();
+test('Seam 1: attribution resolved to null stores attribution: false on every group', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', 'b.txt': 'one\n' });
+  writeUserSettings(c, { attribution: { commit: '' } });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.txt', 'one\nmore\n');
+
+  const planned = await runCommit(c, ['plan']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: [
+      { header: 'feat: a', body: null, files: [], hunks: ['h1'] },
+      { header: 'feat: b', body: null, files: [], hunks: ['h2'] },
+    ],
+    notIncluded: [],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  // Nothing committed (INT-02: a hunk-level plan stops at its validated groups).
+  assert.equal(checked.json.commits, undefined);
+  const state = readState(runDir);
+  assert.deepEqual(state.groups.map((g) => g.attribution), [false, false]);
 });
 
 // --- AC2, reword: direct `validatePlan` over a real `plan --reword` state ------------------
