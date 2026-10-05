@@ -546,12 +546,12 @@ bytes, and that git's converted form is used with `core.autocrlf` and `eol` attr
 
 **Blocked by:** CHG-20, CHG-12.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11 (pass 4 amendment), stories 75, testing-modules Q11 case list.
 
-- [ ] Seam 1: a Latin-1 file and a CRLF file under `core.autocrlf=false`, each split into two groups → committed blobs equal the working-tree bytes.
-- [ ] Seam 1: CRLF content with `core.autocrlf=true` and a `.gitattributes` `eol=crlf` file → no mismatch, committed.
+- [x] Seam 1: a Latin-1 file and a CRLF file under `core.autocrlf=false`, each split into two groups → committed blobs equal the working-tree bytes.
+- [x] Seam 1: CRLF content with `core.autocrlf=true` and a `.gitattributes` `eol=crlf` file → no mismatch, committed.
 
 
 ## CHG-23: Guarded `git commit` and the stale `index.lock`
