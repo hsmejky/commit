@@ -19,10 +19,16 @@ const assert = require('node:assert/strict');
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
 
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
+const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const SHIM_SKIP = process.platform === 'win32'
   && 'PATH script shims are not found by shell-less spawn on Windows (KD-R21)';
 const STALE_ID = '11111111-1111-4111-8111-111111111111';
 const STALE_AGE_MS = 16 * 60 * 1000;
+// The `busy` file-in-use text (run.mjs `BUSY_FILE_IN_USE_MESSAGE`), tests/run-file-in-use.test.js's
+// own copy: needed here for the takeover rename's own busy case.
+const BUSY_TEXT = process.platform === 'win32'
+  ? 'another /commit call on this run is still running; try again once it has finished'
+  : "the run's lock could not be read or replaced (permission denied or in use); try again";
 
 // The notice texts M12 `takeoverNotice` builds (C:plan step 3).
 function takeoverNotice(planId) {
@@ -138,6 +144,58 @@ test('Seam 1 (AC3): a stale unparseable lock is taken over automatically', async
   assert.ok(storedNotices(c, planId).includes(UNREADABLE_TAKEOVER_NOTICE), JSON.stringify(storedNotices(c, planId)));
   // An unparseable lock names no folder: the old one is left for the 24-hour sweep.
   assert.deepEqual(entries(c), [STALE_ID, 'lock', planId].sort());
+});
+
+// RUN-21 review Medium-1: moved from the in-process tests/run.test.js (M12 `acquire`
+// unit directly) to this Seam 1 process boundary, now that the fault preload's
+// COMMIT_TEST_FAULT_RENAME_BASENAME can match the takeover rename's source basename
+// (`lock`), not only a rename's target.
+test('Seam 1: a file in use on the takeover rename is busy, the stale lock and folder stay', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  staleRun(c);
+
+  const result = await runCommit(c, ['plan'], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'lock=EBUSY' },
+  });
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'lock', detail(result));
+  assert.equal(result.json.error.message, BUSY_TEXT, detail(result));
+  assert.equal(lockContent(c).planId, STALE_ID, 'the stale lock is untouched');
+  assert.deepEqual(entries(c), [STALE_ID, 'lock'].sort(), 'the old folder and its lock both stay');
+});
+
+// RUN-21 review Medium-1 (the "ENOENT with the lock still in place" case): the takeover
+// rename's own ENOENT re-peek (RUN-20b item 4) finds the same, untouched stale lock, since
+// the fault throws before any real rename happens — refuses `held` naming the stale holder
+// itself, with its original fields and unchanged (aged) mtime. Interactive by default, so
+// this is a `lock` handback, not a bare refusal.
+test('Seam 1: a rename ENOENT on the takeover with the stale lock still in place refuses held naming it', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  staleRun(c);
+
+  const result = await runCommit(c, ['plan'], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'lock=ENOENT' },
+  });
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'lock', detail(result));
+  const touched = new Date(fs.statSync(path.join(runDirOf(c), 'lock')).mtimeMs).toISOString();
+  const { error } = result.json;
+  assert.deepEqual(
+    { planId: error.planId, created: error.created, touched: error.touched },
+    { planId: STALE_ID, created: '2026-09-26T13:58:02.000Z', touched },
+    detail(result),
+  );
+  assert.equal(result.json.reply.handback.kind, 'lock', detail(result));
+  assert.equal(lockContent(c).planId, STALE_ID, 'the stale lock is untouched');
+  assert.deepEqual(entries(c), [STALE_ID, 'lock'].sort(), 'the old folder and its lock both stay');
 });
 
 test('Seam 1 (AC7): the takeover notice survives a later staged-empty refusal', async (t) => {

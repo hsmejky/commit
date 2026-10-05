@@ -196,6 +196,26 @@ fixed, delete it here; IDs are never reused.
   decision, as KD-R77's), or rewrite `snapshot`/`inventory` at Seam 1 through `plan`'s output
   and `state.json`, or keep them as a documented KD with no slice. Slice: none yet (needs the
   user's seam decision).
+- **KD-R105.** The in-process `tests/run.test.js` M12 takeover cases (`peek`,
+  `acquire({ takeOver })`, `finishTakeover`) call M12 directly, outside testing-seams.md's
+  user-confirmed seam list (M12 is Seam 1 only, Seam 3 "—", testing-modules.md), the same gap
+  KD-R77/KD-R84/KD-R101 name for other modules. RUN-21 moved two of these to Seam 1 once the
+  fault preload's `COMMIT_TEST_FAULT_RENAME_BASENAME` could match a rename's source basename
+  (`tests/plan-takeover.test.js`: the busy case, and the ENOENT-with-the-stale-lock-still-
+  in-place case); the rest cannot move without a further preload change and stay here: a
+  lock touched, or replaced, after the peek (same mtime, other bytes); a rename `ENOENT`
+  with no lock at all in place; a link `EEXIST` after the rename (another call links its own
+  lock in between); and `finishTakeover`'s `rmSync` order (old folder before the renamed
+  lock) and its `rmSync` failure becoming a notice. The earlier (pre-RUN-21) M12 takeover
+  cases share the same unrecorded gap, not only RUN-21's own new ones — this row covers the
+  whole M12-in-process-beyond-Seam-1 gap. Also folds in two RUN-21-review hardening gaps in
+  the same takeover code, left unfixed by design (optional, not a behaviour bug): `open`/
+  `touch` read-then-`utimes` by path, not handle, so a stale holder's own `open`/`touch` can
+  touch the *new* taker's lock if a takeover races in between (bounded damage); and a stale
+  non-regular `lock` (a directory or symlink, hand-made only) can never be taken over. Fix:
+  either add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's),
+  or rebuild each case at Seam 1 as the preload gains the matching fault shape. Slice: none
+  yet (needs the user's seam decision).
 
 ## Coverage
 

@@ -1272,30 +1272,11 @@ test('acquire takeOver: a lock replaced after the peek (same mtime, other bytes)
   assert.equal(fs.readFileSync(lock, 'utf8'), other);
 });
 
-// RUN-20b item 4: a rename that fails with `ENOENT` (another takeover won) re-peeks once.
-test('acquire takeOver: a rename ENOENT with a new lock in place refuses held naming it', (t) => {
-  const { provisional, runDir, lock, staleId, now, stale } = staleRun(t);
-  const winnerId = crypto.randomUUID();
-  const winner = JSON.stringify({ planId: winnerId, created: '2026-09-26T14:20:00.000Z' });
-  const realRename = fs.renameSync;
-  t.mock.method(fs, 'renameSync', (from, to) => {
-    if (path.resolve(String(from)) === lock) {
-      realRename(from, path.join(runDir, `lock.${winnerId}`));
-      fs.writeFileSync(lock, winner);
-      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-    }
-    return realRename(from, to);
-  });
-
-  const acquired = provisional.acquire({ now, takeOver: stale });
-
-  assert.equal(acquired.ok, false);
-  assert.equal(acquired.code, 'held');
-  assert.equal(acquired.holder.planId, winnerId);
-  assert.equal(fs.readFileSync(lock, 'utf8'), winner);
-  assert.ok(fs.existsSync(path.join(runDir, staleId)), 'nothing of the old run is touched');
-});
-
+// RUN-21 review Medium-1: the ENOENT-with-a-new-lock-in-place case moved to Seam 1
+// (tests/plan-takeover.test.js, "a rename ENOENT on the takeover with the stale lock still
+// in place refuses held naming it"); this case ("no lock in place") cannot be reached at
+// Seam 1 without a further preload change (the fault only throws, it cannot also remove the
+// lock file), so it stays here (KD-R, docs/roadmap/known-deficiencies.md).
 test('acquire takeOver: a rename ENOENT with no lock in place links its own lock, with no takeover', (t) => {
   const { provisional, lock, now, stale } = staleRun(t);
   const realRename = fs.renameSync;
@@ -1334,20 +1315,9 @@ test('acquire takeOver: a lock linked by another call after the rename refuses h
   assert.ok(fs.existsSync(path.join(runDir, staleId)));
 });
 
-test('acquire takeOver: a file in use on the rename is busy, and the lock stays', (t) => {
-  const { provisional, lock, bytes, now, stale } = staleRun(t);
-  const realRename = fs.renameSync;
-  t.mock.method(fs, 'renameSync', (from, to) => {
-    if (path.resolve(String(from)) === lock) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
-    return realRename(from, to);
-  });
-
-  const acquired = provisional.acquire({ now, takeOver: stale });
-
-  assert.equal(acquired.ok, false);
-  assert.equal(acquired.code, 'busy');
-  assert.equal(fs.readFileSync(lock, 'utf8'), bytes);
-});
+// RUN-21 review Medium-1: moved to Seam 1 (tests/plan-takeover.test.js, "a file in use on
+// the takeover rename is busy, the stale lock and folder stay"), now that the fault preload
+// can match the takeover rename's source basename.
 
 test('finishTakeover: a failed old-folder deletion becomes a notice and keeps the renamed lock', (t) => {
   const { provisional, runDir, staleId, now, stale } = staleRun(t);
