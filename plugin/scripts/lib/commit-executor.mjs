@@ -588,9 +588,9 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           }
         }
       } catch (err) {
-        // C:commit-release "On failure": a throw after this group reached (c) (a backstop
-        // hit, a non-zero `git commit`, `internal`, until EXE-12/EXE-13 map them) never leaves
-        // the real index staged for the run to repair later.
+        // C:commit-release "On failure": a throw after this group reached (c) (a non-zero
+        // `git commit`, `internal`, until EXE-12 maps them) never leaves the real index
+        // staged for the run to repair later.
         await unstage(git);
         throw err;
       }

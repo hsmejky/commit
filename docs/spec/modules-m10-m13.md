@@ -134,9 +134,10 @@ and of the real index.
   (`git write-tree`); `treeDiffUnits(fromTree, toTree) → units` diffs two trees (`fromTree` the
   expected HEAD, or `null` for the empty tree when unborn) with the same pinned options,
   the same `--raw -z` pass, streamed patch pass and section-to-record pairing, the same
-  `check-attr` call and attribute-hidden `--text` pass (story 212), and the same 1 MB
-  streaming scan limit and `overScanLimit` flag as `snapshot`, keeping only what the scan reads. So the backstop
-  scans the tree it recorded exactly as `plan` scanned the snapshot, and no other module
+  streaming scan limit and `overScanLimit` flag as `snapshot`, keeping only what the scan
+  reads, but no `check-attr` call (story 212): every non-deleted binary-rendered unit under
+  the limit is a `--text` content-sniff candidate, not only one `check-attr` marks hidden,
+  so the backstop's candidate set is a strict superset of `plan`'s and no other module
   holds a diff option.
 - Path lists never go on argv: staging, attribute and index calls pass them on stdin,
   NUL-separated, so a large rename group cannot hit the Windows command-line limit (Q11,

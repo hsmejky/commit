@@ -12,11 +12,13 @@
     files skipped. A tracked file whose added lines exceed 1 MB, or an untracked file over
     1 MB, is not scanned and is reported as skipped (Q19); for an attribute-hidden file
     (below) the measure is the new content's file size, since its added lines are unknown
-    until the `--text` pass, and it is checked before any content decision below. Binary is decided by content only for a file `git check-attr` confirms
+    until the `--text` pass, and it is checked before any content decision below. For
+    `plan`'s diff, binary is decided by content only for a file `git check-attr` confirms
     is hidden by an attribute (`diff`, `binary`, or a custom `diff` driver): a NUL byte in
     the first 8000 bytes of the new content (git's own heuristic) means it is genuinely
     binary; otherwise it is a text file the attribute hides, still scanned through a
-    `--text` diff (Q11). A file git itself reports as binary without such an attribute
+    `--text` diff (Q11). The `commit` backstop's own rule is wider (EXE-13, amended below).
+    A file git itself reports as binary without such an attribute
     (real NUL content, or over `core.bigFileThreshold`) stays binary and is not
     reclassified. A file with a `filter` attribute
     (Git LFS, git-crypt, `nbstripout`) is scanned in the cleaned form `git diff` shows,
@@ -110,8 +112,8 @@
   - Settled: symlink targets are scanned as an added line (Q11 already said so). Dropped the
     contradictory "symlink targets are not scanned" claim from both accepted-gap lists above
     (the pass-3 amendment and the Consequences list).
-  - The NUL-byte content check only decides binary-vs-text for a file `git check-attr`
-    confirms is hidden by an attribute (`diff`, `binary`, or a diff driver); a file git
+  - For `plan`'s diff, the NUL-byte content check only decides binary-vs-text for a file
+    `git check-attr` confirms is hidden by an attribute (`diff`, `binary`, or a diff driver); a file git
     itself reports as binary without such an attribute (real NUL content, or over
     `core.bigFileThreshold`, default 512 MiB) stays binary and is not reclassified —
     otherwise the NUL check would force a `--text` diff on a huge binary file only for it to

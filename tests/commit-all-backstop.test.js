@@ -34,7 +34,9 @@ const REPO_CONFIG = path.join('.claude', 'commit.json');
 // A seed commit of `files` (unless `unborn`), then `edit(c)`, `plan --split`, and the stored
 // groups `groupsOf(units)` returns (each `{ paths, header }`), with `plan`'s own scan map
 // cleared: the state is edited after `plan`, so no stored record says the secret was seen.
-async function plannedRun(t, { files = { 'README.md': 'readme\n' }, unborn = false, edit, groupsOf, planOptions } = {}) {
+async function plannedRun(t, {
+  files = { 'README.md': 'readme\n' }, unborn = false, edit, groupsOf, planOptions, tamperState,
+} = {}) {
   const c = createCase(t);
   if (!unborn) {
     for (const [file, content] of Object.entries(files)) c.writeFile(file, content);
@@ -52,6 +54,7 @@ async function plannedRun(t, { files = { 'README.md': 'readme\n' }, unborn = fal
     { n: i + 1, units: idsOf(paths), header, body: null, committed: false }));
   state.scanned = {};
   state.scanLines = {};
+  tamperState?.(state);
   fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   return { c, planId, runDir, state };
 }
@@ -126,6 +129,65 @@ test('EXE-13 AC2: a path only a scanIgnore pattern committed by an earlier group
   assert.deepEqual(result.json.hits, [{ path: 'vendor/key.js', line: 1, pattern: 'github-token' }]);
 });
 
+test('EXE-13 (storedScanIgnore fail-closed): a missing stored scanIgnore exempts nothing, even though HEAD\'s own config would cover the path', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t, {
+    files: { 'README.md': 'readme\n', [REPO_CONFIG]: '{ "scanIgnore": ["vendor/**"] }\n' },
+    edit: (c) => c.writeFile('vendor/key.js', tokenLine()),
+    groupsOf: () => [{ paths: ['vendor/key.js'], header: 'feat: add vendored key' }],
+    tamperState: (state) => { delete state.config.values.scanIgnore; },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assertRefusedAndReleased(c, result, { headBefore: headOf(c), runDir });
+  assert.deepEqual(result.json.hits, [{ path: 'vendor/key.js', line: 1, pattern: 'github-token' }]);
+});
+
+test('EXE-13 (storedScanIgnore fail-closed): a stored scanIgnore that is not an array exempts nothing', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t, {
+    files: { 'README.md': 'readme\n', [REPO_CONFIG]: '{ "scanIgnore": ["vendor/**"] }\n' },
+    edit: (c) => c.writeFile('vendor/key.js', tokenLine()),
+    groupsOf: () => [{ paths: ['vendor/key.js'], header: 'feat: add vendored key' }],
+    tamperState: (state) => { state.config.values.scanIgnore = 'vendor/**'; },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assertRefusedAndReleased(c, result, { headBefore: headOf(c), runDir });
+  assert.deepEqual(result.json.hits, [{ path: 'vendor/key.js', line: 1, pattern: 'github-token' }]);
+});
+
+test('EXE-13 (storedScanIgnore fail-closed): a non-string entry in the stored scanIgnore is dropped, exempting nothing on its own', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t, {
+    files: { 'README.md': 'readme\n', [REPO_CONFIG]: '{ "scanIgnore": ["vendor/**"] }\n' },
+    edit: (c) => c.writeFile('vendor/key.js', tokenLine()),
+    groupsOf: () => [{ paths: ['vendor/key.js'], header: 'feat: add vendored key' }],
+    tamperState: (state) => { state.config.values.scanIgnore = [42]; },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assertRefusedAndReleased(c, result, { headBefore: headOf(c), runDir });
+  assert.deepEqual(result.json.hits, [{ path: 'vendor/key.js', line: 1, pattern: 'github-token' }]);
+});
+
+test('EXE-13 (storedScanIgnore fail-closed): an uncompilable pattern next to a valid one drops only itself, exempting no path of its own', async (t) => {
+  const { c, planId, runDir } = await plannedRun(t, {
+    files: { 'README.md': 'readme\n', [REPO_CONFIG]: '{ "scanIgnore": ["vendor/**"] }\n' },
+    edit: (c) => c.writeFile('other/key.js', tokenLine()),
+    groupsOf: () => [{ paths: ['other/key.js'], header: 'feat: add other key' }],
+    // "{a}" is a brace pattern, which compileGlob rejects (C:scanignore-globs); "vendor/**"
+    // compiles fine but does not cover other/key.js, so this stays an exit 3 either way —
+    // the point is that the bad entry does not crash the list or exempt the uncovered path.
+    tamperState: (state) => { state.config.values.scanIgnore = ['{a}', 'vendor/**']; },
+  });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assertRefusedAndReleased(c, result, { headBefore: headOf(c), runDir });
+  assert.deepEqual(result.json.hits, [{ path: 'other/key.js', line: 1, pattern: 'github-token' }]);
+});
+
 test('EXE-13 AC3: a text file hidden by -diff in .gitattributes holding the secret → still exit 3', async (t) => {
   const { c, planId, runDir } = await plannedRun(t, {
     files: { 'README.md': 'readme\n', '.gitattributes': 'hidden.txt -diff\n', 'hidden.txt': 'one\n' },
@@ -174,8 +236,12 @@ test('EXE-13 AC5 (static): commitAll takes { now, osUser } and passes osUser to 
   const backstop = source.match(/scanUnits\(await treeDiffUnits\([^;]*;/g) ?? [];
   assert.equal(backstop.length, 1, 'one backstop scanUnits call');
   assert.match(backstop[0], /\bosUser\b/, 'the backstop passes osUser to scanUnits');
-  assert.doesNotMatch(source, /state\.osUser|osUser:\s*osUser\s*}\s*\)\s*;?\s*\n\s*writeState/,
-    'osUser is never written into the run state');
+  assert.doesNotMatch(source, /state\.osUser/, 'osUser is never assigned onto the run state');
+  const writeStateCalls = source.match(/writeState\([^)]*\)/g) ?? [];
+  assert.ok(writeStateCalls.length > 0, 'at least one writeState call to check');
+  for (const call of writeStateCalls) {
+    assert.doesNotMatch(call, /\bosUser\b/, 'osUser is never passed into a writeState call');
+  }
 });
 
 test('EXE-13 AC5: the backstop scans with the OS user (its path segment hits), and no run-folder file holds the OS user name', async (t) => {

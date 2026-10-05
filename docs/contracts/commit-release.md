@@ -97,9 +97,11 @@ created between groups are both caught:
 - Then: scan the index (backstop; not in `reword`): `git write-tree` first records the
   index's tree ID, then the scan reads the tree-to-tree diff of the expected HEAD (the empty
   tree when unborn) against that tree, so the scanned tree is the recorded one. That diff
-  is cut like the `plan` diff: the same pinned options, raw and patch passes, the same
-  attribute-hidden `--text` pass (an attribute cannot hide a text file from the backstop
-  either) and the same 1 MB scan limit. Paths are exempted with the `scanIgnore` patterns
+  is cut like the `plan` diff: the same pinned options, raw and patch passes and the same
+  1 MB scan limit, but with no `check-attr` call: every non-deleted binary-rendered unit
+  under the limit gets the `--text` content-sniff pass `plan` runs only for a
+  `check-attr`-confirmed hidden file (Q10 as amended by EXE-13), so an attribute cannot
+  hide a text file from the backstop either. Paths are exempted with the `scanIgnore` patterns
   `plan` stored in `state.json`, recompiled on each call, not a fresh read of HEAD, which
   an earlier group's `scanIgnore` change may have moved (Q9, Q10 as amended by CFG-01);
   append trailers ([grammar](message-grammar.md)); run

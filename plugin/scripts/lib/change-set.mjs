@@ -1538,9 +1538,10 @@ export async function writeTree({ toplevel, env, now }) {
  * patch pass as `snapshot`, so the backstop scans the recorded tree as `plan` scanned the
  * snapshot. EXE-13: with the attribute-hidden `--text` pass (CHG-11's `resolveHiddenBinaries`,
  * the blobs read from the tree), fail-closed: every binary-rendered unit is a candidate, not
- * only one the worktree's attributes mark hidden (the recorded tree's own `.gitattributes`
- * may differ from them), so only real content (a NUL in the sniff window, or the 1 MB
- * limit) keeps a unit out of the scan.
+ * only one a `check-attr` call marks hidden, since the backstop has no need for the
+ * `check-attr` round trip (or a race between the diff and a later `check-attr` call) once
+ * every binary-rendered unit already gets the `--text` pass, so only real content (a NUL
+ * in the sniff window, or the 1 MB limit) keeps a unit out of the scan.
  *
  * @param {string | null} fromTree
  * @param {string} toTree
