@@ -14,6 +14,7 @@ const assert = require('node:assert/strict');
 const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 const { FILE_CONTENT, buildFixture } = require('./helpers/fixture-generator.js');
+const { hunkIndexEntries } = require('./helpers/hunk-index-entries.js');
 
 let pathClassifier;
 
@@ -129,7 +130,9 @@ for (const row of ROWS) {
     assert.equal(state.stagedNew.length, sum(row.staged) - excludedCount);
     assert.equal(plan.untracked.candidates.length, state.candidates.length);
     const stored = new Set(['seed.txt', ...state.candidates, ...state.stagedNew.map((e) => e.path)]);
-    const unitPaths = result.json.hunks.hunks.map((unit) => unit.path);
+    // CHG-18 (review H1): some rows' fixtures spill the hunk index past the stdout budget,
+    // so `result.json.hunks.hunks` is undefined; read either shape.
+    const unitPaths = hunkIndexEntries(result.json.hunks).map((unit) => unit.path);
     assert.deepEqual(unitPaths.filter((p) => !stored.has(p)), []);
     assert.equal(unitPaths.length, stored.size);
   });
