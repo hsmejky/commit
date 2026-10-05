@@ -1004,6 +1004,19 @@ test('acquire: a temp-file removal failure after a successful link does not fail
   assert.equal(fs.existsSync(path.join(runDir, tempName)), true, 'the temp file is left for the sweep');
 });
 
+// RUN-21 review Medium-2: `run.finishTakeover()` is "a no-op without a takeover"
+// (docs/spec/modules-m10-m13.md:279); a fresh `acquire` with no `takeOver` must still carry
+// one that returns `null` and never throws, for a caller that calls it unconditionally.
+test('acquire: a fresh acquire with no takeover still has a finishTakeover that is a no-op', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.run.finishTakeover(), null);
+});
+
 // review-RUN-06 finding 1: `acquire`'s lost race (`EEXIST`) must name the holder in the
 // typed result (`planId`, `created`, `touched`), matching M12's interface ("`held` with
 // holder") and the failure shape, not just the rendered message.

@@ -1012,6 +1012,10 @@ function ownRun(runDir, planId, folder, sleep) {
     planId,
     write: (name, data) => writeAtomic(folder, name, data, sleep),
     release: () => releaseOwn(runDir, planId),
+    // M12 spec (docs/spec/modules-m10-m13.md:279): "a no-op without a takeover". A real
+    // takeover's `acquire` (`takeOverLock`) overwrites this with the one that deletes the
+    // old folder and the renamed lock.
+    finishTakeover: () => null,
   };
 }
 
