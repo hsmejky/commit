@@ -277,6 +277,10 @@ test('Seam 1 (AC7): the same tree with --no-user commits in-process, and the com
   assert.equal(checked.json.reply.status, 'committed', detail(checked));
   assert.ok(checked.json.reply.notices.includes(takeoverNotice(STALE_ID)), detail(checked));
   assert.deepEqual(entries(c), [], 'the run ended with its commit');
+  // review-RUN-21 Low-2: this in-process `check --plan` commit takes and drops its own
+  // `call.lock` (RUN-20 item 10), the one case among this file's `assertNoCallLock` callers
+  // that actually exercises it.
+  assertNoCallLock(c);
 });
 
 // RUN-20 item 12, takeover path: step 7's HEAD re-read runs after a takeover too (RUN-06

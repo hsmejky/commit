@@ -133,6 +133,9 @@ stories 55, 56, 57, 60, 228.
       `--no-user` → `status: "failed"`, `text` naming the automatic takeover time
       (`touched` plus 15 minutes) in both modes (RUN-07 covers the error's `planId: null`,
       `created: null` and `touched`)
+- [ ] Once the `Notices:` block exists, assert RUN-21's takeover notice in a `confirm`
+      handback's own `text` too (not just `reply.notices`); closes KD-R102's RPL-05 half
+      (docs/roadmap/known-deficiencies.md)
 
 
 ## RPL-06: Escaping paths and relayed git or hook output

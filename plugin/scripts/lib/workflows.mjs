@@ -672,7 +672,9 @@ async function readHistory(ctx) {
  * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the index
  * fingerprint, the unit table and the `id → hash` map; the later rows arrive with their slices), then takes the run
  * lock (`acquire`, no takeover; RUN-06: a lost race → `held`; skipped when step 3's takeover
- * already holds it, RUN-21), then the HEAD re-read on both paths, then writes `plan.json`. A lock is never taken without `state.json` in place. From
+ * already holds it, RUN-21), then the HEAD re-read on both paths, then writes `plan.json`. A
+ * lock is never taken without `state.json` in place, on the path with no takeover (RUN-21's
+ * takeover-path lock at step 3 precedes `state.json`). From
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
  * CFG-08 adds `attribution` (`{ trailer, source }`, step 1's `ctx.attribution`) to both
  * files, in the contract's order (C:run-folder): ahead of `recentSubjects`, so M16/M17 read

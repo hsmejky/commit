@@ -163,6 +163,9 @@ confirmation is pending is refused.
 - [ ] The `staged` mode's skipped/`scanIgnore` and resumed confirm rows move from pure-unit
       to Seam 1 through this slice's confirm route (KD-R94); `tests/plan-attribution-flag.test.js`'s
       `staged` case is rebuilt at Seam 1 through the same trigger (KD-R95)
+- [ ] Once this slice's `commit --confirmed` reply exists, assert RUN-21's takeover notice
+      in it on a tree needing confirmation after a takeover; closes KD-R102's INT-09 half
+      (docs/roadmap/known-deficiencies.md)
 
 
 ## INT-10: A new file in `split` triggers confirmation
