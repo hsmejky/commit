@@ -519,20 +519,20 @@ builds the first `confirm` and `handedBack` handbacks; INT-09 adds the confirm b
 
 **Blocked by:** RUN-17, RPL-04, INT-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q16, Q17, M15 `afterCheck`/`runEnd`, C:check, architectural decisions (confirmation bound to its answer), stories 86, 97, 208.
 
-- [ ] Seam 1: a new file in a group (interactive) → a `confirm` handback. HEAD is
+- [x] Seam 1: a new file in a group (interactive) → a `confirm` handback. HEAD is
       unchanged, the run is kept, and `awaitingConfirm` is stored.
-- [ ] Seam 1: a `humanOnly` reason with `--no-user` → `handedBack`, and the lock and the
+- [x] Seam 1: a `humanOnly` reason with `--no-user` → `handedBack`, and the lock and the
       folder are gone.
-- [ ] Seam 1: the INT-02 First-slice run (one group of modified tracked files, interactive)
+- [x] Seam 1: the INT-02 First-slice run (one group of modified tracked files, interactive)
       → `check` finds no confirmation needed (`confirm: null`) and commits in the same
       process, with no question (story 86); the INT-02 tests still pass.
-- [ ] Seam 1: `confirm` set, `interactive: false`, not `humanOnly` → `check` commits in the
+- [x] Seam 1: `confirm` set, `interactive: false`, not `humanOnly` → `check` commits in the
       same process as with `confirm: null` (C:check, `interactive: false` row), no question asked.
-- [ ] Seam 1: a worker plan with every unit in `notIncluded` (zero groups) → `check` exits
+- [x] Seam 1: a worker plan with every unit in `notIncluded` (zero groups) → `check` exits
       0 with `status: "nothing"`, the `text` lists each `notIncluded` reason, the lock and
       the folder are gone, and there is no `confirm` handback (story 97).
 
