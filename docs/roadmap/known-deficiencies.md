@@ -374,7 +374,8 @@ Plan text that depends on a design fix; fix the design and the slice together.
   failure with no `confirm` field. Where: `plugin/scripts/lib/commit-executor.mjs`
   `commitAll`; `tests/run-policy-confirm.test.js`. Fix: rebuild the skipped/`scanIgnore` and
   `resumed` `staged` cases as Seam-1 rows now (the `confirm` route), and the no-trigger row
-  once EXE-19 lands; then drop this row.
+  once EXE-19 lands; then drop this row. Slices: INT-09 (confirm-route tests), EXE-19 (the
+  no-trigger row).
 - **KD-R95.** PLN-07's `reword` attribution-flag cases (`tests/plan-attribution-flag.test.js`,
   the three `reword:` tests) and its `staged` case (the `staged stores attribution: true`
   test) call M14 `validatePlan` in-process over a real Seam-1 `plan --reword`/`state.json`,
