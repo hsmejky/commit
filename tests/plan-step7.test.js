@@ -97,9 +97,12 @@ function assertLockHandback(result, { respawn }) {
   const { reply } = result.json;
   assert.equal(reply.status, 'handback');
   assert.equal(reply.handback.kind, 'lock');
+  // The lock's `created` is pinned to '2026-09-26T13:58:02.000Z' and its mtime to a minute
+  // before `placeLock` writes it (TZ=UTC, process-seam.js): exact HH:MM and an idle value in
+  // 60-69 s, loose enough for the time the call itself takes (review-INT-05 finding 3).
   assert.match(
     reply.handback.question,
-    /^A \/commit run started at \d\d:\d\d holds the lock, last active \d+ s ago\. It may still be running \(a subagent committing in parallel\); taking it over resets its index mid-commit\. Take it over\?$/,
+    /^A \/commit run started at 13:58 holds the lock, last active 6\d s ago\. It may still be running \(a subagent committing in parallel\); taking it over resets its index mid-commit\. Take it over\?$/,
   );
   assert.equal(reply.handback.question, reply.text.split('\n')[0]);
   assert.deepEqual(reply.handback.answers, [
@@ -267,6 +270,29 @@ test('plan refused at peek by a fresh garbage lock exits 6 lock with the unreada
   assertHolderFields(result, c, { planId: null, created: null });
   assert.equal(result.json.reply.handback, null);
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), 'not json', 'the foreign lock is left alone');
+  assert.deepEqual(folderNames(c), []);
+});
+
+// review-INT-05 finding 2: a live lock with a readable (minted-form) `planId` but a `created`
+// that does not parse as a date (missing here, garbage in plan-lock-handback.test.js's sibling
+// case) must read as unreadable the same way `heldMessage`'s own text does (`lockHolderClock`,
+// run.mjs), not a `lock` handback with "started at NaN:NaN" — `errorFields` still carries the
+// raw `planId`/`created` the lock held (C:cli-and-exit-codes).
+test('plan refused at peek by a live lock with a planId but no created exits 6 lock with the unreadable-lock text and no handback', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  fs.mkdirSync(runDirOf(c));
+  placeLock(c, JSON.stringify({ planId: OTHER_PLAN_ID }));
+
+  const result = await runCommit(c, ['plan']);
+
+  assertLockRefusal(result, 'lock');
+  assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
+  assertHolderFields(result, c, { planId: OTHER_PLAN_ID, created: null });
+  assert.equal(result.json.reply.status, 'failed');
+  assert.equal(result.json.reply.handback, null);
+  assert.equal(result.json.reply.callerRule, parseBaseCallerRule());
   assert.deepEqual(folderNames(c), []);
 });
 

@@ -67,9 +67,12 @@ for (const flag of ['staged', 'split']) {
     const { reply } = result.json;
     assert.equal(reply.status, 'handback');
     assert.equal(reply.handback.kind, 'lock');
+    // The lock's `created` is pinned to '2026-09-26T13:58:02.000Z' and its mtime to a minute
+    // before `placeLock` writes it (TZ=UTC, process-seam.js): exact HH:MM and an idle value in
+    // 60-69 s, loose enough for the time the call itself takes (review-INT-05 finding 3).
     assert.match(
       reply.handback.question,
-      /^A \/commit run started at \d\d:\d\d holds the lock, last active \d+ s ago\. It may still be running \(a subagent committing in parallel\); taking it over resets its index mid-commit\. Take it over\?$/,
+      /^A \/commit run started at 13:58 holds the lock, last active 6\d s ago\. It may still be running \(a subagent committing in parallel\); taking it over resets its index mid-commit\. Take it over\?$/,
     );
     assert.deepEqual(reply.handback.answers, [
       { label: 'take over', respawn: `takeOver: ${OTHER_PLAN_ID}\nmode: ${flag}` },
@@ -91,5 +94,27 @@ test('plan (no mode flag) refused by a live lock gets a lock handback whose resp
     { label: 'take over', respawn: `takeOver: ${OTHER_PLAN_ID}` },
     { label: 'wait' },
   ]);
+  assert.deepEqual(folderNames(c), []);
+});
+
+// review-INT-05 finding 2: a live lock with a readable `planId` but a `created` that is
+// garbage (plan-step7.test.js's sibling case has it missing instead) reads as unreadable, the
+// same as `heldMessage`'s own text (`lockHolderClock`, run.mjs) — no `lock` handback, no
+// "started at NaN:NaN".
+test('plan refused by a live lock with a planId but a garbage created gets no handback', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  fs.mkdirSync(runDirOf(c));
+  placeLock(c, JSON.stringify({ planId: OTHER_PLAN_ID, created: 'garbage' }));
+
+  const result = await runCommit(c, ['plan']);
+
+  assertLockRefusal(result, 'lock');
+  assert.equal(result.json.error.message, 'the /commit lock is unreadable (corrupt or not written by /commit)');
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed');
+  assert.equal(reply.handback, null);
+  assert.equal(reply.callerRule, parseBaseCallerRule());
   assert.deepEqual(folderNames(c), []);
 });

@@ -787,11 +787,33 @@ function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
 }
 
 /**
+ * The holder's clock parts — local `HH:MM` for `created` and whole seconds idle against
+ * `nowMs` — shared by `heldMessage` (the `held` failure's own text) and INT-05's `lock`
+ * handback (`lockHandbackFailure` in workflows.mjs), so both treat an unreadable holder the
+ * same way: `null` when there is no holder, its `planId` is not in the minted form, or
+ * `created` does not parse as a date (missing, garbage, or any other non-date string).
+ *
+ * @param {{ planId: string | null, created: string | null, touched: number } | null} holder
+ *   `null` when no lock could be read.
+ * @param {number} nowMs
+ * @returns {{ hhmm: string, idleSeconds: number } | null}
+ */
+export function lockHolderClock(holder, nowMs) {
+  if (holder === null || holder.planId === null) return null;
+  const started = holder.created === null ? Number.NaN : Date.parse(holder.created);
+  if (Number.isNaN(started)) return null;
+  const date = new Date(started);
+  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const idleSeconds = Math.max(0, Math.round((nowMs - holder.touched) / 1000));
+  return { hhmm, idleSeconds };
+}
+
+/**
  * The `held` refusal text (C:cli-and-exit-codes, failure shape): the holder's start time
  * (`created`, local `HH:MM`) and how long ago it was last active (`touched`, the lock's
- * mtime, against the injected clock). An unparseable lock, or one whose `planId` is not in
- * the minted form, gets the unreadable-lock text instead; a lock gone again by the time it is
- * read names no holder.
+ * mtime, against the injected clock), via `lockHolderClock`. An unparseable lock, or one
+ * whose `planId` is not in the minted form, gets the unreadable-lock text instead; a lock
+ * gone again by the time it is read names no holder.
  *
  * @param {{ planId: string | null, created: string | null, touched: number } | null} holder
  *   `null` when no lock could be read.
@@ -800,14 +822,9 @@ function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
  */
 function heldMessage(holder, nowMs) {
   if (holder === null) return 'another /commit run is in progress';
-  const started = holder.created === null ? Number.NaN : Date.parse(holder.created);
-  if (holder.planId === null || Number.isNaN(started)) {
-    return 'the /commit lock is unreadable (corrupt or not written by /commit)';
-  }
-  const date = new Date(started);
-  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-  const idle = Math.max(0, Math.round((nowMs - holder.touched) / 1000));
-  return `another /commit run is in progress (started ${hhmm}, last active ${idle} s ago)`;
+  const clock = lockHolderClock(holder, nowMs);
+  if (clock === null) return 'the /commit lock is unreadable (corrupt or not written by /commit)';
+  return `another /commit run is in progress (started ${clock.hhmm}, last active ${clock.idleSeconds} s ago)`;
 }
 
 // `acquire`'s lost race (RUN-06): reads the lock now in place, without following a link, to

@@ -317,6 +317,18 @@ Plan text that depends on a design fix; fix the design and the slice together.
   spawn options. Fix: none needed beyond GIT-08 landing as scheduled; this row documents the
   gap until then. Slice: GIT-08 (closes this row; also blocked on PRE-13, RUN-04, RUN-20,
   INT-02, so this window may be long).
+- **KD-R93.** C:reply-and-handback's `callerRule` entry says the handback rule is "added
+  when `handback` is set" — every kind, not only `lock`. `reply` (`plugin/scripts/lib/reply.mjs`)
+  only appends `HANDBACK_RULE` for a `lock` handback; `modeChoice` (RUN-13) and `continue`
+  (INT-02) replies still carry the base rule alone, with no handback rule at all, although
+  both already answer a handback with `AskUserQuestion` or a `run`/`respawn` per
+  C:reply-and-handback's own table. A `lintFailed` reply (RUN-16) has the same gap. The code
+  comment on `HANDBACK_RULE` defers the other kinds to "later slices" (`modeChoice` INT-13's,
+  `lintFailed` and `continue` RPL's) without a KD row (review-INT-05 finding 4). Where:
+  `plugin/scripts/lib/reply.mjs` `reply()`, the `callerRule` ternary. Fix: once INT-13/RPL
+  land, apply `HANDBACK_RULE` whenever `handback !== null` and drop the `lock`-only ternary
+  (or confirm a kind-specific rule text is wanted instead and amend the contract). Slices:
+  INT-13, RPL (closes this row once every handback kind carries the rule).
 
 ## Bookkeeping
 

@@ -97,13 +97,11 @@ function renderCommits(commits) {
 }
 
 // INT-05 (Q22 "A lock refusal in an interactive run carries a lock handback"): the takeover
-// question, built from the holder's `created` (local HH:MM, like `heldMessage` in run.mjs)
-// and how long ago its lock was last touched, against `nowMs`.
-function lockQuestion(holder, nowMs) {
-  const date = new Date(Date.parse(holder.created));
-  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-  const idle = Math.max(0, Math.round((nowMs - holder.touched) / 1000));
-  return `A /commit run started at ${hhmm} holds the lock, last active ${idle} s ago. It may `
+// question, from the holder's clock parts (local `hhmm`, `idleSeconds`) computed by the
+// caller's `lockHolderClock` (run.mjs) — like `heldMessage` there — since this module stays
+// pure and may not read the clock itself (review-INT-05 finding 1).
+function lockQuestion(hhmm, idleSeconds) {
+  return `A /commit run started at ${hhmm} holds the lock, last active ${idleSeconds} s ago. It may `
     + 'still be running (a subagent committing in parallel); taking it over resets its index '
     + 'mid-commit. Take it over?';
 }
@@ -177,7 +175,7 @@ export function reply(facts) {
     firstLines = renderCommits(commits);
     handback = facts.handback;
   } else if (facts.status === 'handback' && facts.kind === 'lock') {
-    firstLines = [lockQuestion(facts.holder, facts.nowMs)];
+    firstLines = [lockQuestion(facts.hhmm, facts.idleSeconds)];
     handback = {
       kind: 'lock',
       question: firstLines[0],
