@@ -167,20 +167,13 @@ fixed, delete it here; IDs are never reused.
   testing-modules.md:9), the same gap KD-R77 and KD-R84 name for other modules. KD-R88 used
   to record this file's in-process M10 calls (`snapshot`, `inventory`), but CHG-20 dropped
   it once the capped-file split moved to Seam 1, and no row has covered the gap since; this
-  case adds `stage` to it. Seam 1 cannot reach a malformed `.gitmodules` through `stage`
-  until EXE-10 lands (`commitAll` turns `stage-failed` into `notBuilt`, KD-R97). Fix: either
-  add an "in-process adapter" seam to testing-seams.md (a user decision, as KD-R77's), or
-  rebuild this one case at Seam 1 once EXE-10 lands. Slice: none yet (needs the user's seam
-  decision; EXE-10 for the rebuild).
+  case adds `stage` to it. Since EXE-10, `commitAll` maps `stage-failed` to exit 4, so Seam 1
+  can now reach a malformed `.gitmodules` through `stage`. Fix: either add an "in-process
+  adapter" seam to testing-seams.md (a user decision, as KD-R77's), or rebuild this one case
+  at Seam 1. Slice: none yet (needs the user's seam decision).
 
 ## Coverage
 
-- **KD-R30.** EXE-10 may leave `mismatch` (phase (c), staged differs from the stored group)
-  with no Seam 1 case. This no longer risks INT-31's manifest check itself: that check is per
-  (row, producer) pair, and the `unmatched, mismatch` row's producers (`M10 via plan --hunks`
-  and `M16`) already have real cases through `unmatched`, so the row passes regardless.
-  `mismatch` stays an untested domain code until EXE-10 gives it its own case (or the gap is
-  cited explicitly, naming `mismatch` rather than the row's producers).
 - **KD-R31.** GRD-05 tests deny precedence only against the bare row. Add pairs such as
   `--amend --squash=HEAD`, `--squash -n`, `-n --fixup=amend:x` (GRD-11's pairs, `git -c k=v
   commit --amend` and `git --unknown commit --amend`, are in `tests/guard-global-options.test.js`).
@@ -204,31 +197,27 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R97.** Three Seam-1 criteria for CHG-21's staging edge cases, moved into EXE-10,
-  EXE-11 and EXE-19 themselves (each is now the slice that unblocks its own case), cannot
-  run end to end until all three land: (1) EXE-11's force-added gitignored file in group 2
-  is pre-staged by `git add -f`, and `commitAll` throws `notBuilt('the unstaged report for
-  pre-staged paths', 'EXE-11')` for any pre-staged path in `split` before the first group;
-  (2) EXE-19's staged 60-file new directory under `--staged` hits `notBuilt('commit --all in
-  staged mode', 'EXE-19')` (in `split` it is pre-staged, EXE-11); (3) EXE-10's
-  `core.safecrlf=true` rejection and the missing required filter make `stage` return
-  `stage-failed`, which `commitAll` turns into `notBuilt('the stage-failed failure',
-  'EXE-10')` instead of unstaging the index and releasing the run. `stage`'s `-f` call for
-  ignored paths exists (CHG-14, CHG-20) but no Seam 1 test reaches it; its `stage-failed`
-  result is reached only in-process, by review-CHG-21 L3's malformed-`.gitmodules` case
-  (KD-R101), not by these two triggers.
+- **KD-R97.** Two Seam-1 criteria for CHG-21's staging edge cases, moved into EXE-11 and
+  EXE-19 themselves (each is now the slice that unblocks its own case), cannot run end to end
+  until both land: (1) EXE-11's force-added gitignored file in group 2 is pre-staged by `git
+  add -f`, and `commitAll` throws `notBuilt('the unstaged report for pre-staged paths',
+  'EXE-11')` for any pre-staged path in `split` before the first group; (2) EXE-19's staged
+  60-file new directory under `--staged` hits `notBuilt('commit --all in staged mode',
+  'EXE-19')` (in `split` it is pre-staged, EXE-11). EXE-10's `core.safecrlf=true` and
+  missing-required-filter cases are in `tests/commit-all-stage-failed.test.js`. `stage`'s `-f`
+  call for ignored paths exists (CHG-14, CHG-20) but no Seam 1 test reaches it.
   Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`,
-  `tests/stage-whole-file.test.js`. Fix: once EXE-10, EXE-11 and EXE-19 land, each adds its
-  own case and drops its number from this row; once all three are gone, drop this row.
-  Slices: EXE-10, EXE-11, EXE-19.
+  `tests/stage-whole-file.test.js`. Fix: once EXE-11 and EXE-19 land, each adds its own case
+  and drops its number from this row; once both are gone, drop this row.
+  Slices: EXE-11, EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists eight pairs as gaps because the code producing them is not built: `unconfirmed` via
+  lists seven pairs as gaps because the code producing them is not built: `unconfirmed` via
   M16 (EXE-22), `env` via the entry point for an install path with a shell-special character
   (RPL-08), `killed-leftover` (RUN-24), `index-locked` via M18's takeover repair (RUN-23,
-  RUN-25), `backstop-hit` (EXE-13), `git-failed` from a failing `git commit` (EXE-12),
-  `stage-failed` (EXE-10) and `timed-out` via M16's `git commit` deadline (EXE-17). Fix: each
+  RUN-25), `backstop-hit` (EXE-13), `git-failed` from a failing `git commit` (EXE-12)
+  and `timed-out` via M16's `git commit` deadline (EXE-17). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
-  EXE-10, EXE-12, EXE-13, EXE-17, EXE-22, RPL-08, RUN-23, RUN-24, RUN-25.
+  EXE-12, EXE-13, EXE-17, EXE-22, RPL-08, RUN-23, RUN-24, RUN-25.
 - **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws
@@ -461,6 +450,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R47;
    KD-R49, KD-R50, KD-R45.
-7. Edges: KD-R7, KD-R30, KD-R10.
+7. Edges: KD-R7, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R26.
 9. The rest of the text and bookkeeping items.

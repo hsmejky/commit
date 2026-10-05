@@ -5,8 +5,9 @@
 // whose submodule `.gitmodules` sets to `ignore = all` in a separate `git add -A -f` (Q11, Q18,
 // C:commit-release (c)). Seam 1: `plan --split`, the groups written into `state.json` as
 // `check` stores them, then `commit --plan <id> --all`; each commit's tree is read back with
-// git. The force-added ignored file, the staged 60-file directory under `--staged` and the
-// `stage-failed` cases wait for EXE-10, EXE-11 and EXE-19 (KD-R97).
+// git. The force-added ignored file and the staged 60-file directory under `--staged` wait
+// for EXE-11 and EXE-19 (KD-R97); the `stage-failed` cases are EXE-10's
+// (tests/commit-all-stage-failed.test.js).
 
 const fs = require('node:fs');
 const path = require('node:path');
