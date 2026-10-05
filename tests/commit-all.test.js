@@ -996,6 +996,16 @@ function runCommitAtElapsed(c, planId, elapsedMs) {
   });
 }
 
+// EXE-22: the same as `runCommitAtElapsed`, but with `--confirmed` on the call's own `run`
+// (AC2/AC3: the first group of a call with `--confirmed` clears `awaitingConfirm`, so the
+// budget-stop `continue` it hands back needs none).
+function runConfirmedCommitAtElapsed(c, planId, elapsedMs) {
+  return runCommit(c, ['commit', '--plan', planId, '--all', '--confirmed'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: scheduleAfterNextCommit(c, elapsedMs) },
+  });
+}
+
 // A schedule whose single step holds from a marker file written before launch, so the clock
 // already reads `elapsedMs` from this call's very first group onward (FND-05). Needed for the
 // AC5 first-group exemption itself: `scheduleAfterNextCommit` only steps the clock after this
@@ -1126,4 +1136,41 @@ test('the first group of the call starts even at 539 s elapsed, but group 2 then
   const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
   assert.equal(shas.length, 1, 'only group 1 was committed');
   assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
+});
+
+// EXE-22 AC2/AC3 (docs/roadmap/10-commit-executor.md): a run left in `confirm`
+// (`state.awaitingConfirm`) with `--confirmed` on the first group's call commits normally
+// and clears `awaitingConfirm` right away; a budget stop after that confirmed group 1 hands
+// back a `continue` whose `run` carries no `--confirmed` (C:commit-release), and that bare
+// `commit --all` still succeeds because `awaitingConfirm` is already gone.
+test('--confirmed on a run left in confirm commits group 1 and clears awaitingConfirm; after a budget stop the continue run (no --confirmed) commits the rest', async (t) => {
+  const { c, planId, runDir, seed } = await threeGroupRun(t, {
+    edit: (state) => { state.awaitingConfirm = true; },
+  });
+
+  const stopped = await runConfirmedCommitAtElapsed(c, planId, 61_000);
+
+  assert.equal(stopped.exitCode, 0, detail(stopped));
+  assert.equal(stopped.json.refusal, undefined, detail(stopped));
+  assert.deepEqual(stopped.json.remaining, [2, 3], detail(stopped));
+  const shas1 = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas1.length, 1, 'only group 1 was committed');
+  assert.deepEqual(stopped.json.commits, [{ n: 1, sha: shas1[0], header: THREE_HEADERS[0] }]);
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(state.awaitingConfirm, undefined, 'awaitingConfirm was cleared on the first group');
+  // AC6 continue handback: same as EXE-16's, no --confirmed appended to its run.
+  assert.equal(stopped.json.handback.answers[0].run, scriptCall.build({
+    scriptPath: COMMIT_ENTRY, subcommand: 'commit', args: ['--plan', planId, '--all'],
+  }), 'the continue run carries no --confirmed');
+
+  // The `continue` call is a bare `commit --all`, with no --confirmed, and still succeeds.
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.refusal, undefined, detail(result));
+  assert.deepEqual(result.json.remaining, []);
+  const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
+  assert.equal(shas.length, 3, 'groups 2 and 3 committed on top of group 1');
+  assert.equal(fs.existsSync(runDir), false, 'released after the last group');
 });
