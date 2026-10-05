@@ -561,14 +561,14 @@ a later `continue` needs no flag.
 
 **Blocked by:** EXE-16, RUN-18.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:commit-release phase (a), C:check, M16, story 208.
 
-- [ ] Seam 1: a run left in `confirm` → `commit --plan X --all` exits 1 `unconfirmed`,
+- [x] Seam 1: a run left in `confirm` → `commit --plan X --all` exits 1 `unconfirmed`,
       nothing committed, the run kept.
-- [ ] Seam 1: `--confirmed` → commits; the state no longer has `awaitingConfirm`.
-- [ ] Seam 1: a budget stop after a confirmed group 1 → the `continue` `run` has no
+- [x] Seam 1: `--confirmed` → commits; the state no longer has `awaitingConfirm`.
+- [x] Seam 1: a budget stop after a confirmed group 1 → the `continue` `run` has no
       `--confirmed` and succeeds.
 
 
