@@ -116,18 +116,18 @@ array and no `reply`, keeps the run, and a corrected worker plan passes on the n
 
 **Blocked by:** INT-02, MSG-05, PLN-04, RUN-16, EXE-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M18 `check`, C:check, C:cli-and-exit-codes (`lint`), Q18, stories 122, 127.
 
-- [ ] Seam 1: a header with an unknown type → exit 2 `lint`, `errors` names the group, no
+- [x] Seam 1: a header with an unknown type → exit 2 `lint`, `errors` names the group, no
       `reply` (C:check's lint example, "first failure, no reply", EXE-01 item 4), lock and
       folder kept
-- [ ] An unplaced unit → an error naming its ID and path; the old path of a rename → the
+- [x] An unplaced unit → an error naming its ID and path; the old path of a rename → the
       "use the new path" error
-- [ ] Lint runs over every group before the first commit: a plan whose second group fails
+- [x] Lint runs over every group before the first commit: a plan whose second group fails
       commits nothing (story 122)
-- [ ] A corrected plan then commits through the same run
+- [x] A corrected plan then commits through the same run
 
 
 ## INT-09: Several groups need confirmation; `yes` commits with `--confirmed`
