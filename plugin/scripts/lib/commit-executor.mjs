@@ -9,8 +9,10 @@
 // returns a `taken-over`/`busy` refusal from it with the earlier groups kept.
 // EXE-05's `no-groups` refusal (no stored groups, or every one committed) is checked at the
 // top of `commitAll`, before the mode dispatch: the lock (M12 `open`) already ran once in
-// the caller before `commitAll` is ever invoked, and EXE-22's `unconfirmed` belongs between
-// the two, per C:commit-release phase (a) order (phase (a) is mode-independent).
+// the caller before `commitAll` is ever invoked. EXE-22 adds `unconfirmed` between the two,
+// per C:commit-release phase (a) order (phase (a) is mode-independent): first group of the
+// call only, when the state has `awaitingConfirm` and the caller's `confirmed` is not true;
+// `confirmed` on the first group clears `awaitingConfirm` right away.
 // EXE-06 adds `head-moved`: M3 `head()` against the expected HEAD before each group (right
 // after `touch()`, same phase (a) order), and, after each `git commit`, M3 `firstParent` of
 // the new HEAD against the SHA expected before that commit. A match advances the expected
@@ -83,6 +85,11 @@ function notBuilt(what, slice) {
 // `already-committed`).
 const NO_GROUPS_TEXT = 'no groups to commit: none are stored, or every stored group is already '
   + 'committed';
+
+// EXE-22: C:cli-and-exit-codes records no text for `unconfirmed` either, so tests assert the
+// domain code's kind and that the text names the state (a pending confirmation).
+const UNCONFIRMED_TEXT = 'a confirmation is pending: answer it, or pass --confirmed to commit '
+  + 'without answering';
 
 /**
  * The `index-changed` refusal text, shared by M18 `plan` step 7 (CHG-04) and this module's
@@ -254,15 +261,16 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *
  * @param {{ toplevel: string, planId: string }} run the run M12 `open` returned.
  * @param {{ now: () => number, osUser: string | null, env: object, deadline: number,
- *   scriptPath: string }} options the injected clock, the OS user for the backstop's M8
- *   `scanUnits` (never stored), the environment, this call's M15 `deadline()` (EXE-16's
- *   budget stop), and the injected `scriptPath` (`process.argv[1]`) a budget stop's
- *   `continue` handback builds its `run` from.
+ *   scriptPath: string, confirmed?: boolean }} options the injected clock, the OS user for
+ *   the backstop's M8 `scanUnits` (never stored), the environment, this call's M15
+ *   `deadline()` (EXE-16's budget stop), the injected `scriptPath` (`process.argv[1]`) a
+ *   budget stop's `continue` handback builds its `run` from, and EXE-22's `confirmed`
+ *   (`--confirmed`, `true` only when the flag was passed).
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: string | null,
  *   unstaged: Array<object> | null, notices: string[], handback?: object,
- *   refusal?: { code: 'no-groups' | 'taken-over' | 'busy' | 'head-moved' | 'index-changed'
- *   | 'index-locked' | 'unmatched' | 'git-failed', message: string } }>} C:commit-release's output fields; `handback` is EXE-16's budget-stop `continue`
+ *   refusal?: { code: 'no-groups' | 'unconfirmed' | 'taken-over' | 'busy' | 'head-moved'
+ *   | 'index-changed' | 'index-locked' | 'unmatched' | 'git-failed', message: string } }>} C:commit-release's output fields; `handback` is EXE-16's budget-stop `continue`
  *   handback (present only on that outcome, interim, C:reply-and-handback); `no-groups` (no
  *   stored groups, or every one committed) refuses before any group, with `failed: null` and
  *   `remaining: []`. On a phase (a) refusal before a later group instead, `refusal` with
@@ -282,17 +290,35 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *   (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
-export async function commitAll(run, { now, osUser, env, deadline, scriptPath }) {
+export async function commitAll(run, { now, osUser, env, deadline, scriptPath, confirmed }) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
   const state = readState(run);
   // (a) Phase (a) refusals, in C:commit-release order. The lock (M12 `open`, with its
   // `call.lock`) already ran once in the caller before this function is ever invoked, and
-  // `touch()` refreshes it again before each group below. EXE-22's `unconfirmed` belongs
-  // here, ahead of `no-groups` — leave it this way round when it lands. Phase (a) is
-  // mode-independent (C:commit-release, M16), so this check runs before the mode dispatch
-  // below: `plan --staged`/`--reword` then `commit --all` without `check` has no stored
-  // groups either, and must refuse `no-groups`, not fall into the not-built-yet throw.
+  // `touch()` refreshes it again before each group below.
+  // EXE-22: `unconfirmed`, ahead of `no-groups`, first group of the call only — this check
+  // runs once, here, not inside the per-group loop below, same as `no-groups`. Only a
+  // `check` that returned a `confirm` handback ever sets `awaitingConfirm` (C:check), so a
+  // plain `commit --all` while one is pending is refused until the `yes` answer's `run`
+  // carries `--confirmed`. `--confirmed` on this call's first group clears `awaitingConfirm`
+  // right away, so a later budget-stop `continue` (EXE-16, no `--confirmed` on its own `run`)
+  // still passes.
+  if (state.awaitingConfirm) {
+    if (!confirmed) {
+      return {
+        commits: [], failed: null, remaining: [], error: null, gitOutput: null, unstaged: null,
+        notices: [],
+        refusal: { code: 'unconfirmed', message: UNCONFIRMED_TEXT },
+      };
+    }
+    delete state.awaitingConfirm;
+    writeState(run, state);
+  }
+  // Phase (a) is mode-independent (C:commit-release, M16), so this check runs before the
+  // mode dispatch below: `plan --staged`/`--reword` then `commit --all` without `check` has
+  // no stored groups either, and must refuse `no-groups`, not fall into the not-built-yet
+  // throw.
   if (!Array.isArray(state.groups) || state.groups.every((group) => group.committed)) {
     return {
       commits: [], failed: null, remaining: [], error: null, gitOutput: null, unstaged: null,

@@ -165,6 +165,37 @@ test('commit --plan X --all with a stored group already committed → no-groups,
   assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
 });
 
+// EXE-22 AC1 (docs/roadmap/10-commit-executor.md): a run left in `confirm` (C:check stores
+// `awaitingConfirm` on the state when it hands a `confirm` question back without committing)
+// refuses `commit --plan X --all` with no `--confirmed` — `unconfirmed`, checked right after
+// the lock and before `no-groups` (C:commit-release phase (a)).
+test('commit --plan X --all on a run left in confirm, no --confirmed → unconfirmed, nothing committed, run kept', async (t) => {
+  const c = createRepo(t);
+  c.writeFile('README.md', 'hello\nmore\n');
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, `stdout ${planned.stdout}\nstderr ${planned.stderr}`);
+  const { planId, runDir: folder } = planned.json;
+  const runDir = runDirOf(c);
+  const statePath = path.join(folder, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = [{
+    n: 1, units: state.units.map((unit) => unit.id), header: 'feat: x', body: null, committed: false,
+  }];
+  state.awaitingConfirm = true;
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  const sha = c.git(['rev-parse', 'HEAD']).trim();
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  const detail = `stdout ${result.stdout}\nstderr ${result.stderr}`;
+  assert.equal(result.exitCode, 1, detail);
+  assert.equal(result.json.error.kind, 'usage', detail);
+  assert.match(result.json.error.message, /confirm/, detail);
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), sha, 'no new commit was made');
+  assert.equal(fs.existsSync(path.join(runDir, 'lock')), true, "the run's own lock is kept");
+  assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
+});
+
 // review-EXE-05 Low-3: phase (a) is mode-independent (C:commit-release, M16), so `no-groups`
 // must fire even for a mode `commitAll` does not build yet (EXE-19, EXE-20) — a `plan
 // --reword` run has no stored groups either, and `commit --all` on it must refuse

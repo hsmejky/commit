@@ -1019,9 +1019,11 @@ async function openRun(ctx) {
 // finds nothing left). EXE-05's phase (a) `no-groups` refusal (no stored groups, or
 // every stored group already committed) is `commitAll`'s own, after the lock check
 // (M12 `open`, step 3) and before any group work. A
-// `no-groups`/`taken-over`/`busy` refusal keeps the run instead (no `releaseOpen`; only this
-// call's `call.lock` goes, via the `finally` in `commit()` below — `ctx.opened` is already
-// true by the time this step runs), matching `usage`/`lock` not ending the run; `head-moved`,
+// `no-groups`/`unconfirmed`/`taken-over`/`busy` refusal keeps the run instead (no
+// `releaseOpen`; only this call's `call.lock` goes, via the `finally` in `commit()` below —
+// `ctx.opened` is already true by the time this step runs), matching `usage`/`lock` not
+// ending the run (EXE-22's `unconfirmed` is `commitAll`'s own first-group-only check, just
+// ahead of `no-groups`, C:commit-release); `head-moved`,
 // `index-changed` (`diff-changed`), `index-locked` (`index-lock`), and EXE-09's `unmatched`
 // (`diff-changed`) and `git-failed` all end it the same way (C:cli-and-exit-codes).
 // INT-02: the release's own notice (a cleanup error after the commits, C:run-folder) joins
@@ -1031,6 +1033,12 @@ async function commitGroups(ctx) {
   const { env, now, osUser } = ctx.injected;
   const outcome = await commitAll(run, {
     now, osUser, env, deadline: ctx.deadline, scriptPath: ctx.injected.scriptPath,
+    // EXE-22: `check`'s own `SUBCOMMAND_OPTIONS` declares no `confirmed` flag (M1), so
+    // `ctx.values.confirmed` is always `undefined` on `commitCheckedGroups`'s own call here
+    // — harmless, since that path never runs with `awaitingConfirm` still set (`check`
+    // clears it in step 5 before ever reaching `commit`, and the `confirm` route returns
+    // before this function is called at all).
+    confirmed: ctx.values.confirmed === true,
   });
   // `remaining.length === 0` is also required for the no-refusal case (not just
   // `!outcome.refusal`): EXE-16's budget stop ends `commitAll` with no `refusal` but a
