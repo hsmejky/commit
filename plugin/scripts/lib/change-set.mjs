@@ -1099,7 +1099,7 @@ function existsInWorktree(toplevel, path) {
  * @param {Map<string, { filtered: boolean, generated: boolean }>} [attrs] the `check-attr`
  *   results (CHG-10), keyed by path: a `filtered` path's section opens with
  *   `entryKind: "filtered"` and every unit carries `generated`.
- * @param {{ keep?: Set<string> | null, sizeOf?: ((unit: object) => number | undefined) | null, wholeFiles?: boolean }} [options]
+ * @param {{ keep?: Set<string> | null, sizeOf?: ((unit: object) => number | undefined) | null, wholeFiles?: boolean, headers?: boolean }} [options]
  *   `keep` (CHG-11's `--text` pass): only
  *   these paths make units; every other section is still paired with its record, but its
  *   lines are discarded as they arrive, like a non-UTF-8 one's, and a rename from a non-UTF-8
@@ -1113,13 +1113,16 @@ function existsInWorktree(toplevel, path) {
  *   default): no decision (a `--text` pass, crafted bytes).
  *   `wholeFiles` (KD-R87, a `--text` pass): every kept file with a hunk streams the same way
  *   from its first hunk, as one whole-file unit with no body and no decision.
+ *   `headers` (CHG-20, `stage`'s patch): each hunk unit of a content-only `M` also carries
+ *   `header`, its section's header lines (`diff --git` up to the first `@@`) as git wrote
+ *   them, so a patch built from them quotes every path exactly as git does.
  * @returns {{ rediff: string[], push: (chunk: Buffer) => void, end: () => object[] }}
  *   `push` throws on the first pairing error and is not called again; `end` flushes the
  *   last line, checks the section count and returns the units in `snapshot`'s shape and
  *   order. `rediff`: the new paths of the renames whose old path is not UTF-8, in diff
  *   order (complete once `end` returns), which made no unit here.
  */
-export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null, wholeFiles = false } = {}) {
+export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null, wholeFiles = false, headers = false } = {}) {
   const records = [];
   const units = [];
   const rediff = [];
@@ -1199,6 +1202,7 @@ export function createDiffReader(attrs = new Map(), { keep = null, sizeOf = null
       }
       section = openSection(record, attrs);
       if (keep !== null && !keep.has(section.notUtf8 === true ? section.rediff : section.path)) section = NOT_UTF8_SECTION;
+      if (headers && section.notUtf8 !== true) section.header = [Buffer.from(line)];
       if (section.notUtf8 === true && section.rediff !== null) rediff.push(section.rediff);
       if (record.status === 'T') typeChange = { header: Buffer.from(line), path: escapeNonUtf8(record.pathBytes) };
       return;
@@ -1305,8 +1309,8 @@ export function matchIds(idMap, units, { exact = false } = {}) {
 // path; the re-diff keeps only the rediff paths. `sizeOf`: the reader's summary-only sizes
 // (`bodyRuleSizes` over the same `args`), null for none; the re-diff reuses them (its `A`
 // unit's new side is the rename's).
-async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null, sizeOf = null, wholeFiles = false } = {}) {
-  const reader = createDiffReader(attrs, { keep, sizeOf, wholeFiles });
+async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allowRediff = true, keep = null, sizeOf = null, wholeFiles = false, headers = false } = {}) {
+  const reader = createDiffReader(attrs, { keep, sizeOf, wholeFiles, headers });
   const result = await run(
     'git',
     [...PINNED_CONFIG, 'diff', ...PINNED_DIFF_OPTIONS, '-z', '--raw', '-p', ...args],
@@ -1316,7 +1320,7 @@ async function diffUnits(args, { toplevel, env, now }, attrs = new Map(), { allo
   const units = reader.end();
   if (!allowRediff || reader.rediff.length === 0) return units;
   const rediff = new Set(reader.rediff);
-  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff, sizeOf, wholeFiles }))
+  const again = (await diffUnits([...args, '--no-renames'], { toplevel, env, now }, attrs, { allowRediff: false, keep: rediff, sizeOf, wholeFiles, headers }))
     .filter((unit) => rediff.has(unit.path));
   return [...units, ...again].sort((a, b) => byteOrder(a.path, b.path));
 }
@@ -1328,26 +1332,51 @@ function sameHashes(units, hashes) {
 }
 
 /**
- * M10 `stage` on the real index, the thin whole-file form (EXE-02; CHG-19 adds the patch
- * apply for hunk subsets): `git reset -q -- .` (the pathspec form, C:commit-release (c)),
- * then `git add -A` over every path of the group's units (both paths of a rename), on stdin
- * NUL-separated, never on argv; ignored paths in a separate `git add -A -f`. Then verifies
- * that the index diff against HEAD holds exactly the group's hashes (one `check-attr` call
- * over the group's paths first, so a filtered file hashes as its stored unit, CHG-10).
+ * M10 `stage` on the real index (EXE-02, CHG-20): `git reset -q -- .` (the pathspec form,
+ * C:commit-release (c)), then the group's hunk units through one built patch and its other
+ * units as whole files. A hunk unit (a content-only `M` of kind `text` that is not
+ * summary-only; a capped one keeps its body, CHG-17) is staged from the **current** diff of
+ * the reset index against the working tree: the patch holds, per file in path order, git's
+ * own header lines of that diff verbatim (`diff --git`, `index`, `---`, `+++`; a path git
+ * quotes is never formatted here) followed by the group's hunks as raw bytes at their
+ * current ranges, applied with `git apply --cached --whitespace=nowarn` on stdin, so an
+ * `apply.whitespace=error|fix` config neither rejects nor changes a planned hunk (Q11, Q18).
+ * A hunk whose hash that diff no longer holds is `mismatch`. Every other unit is staged with
+ * `git add -A` over its paths (both paths of a rename), on stdin NUL-separated, never on argv;
+ * ignored paths in a separate `git add -A -f`. Then verifies that the index diff against HEAD
+ * holds exactly the group's hashes (one `check-attr` call over the group's paths first, so a
+ * filtered file hashes as its stored unit, CHG-10).
  *
- * @param {{ units: Array<{ path: string, oldPath: string | null, hash: string }>,
- *   ignoredPaths?: string[], toplevel: string, env: object, now?: () => number }} options
- *   `units`: the group's stored units; `ignoredPaths`: those of their paths `plan` stored
- *   with `ignored: true`.
+ * @param {{ units: Array<{ path: string, oldPath: string | null, hash: string, status?: string,
+ *   kind?: string, summaryOnly?: string }>, ignoredPaths?: string[], toplevel: string,
+ *   env: object, now?: () => number }} options
+ *   `units`: the group's own units, as phase (b) matched them in the current snapshot
+ *   (`status`, `kind` and `summaryOnly` decide hunk or whole file); `ignoredPaths`: those of
+ *   their paths `plan` stored with `ignored: true`.
  * @returns {Promise<{ ok: true } | { ok: false, code: 'mismatch' }
  *   | { ok: false, code: 'stage-failed', gitOutput: string }>}
- * @throws {Error} when the reset or the verify's diff fails.
+ * @throws {Error} when the reset, the current diff or the verify's diff fails.
  */
 export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   const reset = await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now });
   if (reset.code !== 0) throw new Error(`git reset failed (${reset.code}): ${reset.stderr}`);
+  const hunkLevel = (unit) => unit.status === 'M' && unit.kind === 'text' && unit.summaryOnly === undefined;
+  const hunks = units.filter(hunkLevel);
+  if (hunks.length > 0) {
+    const patch = await hunkPatch(hunks, { toplevel, env, now });
+    if (patch === null) return { ok: false, code: 'mismatch' };
+    const applied = await run(
+      'git',
+      ['apply', '--cached', '--whitespace=nowarn', '-'],
+      { cwd: toplevel, env, now, input: patch },
+    );
+    if (applied.code !== 0) {
+      return { ok: false, code: 'stage-failed', gitOutput: `${applied.stdout.toString('utf8')}${applied.stderr}` };
+    }
+  }
   const ignored = new Set(ignoredPaths);
-  const paths = [...new Set(units.flatMap((unit) => (unit.oldPath === null ? [unit.path] : [unit.oldPath, unit.path])))];
+  const paths = [...new Set(units.filter((unit) => !hunkLevel(unit))
+    .flatMap((unit) => (unit.oldPath === null ? [unit.path] : [unit.oldPath, unit.path])))];
   for (const [list, flags] of [[paths.filter((p) => !ignored.has(p)), []], [paths.filter((p) => ignored.has(p)), ['-f']]]) {
     if (list.length === 0) continue;
     const added = await run(
@@ -1369,6 +1398,24 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   const sizeOf = await bodyRuleSizes(['--cached'], { toplevel, env, now }, attrs, true);
   const staged = withBodyCap(await diffUnits(['--cached'], { toplevel, env, now }, attrs, { sizeOf }));
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
+}
+
+// CHG-20: the patch for `stage`'s hunk units, or null when the current diff of the (reset)
+// real index against the working tree no longer holds one of their hashes. The diff is the
+// pinned one, its reader keeping only the hunk units' paths and their header lines; the
+// patch is each file's header followed by the group's hunks of that file, in diff order.
+async function hunkPatch(hunks, { toplevel, env, now }) {
+  const wanted = new Set(hunks.map((unit) => unit.hash));
+  const current = (await diffUnits([], { toplevel, env, now }, new Map(), {
+    allowRediff: false, keep: new Set(hunks.map((unit) => unit.path)), headers: true,
+  })).filter((unit) => wanted.has(unit.hash) && unit.header !== undefined);
+  if (current.length !== wanted.size) return null;
+  const parts = [];
+  current.forEach((unit, i) => {
+    if (i === 0 || current[i - 1].path !== unit.path) parts.push(unit.header);
+    parts.push(unit.body);
+  });
+  return Buffer.concat(parts);
 }
 
 /**
@@ -1617,6 +1664,7 @@ function sectionLine(section, line) {
   const hunk = section.hunks[section.hunks.length - 1];
   if (hunk === undefined) {
     headerLine(section, line);
+    section.header?.push(Buffer.from(line));
     return;
   }
   hunk.lines.push(Buffer.from(line));
@@ -1769,7 +1817,10 @@ function unitsOf(section) {
     });
     const fileHash = file.digest('hex');
     const fileRange = rangeOf(hunks);
-    return units.map((unit) => ({ ...unit, fileHash, fileRange }));
+    // CHG-20: a `headers` reader's section keeps git's own header lines (`diff --git` to the
+    // line before the first `@@`) for `stage`'s patch; no other reader sets `header`.
+    const header = section.header === undefined ? {} : { header: Buffer.concat(section.header) };
+    return units.map((unit) => ({ ...unit, fileHash, fileRange, ...header }));
   }
   const whole = createHash('sha256').update(Buffer.from(`${status}\0`));
   if (status === 'R') whole.update(oldPathBytes).update(Buffer.from([NUL]));

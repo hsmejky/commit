@@ -185,11 +185,11 @@ function rewordMessageOf({ header, body }, state) {
   return appendTrailers(approved, { carried, attribution: state.attribution.trailer });
 }
 
-// Every stored unit of each file the group names (whole-file staging, EXE-02).
-function wholeFileUnits(state, group) {
+// The group's own stored units (CHG-20: a file split across groups stages and matches only
+// this group's hunks of it; EXE-02's thin form took every unit of each file it named).
+function groupUnits(state, group) {
   const ids = new Set(group.units);
-  const files = new Set(state.units.filter((unit) => ids.has(unit.id)).map((unit) => unit.path));
-  return state.units.filter((unit) => files.has(unit.path));
+  return state.units.filter((unit) => ids.has(unit.id));
 }
 
 // A phase (a) refusal before `group`: the run's index untouched, the earlier groups kept.
@@ -369,7 +369,7 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
       // example) is a `git-failed` refusal carrying git's output, not a throw: the real index
       // was never touched (the rebuild runs entirely on the temporary one), so this group's
       // failure still reports the groups committed so far, like any other mid-run failure.
-      const units = wholeFileUnits(state, group);
+      const units = groupUnits(state, group);
       let current;
       try {
         current = await snapshot({
@@ -407,7 +407,9 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
       writeState(run, state);
       const ignoredPaths = state.stagedNew.filter((entry) => entry.ignored).map((entry) => entry.path);
       try {
-        const staged = await stage({ units, ignoredPaths, ...git });
+        // CHG-20: the group's units as matched in the current snapshot, so `stage` knows which
+        // are hunks (staged from the current ranges) and which whole files.
+        const staged = await stage({ units: matched.units, ignoredPaths, ...git });
         if (!staged.ok) throw notBuilt(`the ${staged.code} failure`, 'EXE-10');
 
         // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
@@ -455,9 +457,8 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
             afterUnits = null;
           }
           if (afterUnits !== null) {
-            // `units` (this group's own, EXE-02's `wholeFileUnits`) is correct only while a
-            // group always stages whole files; once hunk-level staging lands, a file split
-            // across groups needs that group's own *unit* hashes here instead (KD-S84).
+            // `units`: this group's own units, hunks included (CHG-20), so a file split
+            // across groups is not read as changed by the commit of its first group.
             const ownHashes = new Set(units.map((unit) => unit.hash));
             const expected = current.map((unit) => unit.hash).filter((hash) => !ownHashes.has(hash));
             if (sameHashSet(afterUnits, expected)) {

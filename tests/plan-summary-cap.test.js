@@ -6,27 +6,21 @@
 // lines kept for the scan; past the cap, every hunk of the crossing file and every later
 // file keeps its own unit, range and body, marked capped. M13 renders the first as a
 // `summaryOnly[]` entry (no kind, no range, no block) and the second as `body: "cap"` (no
-// block). Through `plan` and `commit` (Seam 1), except one in-process M10 case (KD-R88).
+// block). Through `plan` and `commit` (Seam 1); a capped file split by its ranges is
+// tests/stage-hunk-patch.test.js (CHG-20).
 // This file's own text holds no literal hit: the token is built at run time.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { test, beforeEach } = require('node:test');
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { loadLib } = require('./helpers/load-lib.js');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 
 const SPAWN_RECORD_PRELOAD = pathToFileURL(
   path.join(__dirname, 'helpers', 'spawn-record-preload.mjs'),
 ).href;
-
-let changeSet;
-
-beforeEach(async () => {
-  changeSet = await loadLib('change-set');
-});
 
 // A `ghp_` token built at run time (see tests/scanner.test.js).
 function githubToken(fill) {
@@ -220,27 +214,6 @@ test('eol=crlf file over 256 KB on disk, under it as a blob: summary-only and co
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(c.git(['show', 'HEAD:data.txt']), `${lines.join('\n')}\n`);
-});
-
-// review-CHG-17 Medium 2: the cap limits the worker's context, not the tool output (Q19), so
-// M10 keeps a capped unit's body (a split by its ranges builds the staging patch from it,
-// CHG-20); only M13 leaves its block out. In-process M10 case: KD-R88.
-test('M10 keeps the body of a capped unit; only a summary-only file loses it', async (t) => {
-  const c = capCase(t, { third: 997, withE: true, lockLines: 5 });
-  const units = await changeSet.snapshot({
-    mode: 'split', storedLists: { candidates: [], stagedNew: [] },
-    tracked: ['package-lock.json', 'src/a.js', 'src/b.js', 'src/c.js', 'src/d.js', 'src/e.js'],
-    indexPath: path.join(c.root, 'git-index'), unborn: false,
-    toplevel: c.repoDir, env: c.env, now: () => 0,
-  });
-
-  const byPath = (p) => units.filter((unit) => unit.path === p);
-  assert.equal(byPath('package-lock.json')[0].body.length, 0);
-  const capped = [...byPath('src/d.js'), ...byPath('src/e.js')];
-  assert.equal(capped.length, 3);
-  for (const unit of capped) assert.equal(unit.capped, true);
-  assert.match(capped[0].body.toString('utf8'), /^\+changed 3$/m);
-  assert.match(capped[2].body.toString('utf8'), /^\+E$/m);
 });
 
 // KD-R87 (CHG-17 criterion 4): M10 reads the `size` rule's sizes in a `git diff --raw` pass

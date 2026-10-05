@@ -148,14 +148,6 @@ fixed, delete it here; IDs are never reused.
   size pass, at most one `cat-file --batch-check`, then the patch pass) and the unchanged
   output. The size pass repeats the patch pass's `-M` rename detection (M10). Fix: none
   planned (a memory seam would be a user decision). Slice: none.
-- **KD-R88.** CHG-17's review-Medium-2 case in `tests/plan-summary-cap.test.js` ("M10 keeps
-  the body of a capped unit") calls `snapshot` in-process, outside testing-seams.md's
-  user-confirmed seam list, the same gap KD-R77 names for M2/M11. Seam 1 cannot observe a
-  capped unit's body today: M13 leaves it out of `hunks.txt`, and `stage` still adds whole
-  files. Fix: once CHG-20 stages a capped file split across two groups from its ranges, prove
-  it at Seam 1 and drop this case; or add an "in-process adapter" seam (a user decision, as
-  KD-R77's). This row is scoped to that one case; the earlier `tests/change-set-*.test.js`
-  files call M10 in-process the same way and remain unrecorded. Slice: CHG-20.
 
 ## Coverage
 
