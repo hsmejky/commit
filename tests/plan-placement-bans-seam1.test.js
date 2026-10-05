@@ -2,7 +2,7 @@
 
 // PLN-04 Seam 1 (docs/roadmap/08-plan-validation.md AC1-AC5; testing-seams.md:84-85: M14 is
 // tested through Seam 1): `check --plan` subprocess cases for the scan-hit placement ban, the
-// left-out-hit notice's `path:line` (review-PLN-04 finding 1, KD-R90), the `notIncluded`
+// left-out-hit notice's `path:line` (review-PLN-04 finding 1), the `notIncluded`
 // extras (collapsed directory, hidden/gitignored staged-new, dirty submodule, non-UTF-8
 // path) and the `indexOnly` notice. tests/plan-placement-bans.test.js keeps the in-process
 // M14 cases as supplementary extras.
@@ -28,6 +28,17 @@ const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PA
 // A `ghp_` token built at run time (see tests/scanner.test.js, tests/plan-scan.test.js).
 function githubToken(fill) {
   return 'gh' + 'p_' + fill.repeat(36);
+}
+
+// A file whose first and last line differ from a 30-line seed, so the working-tree diff
+// holds two separate hunks (mirrors tests/plan-hunk-level.test.js' threeHunkRun).
+function numbered(count) {
+  return Array.from({ length: count }, (_, i) => `${i + 1}\n`);
+}
+
+function unitsFor(runDir, filePath) {
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  return state.units.filter((unit) => unit.path === filePath).map((unit) => unit.id);
 }
 
 async function check(c, planId, runDir, plan) {
@@ -100,6 +111,14 @@ test('AC2 Seam 1: a collapsed untracked directory (>50 new files) becomes a notI
   assert.deepEqual(checked.json.notIncluded, [
     { path: 'dist', hunks: null, reason: '51 untracked files in dist/ — add to .gitignore or commit by hand' },
   ]);
+  // The group is whole-file, so `check` runs `commitAll` in-process (C:check). Pin what it
+  // actually committed, so a silent change to the commit path is visible here (review-PLN-04
+  // r2 Low-4): exactly one commit, of `a.txt`.
+  assert.equal(checked.json.commits.length, 1, detail(checked));
+  assert.equal(
+    c.git(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']).trim(),
+    'a.txt',
+  );
 });
 
 test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden…"; unstages it with a group', async (t) => {
@@ -114,9 +133,10 @@ test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden
 
   // hasGroups (a group that will actually be committed) plus any preStaged path hits
   // EXE-11 ("the unstaged report for pre-staged paths is not built yet") in commit-executor
-  // — genuinely infeasible at Seam 1 today, not a test-construction issue (confirmed by
-  // direct repro: the identical fixture with a group over b.txt throws that `internal`
-  // error from `commitAll`). Zero groups below still covers the base (no-group) wording.
+  // whenever the group is whole-file — confirmed by direct repro: the identical fixture with
+  // a whole-file group over b.txt throws that `internal` error from `commitAll`. Zero groups
+  // below still covers the base (no-group) wording; the next case covers "with a group" via a
+  // hunk-level group (KD-R83), which never reaches `commitAll` at all.
   const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
@@ -133,9 +153,43 @@ test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden
   ]);
 });
 
-test.todo('AC2 Seam 1: ...with a group, "unstages it" — blocked by EXE-11 (hasGroups + '
-  + 'any preStaged path crashes commitAll with "the unstaged report for pre-staged paths '
-  + 'is not built yet"); retry once EXE-11 ships');
+// "With a group" gets the "committing this plan unstages it" suffix (hasGroups, C:check).
+// The group here is hunk-level (one of a two-hunk file's two hunks), so `commitCheckedGroups`
+// (workflows.mjs) returns `check`'s own validated output without ever calling `commitAll`
+// (KD-R83: a hunk-level file entry skips the whole-file commit path) — EXE-11's pre-staged
+// gap (above) is never reached, whatever paths are preStaged. Retire this reliance on KD-R83
+// once INT-18 lifts it (the fixture would then need EXE-11 to have shipped too).
+test('AC2 Seam 1: a hidden staged-new `.env.local`, with a group → "…; committing this plan unstages it"', async (t) => {
+  const c = createCase(t);
+  const lines = numbered(30);
+  c.writeFile('a.txt', lines.join(''));
+  c.writeFile('f.txt', lines.join(''));
+  c.git(['add', '--', 'a.txt', 'f.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('.env.local', 'SECRET=1\n');
+  c.git(['add', '-f', '--', '.env.local']);
+  const edited = [...lines];
+  edited[0] = 'first\n';
+  edited[29] = 'last\n';
+  c.writeFile('f.txt', edited.join(''));
+
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const [h1, h2] = unitsFor(runDir, 'f.txt');
+
+  const checked = await check(c, planId, runDir, {
+    groups: [{ header: 'feat: x', body: null, files: [], hunks: [h1] }],
+    notIncluded: [{ path: 'f.txt', hunks: [h2], reason: 'leaving out for now' }],
+  });
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.commits, undefined, detail(checked));
+  assert.deepEqual(checked.json.notIncluded, [
+    { path: 'f.txt', hunks: [h2], reason: 'leaving out for now' },
+    { path: '.env.local', hunks: null, reason: '.env.local was staged but is hidden — commit by hand; committing this plan unstages it' },
+  ]);
+});
 
 // --- AC3: a gitignored staged-new unit left out, with a group and with zero groups -------
 
@@ -162,13 +216,47 @@ async function gitignoredStagedNewCase(t) {
   return { c, planId, runDir };
 }
 
-// AC3's "with a group" variant is blocked by the same EXE-11 gap as AC2's: `a.txt` here is
-// an unstaged-only edit, but `new.txt` (the staged-new unit `notIncluded` names) is still a
-// preStaged path, and hasGroups (a group that will actually be committed) plus any
-// preStaged path crashes `commitAll` with "the unstaged report for pre-staged paths is not
-// built yet" (confirmed by direct repro). Zero groups below still covers the base wording.
-test.todo('AC3 Seam 1: ...with a group, gets the .gitignore clause — blocked by EXE-11; '
-  + 'retry once EXE-11 ships');
+// AC3's "with a group" variant hits the same EXE-11 gap as AC2's whole-file case: `a.txt`
+// here is an unstaged-only edit, but `new.txt` (the staged-new unit `notIncluded` names) is
+// still a preStaged path, and hasGroups (a whole-file group that will actually be committed)
+// plus any preStaged path crashes `commitAll` with "the unstaged report for pre-staged paths
+// is not built yet" (confirmed by direct repro). Zero groups below still covers the base
+// wording; the next case covers "with a group" via a hunk-level group over `a.txt` itself
+// (KD-R83), which never reaches `commitAll` at all.
+test('AC3 Seam 1: ...with a group, gets the .gitignore clause', async (t) => {
+  const c = createCase(t);
+  const lines = numbered(30);
+  c.writeFile('a.txt', lines.join(''));
+  c.writeFile('.gitignore', 'new.txt\n');
+  c.git(['add', '--', 'a.txt', '.gitignore']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const edited = [...lines];
+  edited[0] = 'first\n';
+  edited[29] = 'last\n';
+  c.writeFile('a.txt', edited.join(''));
+  c.writeFile('new.txt', 'n\n');
+  c.git(['add', '-f', '--', 'new.txt']);
+
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const [h1, h2] = unitsFor(runDir, 'a.txt');
+
+  const checked = await check(c, planId, runDir, {
+    groups: [{ header: 'feat: x', body: null, files: [], hunks: [h1] }],
+    notIncluded: [
+      { path: 'new.txt', hunks: null, reason: 'leaving out for now' },
+      { path: 'a.txt', hunks: [h2], reason: 'leaving out for now' },
+    ],
+  });
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.commits, undefined, detail(checked));
+  assert.deepEqual(checked.json.notIncluded, [
+    { path: 'new.txt', hunks: null, reason: 'leaving out for now; committing this plan unstages it and .gitignore then hides it from `git status`' },
+    { path: 'a.txt', hunks: [h2], reason: 'leaving out for now' },
+  ]);
+});
 
 test('AC3 Seam 1: ...with zero groups, no unstaging note on that entry at all', async (t) => {
   const { c, planId, runDir } = await gitignoredStagedNewCase(t);
@@ -238,14 +326,52 @@ test('AC4 Seam 1: a dirty submodule becomes a notIncluded entry "… has uncommi
   ]);
 });
 
-// Blocked by EXE-11 too: the `indexOnly` notice only ever fires with hasGroups (C:check
-// "notices", "at least one group"), and an `indexOnly` path is by definition preStaged
-// (staged, then edited again) — so this AC has no zero-groups escape the way AC2/AC3/AC4's
-// other cases do; it needs a real commit over a preStaged path every time. Confirmed by
-// direct repro: the identical fixture throws the same "unstaged report for pre-staged
-// paths is not built yet" from `commitAll`.
-test.todo('AC4 Seam 1: an indexOnly path (staged, then edited again) is a notice naming '
-  + 'its staged blob — blocked by EXE-11; retry once EXE-11 ships');
+// The `indexOnly` notice only ever fires with hasGroups (C:check "notices", "at least one
+// group"), and an `indexOnly` path is by definition preStaged (staged, then edited again) —
+// so this AC has no zero-groups escape the way AC2/AC3's other cases do; a whole-file group
+// would need a real commit over a preStaged path and hit EXE-11 (confirmed by direct repro:
+// the identical fixture throws the same "unstaged report for pre-staged paths is not built
+// yet" from `commitAll`). A hunk-level group over an unrelated two-hunk file (KD-R83) gets
+// hasGroups without ever calling `commitAll`, so the `indexOnly` path's own preStaged status
+// is never exercised by it.
+test('AC4 Seam 1: an indexOnly path (staged, then edited again) is a notice naming its staged blob', async (t) => {
+  const c = createCase(t);
+  const lines = numbered(30);
+  c.writeFile('a.txt', lines.join(''));
+  c.writeFile('k.txt', 'k1\n');
+  c.git(['add', '--', 'a.txt', 'k.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  // Stage an edit to `k.txt`, then revert the working tree back to HEAD's content: the index
+  // now differs from both HEAD and the working tree (CHG-14's `indexOnly`), with nothing left
+  // to turn into a plannable unit for `k.txt` itself.
+  c.writeFile('k.txt', 'k2\n');
+  c.git(['add', '--', 'k.txt']);
+  c.writeFile('k.txt', 'k1\n');
+  const edited = [...lines];
+  edited[0] = 'first\n';
+  edited[29] = 'last\n';
+  c.writeFile('a.txt', edited.join(''));
+
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  const [h1, h2] = state.units.filter((unit) => unit.path === 'a.txt').map((unit) => unit.id);
+  const blob = state.indexOnly.find((entry) => entry.path === 'k.txt').blob;
+
+  const checked = await check(c, planId, runDir, {
+    groups: [{ header: 'feat: x', body: null, files: [], hunks: [h1] }],
+    notIncluded: [{ path: 'a.txt', hunks: [h2], reason: 'leaving out for now' }],
+  });
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.commits, undefined, detail(checked));
+  assert.deepEqual(checked.json.notIncluded, [{ path: 'a.txt', hunks: [h2], reason: 'leaving out for now' }]);
+  assert.deepEqual(checked.json.notices, [
+    GUARD_NOTICE,
+    `k.txt: the staged version differs from your working tree; committing this plan discards it — recover with \`git cat-file -p ${blob}\``,
+  ]);
+});
 // --- AC5 (POSIX): a non-UTF-8 untracked path ----------------------------------------------
 
 test('AC5 Seam 1: a non-UTF-8 untracked path becomes a notIncluded entry in its \\xNN form', async (t) => {
