@@ -92,8 +92,8 @@ test('staged: a staged new file is listed in newFiles', async (t) => {
 
 // --- `reword`: real `plan --reword` state, M14 `validatePlan` called directly ------------
 //
-// Same reason as the `staged` block above: M16's execution for `reword` is not built yet
-// (EXE-19/EXE-20).
+// Same reason as the `staged` block above: M16's execution for `staged` is not built yet
+// (EXE-19). Reword's own Seam 1 case lives in `tests/reword-workflow.test.js` (INT-24).
 
 test('reword: a real plan --reword run holds every unit; a file added in HEAD is new but not in newFiles', async (t) => {
   const c = createCase(t);
@@ -133,10 +133,10 @@ for (const [label, groups] of [['zero groups', []], ['two groups', [{ header: 'f
   });
 }
 
-// `reword` has no Seam-1 case here: `check`'s success path goes straight on to `commit
-// --all` in the same process (INT-02), and M16's execution for `reword` is not built yet
-// (EXE-19/EXE-20) — a different roadmap slice. M14 is pure and mode-agnostic beyond its own
-// validation, so `reword`'s rules are covered directly on `validatePlan` below instead.
+// `reword` has no Seam-1 case here: its own Seam 1 case lives in
+// `tests/reword-workflow.test.js` (INT-24), a different roadmap slice. M14 is pure and
+// mode-agnostic beyond its own validation, so `reword`'s rules are covered directly on
+// `validatePlan` below instead.
 
 // --- Direct validatePlan: the exactly-one-group rule and reword's forced newFiles ---------
 

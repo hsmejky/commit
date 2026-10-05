@@ -99,11 +99,11 @@ fixed, delete it here; IDs are never reused.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R29.** FND-10's ESM check does not import `node:fs/promises`; add it.
-- **KD-R89.** PLN-05's `staged`/`reword` AC1 ("a group naming only some files still holds
+- **KD-R89.** PLN-05's `staged` AC1 ("a group naming only some files still holds
   every unit") and AC2 (`newFiles`) are asserted on M14 `validatePlan` directly
   (`tests/plan-staged-reword-group.test.js`), not through `check`'s own output: `check`'s
   success path goes straight on to `commit --all` in-process, and M16's execution for
-  `staged`/`reword` is not built yet (EXE-19, EXE-20). INT-14 covers a staged commit
+  `staged` is not built yet (EXE-19). INT-14 covers a staged commit
   end-to-end but no criterion checks that a plan naming only some files still commits every
   staged unit, or `newFiles` in `check`'s output (INT-24's
   `tests/reword-workflow.test.js` covers reword's `newFiles: []` through `check`). Fix:
@@ -447,7 +447,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R57.** The README claims the blocking edges were checked against each slice's
   criteria (KD-R5 to KD-R7 disprove it).
 - **KD-R59.** Sources lines omit stories their criteria cite: CFG-10 (112), INT-18 (91),
-  INT-24 (176, 177), INT-29 (19), INT-30 (63), WRK-02 (228), WRK-06 (43, 47-49, 79, 151,
+  INT-29 (19), INT-30 (63), WRK-02 (228), WRK-06 (43, 47-49, 79, 151,
   213).
 - **KD-R60.** CHG-03b cites "C:plan (step 7)" and counts the `plan.json` write in step 7; M18
   writes it at step 8. C:run-folder's "Versioned" bullet omits `plan.json`.
