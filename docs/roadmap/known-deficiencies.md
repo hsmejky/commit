@@ -246,14 +246,16 @@ Plan text that depends on a design fix; fix the design and the slice together.
   i-t-a paths still uncommitted when building `unstaged`, or accept and document the loss.
   Slices: EXE-11, CHG-20, RUN-23.
 
-- **KD-R83.** `commitCheckedGroups` (INT-02) skips `check`'s in-process commit, keeping the
-  run with the pre-INT-02 output, whenever any group has a hunk-level file entry
+- **KD-R83.** `commitCheckedGroups` (INT-02) skips `check`'s in-process commit and RUN-18's
+  `afterCheck` routing (no `confirm` handback, no `handedBack` release), keeping the run with
+  the pre-INT-02 output, whenever any group has a hunk-level file entry
   (`hunks !== null`): M16's (c) apply stages whole paths today, so routing a hunk-level group
   through it would also commit the file's other hunks, `notIncluded` ones included
   (review-INT-02 Medium-2). Removal is owned by INT-18's criterion, after CHG-20's hunk
   `stage` lands. Where: `plugin/scripts/lib/workflows.mjs` `commitCheckedGroups`. Fix: once
   CHG-20's `stage` commits only a group's own hunks, lift the gate as part of INT-18 (its
-  criterion names this). Slices: CHG-20, INT-18, RUN-18.
+  criterion names this), routing it through `afterCheck` like a whole-file plan. Slices:
+  CHG-20, INT-18.
 
 
 - **KD-R71.** A worker-plan parse failure echoes V8's raw `JSON.parse` message, which can
@@ -322,17 +324,22 @@ Plan text that depends on a design fix; fix the design and the slice together.
   kind-specific rule text is wanted instead and amend the contract). Slices: RPL-08 (Handback
   commands and caller-trust fixtures) closes this row once every handback kind carries real
   answers and the rule.
-- **KD-R94.** RUN-17's Seam-1 coverage of C:confirmation-triggers' `staged` row is missing:
-  `commitAll` throws `notBuilt('commit --all in staged mode', 'EXE-19')` before `check`'s
-  real output (with `confirm`) can ever reach the caller, caught only by `commit.cjs`'s
-  top-level handler as an `internal` failure with no `confirm` field. `split`'s and
-  `reword`'s rows (EXE-20 is done) run end to end; every `staged` row (no trigger despite a
-  new file; a skipped/`scanIgnore` file; the `resumed` "edited plan" row) is pure-unit-tested
-  only, labeled "pure fallback (KD-R94)" and not "Seam 1"
-  (`tests/run-policy-confirm.test.js`'s `computeConfirm` cases), per the mode gate RUN-17
-  added. Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`. Fix: once EXE-19 lands,
-  rebuild those `staged` cases as Seam-1 rows in `tests/run-policy-confirm.test.js` and drop
-  this row.
+- **KD-R94.** RUN-17's Seam-1 coverage of C:confirmation-triggers' `staged` row is missing.
+  Every `staged` row (no trigger despite a new file; a skipped/`scanIgnore` file; the
+  `resumed` "edited plan" row) is pure-unit-tested only, labeled "pure fallback (KD-R94)" and
+  not "Seam 1" (`tests/run-policy-confirm.test.js`'s `computeConfirm` cases), per the mode
+  gate RUN-17 added. Since RUN-18, a `staged` run (always interactive: `--no-user` needs
+  `--split` or `--reword`) whose `confirm` is set routes to M15 `afterCheck`'s `confirm` and
+  keeps the run without calling `commitAll`, so the skipped/`scanIgnore` and `resumed` rows
+  are reachable at Seam 1 now (a probe of the skipped row returned `confirm: { reasons:
+  ["skipped file big.txt"], humanOnly: true }` and a `confirm` handback) but are not rebuilt
+  yet. The no-trigger row (`confirm: null`) still routes to `commit`, where `commitAll`
+  throws `notBuilt('commit --all in staged mode', 'EXE-19')` before `check`'s real output
+  can reach the caller, caught only by `commit.cjs`'s top-level handler as an `internal`
+  failure with no `confirm` field. Where: `plugin/scripts/lib/commit-executor.mjs`
+  `commitAll`; `tests/run-policy-confirm.test.js`. Fix: rebuild the skipped/`scanIgnore` and
+  `resumed` `staged` cases as Seam-1 rows now (the `confirm` route), and the no-trigger row
+  once EXE-19 lands; then drop this row.
 - **KD-R95.** PLN-07's `reword` attribution-flag cases (`tests/plan-attribution-flag.test.js`,
   the three `reword:` tests) and its `staged` case (the `staged stores attribution: true`
   test) call M14 `validatePlan` in-process over a real Seam-1 `plan --reword`/`state.json`,
@@ -341,14 +348,18 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `check` stops at its validated `state.json` groups, nothing committed), but `reword` and
   `staged` never produce a hunk-level `files` entry (`plan-validator.mjs`'s
   `validateSingleGroupPlan` always stores `hunks: null`), so their `check` call is always
-  whole-file: `reword` (EXE-20 is done) commits for real and `check` releases the run folder
-  before `state.json`'s stored `attribution` could be read back, and the CLI's own JSON
-  output never carries `attribution` (MSG-08 is the only reader, not built yet); `staged`
-  cannot even reach that point (KD-R94: `commitAll` throws `notBuilt` for staged mode first).
-  Fix: once MSG-08 lands and the stored flag is surfaced in a reply `check` can observe
-  without reading `state.json` after the fact, or once RUN-18 routes a trigger to a kept run
-  before committing, rebuild these cases at Seam 1 and drop this row. Slices: MSG-08, RUN-18,
-  EXE-19.
+  whole-file: with no trigger, `reword` (EXE-20 is done) commits for real and `check`
+  releases the run folder before `state.json`'s stored `attribution` could be read back, the
+  CLI's own JSON output never carries `attribution`, and `staged` throws `notBuilt` first
+  (KD-R94). RUN-18 (landed) gives both modes a kept run: an interactive run whose `confirm`
+  is set routes to M15 `afterCheck`'s `confirm`, storing `awaitingConfirm` without
+  committing. A `reword` run resumed by a separate `plan --hunks` call (`resumed`, CHG-19)
+  and a `staged` run with a skipped/`scanIgnore` file both get a `confirm` handback, so their
+  stored `attribution` is Seam-1-readable from `state.json` the way the `split` case already
+  reads it; this no longer needs MSG-08. Where: `tests/plan-attribution-flag.test.js`. Fix:
+  rebuild the three `reword:` cases and the `staged` case at Seam 1 through those triggers
+  (mechanism ready, out of RUN-18's own acceptance criteria) and drop this row. Slices: none
+  blocking.
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose
