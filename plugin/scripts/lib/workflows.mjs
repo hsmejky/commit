@@ -78,8 +78,8 @@ import { renderHunks } from './hunk-index.mjs';
 import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import {
-  checkGate, cleanupDeadline, computeConfirm, deadline, onLintFailure, planRefusal, releaseDeadline,
-  resolveMode,
+  afterCheck, checkGate, cleanupDeadline, computeConfirm, deadline, onLintFailure, planRefusal,
+  releaseDeadline, resolveMode,
 } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig, readLayers, scanIgnoreChanged, isRepoConfigPath, REPO_CONFIG_PATH } from './config.mjs';
@@ -1139,31 +1139,47 @@ async function validateWorkerPlan(ctx) {
 }
 
 /**
- * `check` step 6 (INT-02), run by `check()` itself after `runStepsWithin(CHECK_STEPS, ctx)`
- * returns, through a second, plain `runSteps([commitCheckedGroups], ctx)` — the same way
- * `commit()` runs `commitGroups` (`COMMIT_STEPS`'s own step 4), unscoped by any `withDeadline`
- * (review-INT-02 Medium-1; see that call site's comment). RUN-17's `confirm` may now be
- * non-`null`, but `check` still goes straight on as `commit --all` in the same process
- * regardless (C:check): `confirm`'s real routing (asking instead of committing) is RUN-18's,
- * not this function's; `commitGroups`, under this call's lock and `deadline`, but outside the
- * GIT-07 deadline *scope* `CHECK_STEPS` ran in — `commitAll`'s own git calls (its cleanup and
+ * `check` step 6 (INT-02, routed by RUN-18's M15 `afterCheck`), run by `check()` itself after
+ * `runStepsWithin(CHECK_STEPS, ctx)` returns, through a second, plain
+ * `runSteps([commitCheckedGroups], ctx)` — the same way `commit()` runs `commitGroups`
+ * (`COMMIT_STEPS`'s own step 4), unscoped by any `withDeadline` (review-INT-02 Medium-1; see
+ * that call site's comment). A plan with any hunk-level file entry (`hunks` not `null`) keeps
+ * the run without routing at all (KD-R83): INT-02 is the whole-file path only, and M16's (c)
+ * apply stages whole paths today, so a hunk-level group would also commit the file's other
+ * hunks, `notIncluded` ones included (removal owned by INT-18's criterion, after CHG-20's hunk
+ * `stage`). Otherwise `afterCheck(confirm, groups, state)` decides: `releaseNothing` (zero
+ * groups, checked first by `afterCheck` itself) and `handedBack` both release the run
+ * (`releaseOpen`) without committing; `confirm` stores `awaitingConfirm` and keeps the run;
+ * `commit` runs `commitGroups` under this call's lock and `deadline`, but outside the GIT-07
+ * deadline *scope* `CHECK_STEPS` ran in — `commitAll`'s own git calls (its cleanup and
  * reporting ones included, once EXE-10/EXE-11/EXE-17 build them against `cleanupDeadline`)
  * must not be capped a second time by the spent outer `deadline`, and a `scope.expired` past
  * it must not blank out `commits`/`remaining`/`unstaged` the way `runStepsWithin` does for its
- * own steps. The output is `commit --all`'s with `groups` and `notIncluded` merged in, and
- * `check`'s own notices ahead of `commit`'s in `notices`. Zero groups end here with `check`'s
- * own output and the run kept: the release and the `nothing` reply are RUN-18's. So does a
- * plan with any hunk-level file entry (`hunks` not `null`): INT-02 is the whole-file path
- * only, and M16's (c) apply stages whole paths today, so a hunk-level group would also commit
- * the file's other hunks, `notIncluded` ones included (KD-R83: removal owned by INT-18's
- * criterion, after CHG-20's hunk `stage`).
+ * own steps. `ctx.checked.route` carries the decision out to `check()`, which builds the
+ * matching reply (`committedOutput`, `releasedCheckOutput` or the kept `confirm` output). The
+ * output is `commit --all`'s with `groups` and `notIncluded` merged in, and `check`'s own
+ * notices ahead of `commit`'s in `notices`.
  */
 async function commitCheckedGroups(ctx) {
   const { groups, notIncluded, notices, confirm } = ctx.checked;
   const wholeFiles = groups.every((group) => group.files.every((file) => file.hunks === null));
-  if (groups.length === 0 || !wholeFiles) return { groups, notIncluded, notices, confirm };
+  if (groups.length > 0 && !wholeFiles) return { groups, notIncluded, notices, confirm };
+  const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
+  const state = readState(run);
+  const route = afterCheck(confirm, groups, state);
+  if (route === 'releaseNothing' || route === 'handedBack') {
+    const released = releaseOpen(run);
+    return {
+      groups, notIncluded, confirm, route,
+      notices: released.notice === null ? notices : [...notices, released.notice],
+    };
+  }
+  if (route === 'confirm') {
+    writeState(run, { ...state, awaitingConfirm: true });
+    return { groups, notIncluded, confirm, notices, route };
+  }
   const outcome = await commitGroups(ctx);
-  return { ...outcome, groups, notIncluded, confirm, notices: [...notices, ...outcome.notices] };
+  return { ...outcome, groups, notIncluded, confirm, route, notices: [...notices, ...outcome.notices] };
 }
 
 const CHECK_STEPS = Object.freeze([
@@ -1542,6 +1558,9 @@ export async function check(values, injected, { cwd }) {
     const checked = await runSteps([commitCheckedGroups], ctx);
     const commitEnding = checkRefusalEnding(checked, ctx, values);
     if (commitEnding !== undefined) return commitEnding;
+    if (checked.route === 'releaseNothing' || checked.route === 'handedBack' || checked.route === 'confirm') {
+      return { output: await routedCheckOutput(checked, ctx, callStarted) };
+    }
     if (checked.commits === undefined) return { output: checked };
     return { output: await committedOutput(checked, ctx, callStarted) };
   } finally {
@@ -1586,6 +1605,28 @@ async function committedOutput(facts, ctx, callStarted) {
     ? { status: 'committed', commits, notices, planId: kept === true ? ctx.values.plan : null }
     : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, notices, handback };
   return { ...output, reply: await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) }) };
+}
+
+// RUN-18 (C:check): the three non-committing `afterCheck` routes. `releaseNothing` and
+// `handedBack` already released the run in `commitCheckedGroups`, so `planId` is `null`;
+// `confirm` kept the run (`awaitingConfirm` stored), so `planId` stays the run's. The tree
+// read runs against `cleanupDeadline`, same as `committedOutput`: it reports on the state
+// after this call's own work (the release, or nothing at all) is already done.
+async function routedCheckOutput(facts, ctx, callStarted) {
+  const { route, notices, confirm, ...output } = facts;
+  const replyDeadline = cleanupDeadline(callStarted);
+  let replyFacts;
+  if (route === 'releaseNothing') {
+    replyFacts = { status: 'nothing', reason: 'zero-groups', notIncluded: facts.notIncluded, notices, planId: null };
+  } else if (route === 'handedBack') {
+    replyFacts = { status: 'handback', kind: 'handedBack', notices, planId: null };
+  } else {
+    replyFacts = {
+      status: 'handback', kind: 'confirm', humanOnly: confirm?.humanOnly === true, notices,
+      planId: ctx.values.plan,
+    };
+  }
+  return { ...output, confirm, notices, reply: await finalReply(replyFacts, ctx, { deadline: replyDeadline }) };
 }
 
 // RUN-16 (C:check "Lint failure", Q18): a `fix` is exit 2 with the `errors` and no `reply`.

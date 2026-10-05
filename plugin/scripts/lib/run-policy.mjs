@@ -34,6 +34,14 @@
 // stays data-in/data-out: M18 resolves each group's included unit IDs to paths against
 // `state.json`'s unit table, `scanned` map and `scanIgnoreUnits` list before calling in, so
 // this function never needs a unit table of its own.
+//
+// RUN-18 adds `afterCheck`, `check`'s routing over `computeConfirm`'s own decision (C:check):
+// zero groups always releases, whatever `confirm` holds (a resumed zero-group run could
+// otherwise carry an "edited plan" reason with nothing to confirm); `confirm: null` commits
+// right away; a non-null `confirm` commits the same way only when the run is `--no-user` and
+// the reason is not `humanOnly` (nobody but the worker reviewed the grouping, Q17); every
+// other non-null `confirm` either hands back for a real answer (interactive) or hands back
+// and ends the run (`--no-user`, `humanOnly`).
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });
@@ -387,6 +395,31 @@ export function checkGate(runState) {
     return { refusal: { code: 'already-committed', message: ALREADY_COMMITTED_TEXT } };
   }
   return null;
+}
+
+/**
+ * M15 `afterCheck(confirm, groups, runState)` (RUN-18, C:check, Q16, Q17): `check`'s routing
+ * once M15 `computeConfirm` has decided `confirm`. Scoped to whole-file groups only: a
+ * hunk-level group (KD-R83) never reaches this function, since M16's apply stages whole paths
+ * today and the worker keeps the run instead, without routing at all.
+ *
+ * @param {{ reasons: string[], humanOnly: boolean } | null} confirm `computeConfirm`'s result.
+ * @param {Array<unknown>} groups the stored groups (only `.length` matters here): `[]` is
+ *   `check`'s own "zero groups" ending (C:check), checked first so a resumed zero-group run's
+ *   stray `edited plan` reason never reaches the routing below.
+ * @param {{ interactive?: boolean }} runState the run state `check` read; `interactive: false`
+ *   is `--no-user` (`undefined`/`true` is interactive, the same convention `state.json`
+ *   itself uses).
+ * @returns {'commit' | 'confirm' | 'handedBack' | 'releaseNothing'} `commit`: go on as
+ *   `commit --all` right away; `confirm`: store `awaitingConfirm` and hand back
+ *   without committing, the run kept; `handedBack`: hand back without committing and release
+ *   the run; `releaseNothing`: release the run, nothing committed.
+ */
+export function afterCheck(confirm, groups, runState) {
+  if (groups.length === 0) return 'releaseNothing';
+  if (confirm === null) return 'commit';
+  if (runState.interactive === false) return confirm.humanOnly ? 'handedBack' : 'commit';
+  return 'confirm';
 }
 
 /**

@@ -176,7 +176,10 @@ test('all units in notIncluded, zero groups → ok: true, groups: []', async (t)
   assert.equal(checked.json.ok, true);
   assert.deepEqual(checked.json.groups, []);
   assert.deepEqual(checked.json.notIncluded, notIncluded);
-  assert.deepEqual(storedState(runDir).groups, []);
+  // RUN-18: zero groups releases the run (C:check "Zero groups") — state.json is gone, not
+  // storing an empty `groups` array, so the run's own folder is checked instead.
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is deleted');
+  assert.equal(checked.json.reply.status, 'nothing');
 });
 
 // M14 directly, over a hand-built unit table.

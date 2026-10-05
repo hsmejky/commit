@@ -15,7 +15,11 @@
 // state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
 // with the commits made before the budget stop; the not-included and `unstaged` lines, the
 // trailer line and the notices block in `text` are later slices'. RUN-15 adds `cleanText`,
-// M15 `planRefusal`'s own text for a clean tree that still has something to name.
+// M15 `planRefusal`'s own text for a clean tree that still has something to name. RUN-18 adds
+// the `nothing`/`zero-groups` reason (`check`'s own "zero groups" ending, C:check, story 97,
+// `text`: "nothing committed" then one line per `notIncluded` reason) and the first cut of the
+// `confirm` and `handedBack` handbacks (question and, for `confirm`, `humanOnly`; the
+// confirmation block itself and the `confirm` handback's answers are INT-09's).
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -78,7 +82,25 @@ const NOTHING_LINES = Object.freeze({
   clean: 'nothing to commit',
   released: 'nothing committed',
   'already-ended': 'nothing to release: the run has already ended or was taken over',
+  // RUN-18 (C:check "Zero groups", story 97): every unit ended up in `notIncluded`, so there
+  // is nothing to confirm either; `notIncludedReasons` below lists why.
+  'zero-groups': 'nothing committed',
 });
+
+// RUN-18 (C:check "Zero groups", story 97): one line per `notIncluded` entry, naming the path
+// its reason applies to, the same pairing the confirmation block's own "Not included:" lines
+// use (C:reply-and-handback); INT-09 may still fold this into that shared rendering.
+function renderNotIncluded(notIncluded) {
+  return notIncluded.map(({ path, reason }) => `${path}: ${reason}`);
+}
+
+// RUN-18 (C:reply-and-handback handback table, fixed text): the `handedBack` handback's only
+// line — `check`, `interactive: false`, `humanOnly` committed nothing and already released.
+const HANDED_BACK_TEXT = 'nothing committed — run /commit to plan again';
+
+// RUN-18 (C:reply-and-handback handback table, fixed text): the `confirm` handback's question.
+// Its answers (`yes`/`one`/`no`/`edit`) and `ifNoUser` are INT-09's.
+const CONFIRM_QUESTION = 'Commit as proposed? To change it, type your changes under Other.';
 
 // The `modeChoice` counts question (C:plan `mode`, Q9): counts only, never file names.
 // The `lintFailed` question (C:reply-and-handback handback table), fixed text.
@@ -123,14 +145,17 @@ function modeChoiceQuestion({ staged, other }) {
 /**
  * Builds a reply from the facts of the output that ends the worker's part.
  *
- * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended',
- *   cleanText?: string,
+ * @param {{ status: 'nothing', reason: 'clean' | 'released' | 'already-ended' | 'zero-groups',
+ *   cleanText?: string, notIncluded?: Array<{ path: string, reason: string }>,
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'failed', message: string,
  *   treeState: { clean: true } | { count: number, paths: string[] } | undefined,
  *   notices?: string[] } | { status: 'handback', kind: 'modeChoice', staged: number,
  *   other: number, treeState, notices?: string[] } | { status: 'handback', kind: 'lintFailed',
  *   planId: string, errors: object[], shapeOnly?: boolean, treeState, notices?: string[] }
+ *   | { status: 'handback', kind: 'confirm', planId: string, humanOnly: boolean, treeState,
+ *   notices?: string[] } | { status: 'handback', kind: 'handedBack', treeState,
+ *   notices?: string[] }
  *   | { status: 'committed', commits: object[], treeState, notices?: string[] }
  *   | { status: 'handback', kind: 'continue', planId: string, commits: object[],
  *   handback: object, treeState, notices?: string[] }} facts
@@ -161,6 +186,8 @@ export function reply(facts) {
   if (facts.status === 'nothing' && facts.reason === 'clean' && facts.cleanText !== undefined) {
     // RUN-15: M15 `planRefusal` already built this text (the clean-tree breakdown, named).
     firstLines = [facts.cleanText];
+  } else if (facts.status === 'nothing' && facts.reason === 'zero-groups') {
+    firstLines = [NOTHING_LINES['zero-groups'], ...renderNotIncluded(facts.notIncluded ?? [])];
   } else if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
     firstLines = [NOTHING_LINES[facts.reason]];
   } else if (facts.status === 'failed') {
@@ -171,6 +198,16 @@ export function reply(facts) {
     firstLines = [modeChoiceQuestion(facts)];
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
     firstLines = [LINT_FAILED_QUESTION];
+  } else if (facts.status === 'handback' && facts.kind === 'confirm') {
+    // RUN-18: the question only; the confirmation block (Q16, per group the header, body and
+    // files) replacing it in `text`, and the `yes`/`one`/`no`/`edit` answers, are INT-09's.
+    firstLines = [CONFIRM_QUESTION];
+    handback = { kind: 'confirm', humanOnly: facts.humanOnly === true, question: CONFIRM_QUESTION };
+  } else if (facts.status === 'handback' && facts.kind === 'handedBack') {
+    // RUN-18 (C:reply-and-handback handback table): information only — nothing to ask, the
+    // run already released.
+    firstLines = [HANDED_BACK_TEXT];
+    handback = { kind: 'handedBack', question: null };
   } else if (facts.status === 'handback' && facts.kind === 'continue') {
     firstLines = renderCommits(commits);
     handback = facts.handback;

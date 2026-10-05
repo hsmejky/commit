@@ -3,8 +3,9 @@
 // INT-02 (docs/roadmap/12-integration.md, Further Notes "First slice"): the thinnest
 // end-to-end path, the script called directly with no worker. `plan --split` on two modified
 // tracked files, a one-group file-level worker plan written by the test, then `check --plan`,
-// which validates the plan and, with no confirmation logic yet (RUN-18), commits it in the
-// same process as `commit --all` (C:check `confirm: null`): its output is `commit --all`'s
+// which validates the plan, finds no confirmation needed (RUN-18: two modified tracked
+// files trigger no row) and commits it in the same process as `commit --all` (C:check
+// `confirm: null`, M15 `afterCheck` -> `commit`): its output is `commit --all`'s
 // with `groups`, `notIncluded` and `notices` merged in, plus the `committed` reply
 // (C:reply-and-handback). MSG-07 now appends the default attribution trailer (no settings
 // layer sets one up here) as a new last paragraph, since the planned header has no footer.
@@ -151,6 +152,7 @@ test('check --plan with a one-group plan commits it in the same process: the pla
   assert.equal(json.groups[0].header, HEADER);
   assert.deepEqual(json.groups[0].files.map((file) => file.path), ['a.txt', 'b.txt']);
   assert.deepEqual(json.notIncluded, []);
+  assert.equal(json.confirm, null, 'RUN-18 AC3: no confirmation needed, so no question');
   assert.deepEqual(json.notices, [GUARD_NOTICE]);
   assert.deepEqual(json.commits, [{ n: 1, sha, header: HEADER }]);
   assert.equal(json.failed, null);
@@ -193,10 +195,12 @@ function runCheckWithBudgetStopAfterGroupOne(c, planId, elapsedMs) {
   });
 }
 
+// RUN-18: two groups set `confirm` ("2 groups"), so an interactive run would stop at the
+// `confirm` handback before any commit; `--no-user` (not `humanOnly`) commits in-process.
 test('a budget stop after group 1 under check: the continue handback moves into reply.handback, the run kept', async (t) => {
   const c = twoModifiedFiles(t);
   const seed = c.git(['rev-parse', 'HEAD']).trim();
-  const planned = await runCommit(c, ['plan', '--split']);
+  const planned = await runCommit(c, ['plan', '--split', '--no-user']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
   writeWorkerPlan(runDir, [
