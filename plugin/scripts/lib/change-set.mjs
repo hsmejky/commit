@@ -1414,6 +1414,22 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
 }
 
+/**
+ * M10 `unstage()` (EXE-10, C:commit-release "On failure"): the failing group's staging taken
+ * back out of the real index with `git reset -q -- .`, the pathspec form (a bare `git reset
+ * -q` would move `ORIG_HEAD`, append a HEAD reflog entry, fail on `HEAD.lock` and delete
+ * `MERGE_MSG`, Q11). Called by M16 only when the failing group itself reached phase (c).
+ * Never throws on a git failure: a cleanup call that fails keeps the original cause, so the
+ * caller gets `ok: false` with git's output instead.
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number, timeoutMs?: number }} options
+ * @returns {Promise<{ ok: boolean, gitOutput: string }>}
+ */
+export async function unstage({ toplevel, env, now, timeoutMs }) {
+  const reset = await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now, timeoutMs });
+  return { ok: reset.code === 0, gitOutput: `${reset.stdout.toString('utf8')}${reset.stderr}` };
+}
+
 // CHG-21: the paths of `stage`'s submodule units whose submodule `.gitmodules` sets to
 // `ignore = all`. A plain `git add -A` on such a gitlink skips it with a hint and exits 0 on
 // newer git (2.54; git 2.34 and 2.43 stage it), so the verify would refuse `mismatch`; they

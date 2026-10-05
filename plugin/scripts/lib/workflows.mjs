@@ -1043,11 +1043,13 @@ async function commitGroups(ctx) {
   // lands, it replaces this condition outright.
   // EXE-07's `index-changed` (CLI kind `diff-changed`) and EXE-08's `index-locked` (CLI kind
   // `index-lock`) end the run the same way, and so do EXE-09's phase (b) `unmatched` (CLI
-  // kind `diff-changed`) and `git-failed` (exit 4: "exits 3-5 end the run").
+  // kind `diff-changed`) and `git-failed` (exit 4: "exits 3-5 end the run"), and EXE-10's
+  // phase (c) `stage-failed` (exit 4) and `mismatch` (`diff-changed`), after their unstage.
   if ((!outcome.refusal && outcome.remaining.length === 0)
     || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed'
     || outcome.refusal?.code === 'index-locked' || outcome.refusal?.code === 'unmatched'
-    || outcome.refusal?.code === 'git-failed') {
+    || outcome.refusal?.code === 'git-failed' || outcome.refusal?.code === 'stage-failed'
+    || outcome.refusal?.code === 'mismatch') {
     const released = releaseOpen(run);
     if (released.notice !== null) outcome.notices.push(released.notice);
     // review-INT-02 Low-3: a `release()` that could not remove the lock (`busy`) reports

@@ -25,9 +25,9 @@
 // before each group (right after `head-moved`), so staging made outside the run between `plan`
 // and `commit`, or between two groups, is refused before (b) rather than folded into a group
 // or lost to (c)'s reset. The stored fingerprint is re-read after each of the run's own `git
-// commit` calls (C:commit-release), so the run's own staging never trips it. The unstage
-// half of that update arrives with M10 `unstage` (EXE-10); today's best-effort reset only
-// runs on a path that throws.
+// commit` calls (C:commit-release), so the run's own staging never trips it. Its re-read
+// after an unstage is not needed yet: EXE-10's unstage only follows a failure that ends the
+// run.
 // EXE-08 adds the last phase (a) refusal, `index-lock`: M10 `indexLockExists`, checked right
 // before a group's (b)/(c) work ever touches the index (after `index-changed`, before the
 // budget check). EXE-16 adds that budget check, M15 `nextStep`, as the actual last step of
@@ -55,16 +55,17 @@
 // the attribution append conditional: `rewordMessageOf` reads the group's own stored
 // `attribution` flag (PLN-07: `false` for a dictated `source: "user"` text whose old message
 // carried no attribution trailer, `true` otherwise) rather than re-deciding with
-// `hadAttributionTrailer` itself, so the two never diverge. The failure paths (EXE-10 to
-// EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. `staged`
+// `hadAttributionTrailer` itself, so the two never diverge. EXE-10 adds phase (c)'s
+// own failures: `stage`'s `stage-failed` and the verify's `mismatch` run M10 `unstage` and
+// end the run with `unstaged` present. The other failure paths (EXE-12, EXE-13) and the
+// tree check (EXE-14) are not built yet: reaching one throws. `staged`
 // (EXE-19) is not built yet either.
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, indexLockExists, matchIds, snapshot, stage, treeDiffUnits,
-  writeTree,
+  unstage, writeTree,
 } from './change-set.mjs';
-import { run } from './process-adapter.mjs';
 import { appendTrailers, carryOver, normaliseText } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
@@ -140,13 +141,14 @@ function anotherCommitNotice(n) {
   return `another commit was made during group ${n}; later groups refused`;
 }
 
-// Low 2 (review-EXE-02): C:commit-release "`split` runs `git reset -q -- .` only when the
-// failing group itself reached (c)". EXE-10 builds the real M10 `unstage` and its `unstaged`
-// report (EXE-11); until then this best-effort reset is the cheap half, so a failure after
-// (c) (`stage-failed`/`mismatch`, a backstop hit, a non-zero `git commit`) never leaves the
-// real index staged for the run to repair later.
-async function resetIndex({ toplevel, env, now }) {
-  await run('git', ['reset', '-q', '--', '.'], { cwd: toplevel, env, now });
+// EXE-10: phase (c)'s own refusals, mapped by M18 through the domain-code table:
+// `stage-failed` (CLI kind `git`, exit 4) and the verify's `mismatch` (`diff-changed`, exit 6).
+function stageFailedText(n) {
+  return `staging failed for group ${n}`;
+}
+
+function mismatchText(n) {
+  return `files changed while staging group ${n}, run /commit again`;
 }
 
 /**
@@ -413,7 +415,16 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
         // CHG-20: the group's units as matched in the current snapshot, so `stage` knows which
         // are hunks (staged from the current ranges) and which whole files.
         const staged = await stage({ units: matched.units, ignoredPaths, ...git });
-        if (!staged.ok) throw notBuilt(`the ${staged.code} failure`, 'EXE-10');
+        if (!staged.ok) {
+          // EXE-10 (C:commit-release (c)): this group reached (c), so its staging is taken
+          // back out (M10 `unstage`) before the refusal, and `unstaged` is present (`indexReset`
+          // is set). A failing or skipped unstage (keep the run, notice) is EXE-17's.
+          await unstage(git);
+          const refusal = staged.code === 'stage-failed'
+            ? { code: 'stage-failed', message: stageFailedText(group.n) }
+            : { code: 'mismatch', message: mismatchText(group.n) };
+          return refused(state, group, commits, refusal, notices, staged.gitOutput ?? null);
+        }
 
         // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
         const tree = await writeTree(git);
@@ -472,7 +483,10 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath })
           }
         }
       } catch (err) {
-        await resetIndex(git);
+        // C:commit-release "On failure": a throw after this group reached (c) (a backstop
+        // hit, a non-zero `git commit`, `internal`, until EXE-12/EXE-13 map them) never leaves
+        // the real index staged for the run to repair later.
+        await unstage(git);
         throw err;
       }
       sha = await head({ cwd: toplevel, env, now });

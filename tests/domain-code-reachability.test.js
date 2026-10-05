@@ -45,7 +45,7 @@ function seededCase(t, files) {
 // Two modified files, a `plan --split` run holding the lock, and one stored group naming every
 // unit, as `check` stores it (tests/commit-all.test.js `groupedRun`). With `extraCandidate`,
 // an untracked `new.txt` is a stored candidate no group names (`runWithExtraCandidate`).
-async function groupedRun(t, { extraCandidate = false } = {}) {
+async function groupedRun(t, { extraCandidate = false, groupExtra = false } = {}) {
   const c = seededCase(t, { 'a.txt': 'one\n', 'b.txt': 'two\n' });
   c.writeFile('a.txt', 'one\nmore\n');
   c.writeFile('b.txt', 'two\nmore\n');
@@ -57,7 +57,7 @@ async function groupedRun(t, { extraCandidate = false } = {}) {
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   state.groups = [{
     n: 1,
-    units: state.units.filter((unit) => unit.path !== 'new.txt').map((unit) => unit.id),
+    units: state.units.filter((unit) => groupExtra || unit.path !== 'new.txt').map((unit) => unit.id),
     header: 'feat: change both files',
     body: null,
     committed: false,
@@ -420,8 +420,8 @@ const ROWS = [
     ],
   },
   {
-    // `mismatch` (phase (c), staged differs from the group) has no Seam 1 fixture; KD-R30
-    // leaves it to EXE-10. `unmatched` reaches both producers.
+    // `unmatched` reaches both producers; `mismatch` (phase (c), staged differs from the
+    // group) has its own M16 case in tests/commit-all-stage-failed.test.js (EXE-10).
     row: 'unmatched, mismatch',
     producers: 'M10 via `plan --hunks` and M16',
     kind: 'diff-changed',
@@ -586,7 +586,18 @@ const ROWS = [
     producers: 'M10 via M16',
     kind: 'git',
     exitCode: 4,
-    pairs: [{ producer: 'M10 via M16', gap: { kd: 'KD-R98' } }],
+    pairs: [{
+      producer: 'M10 via M16',
+      message: /^staging failed for group 1/,
+      // EXE-10: `core.safecrlf=true` set after plan makes phase (c)'s `git add` of the
+      // whole-file `new.txt` die (tests/commit-all-stage-failed.test.js).
+      async seam1Case(t) {
+        const { c, planId } = await groupedRun(t, { extraCandidate: true, groupExtra: true });
+        c.git(['config', 'core.autocrlf', 'true']);
+        c.git(['config', 'core.safecrlf', 'true']);
+        return commitAll(c, planId);
+      },
+    }],
   },
   {
     row: 'timed-out',
