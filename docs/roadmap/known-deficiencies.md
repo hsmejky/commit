@@ -319,15 +319,17 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R93.** C:reply-and-handback's `callerRule` entry says the handback rule is "added
   when `handback` is set" — every kind, not only `lock`. `reply` (`plugin/scripts/lib/reply.mjs`)
   only appends `HANDBACK_RULE` for a `lock` handback; `modeChoice` (RUN-13) and `continue`
-  (INT-02) replies still carry the base rule alone, with no handback rule at all, although
-  both already answer a handback with `AskUserQuestion` or a `run`/`respawn` per
-  C:reply-and-handback's own table. A `lintFailed` reply (RUN-16) has the same gap. The code
-  comment on `HANDBACK_RULE` defers the other kinds to "later slices" (`modeChoice` INT-13's,
-  `lintFailed` and `continue` RPL's) without a KD row (review-INT-05 finding 4). Where:
-  `plugin/scripts/lib/reply.mjs` `reply()`, the `callerRule` ternary. Fix: once INT-13/RPL
-  land, apply `HANDBACK_RULE` whenever `handback !== null` and drop the `lock`-only ternary
-  (or confirm a kind-specific rule text is wanted instead and amend the contract). Slices:
-  INT-13, RPL (closes this row once every handback kind carries the rule).
+  (INT-02) replies still carry the base rule alone, with no handback rule at all. Today's
+  `modeChoice` and `lintFailed` (RUN-16) handbacks are stubs — `{kind, question}` with no
+  `answers` yet — so a rule saying "run the only answer" / "ask with `AskUserQuestion`; the
+  answers..." has nothing to act on; applying it now would describe a shape the reply does
+  not yet carry. The code comment on `HANDBACK_RULE` defers the other kinds to "later slices"
+  without a KD row (review-INT-05 finding 4). Where: `plugin/scripts/lib/reply.mjs` `reply()`,
+  the `callerRule` ternary. Fix: once the slice that completes those handbacks lands, apply
+  `HANDBACK_RULE` whenever `handback !== null` and drop the `lock`-only ternary (or confirm a
+  kind-specific rule text is wanted instead and amend the contract). Slices: RPL-08 (Handback
+  commands and caller-trust fixtures) closes this row once every handback kind carries real
+  answers and the rule.
 
 ## Bookkeeping
 

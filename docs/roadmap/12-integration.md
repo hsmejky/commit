@@ -90,20 +90,20 @@ before any inventory work, with the takeover question as a `lock` handback; a ra
 
 **Blocked by:** INT-02, RUN-06, RUN-07.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M18 `plan` steps 3 and 7, C:run-folder, C:reply-and-handback (`lock` row), Q22,
 stories 187, 188.
 
-- [ ] Seam 1: a second `plan` while a first run holds the lock → exit 6 `lock` with the
+- [x] Seam 1: a second `plan` while a first run holds the lock → exit 6 `lock` with the
       holder's `planId`, `created` and `touched`, refused before inventory (no temporary
       index written for the refused call)
-- [ ] The reply is a `lock` handback: `take over` → `respawn` with `takeOver: <planId>` and
+- [x] The reply is a `lock` handback: `take over` → `respawn` with `takeOver: <planId>` and
       the refused call's mode flag, `wait` → neither, `ifNoUser` `wait` with
       `returnToParent: true`
-- [ ] The refused run's provisional folder is deleted; the holder's lock and folder are
+- [x] The refused run's provisional folder is deleted; the holder's lock and folder are
       untouched
-- [ ] The `lock` handback's `callerRule` equals the base rule plus the handback rule, byte
+- [x] The `lock` handback's `callerRule` equals the base rule plus the handback rule, byte
       for byte, matching the C:reply-and-handback fixture text; a reply from this run's other
       endings that carries no handback (INT-01's `nothing`, INT-02's `committed`) holds only
       the base rule
