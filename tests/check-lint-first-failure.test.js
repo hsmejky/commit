@@ -23,8 +23,9 @@ function detail(result) {
 }
 
 // A repo with `a.txt` and `b.txt` committed; `change(c)` edits the working tree, then a
-// `plan --split` run holds the lock.
-async function plannedRun(t, change) {
+// `plan --split` run holds the lock. `planArgs` adds extra flags to that `plan` call (e.g.
+// `--no-user`).
+async function plannedRun(t, change, planArgs = []) {
   const c = createCase(t);
   c.writeFile('a.txt', 'one\n');
   c.writeFile('b.txt', 'two\n');
@@ -32,7 +33,7 @@ async function plannedRun(t, change) {
   c.git(['commit', '-q', '-m', 'seed']);
   change(c);
   const head = c.git(['rev-parse', 'HEAD']).trim();
-  const planned = await runCommit(c, ['plan', '--split']);
+  const planned = await runCommit(c, ['plan', '--split', ...planArgs]);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
   return { c, head, planId, runDir };
@@ -126,8 +127,11 @@ test('the old path of a rename → the "use the new path" error, no reply, the r
   assertCorrectedCommit(run, corrected, header, ['a.txt', 'c.txt']);
 });
 
+// `--no-user`: a 2-group plan runs without a human to answer a confirm handback (RUN-18),
+// so this stays a lint-only story regardless of how many groups a run would otherwise stop
+// to confirm.
 test('story 122: lint runs over every group first; a plan whose second group fails commits nothing, and the corrected plan then commits', async (t) => {
-  const run = await plannedRun(t, modifyBoth);
+  const run = await plannedRun(t, modifyBoth, ['--no-user']);
 
   const failed = await check(run.c, run.planId, run.runDir, [
     group('feat: change a', ['a.txt']),
@@ -135,6 +139,20 @@ test('story 122: lint runs over every group first; a plan whose second group fai
   ]);
   assertFirstFailure(run, failed, [{ group: 2, reason: "type 'wip' not in types" }]);
   assert.equal(run.c.git(['rev-list', '--count', 'HEAD']).trim(), '1', 'group 1 was not committed either');
+
+  const corrected = await check(run.c, run.planId, run.runDir, [group(GOOD_HEADER, ['a.txt', 'b.txt'])]);
+  assertCorrectedCommit(run, corrected, GOOD_HEADER, ['a.txt', 'b.txt']);
+});
+
+test('two errors in one check call → both named, the message is "2 errors" (C:check\'s example); the corrected plan commits through the same run', async (t) => {
+  const run = await plannedRun(t, modifyBoth);
+  const bId = unitId(run.runDir, 'b.txt');
+
+  const failed = await check(run.c, run.planId, run.runDir, [group('wip: change a', ['a.txt'])]);
+  assertFirstFailure(run, failed, [
+    { group: 1, reason: "type 'wip' not in types" },
+    { group: null, reason: `${bId} (b.txt) not placed; put it in a group or in notIncluded` },
+  ]);
 
   const corrected = await check(run.c, run.planId, run.runDir, [group(GOOD_HEADER, ['a.txt', 'b.txt'])]);
   assertCorrectedCommit(run, corrected, GOOD_HEADER, ['a.txt', 'b.txt']);
