@@ -162,7 +162,29 @@ const ROWS = [
     producers: 'M16',
     kind: 'usage',
     exitCode: 1,
-    pairs: [{ producer: 'M16', gap: { kd: 'KD-R98' } }],
+    pairs: [{
+      producer: 'M16',
+      message: /confirm/,
+      // EXE-22: a run left in `confirm` by a real `check --plan` over a worker plan naming a
+      // new file (tests/commit-open.test.js) refuses a bare `commit --all`.
+      async seam1Case(t) {
+        const c = seededCase(t, { 'a.txt': 'one\n' });
+        c.writeFile('a.txt', 'one\nmore\n');
+        c.writeFile('new.txt', 'new\n');
+        const planned = await runCommit(c, ['plan']);
+        assert.equal(planned.exitCode, 0, detail(planned));
+        const { planId, runDir } = planned.json;
+        fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+          version: 1,
+          source: 'worker',
+          groups: [{ header: 'feat: x', body: null, files: ['a.txt', 'new.txt'], hunks: [] }],
+          notIncluded: [],
+        }));
+        const checked = await runCommit(c, ['check', '--plan', planId]);
+        assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
+        return runCommit(c, ['commit', '--plan', planId, '--all']);
+      },
+    }],
   },
   {
     row: 'staged-empty',

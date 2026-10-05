@@ -229,13 +229,13 @@ fixed, delete it here; IDs are never reused.
   and drops its number from this row; once both are gone, drop this row.
   Slices: EXE-11, EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists seven pairs as gaps because the code producing them is not built: `unconfirmed` via
-  M16 (EXE-22), `env` via the entry point for an install path with a shell-special character
-  (RPL-08), `killed-leftover` (RUN-24), `index-locked` via M18's takeover repair (RUN-23,
-  RUN-25), `backstop-hit` (EXE-13), `git-failed` from a failing `git commit` (EXE-12)
-  and `timed-out` via M16's `git commit` deadline (EXE-17). Fix: each
+  lists six pairs as gaps because the code producing them is not built: `env` via the entry
+  point for an install path with a shell-special character (RPL-08), `killed-leftover`
+  (RUN-24), `index-locked` via M18's takeover repair (RUN-23, RUN-25), `backstop-hit`
+  (EXE-13), `git-failed` from a failing `git commit` (EXE-12) and `timed-out` via M16's `git
+  commit` deadline (EXE-17). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
-  EXE-12, EXE-13, EXE-17, EXE-22, RPL-08, RUN-23, RUN-24, RUN-25.
+  EXE-12, EXE-13, EXE-17, RPL-08, RUN-23, RUN-24, RUN-25.
 - **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws
@@ -253,6 +253,20 @@ fixed, delete it here; IDs are never reused.
   is INT-09's (`commit --plan --all` today outputs no `reply` and `notices: []`). Fix: once
   RPL-05 and INT-09 land, assert the notice in the handback's `text` and in the `commit
   --confirmed` reply, and drop this row. Slice: RUN-21 (with RPL-05, INT-09).
+- **KD-R104.** EXE-22's AC2/AC3 case (`tests/commit-all.test.js`, the `--confirmed` test)
+  still forges `state.awaitingConfirm = true` through `threeGroupRun`'s `edit` hook instead
+  of reaching `confirm` through a real `check` (RUN-18's route), unlike AC1
+  (`tests/commit-open.test.js`, rebuilt over a real `check --plan` confirm handback:
+  review-EXE-22 Low-2). `threeGroupRun` backs most of this file's multi-group budget-stop
+  cases, so rebuilding it over three real new-file confirm handbacks is out of EXE-22's own
+  scope. The same gap leaves the `unconfirmed`-before-`no-groups` order (C:commit-release
+  phase (a)) untested: no case stores `awaitingConfirm` with zero stored groups, so only a
+  tampered state (Q16's `Edit(**/.commit-plan/**)` gap) could show the order, and none exists
+  (review-EXE-22 Low-3). Where: `tests/commit-all.test.js` `threeGroupRun`. Fix: once INT-09
+  rebuilds the forged-state confirm-route cases over real `check` handbacks, add a
+  three-group case the same way and, separately, a case with `awaitingConfirm` and zero
+  stored groups (`unconfirmed`) next to a `--confirmed` case with zero stored groups
+  (`no-groups`), and drop this row. Slice: INT-09 (confirm-route tests).
 
 ## Design sync
 

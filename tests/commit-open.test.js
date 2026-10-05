@@ -165,24 +165,38 @@ test('commit --plan X --all with a stored group already committed → no-groups,
   assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
 });
 
+// A worker plan good enough for `check` to route a whole-file group (C:check), the shape
+// tests/check-confirm-routes.test.js already builds for RUN-18's `confirm` route.
+function writeWorkerPlan(runDir, value) {
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify(value));
+}
+
+function oneGroup(files, extra = {}) {
+  return { version: 1, source: 'worker', groups: [{ header: 'feat: x', body: null, files, hunks: [], ...extra }], notIncluded: [] };
+}
+
 // EXE-22 AC1 (docs/roadmap/10-commit-executor.md): a run left in `confirm` (C:check stores
 // `awaitingConfirm` on the state when it hands a `confirm` question back without committing)
 // refuses `commit --plan X --all` with no `--confirmed` — `unconfirmed`, checked right after
-// the lock and before `no-groups` (C:commit-release phase (a)).
-test('commit --plan X --all on a run left in confirm, no --confirmed → unconfirmed, nothing committed, run kept', async (t) => {
+// the lock and before `no-groups` (C:commit-release phase (a)). review-EXE-22 Low-2: the run
+// is left in `confirm` by a real `check --plan` over a worker plan naming a new file, the
+// way RUN-18's own route is built (tests/check-confirm-routes.test.js), not by writing
+// `awaitingConfirm` into state.json by hand.
+test('commit --plan X --all on a run left in confirm by a real check, no --confirmed → unconfirmed, nothing committed, run and awaitingConfirm kept', async (t) => {
   const c = createRepo(t);
   c.writeFile('README.md', 'hello\nmore\n');
-  const planned = await runCommit(c, ['plan', '--split']);
+  c.writeFile('new.txt', 'new\n');
+  const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, `stdout ${planned.stdout}\nstderr ${planned.stderr}`);
   const { planId, runDir: folder } = planned.json;
   const runDir = runDirOf(c);
+  writeWorkerPlan(folder, oneGroup(['README.md', 'new.txt']));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.equal(checked.json.reply.handback.kind, 'confirm', `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+
   const statePath = path.join(folder, 'state.json');
-  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  state.groups = [{
-    n: 1, units: state.units.map((unit) => unit.id), header: 'feat: x', body: null, committed: false,
-  }];
-  state.awaitingConfirm = true;
-  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   const sha = c.git(['rev-parse', 'HEAD']).trim();
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
@@ -194,6 +208,9 @@ test('commit --plan X --all on a run left in confirm, no --confirmed → unconfi
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), sha, 'no new commit was made');
   assert.equal(fs.existsSync(path.join(runDir, 'lock')), true, "the run's own lock is kept");
   assert.equal(fs.existsSync(folder), true, 'the run folder is kept');
+  // review-EXE-22 Low-1: the refusal does not clear the confirmation the run is waiting on.
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(state.awaitingConfirm, true, 'awaitingConfirm is still stored after the refusal');
 });
 
 // review-EXE-05 Low-3: phase (a) is mode-independent (C:commit-release, M16), so `no-groups`
