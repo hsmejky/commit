@@ -66,7 +66,7 @@
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, indexLockExists, matchIds, snapshot, stage, treeDiffUnits,
-  unstage, writeTree,
+  unstage, unstagedAfterReset, writeTree,
 } from './change-set.mjs';
 import { appendTrailers, carryOver, normaliseText } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
@@ -290,10 +290,25 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *   (C:cli-and-exit-codes, C:commit-release).
  * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
  */
-export async function commitAll(run, { now, osUser, env, deadline, scriptPath, confirmed }) {
+export async function commitAll(run, options) {
+  const state = readState(run);
+  const output = await commitGroups(run, state, options);
+  // EXE-11 (C:commit-release `unstaged`): on every output, run-ending or mid-run, gated only
+  // by `indexReset` (`[]` from the groups below once it is set); the list is read after
+  // their last git call, from the state file's `preStaged` and `indexOnly` (KD-R69).
+  if (Array.isArray(output.unstaged)) {
+    output.unstaged = await unstagedAfterReset(state.preStaged ?? [], state.indexOnly ?? [], {
+      toplevel: run.toplevel, env: options.env, now: options.now,
+    });
+  }
+  return output;
+}
+
+// `commitAll`'s per-group loop over the state it read; `unstaged` here is only `[]` or
+// `null` (`indexReset`), filled in by `commitAll`.
+async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath, confirmed }) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
-  const state = readState(run);
   // (a) Phase (a) refusals, in C:commit-release order. The lock (M12 `open`, with its
   // `call.lock`) already ran once in the caller before this function is ever invoked, and
   // `touch()` refreshes it again before each group below.
@@ -329,14 +344,6 @@ export async function commitAll(run, { now, osUser, env, deadline, scriptPath, c
   // (b)/(c) mode dispatch: `split` and `reword` (EXE-20) are built; `staged` (EXE-19) is not.
   if (state.mode !== 'split' && state.mode !== 'reword') {
     throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19');
-  }
-  // Medium (review-EXE-02): checked before any group's (c) reset, not after the loop, so a
-  // run with pre-staged paths is refused with the real index untouched and nothing committed
-  // — EXE-11 (the `unstaged` report those paths would need) is not built yet. `reword` never
-  // resets or stages (EXE-20), so its `unstaged` is always `null` regardless of `preStaged`;
-  // this restriction is `split`'s own.
-  if (state.mode === 'split' && state.preStaged.length > 0) {
-    throw notBuilt('the unstaged report for pre-staged paths', 'EXE-11');
   }
   const commits = [];
   const notices = [];

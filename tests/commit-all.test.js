@@ -148,19 +148,18 @@ async function partiallyStagedRun(t) {
   return { c, planId, runDir };
 }
 
-test('a pre-staged file refuses before any group: no commit, the real index untouched, the run kept', async (t) => {
+// EXE-11: a partially staged file is committed with its working-tree content; its staged
+// version (`indexOnly`) is reported in `unstaged` with its blob, and the run is released.
+test('a partially staged file is committed whole and reported in unstaged with its staged blob', async (t) => {
   const { c, planId, runDir } = await partiallyStagedRun(t);
-  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
-  const statusBefore = c.git(['status', '--porcelain']);
+  const stagedBlob = c.git(['rev-parse', ':a.txt']).trim();
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
-  assert.equal(result.exitCode, 1, detail(result));
-  assert.equal(result.json.error.kind, 'internal', detail(result));
-  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'no commit was made');
-  assert.equal(c.git(['status', '--porcelain']), statusBefore, 'the real index is exactly as plan left it');
-  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the run lock is kept');
-  assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(c.git(['show', 'HEAD:a.txt']), 'one\nstaged\nmore\n');
+  assert.deepEqual(result.json.unstaged, [{ path: 'a.txt', ignored: false, blob: stagedBlob }]);
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is gone');
 });
 
 test('a backstop hit after staging resets the real index before throwing, and commits nothing', async (t) => {

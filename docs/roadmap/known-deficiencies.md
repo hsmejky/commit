@@ -215,19 +215,16 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R97.** Two Seam-1 criteria for CHG-21's staging edge cases, moved into EXE-11 and
-  EXE-19 themselves (each is now the slice that unblocks its own case), cannot run end to end
-  until both land: (1) EXE-11's force-added gitignored file in group 2 is pre-staged by `git
-  add -f`, and `commitAll` throws `notBuilt('the unstaged report for pre-staged paths',
-  'EXE-11')` for any pre-staged path in `split` before the first group; (2) EXE-19's staged
-  60-file new directory under `--staged` hits `notBuilt('commit --all in staged mode',
-  'EXE-19')` (in `split` it is pre-staged, EXE-11). EXE-10's `core.safecrlf=true` and
-  missing-required-filter cases are in `tests/commit-all-stage-failed.test.js`. `stage`'s `-f`
-  call for ignored paths exists (CHG-14, CHG-20) but no Seam 1 test reaches it.
+- **KD-R97.** A Seam-1 criterion for CHG-21's staging edge cases, moved into EXE-19 (the
+  slice that unblocks it), cannot run end to end until it lands: EXE-19's staged 60-file new
+  directory under `--staged` hits `notBuilt('commit --all in staged mode', 'EXE-19')`.
+  EXE-11's force-added gitignored file in group 2 and EXE-10's `core.safecrlf=true` and
+  missing-required-filter cases are covered (`tests/stage-whole-file.test.js`,
+  `tests/commit-all-stage-failed.test.js`).
   Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`,
-  `tests/stage-whole-file.test.js`. Fix: once EXE-11 and EXE-19 land, each adds its own case
-  and drops its number from this row; once both are gone, drop this row.
-  Slices: EXE-11, EXE-19.
+  `tests/stage-whole-file.test.js`. Fix: once EXE-19 lands, it adds its case and this row
+  is dropped.
+  Slice: EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
   lists six pairs as gaps because the code producing them is not built: `env` via the entry
   point for an install path with a shell-special character (RPL-08), `killed-leftover`

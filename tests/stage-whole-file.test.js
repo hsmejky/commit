@@ -5,8 +5,8 @@
 // whose submodule `.gitmodules` sets to `ignore = all` in a separate `git add -A -f` (Q11, Q18,
 // C:commit-release (c)). Seam 1: `plan --split`, the groups written into `state.json` as
 // `check` stores them, then `commit --plan <id> --all`; each commit's tree is read back with
-// git. The force-added ignored file and the staged 60-file directory under `--staged` wait
-// for EXE-11 and EXE-19 (KD-R97); the `stage-failed` cases are EXE-10's
+// git. The force-added ignored file is EXE-11's; the staged 60-file directory under
+// `--staged` waits for EXE-19 (KD-R97); the `stage-failed` cases are EXE-10's
 // (tests/commit-all-stage-failed.test.js).
 
 const fs = require('node:fs');
@@ -115,6 +115,27 @@ test('a sed clean filter file is committed as its cleaned form, with the plan ha
   assert.equal(result.json.commits.length, 1);
   assert.equal(c.git(['cat-file', 'blob', 'HEAD:clean.txt']), 'keep\nme\nmore\n');
   assert.equal(rev(c, 'HEAD:clean.txt'), c.git(['hash-object', '--path', 'clean.txt', 'clean.txt']).trim());
+});
+
+// EXE-11 (moved from CHG-21, KD-R97): a force-added gitignored file is pre-staged; group 1's
+// reset unstages it, and group 2's separate `git add -A -f` stages and commits it.
+test('a force-added gitignored file is committed in group 2', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'a\n');
+  c.writeFile('.gitignore', 'build/\n');
+  c.git(['add', '--', 'a.txt', '.gitignore']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'a\nmore\n');
+  c.writeFile('build/out.js', 'out\n');
+  c.git(['add', '-f', '--', 'build/out.js']);
+
+  const result = await commitGroups(c, (units) => ['a.txt', 'build/out.js']
+    .map((name) => units.filter((unit) => unit.path === name).map((unit) => unit.id)));
+
+  assert.equal(result.json.commits.length, 2);
+  assert.equal(c.git(['ls-tree', '-r', '--name-only', 'HEAD~1']), '.gitignore\na.txt\n');
+  assert.equal(c.git(['cat-file', 'blob', 'HEAD:build/out.js']), 'out\n');
+  assert.deepEqual(result.json.unstaged, [], 'build/out.js no longer differs from HEAD');
 });
 
 // Q11: whole-file paths go to `git add -A` on stdin, never on argv. 200 renames are the most

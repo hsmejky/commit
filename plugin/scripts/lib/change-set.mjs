@@ -1430,6 +1430,35 @@ export async function unstage({ toplevel, env, now, timeoutMs }) {
   return { ok: reset.code === 0, gitOutput: `${reset.stdout.toString('utf8')}${reset.stderr}` };
 }
 
+/**
+ * M10 `unstagedAfterReset(preStaged, indexOnly)` (EXE-11, Q18, C:commit-release `unstaged`):
+ * what the run's `git reset -q -- .` unstaged, read after it. Every `preStaged` path that
+ * still differs from HEAD (one `git status` entry: a tracked change, an untracked file, or an
+ * ignored one), plus every `indexOnly` path whether or not it differs from HEAD, with its
+ * index `blob` (`null` for the others); in byte order. `ignored`: the path is one `git status`
+ * no longer shows (an ignored `!!` entry). A non-UTF-8 path is matched in its `\xNN` form, as
+ * `plan` stored it (C:plan). KD-R69: an intent-to-add mark the reset dropped is not named.
+ * No path to report costs no git call.
+ *
+ * @param {string[]} preStaged the state file's `preStaged`.
+ * @param {Array<{ path: string, blob: string }>} indexOnly the state file's `indexOnly`.
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<Array<{ path: string, ignored: boolean, blob: string | null }>>}
+ * @throws {Error} when `git status` fails.
+ */
+export async function unstagedAfterReset(preStaged, indexOnly, { toplevel, env, now }) {
+  if (preStaged.length === 0 && indexOnly.length === 0) return [];
+  const status = await statusEntries({
+    toplevel, env, now, untracked: 'all', renames: false, ignored: true,
+  });
+  const shown = new Map(status.map((entry) => [entry.path, entry.xy === '!!']));
+  const blobs = new Map(indexOnly.map((entry) => [entry.path, entry.blob]));
+  const paths = new Set([...preStaged.filter((path) => shown.has(path)), ...blobs.keys()]);
+  return [...paths].sort(byteOrder).map((path) => ({
+    path, ignored: shown.get(path) === true, blob: blobs.get(path) ?? null,
+  }));
+}
+
 // CHG-21: the paths of `stage`'s submodule units whose submodule `.gitmodules` sets to
 // `ignore = all`. A plain `git add -A` on such a gitlink skips it with a hint and exits 0 on
 // newer git (2.54; git 2.34 and 2.43 stage it), so the verify would refuse `mismatch`; they
@@ -1566,10 +1595,13 @@ export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs
 // One `git status --porcelain -z --untracked-files=<untracked>` call, as `{ xy, path }`
 // entries. The inventory passes `no`: its candidates come from `ls-files --others`, so the
 // untracked walk would only be discarded. `renames: false` adds `--no-renames` (git 2.18);
-// `ignoreSubmodules` adds `--ignore-submodules=<value>`.
-async function statusEntries({ toplevel, env, now, untracked, renames = true, ignoreSubmodules, notUtf8 }) {
+// `ignoreSubmodules` adds `--ignore-submodules=<value>`. `ignored: true` adds
+// `--ignored=traditional` (EXE-11): with `--untracked-files=all`, every ignored file is its
+// own `!!` entry, also one inside an ignored directory.
+async function statusEntries({ toplevel, env, now, untracked, renames = true, ignoreSubmodules, notUtf8, ignored = false }) {
   const args = ['status', '--porcelain', '-z', `--untracked-files=${untracked}`];
   if (!renames) args.push('--no-renames');
+  if (ignored) args.push('--ignored=traditional');
   if (ignoreSubmodules !== undefined) args.push(`--ignore-submodules=${ignoreSubmodules}`);
   const result = await run('git', args, {
     cwd: toplevel,
