@@ -340,23 +340,23 @@ unstaged.
 
 **Blocked by:** EXE-10, SCN-13, CHG-11, EXE-01, CFG-01, CHG-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, Q18, C:commit-release, M16, C:scan-patterns, stories 143, 162.
 
-- [ ] Seam 1: a fixture writes into the stored group a unit of a file holding a test secret
+- [x] Seam 1: a fixture writes into the stored group a unit of a file holding a test secret
       that `plan` did not scan (state edited after `plan`) → exit 3, `hits` names the file,
       nothing committed, `unstaged` present.
-- [ ] Seam 1: the same secret in a path the stored `scanIgnore` covers → committed; in a
+- [x] Seam 1: the same secret in a path the stored `scanIgnore` covers → committed; in a
       path only a `scanIgnore` pattern committed by an earlier group of the run covers →
       still exit 3 (CFG-01 item 1).
-- [ ] Seam 1: a text file hidden by `-diff` in `.gitattributes` holding the secret → still
+- [x] Seam 1: a text file hidden by `-diff` in `.gitattributes` holding the secret → still
       exit 3.
-- [ ] Seam 1, unborn HEAD: the backstop diffs against the empty tree.
-- [ ] A static test asserts `commitAll`'s exported signature takes `{ now, osUser }` and
+- [x] Seam 1, unborn HEAD: the backstop diffs against the empty tree.
+- [x] A static test asserts `commitAll`'s exported signature takes `{ now, osUser }` and
       passes `osUser` to `scanUnits`; no run-folder file holds the OS user name (EXE-01
       item 1).
-- [ ] Seam 1: after an exit 3 `scan` refusal, the lock and the run folder are gone.
+- [x] Seam 1: after an exit 3 `scan` refusal, the lock and the run folder are gone.
 
 
 ## EXE-14: notice when the committed tree differs from the scanned one
