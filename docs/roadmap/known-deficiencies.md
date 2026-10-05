@@ -105,11 +105,11 @@ fixed, delete it here; IDs are never reused.
   success path goes straight on to `commit --all` in-process, and M16's execution for
   `staged`/`reword` is not built yet (EXE-19, EXE-20). INT-14 covers a staged commit
   end-to-end but no criterion checks that a plan naming only some files still commits every
-  staged unit, or `newFiles` in `check`'s output; INT-24 covers reword but not
-  `newFiles: []`. Fix: once EXE-19/EXE-20 land, add subprocess `check --plan` success cases
-  to `tests/plan-staged-reword-group.test.js`: staged with a partial `files` list still
-  commits every unit and reports `newFiles` from the index diff; reword output has
-  `newFiles: []`. Slice: PLN-05, EXE-19, EXE-20.
+  staged unit, or `newFiles` in `check`'s output (INT-24's
+  `tests/reword-workflow.test.js` covers reword's `newFiles: []` through `check`). Fix:
+  once EXE-19 lands, add a subprocess `check --plan` success case to
+  `tests/plan-staged-reword-group.test.js`: staged with a partial `files` list still
+  commits every unit and reports `newFiles` from the index diff. Slice: PLN-05, EXE-19.
 - **KD-R77.** GIT-07's M2 and M11 cases (`tests/git-timeout-tree-kill.test.js`,
   `tests/signing-probe-deadline.test.js`), like GIT-05's and GIT-12's own M2 cases, call
   `run`/`withDeadline`/`probeSigning` in-process, outside testing-seams.md's user-confirmed

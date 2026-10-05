@@ -161,6 +161,11 @@ test('Seam 1: a dictated reword of a root commit keeps it a root commit', async 
   assert.equal(c.git(['rev-list', '--parents', '-n', '1', sha]).trim(), sha, 'no parent');
   assert.equal(c.git(['rev-parse', `${sha}^{tree}`]).trim(), oldTree);
   assert.equal(messageOf(c, sha), 'feat: renamed first\n');
+  // KD-R89's reword half (C:check `newFiles`): the root commit added file.txt, so its unit is
+  // `new: true`, yet `reword` forces `newFiles` to `[]`, since nothing new is committed.
+  const [group] = checked.json.groups;
+  assert.deepEqual(group.files.map((f) => [f.path, f.status, f.new]), [['file.txt', 'A', true]]);
+  assert.deepEqual(group.newFiles, []);
 });
 
 // Criterion 3 (story 176): each reword refusal row also refuses on the dictated path, before
