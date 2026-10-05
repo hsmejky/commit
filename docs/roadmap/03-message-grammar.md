@@ -201,17 +201,17 @@ flag rather than re-deciding with `hadAttributionTrailer` itself, so the two nev
 
 **Blocked by:** MSG-07, EXE-20, PLN-07.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** C:message-grammar (trailer order, reword carry-over), Q20, M6, M14.
 
-- [ ] Seam 1: rewording a commit whose footer holds `Signed-off-by: A <a@b>`, `Change-Id:
+- [x] Seam 1: rewording a commit whose footer holds `Signed-off-by: A <a@b>`, `Change-Id:
       I1` and a human `Co-Authored-By` keeps all three verbatim, in their original order,
       after the new message's own footers.
-- [ ] Seam 1: an old `Refs: x` is not carried; the old
+- [x] Seam 1: an old `Refs: x` is not carried; the old
       `Co-Authored-By: Claude <noreply@anthropic.com>` is dropped and, since it was present,
       the resolved attribution is appended once after the carried trailers.
-- [ ] Seam 1: a dictated reword (`source: user`) of an old message with no noreply trailer
+- [x] Seam 1: a dictated reword (`source: user`) of an old message with no noreply trailer
       gets no attribution trailer; the same with `source: worker` gets one.
-- [ ] Seam 1: an old message whose last paragraph is body (not a footer paragraph) carries
+- [x] Seam 1: an old message whose last paragraph is body (not a footer paragraph) carries
       nothing.
