@@ -59,8 +59,12 @@
 // carried no attribution trailer, `true` otherwise) rather than re-deciding with
 // `hadAttributionTrailer` itself, so the two never diverge. EXE-10 adds phase (c)'s
 // own failures: `stage`'s `stage-failed` and the verify's `mismatch` run M10 `unstage` and
-// end the run with `unstaged` present. The other failure paths (EXE-12, EXE-13) and the
-// tree check (EXE-14) are not built yet: reaching one throws. `staged`
+// end the run with `unstaged` present. EXE-12 adds `split`'s own non-zero `git commit`
+// (a rejecting hook): `git-failed`, M10 `unstage` (this group reached (c) too), HEAD
+// re-read in case the hook had already committed anyway (`sha` then set, the "committed
+// as `<sha>`, but git did not exit cleanly" text), no retry, never `--no-verify`. A
+// non-zero `--amend --only` in `reword` (no index to unstage there), the backstop
+// (EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. `staged`
 // (EXE-19) is not built yet either.
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
@@ -159,6 +163,18 @@ function mismatchText(n) {
   return `files changed while staging group ${n}, run /commit again`;
 }
 
+// EXE-12 (C:commit-release's own exit-4 example): a non-zero `git commit` with HEAD unmoved
+// (no hook committed anyway).
+function commitFailedText(n) {
+  return `git commit failed for group ${n}`;
+}
+
+// EXE-12 (Q18, C:commit-release "After exit 4 or 5"): a hook rejected the commit (non-zero
+// exit) but had itself already made one — HEAD moved from this group's expected SHA anyway.
+function committedAnywayText(sha) {
+  return `committed as \`${sha}\`, but git did not exit cleanly`;
+}
+
 // EXE-13: the backstop's refusal (`backstop-hit`, CLI kind `scan`, exit 3).
 function backstopText(n) {
   return `the scan before committing group ${n} found a possible secret`;
@@ -231,7 +247,10 @@ function groupUnits(state, group) {
 // carries `commits`/`failed`/`remaining`/`unstaged`, not only `head-moved`'s). EXE-09:
 // phase (b)'s `unmatched` and `git-failed` use it too; `gitOutput` is git's verbatim output
 // for `git-failed` (exit 4, C:commit-release), `null` otherwise.
-function refused(state, group, commits, refusal, notices, gitOutput = null) {
+// EXE-12: `sha` is set only when a re-read HEAD moved from this group's expected one despite
+// the failure (a hook committed anyway); omitted (not merely `null`) otherwise, matching
+// C:commit-release's plain exit-4 example, which has no `sha` key at all.
+function refused(state, group, commits, refusal, notices, gitOutput = null, sha = undefined) {
   return {
     commits,
     failed: group.n,
@@ -241,6 +260,7 @@ function refused(state, group, commits, refusal, notices, gitOutput = null) {
     unstaged: state.indexReset === true ? [] : null,
     notices,
     refusal,
+    ...(sha !== undefined ? { sha } : {}),
   };
 }
 
@@ -288,7 +308,7 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *   (`--confirmed`, `true` only when the flag was passed).
  * @returns {Promise<{ commits: Array<{ n: number, sha: string, header: string }>,
  *   failed: number | null, remaining: number[], error: null, gitOutput: string | null,
- *   unstaged: Array<object> | null, notices: string[], handback?: object,
+ *   unstaged: Array<object> | null, notices: string[], handback?: object, sha?: string,
  *   refusal?: { code: 'no-groups' | 'unconfirmed' | 'taken-over' | 'busy' | 'head-moved'
  *   | 'index-changed' | 'index-locked' | 'unmatched' | 'git-failed', message: string } }>} C:commit-release's output fields; `handback` is EXE-16's budget-stop `continue`
  *   handback (present only on that outcome, interim, C:reply-and-handback); `no-groups` (no
@@ -301,7 +321,10 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *   (EXE-09): `git-failed` with `gitOutput` when a `git add -N` rebuilding the temporary
  *   index exits non-zero; `unmatched` when a stored unit's hash is missing from the fresh
  *   snapshot, its text naming the previous group as the likely hook-rewrite cause when the
- *   state file's `treeChangedDuringCommit` names it (EXE-15), else the generic text.
+ *   state file's `treeChangedDuringCommit` names it (EXE-15), else the generic text. (c)
+ *   (EXE-12): `git-failed` with `gitOutput` on a non-zero `git commit`, `unstage` run first
+ *   (this group reached (c)); `sha` set, omitted otherwise, to a re-read HEAD when it moved
+ *   from this group's expected one anyway (the rejecting hook had itself already committed).
  *   `notices` holds any "another commit was made during group `<n>`" notices from groups
  *   this call already committed before a `head-moved` refusal (EXE-06), `[]` otherwise.
  *   `no-groups`/`taken-over`/`busy` (`usage`/`lock`, M18's call) keep the run; the caller
@@ -501,7 +524,24 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         const committed = await commitGuarded({
           args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group, state), ...git,
         });
-        if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+        if (committed.code !== 0) {
+          // EXE-12 (Q18: never retry, never `--no-verify` — neither happens here, one plain
+          // `commitGuarded` call above): this group reached (c), so its staging is taken back
+          // out (M10 `unstage`), same as EXE-10's `stage-failed`. HEAD is re-read in case the
+          // rejecting hook had itself already made a commit (a hanging `post-commit`, a
+          // partial pre-commit): a moved HEAD reports that SHA and the "committed as `<sha>`,
+          // but git did not exit cleanly" text instead of the plain one; either way the group
+          // itself is `failed`, never added to `commits`.
+          await unstage(git);
+          const gitOutput = `${committed.stdout}${committed.stderr}`;
+          const headAfter = await head({ cwd: toplevel, env, now });
+          const moved = headAfter !== state.head;
+          const message = moved ? committedAnywayText(headAfter) : commitFailedText(group.n);
+          return refused(
+            state, group, commits, { code: 'git-failed', message }, notices, gitOutput,
+            moved ? headAfter : undefined,
+          );
+        }
 
         // EXE-15: only while a later group is still pending — nothing after this one would
         // ever read the diagnosis. `current` (phase (b), moments earlier) already is the

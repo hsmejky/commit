@@ -1545,6 +1545,9 @@ function commitAllFailure(facts) {
       gitOutput,
       unstaged,
       notices,
+      // EXE-12: `sha`, present only when a re-read HEAD moved anyway despite the failure (a
+      // rejecting hook that had itself already committed), never a bare `null`.
+      ...(facts.sha !== undefined ? { sha: facts.sha } : {}),
       // EXE-13: a backstop refusal's `hits` (C:commit-release exit 3), M8's `patternId` as
       // C:plan's `pattern`, never the matched value.
       ...(facts.hits ? { hits: facts.hits.map(({ path, line, patternId }) => ({ path, line, pattern: patternId })) } : {}),
