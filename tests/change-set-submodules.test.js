@@ -2,9 +2,17 @@
 
 // CHG-09 (docs/roadmap/07-change-set.md): symlinks, submodule pointers, type changes and
 // dirty submodules (Q11 hash table and pass 8 amendment, C:plan `dirtySubmodules` and
-// `clean`, C:plan-hunks `kind`). M10 is called in-process against real temp repos, as the
-// other change-set tests do; a few crafted raw+patch cases run the reader on every OS,
-// since a real symlink needs privileges on Windows.
+// `clean`, C:plan-hunks `kind`). KD-R101 (docs/roadmap/known-deficiencies.md, user decision
+// (b)): the shape and hash cases below run M10 only through Seam 1 — `plan --split` over a
+// temp repo, reading `state.json`'s unit table (hash, identityKey, path, oldPath, status,
+// kind) and `plan.json`'s `tracked` list (added/deleted) and the inline hunk index (range,
+// body kind, the patch text in `hunks.txt`), per docs/spec/testing-seams.md Seam 1 — never
+// `snapshot`/`inventory` in-process. The reader tests at the end of this file
+// (`createDiffReader` fed crafted raw+patch buffers) are the accepted in-process pattern for
+// that parser, shared with tests/change-set-units.test.js and
+// tests/change-set-attribute-hidden.test.js, out of KD-R101's scope; a few crafted
+// raw+patch cases run the reader on every OS, since a real symlink needs privileges on
+// Windows.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,7 +30,6 @@ beforeEach(async () => {
   changeSet = await loadLib('change-set');
 });
 
-const NOW = () => Date.UTC(2026, 0, 1);
 const NO_SYMLINKS = process.platform === 'win32' && 'no symlinks without privileges';
 const NO_EOL = '\\ No newline at end of file\n';
 const ZERO = '0'.repeat(40);
@@ -31,19 +38,43 @@ function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-function snapshot(c, storedLists = { candidates: [], stagedNew: [] }) {
-  return changeSet.snapshot({
-    mode: 'split', storedLists, tracked: [], indexPath: path.join(c.root, 'git-index'), unborn: false,
-    toplevel: c.repoDir, env: c.env, now: NOW,
-  });
-}
-
-function inventory(c) {
-  return changeSet.inventory({ toplevel: c.repoDir, env: c.env, now: NOW });
+function detail(result) {
+  return `stdout ${result.stdout}\nstderr ${result.stderr}`;
 }
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+// Seam 1: `plan --split`, then the unit table and `tracked` list it wrote (run-folder.md,
+// C:plan). Only non-clean outcomes keep a run folder (`plan.json`, `state.json`); a clean
+// or `nothing` outcome is asserted from `result.json.reply` directly instead, not through
+// this helper.
+async function planSplit(c, argv = ['plan', '--split']) {
+  const result = await runCommit(c, argv);
+  assert.equal(result.exitCode, 0, detail(result));
+  const runDir = result.json.runDir;
+  const state = readJson(path.join(runDir, 'state.json'));
+  const plan = readJson(path.join(runDir, 'plan.json'));
+  return { result, runDir, state, plan, units: state.units };
+}
+
+function unitOf(units, p) {
+  const unit = units.find((u) => u.path === p);
+  assert.ok(unit, `no unit for ${p}`);
+  return unit;
+}
+
+function trackedOf(plan, p) {
+  const entry = plan.tracked.find((t) => t.path === p);
+  assert.ok(entry, `no tracked entry for ${p}`);
+  return entry;
+}
+
+function hunkOf(result, p) {
+  const entry = result.json.hunks.hunks.find((h) => h.path === p);
+  assert.ok(entry, `no hunk entry for ${p}`);
+  return entry;
 }
 
 // A source repo with two commits, outside the main repo.
@@ -77,51 +108,52 @@ test('a pointer change in a submodule with untracked files inside is one submodu
   c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
   fs.writeFileSync(path.join(sub.inner, 'build.out'), 'junk\n');
 
-  const inv = await inventory(c);
-  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [false, ['libs/x'], []]);
-  const units = await snapshot(c);
+  const { result, plan, units } = await planSplit(c);
+  assert.deepEqual([plan.clean, plan.dirtySubmodules], [false, []]);
   assert.equal(units.length, 1);
-  const [unit] = units;
-  assert.deepEqual(
-    [unit.path, unit.oldPath, unit.status, unit.kind, unit.range, unit.added, unit.deleted],
-    ['libs/x', null, 'M', 'submodule', '-0,0 +0,0', 0, 0],
-  );
+  const unit = unitOf(units, 'libs/x');
+  assert.deepEqual([unit.oldPath, unit.status, unit.kind], [null, 'M', 'submodule']);
+  assert.deepEqual(plan.tracked.map((entry) => entry.path), ['libs/x']);
+  const tracked = trackedOf(plan, 'libs/x');
+  assert.deepEqual([tracked.status, tracked.added, tracked.deleted], ['M', 0, 0]);
+  const hunk = hunkOf(result, 'libs/x');
+  assert.deepEqual([hunk.range, hunk.body], ['-0,0 +0,0', 'none']);
   // Q11: path + old and new commit ID; a gitlink has no body and is not scanned.
   assert.equal(unit.hash, sha256(`M\0libs/x\0commit ${sub.head} ${sub.prev}\0`));
   assert.equal(unit.identityKey, unit.hash);
-  assert.deepEqual(unit.addedLines, []);
-  assert.equal(unit.body.length, 0);
 });
 
 test('diff.submodule=log leaves a pointer change unit and its hash unchanged', async (t) => {
-  const c = createCase(t);
-  const sub = withSubmodule(c);
-  c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
-  const plain = await snapshot(c);
-  c.git(['config', 'diff.submodule', 'log']);
-  assert.deepEqual(await snapshot(c), plain);
-  c.git(['config', 'diff.submodule', 'diff']);
-  assert.deepEqual(await snapshot(c), plain);
+  const configs = [null, (c) => c.git(['config', 'diff.submodule', 'log']), (c) => c.git(['config', 'diff.submodule', 'diff'])];
+  const hashes = [];
+  for (const configure of configs) {
+    const c = createCase(t);
+    const sub = withSubmodule(c);
+    c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
+    if (configure) configure(c);
+    const { units } = await planSplit(c);
+    hashes.push(unitOf(units, 'libs/x').hash);
+  }
+  assert.equal(hashes[1], hashes[0]);
+  assert.equal(hashes[2], hashes[0]);
 });
 
 test('a new and a removed submodule are A and D submodule units', async (t) => {
   const c = createCase(t);
   const sub = withSubmodule(c);
   c.git(['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.source, 'libs/y']);
-  const inv = await inventory(c);
-  const units = await snapshot(c, {
-    candidates: inv.candidates.map((entry) => entry.path), stagedNew: inv.stagedNew,
-  });
-  const y = units.find((unit) => unit.path === 'libs/y');
+  const { units: added } = await planSplit(c);
+  const y = unitOf(added, 'libs/y');
   assert.deepEqual([y.status, y.kind], ['A', 'submodule']);
   assert.equal(y.hash, sha256(`A\0libs/y\0commit ${ZERO} ${sub.head}\0`));
 
   const d = createCase(t);
   withSubmodule(d);
   d.git(['rm', '-q', 'libs/x']);
-  const removed = (await snapshot(d)).find((unit) => unit.path === 'libs/x');
-  assert.deepEqual([removed.status, removed.kind], ['D', 'submodule']);
-  assert.equal(removed.hash, sha256(`D\0libs/x\0commit ${sub.head} ${ZERO}\0`));
+  const { units: removed } = await planSplit(d);
+  const x = unitOf(removed, 'libs/x');
+  assert.deepEqual([x.status, x.kind], ['D', 'submodule']);
+  assert.equal(x.hash, sha256(`D\0libs/x\0commit ${sub.head} ${ZERO}\0`));
 });
 
 // review-CHG-21 L3's malformed-`.gitmodules` `stage` case moved to Seam 1
@@ -135,10 +167,6 @@ test('dirt without a pointer change is in dirtySubmodules, no unit, and the tree
   fs.writeFileSync(path.join(sub.inner, 'inner.txt'), 'edited\n');
   fs.writeFileSync(path.join(sub.inner, 'build.out'), 'junk\n');
 
-  const inv = await inventory(c);
-  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [true, [], ['libs/x']]);
-  assert.deepEqual(await snapshot(c), []);
-
   const result = await runCommit(c, ['plan']);
   assert.equal(result.exitCode, 0, result.stdout + result.stderr);
   assert.equal(result.json.reply.status, 'nothing');
@@ -151,10 +179,6 @@ test('a submodule with only inner dirt next to an edit: listed in dirtySubmodule
   const sub = withSubmodule(c);
   fs.writeFileSync(path.join(sub.inner, 'build.out'), 'junk\n');
   c.writeFile('a.txt', 'b\n');
-
-  const inv = await inventory(c);
-  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [false, ['a.txt'], ['libs/x']]);
-  assert.deepEqual((await snapshot(c)).map((unit) => unit.path), ['a.txt']);
 
   const result = await runCommit(c, ['plan']);
   assert.equal(result.exitCode, 0, result.stdout + result.stderr);
@@ -175,14 +199,16 @@ test('a file replaced by a submodule is one T unit of kind submodule', async (t)
   c.git(['clone', '-q', source, 'f']);
   const head = c.git(['rev-parse', 'HEAD'], { cwd: path.join(c.repoDir, 'f') }).trim();
 
-  const units = await snapshot(c);
+  const { result, units } = await planSplit(c);
   assert.equal(units.length, 1);
-  const [unit] = units;
-  assert.deepEqual([unit.path, unit.status, unit.kind], ['f', 'T', 'submodule']);
-  // C:plan-hunks: a file↔submodule `T`'s body is its file side; the gitlink line is left out.
-  assert.equal(unit.body.toString(), '@@ -1 +0,0 @@\n-x\n');
-  assert.deepEqual(unit.addedLines, []);
+  const unit = unitOf(units, 'f');
+  assert.deepEqual([unit.status, unit.kind], ['T', 'submodule']);
   assert.equal(unit.hash, sha256(`T\0f\0mode 100644 160000\0-x\n+Subproject commit ${head}\n`));
+  const hunk = hunkOf(result, 'f');
+  assert.equal(hunk.body, 'file');
+  // C:plan-hunks: a file<->submodule `T`'s body is its file side; the gitlink line is left out.
+  const hunksTxt = fs.readFileSync(result.json.hunks.hunksFile, 'utf8');
+  assert.ok(hunksTxt.includes('@@ -1 +0,0 @@\n-x\n'), hunksTxt);
 });
 
 test('a new symlink and a changed target are symlink units', { skip: NO_SYMLINKS }, async (t) => {
@@ -196,12 +222,13 @@ test('a new symlink and a changed target are symlink units', { skip: NO_SYMLINKS
   fs.symlinkSync('b.txt', path.join(c.repoDir, 'old'));
   fs.symlinkSync('a.txt', path.join(c.repoDir, 'new'));
 
-  const units = await snapshot(c, { candidates: ['new'], stagedNew: [] });
-  assert.deepEqual(units.map((u) => [u.path, u.status, u.kind]), [['new', 'A', 'symlink'], ['old', 'M', 'symlink']]);
-  assert.equal(units[0].hash, sha256(`A\0new\0+a.txt\n${NO_EOL}`));
-  assert.equal(units[1].hash, sha256(`M\0old\0-a.txt\n${NO_EOL}+b.txt\n${NO_EOL}`));
-  // A symlink target is scanned as an added line (Q11).
-  assert.deepEqual(units[1].addedLines, [{ line: 1, text: 'b.txt' }]);
+  const { units } = await planSplit(c);
+  const newUnit = unitOf(units, 'new');
+  const oldUnit = unitOf(units, 'old');
+  assert.deepEqual([newUnit.status, newUnit.kind], ['A', 'symlink']);
+  assert.deepEqual([oldUnit.status, oldUnit.kind], ['M', 'symlink']);
+  assert.equal(newUnit.hash, sha256(`A\0new\0+a.txt\n${NO_EOL}`));
+  assert.equal(oldUnit.hash, sha256(`M\0old\0-a.txt\n${NO_EOL}+b.txt\n${NO_EOL}`));
 });
 
 test('a file replaced by a symlink is one T unit of kind symlink', { skip: NO_SYMLINKS }, async (t) => {
@@ -213,9 +240,12 @@ test('a file replaced by a symlink is one T unit of kind symlink', { skip: NO_SY
   fs.rmSync(path.join(c.repoDir, 'l'));
   fs.symlinkSync('a.txt', path.join(c.repoDir, 'l'));
 
-  const units = await snapshot(c);
-  assert.deepEqual(units.map((u) => [u.path, u.status, u.kind, u.range]), [['l', 'T', 'symlink', '-1 +1']]);
-  assert.equal(units[0].hash, sha256(`T\0l\0mode 100644 120000\0-x\n+a.txt\n${NO_EOL}`));
+  const { result, units } = await planSplit(c);
+  const unit = unitOf(units, 'l');
+  assert.deepEqual([unit.status, unit.kind], ['T', 'symlink']);
+  assert.equal(unit.hash, sha256(`T\0l\0mode 100644 120000\0-x\n+a.txt\n${NO_EOL}`));
+  const hunk = hunkOf(result, 'l');
+  assert.equal(hunk.range, '-1 +1');
 });
 
 test('a submodule replaced by a file is one T unit of kind submodule whose body is the file', async (t) => {
@@ -224,24 +254,18 @@ test('a submodule replaced by a file is one T unit of kind submodule whose body 
   fs.rmSync(sub.inner, { recursive: true, force: true });
   c.writeFile('libs/x', 'p\nq\n');
 
-  const units = await snapshot(c);
+  const { result, plan, units } = await planSplit(c);
   assert.equal(units.length, 1);
-  const [unit] = units;
-  assert.deepEqual(
-    [unit.path, unit.status, unit.kind, unit.added, unit.deleted],
-    ['libs/x', 'T', 'submodule', 2, 0],
-  );
-  assert.equal(unit.body.toString(), '@@ -0,0 +1,2 @@\n+p\n+q\n');
-  assert.deepEqual(unit.addedLines, [{ line: 1, text: 'p' }, { line: 2, text: 'q' }]);
+  const unit = unitOf(units, 'libs/x');
+  assert.deepEqual([unit.status, unit.kind], ['T', 'submodule']);
   assert.equal(unit.hash, sha256(`T\0libs/x\0mode 160000 100644\0-Subproject commit ${sub.head}\n+p\n+q\n`));
-
+  const tracked = trackedOf(plan, 'libs/x');
+  assert.deepEqual([tracked.added, tracked.deleted], [2, 0]);
   // C:plan-hunks: unlike a pointer change, it has a block, so the worker sees the file.
-  const hunkIndex = await loadLib('hunk-index');
-  const { stdoutObj } = hunkIndex.renderHunks(
-    { runDir: 'C:/r', mode: 'split', config: { values: { scanIgnore: [] } } },
-    [{ ...unit, id: 'h1' }],
-  );
-  assert.equal(stdoutObj.hunks[0].body, 'file');
+  const hunk = hunkOf(result, 'libs/x');
+  assert.equal(hunk.body, 'file');
+  const hunksTxt = fs.readFileSync(result.json.hunks.hunksFile, 'utf8');
+  assert.ok(hunksTxt.includes('@@ -0,0 +1,2 @@\n+p\n+q\n'), hunksTxt);
 });
 
 test('submodule ignore=all hides no pointer change from the inventory (review-CHG-09 finding 1)', async (t) => {
@@ -252,12 +276,10 @@ test('submodule ignore=all hides no pointer change from the inventory (review-CH
   c.git(['config', 'diff.ignoreSubmodules', 'all']);
   c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
 
-  const inv = await inventory(c);
-  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [false, ['libs/x'], []]);
-  assert.deepEqual(
-    (await snapshot(c)).map((unit) => [unit.path, unit.status, unit.kind]),
-    [['libs/x', 'M', 'submodule']],
-  );
+  const { plan, units } = await planSplit(c);
+  assert.deepEqual([plan.clean, plan.dirtySubmodules], [false, []]);
+  const unit = unitOf(units, 'libs/x');
+  assert.deepEqual([unit.status, unit.kind], ['M', 'submodule']);
 });
 
 test('a dirty submodule whose path is not UTF-8 is listed in its \\xNN form (review-CHG-09 finding 8)', async (t) => {
@@ -287,8 +309,11 @@ test('a dirty submodule whose path is not UTF-8 is listed in its \\xNN form (rev
   c.git(['commit', '-q', '-m', 'non-UTF-8 gitlink']);
   fs.writeFileSync(Buffer.concat([dir, Buffer.from('/build.out')]), 'junk\n');
 
-  const inv = await inventory(c);
-  assert.deepEqual([inv.clean, inv.tracked, inv.dirtySubmodules], [true, [], ['s\\xff']]);
+  const result = await runCommit(c, ['plan']);
+  assert.equal(result.exitCode, 0, result.stdout + result.stderr);
+  assert.equal(result.json.reply.status, 'nothing');
+  // RUN-15 (C:plan `clean`): a non-UTF-8 submodule path is named in its `\xNN` form, Seam 1.
+  assert.equal(result.json.reply.text.split('\n')[0], 'nothing to commit: dirty submodule: `s\\xff`');
 });
 
 test('a gitlink without .gitmodules: a pointer change is a unit, dirt alone is not reported', async (t) => {
@@ -301,14 +326,19 @@ test('a gitlink without .gitmodules: a pointer change is a unit, dirt alone is n
   const inner = path.join(c.repoDir, 'emb');
   fs.writeFileSync(path.join(inner, 'build.out'), 'junk\n');
 
-  // C:plan `dirtySubmodules`: only a tree with a `.gitmodules` file is checked for dirt.
-  const dirty = await inventory(c);
-  assert.deepEqual([dirty.clean, dirty.tracked, dirty.dirtySubmodules], [true, [], []]);
+  // C:plan `dirtySubmodules`: only a tree with a `.gitmodules` file is checked for dirt, so
+  // dirt alone (no pointer change) leaves the tree fully clean, not even a dirty-submodule
+  // note in the reply.
+  const clean = await runCommit(c, ['plan']);
+  assert.equal(clean.exitCode, 0, detail(clean));
+  assert.equal(clean.json.reply.status, 'nothing');
+  assert.equal(clean.json.reply.text.split('\n')[0], 'nothing to commit');
 
   c.git(['checkout', '-q', 'HEAD~1'], { cwd: inner });
-  const moved = await inventory(c);
-  assert.deepEqual([moved.clean, moved.tracked, moved.dirtySubmodules], [false, ['emb'], []]);
-  assert.deepEqual((await snapshot(c)).map((unit) => [unit.path, unit.kind]), [['emb', 'submodule']]);
+  const { plan, units } = await planSplit(c);
+  assert.equal(plan.clean, false);
+  assert.deepEqual(plan.tracked.map((entry) => entry.path), ['emb']);
+  assert.equal(unitOf(units, 'emb').kind, 'submodule');
 });
 
 test('an untracked embedded repository is no candidate and no unit; alone it leaves the tree clean', async (t) => {
@@ -318,10 +348,6 @@ test('an untracked embedded repository is no candidate and no unit; alone it lea
   c.git(['add', 'a.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
   c.git(['clone', '-q', source, 'nested']);
-
-  const inv = await inventory(c);
-  assert.deepEqual([inv.clean, inv.candidates, inv.embeddedRepos], [true, [], ['nested']]);
-  assert.deepEqual(await snapshot(c), []);
 
   const result = await runCommit(c, ['plan']);
   assert.equal(result.exitCode, 0, result.stdout + result.stderr);

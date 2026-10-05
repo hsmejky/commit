@@ -185,17 +185,27 @@ fixed, delete it here; IDs are never reused.
   committed blob differs from the cleaned form, which is what the criterion guards against.
   Revisit only if a cheap Seam-1-safe way to expose the stored hash appears, or the user
   accepts stretching this file's seam for one assert. Slice: none.
-- **KD-R101.** `tests/change-set-submodules.test.js` calls M10 `snapshot` and `inventory`
-  in-process, outside testing-seams.md's user-confirmed seam list (M10 is Seam 1 only,
-  testing-modules.md:9), the same gap KD-R77 and KD-R84 name for other modules. KD-R88 used
-  to record this file's in-process M10 calls, but CHG-20 dropped it once the capped-file
-  split moved to Seam 1, and no row has covered the gap since. (Its review-CHG-21 L3 `stage`
-  case, once part of this row, moved to Seam 1 in `tests/commit-all-stage-failed.test.js`,
-  review-EXE-10 Medium-1, now that EXE-10 maps `stage-failed` to exit 4; it no longer needs a
-  seam decision.) Fix: either add an "in-process adapter" seam to testing-seams.md (a user
-  decision, as KD-R77's), or rewrite `snapshot`/`inventory` at Seam 1 through `plan`'s output
-  and `state.json`, or keep them as a documented KD with no slice. Slice: none yet (needs the
-  user's seam decision).
+- **KD-R101.** User decision: (b), the rest via (c) (as KD-R77's). Every `snapshot`/
+  `inventory` case in `tests/change-set-submodules.test.js` that checked a unit's path,
+  oldPath, status, kind, hash or identityKey, a submodule's dirtySubmodules/clean report, or
+  an embedded-repository report, is now rewritten at Seam 1: `plan --split` over a temp repo
+  (or, for a reply-only "nothing" outcome, plain `plan`), reading `state.json`'s unit table
+  (hash, identityKey, path, oldPath, status, kind), `plan.json`'s `tracked` list
+  (added/deleted) and the inline hunk index (`range`, `body` kind, the patch text in
+  `hunks.txt`) — never `snapshot`/`inventory` in-process. The remainder, truly unreachable at
+  Seam 1 without stretching it or adding one: a unit's `addedLines` array (the per-`+`-line
+  `{ line, text }` list Q11's hash table folds in, e.g. a symlink's new target text, or a
+  file-to-submodule `T`'s new lines) never reaches Seam 1 output — `renderHunks`
+  (`plugin/scripts/lib/hunk-index.mjs`) strips it in every branch (`file`, `cap`, `none`,
+  summary-only) and the `state.json` unit table (`docs/contracts/run-folder.md`) does not
+  carry it either, confirmed by reading both. The scanning behavior `addedLines` feeds is
+  already provable through `plan`'s `scan.hits`/`scanLines` at Seam 1 and through M8's own
+  Seam 3 table (C:scan-patterns); asserting the exact per-line array itself is M10-internal.
+  Dropped assertions, all in `tests/change-set-submodules.test.js`: the symlink-target-change
+  case's `addedLines` (`[{ line: 1, text: 'b.txt' }]`), the file-replaced-by-symlink and
+  pointer-change cases' `addedLines: []`, and the submodule-replaced-by-a-file case's
+  `addedLines` (`[{ line: 1, text: 'p' }, { line: 2, text: 'q' }]`). Fix: none planned; code
+  reading only. Slice: none.
 - **KD-R105.** The in-process `tests/run.test.js` M12 takeover cases (`peek`,
   `acquire({ takeOver })`, `finishTakeover`) call M12 directly, outside testing-seams.md's
   user-confirmed seam list (M12 is Seam 1 only, Seam 3 "—", testing-modules.md), the same gap
