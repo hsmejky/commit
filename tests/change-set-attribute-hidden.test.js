@@ -38,6 +38,25 @@ function snapshot(c, { tracked = [] } = {}) {
   });
 }
 
+// review-KD-R87-r2 Medium 1 fix: `createDiffReader` fed a real `git diff -z --raw -p`
+// buffer (never `changeSet.snapshot`, which would be M10 in-process outside the confirmed
+// seam list), once with no decision (the classic `unitsOf`/`typeChangeUnit` path: per-hunk
+// `M text` units carry a `fileHash`/`fileRange` over every hunk regardless) and once forced
+// to stream (`wholeFiles: true`, or a `sizeOf` that drives KD-R87's own fold). Folding is
+// meant to be a pure memory optimization (the PASS verdict's byte-identity check proved this
+// commit-to-commit); comparing the two readers' output for the very same diff bytes proves it
+// in a committed test, with no need to hardcode an expected hash or range.
+function diffBytes(c, extra = []) {
+  const result = spawnSync('git', ['diff', '-z', '--raw', '-p', ...extra], { cwd: c.repoDir, env: c.env });
+  assert.equal(result.status, 0, result.stderr && result.stderr.toString());
+  return result.stdout;
+}
+function unitsFrom(output, options) {
+  const reader = changeSet.createDiffReader(new Map(), options);
+  reader.push(output);
+  return reader.end();
+}
+
 // Seam 1 (AC1): a text file marked `-diff` -> one `kind: "text"` unit, `body: "none"`, added
 // lines from the shared `--text` pass.
 test('a text file marked -diff is one text unit scanned through a --text pass', async (t) => {
@@ -170,10 +189,13 @@ test('a deleted attribute-hidden binary file stays kind binary in split mode', a
   assert.deepEqual(units.map((u) => [u.path, u.status, u.kind, u.added, u.deleted]), [['img.png', 'D', 'binary', 0, 0]]);
 });
 
-// review KD-R87 Medium 2: the main pass decides summary-only on a hidden file's binary counts
-// (zero); once the `--text` pass turns it into text, it is decided again on its text counts,
-// so a `-diff` text file over 1000 changed lines is summary-only `lines` (C:summary-only-files).
-test('a -diff text file of 1001 changed lines is summary-only lines in split and staged', async (t) => {
+// review KD-R87-r2 Medium 2 fix: moved off the in-process `changeSet.snapshot` call (outside
+// the confirmed seam list) to the real `plan` entry point. review KD-R87 Medium 2 (original):
+// the main pass decides summary-only on a hidden file's binary counts (zero); once the
+// `--text` pass turns it into text, it is decided again on its text counts, so a `-diff` text
+// file over 1000 changed lines is summary-only `lines` (C:summary-only-files), in both split
+// and staged.
+test('plan: a -diff text file of 1001 changed lines is summary-only lines in split and staged', async (t) => {
   const c = createCase(t);
   c.writeFile('x.bin', 'seed\n');
   c.writeFile('.gitattributes', '*.bin -diff\n');
@@ -181,27 +203,129 @@ test('a -diff text file of 1001 changed lines is summary-only lines in split and
   c.git(['commit', '-q', '-m', 'seed']);
   c.writeFile('x.bin', `seed\n${Array.from({ length: 1001 }, (_, i) => `line ${i}\n`).join('')}`);
 
-  const expected = [['x.bin', 'text', 1001, 0, 'lines', 0]];
-  const shape = (units) => units.map((u) => [u.path, u.kind, u.added, u.deleted, u.summaryOnly, u.body.length]);
-  assert.deepEqual(shape(await snapshot(c, { tracked: ['x.bin'] })), expected);
-  c.git(['add', 'x.bin']);
-  assert.deepEqual(shape(await changeSet.snapshot({ mode: 'staged', toplevel: c.repoDir, env: c.env, now: NOW })), expected);
+  const split = await runCommit(c, ['plan']);
+  assert.equal(split.exitCode, 0, `stdout ${split.stdout}\nstderr ${split.stderr}`);
+  assert.deepEqual(split.json.hunks.hunks, []);
+  assert.deepEqual(
+    split.json.hunks.summaryOnly.map((e) => [e.path, e.reason, e.added, e.deleted]),
+    [['x.bin', 'lines', 1001, 0]],
+  );
+
+  const c2 = createCase(t);
+  c2.writeFile('x.bin', 'seed\n');
+  c2.writeFile('.gitattributes', '*.bin -diff\n');
+  c2.git(['add', '.']);
+  c2.git(['commit', '-q', '-m', 'seed']);
+  c2.writeFile('x.bin', `seed\n${Array.from({ length: 1001 }, (_, i) => `line ${i}\n`).join('')}`);
+  c2.git(['add', 'x.bin']);
+  const staged = await runCommit(c2, ['plan', '--staged']);
+  assert.equal(staged.exitCode, 0, `stdout ${staged.stdout}\nstderr ${staged.stderr}`);
+  assert.deepEqual(
+    staged.json.hunks.summaryOnly.map((e) => [e.path, e.reason, e.added, e.deleted]),
+    [['x.bin', 'lines', 1001, 0]],
+  );
 });
 
-// A hidden text file's counts and added lines come from every hunk of its `--text` section,
-// not only the last one.
-test('a -diff text file with two hunks counts and scans both of them', async (t) => {
+// review KD-R87-r2 Medium 2 fix: moved off the in-process `changeSet.snapshot` call. Also
+// proves the Medium 2 fix's own suggested Seam 1 case: a secret in the *first* of two hunks
+// of a `-diff` text file is still a scan hit (the parent took counts and added lines from
+// only the last per-hunk text unit, so an earlier hunk's secret never reached the scanner).
+test('plan: a secret in the first hunk of a two-hunk -diff file is still found', async (t) => {
   const c = createCase(t);
   const lines = Array.from({ length: 40 }, (_, i) => `l${i}\n`);
   c.writeFile('x.bin', lines.join(''));
   c.writeFile('.gitattributes', '*.bin -diff\n');
   c.git(['add', '.']);
   c.git(['commit', '-q', '-m', 'seed']);
-  c.writeFile('x.bin', ['top\n', ...lines, 'bottom\n'].join(''));
+  c.writeFile('x.bin', [`const token = "${githubToken('e')}";\n`, ...lines, 'bottom\n'].join(''));
 
-  const units = await snapshot(c, { tracked: ['x.bin'] });
-  assert.deepEqual(units.map((u) => [u.path, u.kind, u.added, u.deleted]), [['x.bin', 'text', 2, 0]]);
-  assert.deepEqual(units[0].addedLines, [{ line: 1, text: 'top' }, { line: 42, text: 'bottom' }]);
+  const result = await runCommit(c, ['plan']);
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  const entry = result.json.hunks.hunks.find((h) => h.path === 'x.bin');
+  assert.deepEqual(
+    { kind: entry.kind, body: entry.body, scan: entry.scan },
+    { kind: 'text', body: 'none', scan: ['github-token'] },
+  );
+});
+
+// review-KD-R87-r2 Medium 1 fix, mutant "dropping `mode` from the fold hash prefix": a mode
+// change with a content edit is never per-hunk (`kind: "mode"`, change-set.mjs `unitsOf`), so
+// its unfolded hash is directly comparable to a forced-fold (`wholeFiles`) reader's hash of
+// the same bytes. Dropping `mode` from `startFold`'s hash prefix would make the folded hash
+// stop depending on the mode change, diverging from the unfolded one.
+test('a mode change with a content edit folds to the same hash as the unfolded whole-file unit', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.fileMode', 'true']);
+  c.writeFile('run.sh', 'one\ntwo\n');
+  c.git(['add', 'run.sh']);
+  c.git(['update-index', '--chmod=+x', '--', 'run.sh']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.chmodSync(path.join(c.repoDir, 'run.sh'), 0o644);
+  c.writeFile('run.sh', 'one\nTWO\n');
+
+  const output = diffBytes(c);
+  const [unfolded] = unitsFrom(output, {});
+  const [folded] = unitsFrom(output, { wholeFiles: true });
+  assert.equal(unfolded.kind, 'mode');
+  assert.equal(folded.hash, unfolded.hash);
+  assert.equal(folded.range, unfolded.range);
+});
+
+// review-KD-R87-r2 Medium 1 fix, mutant "dropping the T-binary `blob` hash line in
+// `foldedUnit`": a type change (symlink -> a regular file with binary content) makes
+// `typeChangeUnit` (unfolded) hash the new side's `blob <old> <new>` line; a forced-fold
+// reader must do the same at `foldedUnit`'s close for the comparison to hold.
+test('a type change to a binary file folds to the same hash as the unfolded T unit', { skip: NO_SYMLINKS }, async (t) => {
+  const c = createCase(t);
+  c.writeFile('target.txt', 'hi\n');
+  fs.symlinkSync('target.txt', path.join(c.repoDir, 'x'));
+  c.git(['add', 'target.txt', 'x']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  fs.rmSync(path.join(c.repoDir, 'x'));
+  c.writeFile('x', Buffer.from([0x41, 0x00, 0x42, 0x0a]));
+
+  const output = diffBytes(c);
+  const [unfolded] = unitsFrom(output, {});
+  const [folded] = unitsFrom(output, { wholeFiles: true });
+  assert.equal(unfolded.status, 'T');
+  assert.equal(unfolded.binary, true);
+  assert.equal(folded.hash, unfolded.hash);
+});
+
+// review-KD-R87-r2 Medium 1 fix, mutants "rangeOf([fold.first]) instead of first and last"
+// and "dropping the replay of buffered hunks in `startFold`", plus the Medium 1 case "no test
+// folds at the 1001st changed line": a plain text file edited in two hunks far apart, the
+// first small (10 changed lines, fully buffered before folding starts) and the second large
+// enough (995 more) that the cumulative 1000-changed-line bound is crossed mid-hunk, at the
+// file's 1001st changed line, not at a hunk boundary. The unfolded reader's per-hunk `M text`
+// units always carry the whole file's `fileHash`/`fileRange` (every hunk, Q11's hash table):
+// comparing them to the folded reader's single unit proves both hunks (not just the one being
+// streamed when the bound was crossed) fed the fold, and that the range spans hunk 1's start
+// to hunk 2's end, not just hunk 1's own range.
+test('a text file folds at its 1001st changed line, replaying its first (already-closed) hunk', async (t) => {
+  const c = createCase(t);
+  const base = Array.from({ length: 2000 }, (_, i) => `l${i}`);
+  c.writeFile('big.txt', `${base.join('\n')}\n`);
+  c.git(['add', 'big.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const withInsert = (arr, at, added) => [...arr.slice(0, at), ...added, ...arr.slice(at)];
+  const hunk1 = Array.from({ length: 10 }, (_, i) => `new1-${i}`);
+  const hunk2 = Array.from({ length: 995 }, (_, i) => `new2-${i}`);
+  const edited = withInsert(withInsert(base, 1500, hunk2), 10, hunk1);
+  c.writeFile('big.txt', `${edited.join('\n')}\n`);
+
+  const output = diffBytes(c);
+  const unfolded = unitsFrom(output, {});
+  assert.equal(unfolded.length, 2, 'the edit must land in two separate hunks');
+  const totalAdded = unfolded.reduce((sum, u) => sum + u.added, 0);
+  assert.equal(totalAdded, 1005);
+
+  const [folded] = unitsFrom(output, { sizeOf: () => 0 });
+  assert.equal(folded.summaryOnly, 'lines');
+  assert.equal(folded.added, totalAdded);
+  assert.equal(folded.deleted, 0);
+  assert.equal(folded.hash, unfolded[0].fileHash);
+  assert.equal(folded.range, unfolded[0].fileRange);
 });
 
 function reword(c, head) {
