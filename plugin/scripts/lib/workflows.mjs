@@ -78,7 +78,8 @@ import { renderHunks } from './hunk-index.mjs';
 import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import {
-  checkGate, cleanupDeadline, deadline, onLintFailure, planRefusal, releaseDeadline, resolveMode,
+  checkGate, cleanupDeadline, computeConfirm, deadline, onLintFailure, planRefusal, releaseDeadline,
+  resolveMode,
 } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig, readLayers, scanIgnoreChanged, isRepoConfigPath, REPO_CONFIG_PATH } from './config.mjs';
@@ -1086,7 +1087,36 @@ async function validateWorkerPlan(ctx) {
   // `check`'s own output, ahead of its own notices (the same order `plan` itself uses,
   // step 8), since the worker only ever surfaces the final reply.
   const storedNotices = Array.isArray(state.notices) ? state.notices : [];
-  ctx.checked = { groups: validated.groups, notIncluded: validated.notIncluded, notices: [...storedNotices, ...validated.notices] };
+  // RUN-17 (C:confirmation-triggers): resolve each stored group's included unit IDs to paths
+  // against this run's unit table, scan map and `scanIgnoreUnits`, for M15 `computeConfirm`.
+  const scanned = state.scanned ?? {};
+  const scanIgnoreSet = new Set(state.scanIgnoreUnits ?? []);
+  const unitPath = new Map((state.units ?? []).map((unit) => [unit.id, unit.path]));
+  const confirmGroups = validated.stored.map((row, i) => {
+    const skippedFiles = [];
+    const scanIgnoreFiles = [];
+    const seenSkip = new Set();
+    const seenIgnore = new Set();
+    for (const id of row.units) {
+      const path = unitPath.get(id) ?? id;
+      if (scanned[id] === 'skipped' && !seenSkip.has(path)) {
+        seenSkip.add(path);
+        skippedFiles.push(path);
+      }
+      if (scanIgnoreSet.has(id) && !seenIgnore.has(path)) {
+        seenIgnore.add(path);
+        scanIgnoreFiles.push(path);
+      }
+    }
+    return { newFiles: validated.groups[i].newFiles, skippedFiles, scanIgnoreFiles };
+  });
+  const confirm = computeConfirm(state.mode, confirmGroups, {
+    resumed: state.resumed === true, interactive: state.interactive !== false,
+  });
+  ctx.checked = {
+    groups: validated.groups, notIncluded: validated.notIncluded, confirm,
+    notices: [...storedNotices, ...validated.notices],
+  };
   // Terminates `CHECK_STEPS` with a defined value (`runSteps` throws on falling off the end).
   // `check()` runs `commitCheckedGroups` itself, in a separate, unscoped `runSteps` call
   // (review-INT-02 Medium-1) rather than as a further step here.
@@ -1097,9 +1127,10 @@ async function validateWorkerPlan(ctx) {
  * `check` step 6 (INT-02), run by `check()` itself after `runStepsWithin(CHECK_STEPS, ctx)`
  * returns, through a second, plain `runSteps([commitCheckedGroups], ctx)` — the same way
  * `commit()` runs `commitGroups` (`COMMIT_STEPS`'s own step 4), unscoped by any `withDeadline`
- * (review-INT-02 Medium-1; see that call site's comment). With no `computeConfirm` yet,
- * `confirm` is always `null`, so `check` goes straight on as `commit --all` in the same
- * process (C:check): `commitGroups`, under this call's lock and `deadline`, but outside the
+ * (review-INT-02 Medium-1; see that call site's comment). RUN-17's `confirm` may now be
+ * non-`null`, but `check` still goes straight on as `commit --all` in the same process
+ * regardless (C:check): `confirm`'s real routing (asking instead of committing) is RUN-18's,
+ * not this function's; `commitGroups`, under this call's lock and `deadline`, but outside the
  * GIT-07 deadline *scope* `CHECK_STEPS` ran in — `commitAll`'s own git calls (its cleanup and
  * reporting ones included, once EXE-10/EXE-11/EXE-17 build them against `cleanupDeadline`)
  * must not be capped a second time by the spent outer `deadline`, and a `scope.expired` past
@@ -1113,11 +1144,11 @@ async function validateWorkerPlan(ctx) {
  * criterion, after CHG-20's hunk `stage`).
  */
 async function commitCheckedGroups(ctx) {
-  const { groups, notIncluded, notices } = ctx.checked;
+  const { groups, notIncluded, notices, confirm } = ctx.checked;
   const wholeFiles = groups.every((group) => group.files.every((file) => file.hunks === null));
-  if (groups.length === 0 || !wholeFiles) return { groups, notIncluded, notices };
+  if (groups.length === 0 || !wholeFiles) return { groups, notIncluded, notices, confirm };
   const outcome = await commitGroups(ctx);
-  return { ...outcome, groups, notIncluded, notices: [...notices, ...outcome.notices] };
+  return { ...outcome, groups, notIncluded, confirm, notices: [...notices, ...outcome.notices] };
 }
 
 const CHECK_STEPS = Object.freeze([

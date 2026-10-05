@@ -330,6 +330,15 @@ Plan text that depends on a design fix; fix the design and the slice together.
   kind-specific rule text is wanted instead and amend the contract). Slices: RPL-08 (Handback
   commands and caller-trust fixtures) closes this row once every handback kind carries real
   answers and the rule.
+- **KD-R94.** RUN-17's Seam-1 coverage of C:confirmation-triggers' `staged` row is missing:
+  `commitAll` throws `notBuilt('commit --all in staged mode', 'EXE-19')` before `check`'s
+  real output (with `confirm`) can ever reach the caller, caught only by `commit.cjs`'s
+  top-level handler as an `internal` failure with no `confirm` field. `split`'s and
+  `reword`'s rows (EXE-20 is done) run end to end; `staged`'s two rows
+  (no trigger despite a new file; a skipped/`scanIgnore` file) are pure-unit-tested only
+  (`tests/run-policy-confirm.test.js`'s `computeConfirm` cases), per the mode gate RUN-17
+  added. Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`. Fix: once EXE-19 lands,
+  add the two `staged` Seam-1 rows to `tests/run-policy-confirm.test.js` and drop this row.
 
 ## Bookkeeping
 
