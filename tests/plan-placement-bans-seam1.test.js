@@ -131,11 +131,7 @@ test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden
   c.writeFile('b.txt', 'b\n');
   c.git(['add', '--', 'b.txt']);
 
-  // hasGroups (a group that will actually be committed) plus any preStaged path hits
-  // EXE-11 ("the unstaged report for pre-staged paths is not built yet") in commit-executor
-  // whenever the group is whole-file — confirmed by direct repro: the identical fixture with
-  // a whole-file group over b.txt throws that `internal` error from `commitAll`. Zero groups
-  // below still covers the base (no-group) wording; the next case covers "with a group" via a
+  // Zero groups covers the base (no-group) wording; the next case covers "with a group" via a
   // hunk-level group (KD-R83), which never reaches `commitAll` at all.
   const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, detail(planned));
@@ -156,9 +152,9 @@ test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden
 // "With a group" gets the "committing this plan unstages it" suffix (hasGroups, C:check).
 // The group here is hunk-level (one of a two-hunk file's two hunks), so `commitCheckedGroups`
 // (workflows.mjs) returns `check`'s own validated output without ever calling `commitAll`
-// (KD-R83: a hunk-level file entry skips the whole-file commit path) — EXE-11's pre-staged
-// gap (above) is never reached, whatever paths are preStaged. Retire this reliance on KD-R83
-// once INT-18 lifts it (the fixture would then need EXE-11 to have shipped too).
+// (KD-R83: a hunk-level file entry skips the whole-file commit path). Retire this reliance on
+// KD-R83 once INT-18 lifts it (EXE-11's `unstaged` report already covers the preStaged paths
+// a whole-file commit would reset).
 test('AC2 Seam 1: a hidden staged-new `.env.local`, with a group → "…; committing this plan unstages it"', async (t) => {
   const c = createCase(t);
   const lines = numbered(30);
@@ -216,13 +212,8 @@ async function gitignoredStagedNewCase(t) {
   return { c, planId, runDir };
 }
 
-// AC3's "with a group" variant hits the same EXE-11 gap as AC2's whole-file case: `a.txt`
-// here is an unstaged-only edit, but `new.txt` (the staged-new unit `notIncluded` names) is
-// still a preStaged path, and hasGroups (a whole-file group that will actually be committed)
-// plus any preStaged path crashes `commitAll` with "the unstaged report for pre-staged paths
-// is not built yet" (confirmed by direct repro). Zero groups below still covers the base
-// wording; the next case covers "with a group" via a hunk-level group over `a.txt` itself
-// (KD-R83), which never reaches `commitAll` at all.
+// Zero groups below covers the base wording; the next case covers "with a group" via a
+// hunk-level group over `a.txt` itself (KD-R83), which never reaches `commitAll` at all.
 test('AC3 Seam 1: ...with a group, gets the .gitignore clause', async (t) => {
   const c = createCase(t);
   const lines = numbered(30);
@@ -308,8 +299,6 @@ test('AC4 Seam 1: a dirty submodule becomes a notIncluded entry "… has uncommi
   c.writeFile('b.txt', 'b\n');
   c.git(['add', '--', 'b.txt']);
 
-  // hasGroups plus any preStaged path (b.txt here) hits EXE-11 in commitAll, same as the
-  // AC2 `.env.local` case above — zero groups keeps this at Seam 1 today.
   const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
@@ -327,13 +316,9 @@ test('AC4 Seam 1: a dirty submodule becomes a notIncluded entry "… has uncommi
 });
 
 // The `indexOnly` notice only ever fires with hasGroups (C:check "notices", "at least one
-// group"), and an `indexOnly` path is by definition preStaged (staged, then edited again) —
-// so this AC has no zero-groups escape the way AC2/AC3's other cases do; a whole-file group
-// would need a real commit over a preStaged path and hit EXE-11 (confirmed by direct repro:
-// the identical fixture throws the same "unstaged report for pre-staged paths is not built
-// yet" from `commitAll`). A hunk-level group over an unrelated two-hunk file (KD-R83) gets
-// hasGroups without ever calling `commitAll`, so the `indexOnly` path's own preStaged status
-// is never exercised by it.
+// group"), so this case needs a group. A hunk-level group over an unrelated two-hunk file
+// (KD-R83) gets hasGroups without ever calling `commitAll`; the `indexOnly` path's discarded
+// blob in a real commit's `unstaged` report is EXE-11's (tests/commit-all-unstaged.test.js).
 test('AC4 Seam 1: an indexOnly path (staged, then edited again) is a notice naming its staged blob', async (t) => {
   const c = createCase(t);
   const lines = numbered(30);

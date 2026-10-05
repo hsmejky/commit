@@ -185,11 +185,8 @@ test('Seam 1, split: a staged-added (status A) new file in a group → confirm r
   const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
   const [h1, h2] = state.units.filter((unit) => unit.path === 'a.txt').map((unit) => unit.id);
   const [newId] = state.units.filter((unit) => unit.path === 'staged-new.txt').map((unit) => unit.id);
-  // A hunk-level group (KD-R83) never reaches `commitAll`, so this fixture's preStaged
-  // `staged-new.txt` never hits EXE-11 ("the unstaged report for pre-staged paths is not
-  // built yet", confirmed by direct repro of the whole-file form of this same fixture). A
-  // plan never mixes `files` and `hunks` paths, so `staged-new.txt` is named by its own unit
-  // ID too (PLN-03).
+  // A hunk-level group (KD-R83) never reaches `commitAll`. A plan never mixes `files` and
+  // `hunks` paths, so `staged-new.txt` is named by its own unit ID too (PLN-03).
   fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
     version: 1, source: 'worker',
     groups: [{ header: 'feat: a', body: null, files: [], hunks: [h1, newId] }],

@@ -182,3 +182,58 @@ test('a budget stop with nothing pre-staged → unstaged is [], never null', asy
   assert.deepEqual(result.json.remaining, [2], detail(result));
   assert.deepEqual(result.json.unstaged, []);
 });
+
+// AC1's report text through a real route: `check --plan`'s in-process `commit --all` puts
+// `unstaged` in the `committed` reply's `text` after the commit lines (Q18), one line per
+// entry: a plain pre-staged path, an index-only one with its blob, a force-added ignored one.
+test('check commits the plan → the committed reply says "your earlier staging was reset:" and lists each unstaged path', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'a\n');
+  c.writeFile('b.txt', 'b\n');
+  c.git(['add', '--', 'a.txt', 'b.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'a\nmore\n');
+  c.writeFile('new.txt', 'new\n');
+  c.git(['add', '--', 'new.txt']);
+  // Staged, then the working file changed back to HEAD's content: index-only.
+  c.writeFile('b.txt', 'b\nstaged\n');
+  c.git(['add', '--', 'b.txt']);
+  c.writeFile('b.txt', 'b\n');
+  c.writeFile('.git/info/exclude', 'build/\n');
+  c.writeFile('build/out.js', 'out\n');
+  c.git(['add', '-f', '--', 'build/out.js']);
+  const planned = await runCommit(c, ['plan', '--split', '--no-user']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: [{ header: 'feat: change a', body: null, files: ['a.txt'], hunks: [], reason: 'test' }],
+    notIncluded: [
+      { path: 'new.txt', hunks: null, reason: 'leaving out for now' },
+      { path: 'build/out.js', hunks: null, reason: 'leaving out for now' },
+    ],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  const { json } = checked;
+  const blob = json.unstaged.find((entry) => entry.path === 'b.txt')?.blob;
+  assert.match(String(blob), /^[0-9a-f]{40,64}$/, detail(checked));
+  const sha = c.git(['rev-parse', 'HEAD']).trim();
+  assert.equal(json.reply.status, 'committed');
+  const expected = {
+    'b.txt': `b.txt: staged version discarded, recover with \`git cat-file -p ${blob}\``,
+    'build/out.js': 'build/out.js is no longer shown by `git status`',
+    'new.txt': 'new.txt',
+  };
+  assert.deepEqual(json.unstaged.map((entry) => entry.path).sort(), Object.keys(expected));
+  // The lines after these are the tree state's.
+  assert.equal(json.reply.text.split('\n').slice(0, 5).join('\n'), [
+    `${sha} feat: change a`,
+    'your earlier staging was reset:',
+    ...json.unstaged.map((entry) => expected[entry.path]),
+  ].join('\n'));
+  assert.equal(c.git(['cat-file', '-p', blob]), 'b\nstaged\n');
+});

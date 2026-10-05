@@ -51,6 +51,13 @@ fixed, delete it here; IDs are never reused.
   lint/scan failures, still go through the plain `refusalFailure` with no `reply` at all. No
   roadmap criterion currently names this gap. Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
+- **KD-R106.** EXE-11 AC5's "the report says the index is untouched" is not reachable: a
+  `commit --all` refusal before any group reached (c) has `unstaged: null` (asserted at
+  Seam 1, `tests/commit-all-unstaged.test.js`), but goes out through the plain
+  `refusalFailure` with no `failed` reply and so no report text (KD-R73). Fix: when KD-R73's
+  `failed` reply lands for `commit --all`, add a line saying the index is untouched (Q18,
+  C:commit-release `unstaged: null`) after the failed group in `reply.mjs`'s `failed`
+  text, and assert it on the same refusal. Slice: whichever lands KD-R73.
 - **KD-R91.** A hidden staged-new path that is also gitignored (Q11's own example,
   `git add -f .env.local` where `.env.local` is listed in `.gitignore`) never gets the
   "and .gitignore then hides it from `git status`" clause on its `notIncluded` entry:

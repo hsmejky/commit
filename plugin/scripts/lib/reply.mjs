@@ -13,8 +13,9 @@
 // run's `planId`; its answers, `ifNoUser` and the quoted rejected messages are RPL's. INT-02
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
 // state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
-// with the commits made before the budget stop; the not-included and `unstaged` lines, the
-// trailer line and the notices block in `text` are later slices'. RUN-15 adds `cleanText`,
+// with the commits made before the budget stop; the not-included lines, the trailer line and
+// the notices block in `text` are later slices'. EXE-11 adds the `unstaged` lines after the
+// commit lines of both (Q18: "your earlier staging was reset:"). RUN-15 adds `cleanText`,
 // M15 `planRefusal`'s own text for a clean tree that still has something to name. RUN-18 adds
 // the `nothing`/`zero-groups` reason (`check`'s own "zero groups" ending, C:check, story 97,
 // `text`: "nothing committed" then one line per `notIncluded` reason) and the first cut of the
@@ -87,6 +88,24 @@ const NOTHING_LINES = Object.freeze({
   'zero-groups': 'nothing committed',
 });
 
+// EXE-11 (Q18, C:commit-release `unstaged`): what the run's index reset unstaged, one line per
+// entry after the commit lines; none for `null` (index untouched) or `[]`. A gitignored entry
+// "is no longer shown by `git status`", an index-only one names its discarded blob. Paths are
+// escaped (RPL-06); the 10-entry cap with "+N more" is RPL-05's.
+const UNSTAGED_LINE = 'your earlier staging was reset:';
+
+function renderUnstaged(unstaged) {
+  if (!Array.isArray(unstaged) || unstaged.length === 0) return [];
+  return [UNSTAGED_LINE, ...unstaged.map(({ path, blob, ignored }) => {
+    let line = escapePath(path);
+    if (ignored === true) line += ' is no longer shown by `git status`';
+    if (blob !== null && blob !== undefined) {
+      line += `${ignored === true ? ';' : ':'} staged version discarded, recover with \`git cat-file -p ${blob}\``;
+    }
+    return line;
+  })];
+}
+
 // RUN-18 (C:check "Zero groups", story 97): one line per `notIncluded` entry, naming the path
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
 // use (C:reply-and-handback); INT-09 may still fold this into that shared rendering.
@@ -156,11 +175,15 @@ function modeChoiceQuestion({ staged, other }) {
  *   | { status: 'handback', kind: 'confirm', planId: string, humanOnly: boolean, treeState,
  *   notices?: string[] } | { status: 'handback', kind: 'handedBack', treeState,
  *   notices?: string[] }
- *   | { status: 'committed', commits: object[], treeState, notices?: string[] }
- *   | { status: 'handback', kind: 'continue', planId: string, commits: object[],
- *   handback: object, treeState, notices?: string[] }} facts
+ *   | { status: 'committed', commits: object[], unstaged?: object[] | null, treeState,
+ *   notices?: string[] } | { status: 'handback', kind: 'continue', planId: string,
+ *   commits: object[], unstaged?: object[] | null, handback: object, treeState,
+ *   notices?: string[] }} facts
  *   `commits`: the commits the call made (`n`, `sha`, `header`, C:commit-release), one
- *   `sha subject` line each in `text`. `handback` (`continue` only): M16 `commitAll`'s own
+ *   `sha subject` line each in `text`. `unstaged` (`committed` and `continue`, EXE-11): M16
+ *   `commitAll`'s `unstaged` (`{ path, blob, ignored }` entries, or `null`), listed after the
+ *   commit lines under "your earlier staging was reset:" when non-empty (Q18).
+ *   `handback` (`continue` only): M16 `commitAll`'s own
  *   `continue` handback, passed through verbatim (INT-02).
  *   `errors` (a `lintFailed`, or a `failed` lint failure with `--no-user`): C:check's lint
  *   errors, listed in `text` after the first line. `planId`: the kept run's (default `null`).
@@ -193,7 +216,7 @@ export function reply(facts) {
   } else if (facts.status === 'failed') {
     firstLines = [facts.message];
   } else if (facts.status === 'committed') {
-    firstLines = renderCommits(commits);
+    firstLines = [...renderCommits(commits), ...renderUnstaged(facts.unstaged)];
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
     firstLines = [modeChoiceQuestion(facts)];
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
@@ -211,7 +234,7 @@ export function reply(facts) {
     firstLines = [HANDED_BACK_TEXT];
     handback = { kind: 'handedBack', question: null };
   } else if (facts.status === 'handback' && facts.kind === 'continue') {
-    firstLines = renderCommits(commits);
+    firstLines = [...renderCommits(commits), ...renderUnstaged(facts.unstaged)];
     handback = facts.handback;
   } else if (facts.status === 'handback' && facts.kind === 'lock') {
     firstLines = [lockQuestion(facts.hhmm, facts.idleSeconds)];

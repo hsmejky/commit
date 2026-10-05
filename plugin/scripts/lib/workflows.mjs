@@ -1636,10 +1636,11 @@ async function committedOutput(facts, ctx, callStarted) {
   // (`commitCheckedGroups`'s `commit` branch carries it into `facts` alongside `handback`
   // and `kept`); C:check's output never has a `route` field, so it is stripped here too.
   const { handback, kept, route, ...output } = facts;
-  const { commits, notices } = output;
+  // EXE-11: `unstaged` (what the run's index reset unstaged) goes to the reply's text too.
+  const { commits, notices, unstaged } = output;
   const replyFacts = handback === undefined
-    ? { status: 'committed', commits, notices, planId: kept === true ? ctx.values.plan : null }
-    : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, notices, handback };
+    ? { status: 'committed', commits, unstaged, notices, planId: kept === true ? ctx.values.plan : null }
+    : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, unstaged, notices, handback };
   return { ...output, reply: await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) }) };
 }
 
