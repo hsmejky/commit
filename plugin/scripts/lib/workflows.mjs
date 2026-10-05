@@ -849,8 +849,12 @@ function entryPerLine(object) {
  * Guard state and the stored notices come before it (GRD-17); the effective config values
  * are CFG-05's `ctx.config.values` (`scanIgnore` dropped by `renderHunks` itself); the spill
  * to `hunks.json` is CHG-18's.
+ *
+ * INT-24 (C:plan step 8, Q20): `--dictated` skips the step; the dictated text needs no
+ * diff, so the run keeps its lock with `hunks: null` (and `reply: null`) on stdout.
  */
 async function renderHunkIndex(ctx) {
+  if (ctx.values.dictated === true) return { hunks: null };
   const { stdoutObj, hunksTxt, hunksJson } = renderHunks(
     {
       runDir: ctx.provisional.runDir,
@@ -1310,10 +1314,11 @@ export async function plan(values, injected, { cwd }) {
   // for a direct call that did not pass one.
   const callStarted = injected.callStarted ?? injected.now();
   // Only bare `plan`, `plan --split`, `plan --reword` (RUN-06: the lock on a clean tree;
-  // its reword facts GIT-09's, its snapshot CHG-15's) and `plan --staged` (RUN-13: its mode
-  // decision; its index-only snapshot is CHG-14's) are built: every other flag changes the
-  // mode or the clean-tree outcome (C:plan `mode`).
-  const unbuilt = ['dictated', 'take-over'].filter((f) => values[f] !== undefined);
+  // its reword facts GIT-09's, its snapshot CHG-15's; `--dictated` INT-24's, which skips
+  // the hunk step) and `plan --staged` (RUN-13: its mode decision; its index-only snapshot
+  // is CHG-14's) are built: every other flag changes the mode or the clean-tree outcome
+  // (C:plan `mode`).
+  const unbuilt = ['take-over'].filter((f) => values[f] !== undefined);
   if (unbuilt.length > 0) {
     throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
   }
