@@ -1062,9 +1062,10 @@ async function checkAlreadyCommitted(ctx) {
  * a `reply`), passing on the run's `interactive`; it also carries `shapeOnly` (RPL-08 reads
  * it to drop the `edit` answer when the plan's one error is a shape error) into the
  * `lintFailed` reply facts, unused until then. On success the validated groups are stored with
- * `committed: false`, and `groups`, `notIncluded` and `notices` are kept on `ctx.checked` for
- * step 6 (`commitCheckedGroups`); `computeConfirm` arrives with its own slices (RUN-17,
- * RUN-18).
+ * `committed: false`, and `groups`, `notIncluded`, `confirm` and `notices` are kept on
+ * `ctx.checked` for step 6 (`commitCheckedGroups`): `confirm` is M15 `computeConfirm`'s
+ * decision (RUN-17, landed), resolved here from the stored groups' unit IDs against this
+ * run's unit table, scan map and `scanIgnoreUnits`; RUN-18 routes it into `check`'s reply.
  */
 async function validateWorkerPlan(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
@@ -1092,13 +1093,20 @@ async function validateWorkerPlan(ctx) {
   const scanned = state.scanned ?? {};
   const scanIgnoreSet = new Set(state.scanIgnoreUnits ?? []);
   const unitPath = new Map((state.units ?? []).map((unit) => [unit.id, unit.path]));
+  // Each new file's `kind` (RUN-17 M1 fix, C:confirmation-triggers, Q16): a status-`A` path's
+  // own unit table entry, for `new binary file <path>` vs `new file <path>`.
+  const newFileKind = new Map(
+    (state.units ?? []).filter((unit) => unit.status === 'A').map((unit) => [unit.path, unit.kind]),
+  );
   const confirmGroups = validated.stored.map((row, i) => {
     const skippedFiles = [];
     const scanIgnoreFiles = [];
     const seenSkip = new Set();
     const seenIgnore = new Set();
     for (const id of row.units) {
-      const path = unitPath.get(id) ?? id;
+      // `validatePlan` only ever stores IDs it resolved against this same unit table, so
+      // `unitPath.get(id)` always hits; there is no raw-ID fallback to keep in step with it.
+      const path = unitPath.get(id);
       if (scanned[id] === 'skipped' && !seenSkip.has(path)) {
         seenSkip.add(path);
         skippedFiles.push(path);
@@ -1108,7 +1116,10 @@ async function validateWorkerPlan(ctx) {
         scanIgnoreFiles.push(path);
       }
     }
-    return { newFiles: validated.groups[i].newFiles, skippedFiles, scanIgnoreFiles };
+    const newFiles = validated.groups[i].newFiles.map(
+      (path) => ({ path, binary: newFileKind.get(path) === 'binary' }),
+    );
+    return { newFiles, skippedFiles, scanIgnoreFiles };
   });
   const confirm = computeConfirm(state.mode, confirmGroups, {
     resumed: state.resumed === true, interactive: state.interactive !== false,

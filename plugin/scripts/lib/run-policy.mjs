@@ -397,9 +397,12 @@ export function checkGate(runState) {
  * function never needs a unit table of its own.
  *
  * @param {'split' | 'staged' | 'reword'} mode
- * @param {Array<{ newFiles: string[], skippedFiles: string[], scanIgnoreFiles: string[] }>}
- *   groups per stored group, in `n` order: `newFiles` (forced `[]` in `reword`, the same
- *   derivation as `check`'s own `groups[].newFiles`, C:check) triggers in `split` only;
+ * @param {Array<{ newFiles: Array<{ path: string, binary: boolean }>, skippedFiles: string[],
+ *   scanIgnoreFiles: string[] }>}
+ *   groups per stored group, in `n` order: `newFiles` (forced `[]` in `reword`; `path` is the
+ *   same derivation as `check`'s own `groups[].newFiles`, C:check, `binary` is the unit's
+ *   `kind === 'binary'`) triggers in `split` only, as `new file <path>` or (Q16,
+ *   C:confirmation-triggers) `new binary file <path>` when `binary` is true;
  *   `skippedFiles` (a size-skipped path, M8 `scanUnits`'s `skipped`) and `scanIgnoreFiles` (a
  *   path flagged by a `scanIgnore` change, M8 `scanUnits`'s `scanIgnoreUnits`) are each `[]` in
  *   `reword`, which never scans, and both set `humanOnly` in `split` and `staged`.
@@ -413,7 +416,9 @@ export function computeConfirm(mode, groups, { resumed, interactive }) {
   if (groups.length > 1) reasons.push(`${groups.length} groups`);
   if (mode === 'split') {
     for (const group of groups) {
-      for (const path of group.newFiles ?? []) reasons.push(`new file ${path}`);
+      for (const file of group.newFiles ?? []) {
+        reasons.push(file.binary ? `new binary file ${file.path}` : `new file ${file.path}`);
+      }
     }
   }
   let humanOnly = false;
