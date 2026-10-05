@@ -315,6 +315,32 @@ test('MSG-06: a CRLF body\'s secret span indexes the normalised (LF) message, no
   }]);
 });
 
+// PLN-07 (C:check "the normalised message"): a passing group's `stored` header/body is the
+// same M6-normalised text `lintMessage` already scanned and linted (CRLF/lone-CR to LF, no
+// trailing blank lines) — the exact text review-MSG-06 finding 5's "stored" half (above test)
+// needed normalised first. Reassembling `stored.header + "\n\n" + stored.body` must equal
+// `messageOf`'s own normalised text byte for byte, so a span computed at lint time (the test
+// above) always indexes the stored message too.
+test('PLN-07: a CRLF body\'s stored header/body is the normalised (LF) text, not the raw one', async () => {
+  const { validatePlan } = await loadLib('plan-validator');
+  const header = 'feat: x';
+  const body = 'line one\r\nline two\r\n\r\n\r\n';
+  const units = [{ id: 'h1', path: 'a.txt', status: 'M' }];
+  const bytes = Buffer.from(JSON.stringify({ groups: [{ header, body, files: ['a.txt'] }] }));
+  const values = { ...DEFAULT_VALUES, body: 'optional' };
+
+  const result = validatePlan(bytes, { mode: 'split', units, config: { values } });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.stored[0], {
+    n: 1,
+    units: ['h1'],
+    header: 'feat: x',
+    body: 'line one\nline two',
+    attribution: false,
+  });
+});
+
 // review-MSG-06 finding 1 (Medium): an unpaired high-surrogate JSON escape re-encodes
 // cleanly through JSON.stringify/parse (a well-formed JSON escape, not an invalid byte), but
 // leaves a lone surrogate in the decoded JS string. `messageOf` used to swallow this and lint

@@ -184,7 +184,7 @@ test('validatePlan resolves a path to all of its units and stores them per group
   const result = validatePlan(bytes, { mode: 'split', units: UNITS, config: { values: DEFAULT_VALUES } });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.stored, [{ n: 1, units: ['h1', 'h2', 'h3'], header: 'feat: x', body: null }]);
+  assert.deepEqual(result.stored, [{ n: 1, units: ['h1', 'h2', 'h3'], header: 'feat: x', body: null, attribution: false }]);
   assert.deepEqual(result.groups[0].newFiles, ['docs/new.md']);
 });
 

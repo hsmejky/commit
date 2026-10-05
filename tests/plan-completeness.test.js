@@ -202,7 +202,7 @@ test('validatePlan: notIncluded by ID places single units', () => {
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.stored, [{ n: 1, units: ['h3', 'h4'], header: 'feat: x', body: null }]);
+  assert.deepEqual(result.stored, [{ n: 1, units: ['h3', 'h4'], header: 'feat: x', body: null, attribution: false }]);
 });
 
 test('validatePlan: one ID of a path left out names the other unit as not placed', () => {
