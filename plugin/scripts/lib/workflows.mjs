@@ -833,7 +833,7 @@ function entryPerLine(object) {
  * to `hunks.json` is CHG-18's.
  */
 async function renderHunkIndex(ctx) {
-  const { stdoutObj, hunksTxt } = renderHunks(
+  const { stdoutObj, hunksTxt, hunksJson } = renderHunks(
     {
       runDir: ctx.provisional.runDir,
       mode: ctx.mode,
@@ -845,6 +845,8 @@ async function renderHunkIndex(ctx) {
     ctx.units,
   );
   ctx.run.write('hunks.txt', hunksTxt);
+  // CHG-18: past the stdout budget, the full index also goes to `hunks.json`.
+  if (hunksJson !== undefined) ctx.run.write('hunks.json', hunksJson);
   // RUN-16 (C:plan step 8, C:plan-hunks): `plan --hunks` resets `lintFailures`, rewriting
   // `state.json` from the state it read so the stored notices survive.
   const run = { toplevel: ctx.toplevel, planId: ctx.provisional.planId };
@@ -908,7 +910,7 @@ async function resnapshotUnits(ctx) {
   }
   const matched = matchIds(state.idMap, current, { exact: true });
   if (!matched.ok) return { refusal: { code: 'unmatched', message: UNMATCHED_TEXT } };
-  const { stdoutObj, hunksTxt } = renderHunks(
+  const { stdoutObj, hunksTxt, hunksJson } = renderHunks(
     {
       runDir: folder.split(path.sep).join('/'),
       mode: state.mode,
@@ -920,6 +922,8 @@ async function resnapshotUnits(ctx) {
     matched.units,
   );
   writeRunFile(run, 'hunks.txt', hunksTxt);
+  // CHG-18: past the stdout budget, the full index also goes to `hunks.json`.
+  if (hunksJson !== undefined) writeRunFile(run, 'hunks.json', hunksJson);
   writeState(run, { ...state, lintFailures: 0, resumed: true });
   return { hunks: stdoutObj };
 }
