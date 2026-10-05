@@ -503,24 +503,24 @@ carry-over of foreign trailers belongs to MSG-08.
 
 **Blocked by:** EXE-06, CHG-15, PLN-05, GIT-09.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q20, C:commit-release (`reword`), M16, stories 175, 177, 179, 180, 181.
 
-- [ ] Seam 1: reword skips (b), (c) and the backstop entirely — no match, no reset, no
+- [x] Seam 1: reword skips (b), (c) and the backstop entirely — no match, no reset, no
       staging, no verify, no scan (story 181); `index-changed` is not checked, but
       `head-moved` still is.
-- [ ] Seam 1: a staged file during reword → the amended commit has the old tree, the file
+- [x] Seam 1: a staged file during reword → the amended commit has the old tree, the file
       still staged.
-- [ ] Seam 1: extra staging between `plan` and `commit` → not refused; a manual commit in
+- [x] Seam 1: extra staging between `plan` and `commit` → not refused; a manual commit in
       between → `head-moved`.
-- [ ] Seam 1: the root commit reworded → new message, same tree, still a root commit.
-- [ ] Seam 1: a foreign trailer in the old message survives; an Anthropic
+- [x] Seam 1: the root commit reworded → new message, same tree, still a root commit.
+- [x] Seam 1: a foreign trailer in the old message survives; an Anthropic
       `Co-Authored-By` is dropped (per MSG's carry-over).
-- [ ] Seam 1: reword gives no "another commit was made during group `n`" notice — the
+- [x] Seam 1: reword gives no "another commit was made during group `n`" notice — the
       first-parent check compares the amended HEAD's first parent against the expected
       HEAD's own first parent, not against the expected HEAD itself.
-- [ ] Seam 1: reword of a root commit gives no such notice either — both the amended HEAD
+- [x] Seam 1: reword of a root commit gives no such notice either — both the amended HEAD
       and the expected HEAD have no first parent, so the check still matches.
 
 
