@@ -19,9 +19,14 @@
 //                                       COMMIT_TEST_FAULT_LINK_CODE (default EIO).
 //   COMMIT_TEST_FAULT_LINK_CODE         default errno code for a failed link call whose
 //                                       matching entry has no `=code` (default EIO).
-//   COMMIT_TEST_FAULT_RENAME_BASENAME   same shape as COMMIT_TEST_FAULT_LINK_BASENAME, for
-//                                       the rename *target* (the second argument to
-//                                       fs.renameSync/fs.rename/fs.promises.rename).
+//   COMMIT_TEST_FAULT_RENAME_BASENAME   same shape as COMMIT_TEST_FAULT_LINK_BASENAME, matched
+//                                       against the rename *target* (the second argument to
+//                                       fs.renameSync/fs.rename/fs.promises.rename) first,
+//                                       then against the rename *source* (the first argument)
+//                                       when the target does not match: a rename away from a
+//                                       stable name to a private one (RUN-21's takeover,
+//                                       `lock` -> `lock.<planId>`) has its meaningful name on
+//                                       the source, not the newly chosen target.
 //   COMMIT_TEST_FAULT_RENAME_CODE       default errno code for a failed rename call whose
 //                                       matching entry has no `=code` (default EIO).
 //   COMMIT_TEST_FAULT_UTIMES_BASENAME   same shape as COMMIT_TEST_FAULT_LINK_BASENAME, for
@@ -184,11 +189,16 @@ fs.promises.link = function link(existingPath, newPath) {
 };
 
 // --- fs.rename / fs.renameSync / fs.promises.rename -----------------------------------------
+// Target first, then source (RUN-21: a rename away from a stable name has no stable target).
+
+function matchRenameFault(oldPath, newPath) {
+  return matchFault(RENAME_BASENAMES, newPath, RENAME_CODE) || matchFault(RENAME_BASENAMES, oldPath, RENAME_CODE);
+}
 
 const originalRenameSync = fs.renameSync;
 fs.renameSync = function renameSync(oldPath, newPath, ...rest) {
   logCall(newPath);
-  const code = matchFault(RENAME_BASENAMES, newPath, RENAME_CODE);
+  const code = matchRenameFault(oldPath, newPath);
   if (code) throw makeFault(code, 'rename', oldPath, newPath);
   return originalRenameSync.call(this, oldPath, newPath, ...rest);
 };
@@ -196,7 +206,7 @@ fs.renameSync = function renameSync(oldPath, newPath, ...rest) {
 const originalRename = fs.rename;
 fs.rename = function rename(oldPath, newPath, callback) {
   logCall(newPath);
-  const code = matchFault(RENAME_BASENAMES, newPath, RENAME_CODE);
+  const code = matchRenameFault(oldPath, newPath);
   if (code) {
     process.nextTick(callback, makeFault(code, 'rename', oldPath, newPath));
     return;
@@ -207,7 +217,7 @@ fs.rename = function rename(oldPath, newPath, callback) {
 const originalRenamePromise = fs.promises.rename;
 fs.promises.rename = function rename(oldPath, newPath) {
   logCall(newPath);
-  const code = matchFault(RENAME_BASENAMES, newPath, RENAME_CODE);
+  const code = matchRenameFault(oldPath, newPath);
   if (code) return Promise.reject(makeFault(code, 'rename', oldPath, newPath));
   return originalRenamePromise.call(this, oldPath, newPath);
 };
