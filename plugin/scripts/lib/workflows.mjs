@@ -246,7 +246,9 @@ async function preFolderRefusals(ctx) {
  * to the common dir's `info/exclude`, mints the `planId` and creates the provisional run
  * folder. `plan` discards it on every
  * outcome that takes no lock (`plan`'s `finally`). Then M12 `peek` (RUN-07) checks the run
- * lock read-only, before any inventory work: a live lock refuses `lock`.
+ * lock read-only, before any inventory work: a live lock refuses `lock`; a stale one is taken
+ * over here (RUN-21): M12 `acquire({ takeOver })`, then `finishTakeover` deletes the old
+ * folder and the renamed lock. From then on `ctx.run` holds the lock, so step 7 takes none.
  */
 async function createRunFolder(ctx) {
   const { env, now } = ctx.injected;
@@ -260,6 +262,20 @@ async function createRunFolder(ctx) {
   // `finally` discards this call's own provisional folder since `ctx.run` is never set here.
   const peeked = ctx.provisional.peek({ now: ctx.injected.now });
   if (!peeked.ok) return { refusal: { code: peeked.code, message: peeked.message, holder: peeked.holder } };
+  if (peeked.stale === null) return undefined;
+  // RUN-21 (Q22, C:plan step 3): the automatic takeover of a stale lock. A takeover that
+  // loses a race refuses like a live lock (`held`, a fresh handback naming the lock now in
+  // place); `plan`'s `finally` then discards only this call's own provisional folder. Once
+  // it holds the lock, every later outcome releases it there too, and the takeover notice,
+  // kept on `ctx.notices`, goes into whatever output `plan` ends with (story 210).
+  const acquired = ctx.provisional.acquire({ now: ctx.injected.now, takeOver: peeked.stale });
+  if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
+  ctx.run = acquired.run;
+  if (acquired.takeover === null) return undefined;
+  ctx.notices.push(acquired.takeover.notice);
+  // The taken-over run's index-repair check goes here, before the folder is deleted (RUN-23).
+  const finished = ctx.run.finishTakeover();
+  if (finished !== null) ctx.notices.push(finished);
   return undefined;
 }
 
@@ -655,8 +671,8 @@ async function readHistory(ctx) {
  * Step 7 (CHG-03b): in contract order (C:run-folder, C:plan step 7), M12 writes `state.json`
  * (the stored facts so far: `version`, `mode`, `interactive`, the expected `head`, the index
  * fingerprint, the unit table and the `id → hash` map; the later rows arrive with their slices), then takes the run
- * lock (`acquire`, no takeover; RUN-06: a lost race → `held`, then the HEAD re-read; the
- * takeover path is RUN-21's), then writes `plan.json`. A lock is never taken without `state.json` in place. From
+ * lock (`acquire`, no takeover; RUN-06: a lost race → `held`; skipped when step 3's takeover
+ * already holds it, RUN-21), then the HEAD re-read on both paths, then writes `plan.json`. A lock is never taken without `state.json` in place. From
  * the `acquire` on, `ctx.run` is set, so `plan`'s `finally` releases the lock on a throw.
  * CFG-08 adds `attribution` (`{ trailer, source }`, step 1's `ctx.attribution`) to both
  * files, in the contract's order (C:run-folder): ahead of `recentSubjects`, so M16/M17 read
@@ -722,9 +738,11 @@ async function storeAndLock(ctx) {
   // A race lost to another run's lock (`held`, RUN-06) refuses `lock`; with no `ctx.run`,
   // `plan`'s `finally` deletes only this call's own provisional folder. `holder` becomes the
   // failure's `planId`/`created`/`touched` error fields (`planRefusalFailure`, RUN-07).
-  const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
-  if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
-  ctx.run = acquired.run;
+  if (ctx.run === null) {
+    const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
+    if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
+    ctx.run = acquired.run;
+  }
   // RUN-12: the re-reads below are git calls under `plan`'s deadline; past it `plan`'s
   // `finally` releases the run just taken.
   const late = pastDeadline(ctx);

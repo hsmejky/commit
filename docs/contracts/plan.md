@@ -45,7 +45,10 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    later outcome that takes no lock on the path with no takeover (a clean tree,
    `modeChoice`, `staged-empty`, `staged-hit`, `signing`, `killed-leftover`, `git-failed`,
    `timeout`, …) releases the lock and deletes the folder. The takeover's notices (the
-   takeover notice, naming the stale run's `planId` for an automatic takeover; the reset
+   takeover notice, naming the stale run's `planId` for an automatic takeover: "took over
+   the stale /commit run `` `<planId>` `` (idle for 15 minutes or more)", or for a lock with
+   no `planId` in the minted form "took over a stale, unreadable /commit lock (idle for 15
+   minutes or more)"; the reset
    notice; the `unstaged` report; with `killedLeftover` the killed group's paths still
    staged) are kept from here on and go into the reply's notices of every output `plan`
    ends with, whatever step it ends at: a clean tree, `modeChoice`, `staged-empty`,

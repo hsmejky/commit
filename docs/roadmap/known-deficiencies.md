@@ -237,6 +237,15 @@ fixed, delete it here; IDs are never reused.
   `sha`; the preload cannot fail only a later rename. AC2 is INT-31's own criterion, not the
   accepted-gap list: INT-31 cannot close until this case exists. Fix: once EXE-19 and EXE-17
   land, add the case and drop this row. Slice: INT-31.
+- **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
+  `confirm` handback and the `committed` reply on a tree needing confirmation) is covered
+  only in part by `tests/plan-takeover.test.js`: the `confirm` handback carries the notice
+  in `reply.notices`, and the `--no-user` route's in-process `committed` reply from `check`
+  carries it, but no reply `text` renders notices yet (the `Notices:` block is RPL-05's),
+  and the interactive route's `committed` reply comes from `commit --confirmed`, whose reply
+  is INT-09's (`commit --plan --all` today outputs no `reply` and `notices: []`). Fix: once
+  RPL-05 and INT-09 land, assert the notice in the handback's `text` and in the `commit
+  --confirmed` reply, and drop this row. Slice: RUN-21 (with RPL-05, INT-09).
 
 ## Design sync
 
