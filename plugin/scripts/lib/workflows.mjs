@@ -1057,7 +1057,9 @@ async function commitGroups(ctx) {
     || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed'
     || outcome.refusal?.code === 'index-locked' || outcome.refusal?.code === 'unmatched'
     || outcome.refusal?.code === 'git-failed' || outcome.refusal?.code === 'stage-failed'
-    || outcome.refusal?.code === 'mismatch') {
+    || outcome.refusal?.code === 'mismatch'
+    // EXE-13: the backstop's `backstop-hit` (exit 3 `scan`), after its unstage.
+    || outcome.refusal?.code === 'backstop-hit') {
     const released = releaseOpen(run);
     if (released.notice !== null) outcome.notices.push(released.notice);
     // review-INT-02 Low-3: a `release()` that could not remove the lock (`busy`) reports
@@ -1541,6 +1543,9 @@ function commitAllFailure(facts) {
       gitOutput,
       unstaged,
       notices,
+      // EXE-13: a backstop refusal's `hits` (C:commit-release exit 3), M8's `patternId` as
+      // C:plan's `pattern`, never the matched value.
+      ...(facts.hits ? { hits: facts.hits.map(({ path, line, patternId }) => ({ path, line, pattern: patternId })) } : {}),
     },
   };
 }

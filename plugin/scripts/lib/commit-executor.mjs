@@ -70,6 +70,7 @@ import {
 } from './change-set.mjs';
 import { appendTrailers, carryOver, normaliseText } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
+import { compileGlob } from './glob-matcher.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
 import { build } from './script-call.mjs';
@@ -156,6 +157,25 @@ function stageFailedText(n) {
 
 function mismatchText(n) {
   return `files changed while staging group ${n}, run /commit again`;
+}
+
+// EXE-13: the backstop's refusal (`backstop-hit`, CLI kind `scan`, exit 3).
+function backstopText(n) {
+  return `the scan before committing group ${n} found a possible secret`;
+}
+
+// EXE-13 (CFG-01 item 1): the `scanIgnore` matchers recompiled by M7 from the patterns
+// `plan` stored (`config.values.scanIgnore`, read at HEAD then). Fail-closed: a missing or
+// malformed stored list exempts nothing, and a pattern that no longer compiles is dropped,
+// so a damaged state can only make the backstop scan more, never less.
+function storedScanIgnore(state) {
+  const patterns = state.config?.values?.scanIgnore;
+  if (!Array.isArray(patterns)) return [];
+  return patterns
+    .filter((pattern) => typeof pattern === 'string')
+    .map((pattern) => compileGlob(pattern))
+    .filter((compiled) => compiled.ok)
+    .map((compiled) => compiled.matcher);
 }
 
 /**
@@ -459,10 +479,22 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           return refused(state, group, commits, refusal, notices, staged.gitOutput ?? null);
         }
 
-        // The backstop over the recorded tree (thin: no stored scanIgnore patterns yet).
+        // EXE-13 (C:commit-release): the backstop over the recorded tree, fail-closed. The
+        // tree is recorded first, so the scan reads exactly that tree; the diff from the
+        // expected HEAD (`null`: the empty tree, unborn) carries the attribute-hidden `--text`
+        // pass. Paths are exempted only by the patterns `plan` stored, recompiled here, never
+        // by a fresh read of HEAD that an earlier group of this run may have moved (CFG-01).
         const tree = await writeTree(git);
-        const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), { scanIgnore: [], osUser });
-        if (hits.length > 0) throw notBuilt('the backstop refusal', 'EXE-13');
+        const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), {
+          scanIgnore: storedScanIgnore(state), osUser,
+        });
+        if (hits.length > 0) {
+          await unstage(git);
+          return {
+            ...refused(state, group, commits, { code: 'backstop-hit', message: backstopText(group.n) }, notices),
+            hits,
+          };
+        }
 
         // EXE-23 (Q18): the repo's signing config stays untouched — never `--no-gpg-sign` or
         // `-c commit.gpgsign=false`; M2's scrub keeps an exported `GIT_CONFIG_SYSTEM`.

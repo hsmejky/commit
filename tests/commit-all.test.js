@@ -162,7 +162,7 @@ test('a partially staged file is committed whole and reported in unstaged with i
   assert.equal(fs.existsSync(runDir), false, 'the run folder is gone');
 });
 
-test('a backstop hit after staging resets the real index before throwing, and commits nothing', async (t) => {
+test('a backstop hit after staging unstages the group, commits nothing, and ends the run with exit 3 scan (EXE-13)', async (t) => {
   const c = createCase(t);
   c.writeFile('a.txt', 'one\n');
   c.writeFile('b.txt', 'two\n');
@@ -184,13 +184,13 @@ test('a backstop hit after staging resets the real index before throwing, and co
 
   const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
 
-  assert.equal(result.exitCode, 1, detail(result));
-  assert.equal(result.json.error.kind, 'internal', detail(result));
+  assert.equal(result.exitCode, 3, detail(result));
+  assert.equal(result.json.error.kind, 'scan', detail(result));
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'no commit was made');
   assert.equal(c.git(['diff', '--cached']), '', 'the real index was reset, nothing staged');
   assert.match(c.git(['status', '--porcelain']), /^ M a\.txt\r?\n M b\.txt\r?\n?$/, 'both files are plain unstaged modifications again');
-  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the run lock is kept');
-  assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });
 
 // EXE-03 (docs/roadmap/10-commit-executor.md): the message reaches git exactly as approved.

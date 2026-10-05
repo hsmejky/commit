@@ -571,7 +571,24 @@ const ROWS = [
     producers: 'M8 via M16',
     kind: 'scan',
     exitCode: 3,
-    pairs: [{ producer: 'M8 via M16', gap: { kd: 'KD-R98' } }],
+    pairs: [{
+      producer: 'M8 via M16',
+      message: /^the scan before committing group 1 found a possible secret/,
+      // EXE-13: a stored group holding a `ghp_` token (built at run time) that `plan`'s
+      // recorded scan map no longer names (tests/commit-all-backstop.test.js).
+      async seam1Case(t) {
+        const c = seededCase(t, { 'a.txt': 'one\n' });
+        c.writeFile('key.js', `const token = "${'gh' + 'p_' + 'q'.repeat(36)}";\n`);
+        const planned = await runCommit(c, ['plan', '--split']);
+        assert.equal(planned.exitCode, 0, detail(planned));
+        const statePath = path.join(planned.json.runDir, 'state.json');
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        state.groups = [{ n: 1, units: state.units.map((unit) => unit.id), header: 'feat: add key', body: null, committed: false }];
+        state.scanned = {};
+        fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+        return commitAll(c, planned.json.planId);
+      },
+    }],
   },
   {
     row: 'git-failed',

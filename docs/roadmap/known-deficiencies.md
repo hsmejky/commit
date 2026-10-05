@@ -253,13 +253,13 @@ fixed, delete it here; IDs are never reused.
   is dropped.
   Slice: EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists six pairs as gaps because the code producing them is not built: `env` via the entry
+  lists five pairs as gaps because the code producing them is not built: `env` via the entry
   point for an install path with a shell-special character (RPL-08), `killed-leftover`
-  (RUN-24), `index-locked` via M18's takeover repair (RUN-23, RUN-25), `backstop-hit`
-  (EXE-13), `git-failed` from a failing `git commit` (EXE-12) and `timed-out` via M16's `git
+  (RUN-24), `index-locked` via M18's takeover repair (RUN-23, RUN-25), `git-failed` from a
+  failing `git commit` (EXE-12) and `timed-out` via M16's `git
   commit` deadline (EXE-17). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
-  EXE-12, EXE-13, EXE-17, RPL-08, RUN-23, RUN-24, RUN-25.
+  EXE-12, EXE-17, RPL-08, RUN-23, RUN-24, RUN-25.
 - **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws

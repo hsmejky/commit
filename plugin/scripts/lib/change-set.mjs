@@ -983,7 +983,7 @@ async function resolveHiddenBinaries(units, attrs, runTextPass, ctx, sizeOf) {
     unit.kind === 'binary' && unit.status !== 'D' && attrs.get(unit.path)?.hidden === true
   ));
   if (candidates.length === 0) return units;
-  const facts = ctx.mode === 'reword' || ctx.mode === 'staged'
+  const facts = ctx.mode === 'reword' || ctx.mode === 'staged' || ctx.mode === 'backstop'
     ? await hiddenBinaryFactsBatch(candidates, ctx)
     : new Map(candidates.map((unit) => [unit.path, hiddenBinaryFacts(unit.path, ctx)]));
   const overLimit = new Set([...facts].filter(([, f]) => f.overLimit).map(([p]) => p));
@@ -1532,11 +1532,15 @@ export async function writeTree({ toplevel, env, now }) {
 }
 
 /**
- * M10 `treeDiffUnits` (EXE-02, thin: CHG-20 adds the attribute-hidden `--text` pass; the
- * shared `createDiffReader` already applies the CHG-16 1 MB scan limit here, same as
- * `snapshot`): the units of the diff from `fromTree` (the expected HEAD, or `null` for
- * the empty tree when unborn) to `toTree`, with the same pinned options and patch pass as
- * `snapshot`, so the backstop scans the recorded tree as `plan` scanned the snapshot.
+ * M10 `treeDiffUnits` (EXE-02; the shared `createDiffReader` applies the CHG-16 1 MB scan
+ * limit here, same as `snapshot`): the units of the diff from `fromTree` (the expected HEAD,
+ * or `null` for the empty tree when unborn) to `toTree`, with the same pinned options and
+ * patch pass as `snapshot`, so the backstop scans the recorded tree as `plan` scanned the
+ * snapshot. EXE-13: with the attribute-hidden `--text` pass (CHG-11's `resolveHiddenBinaries`,
+ * the blobs read from the tree), fail-closed: every binary-rendered unit is a candidate, not
+ * only one the worktree's attributes mark hidden (the recorded tree's own `.gitattributes`
+ * may differ from them), so only real content (a NUL in the sniff window, or the 1 MB
+ * limit) keeps a unit out of the scan.
  *
  * @param {string | null} fromTree
  * @param {string} toTree
@@ -1546,8 +1550,13 @@ export async function writeTree({ toplevel, env, now }) {
  */
 export async function treeDiffUnits(fromTree, toTree, { toplevel, env, now }) {
   const from = fromTree ?? await emptyTreeId({ toplevel, env, now });
-  const sizeOf = await bodyRuleSizes([from, toTree], { toplevel, env, now }, new Map(), false);
-  return withBodyCap(await diffUnits([from, toTree], { toplevel, env, now }, new Map(), { sizeOf }));
+  const opts = { toplevel, env, now };
+  const sizeOf = await bodyRuleSizes([from, toTree], opts, new Map(), false);
+  const units = await diffUnits([from, toTree], opts, new Map(), { sizeOf });
+  const everyPathHidden = { get: () => ({ hidden: true }) };
+  const runTextPass = (keep) => diffUnits([from, toTree, '--text'], opts, new Map(), { keep, wholeFiles: true });
+  const ctx = { mode: 'backstop', toplevel, env, now };
+  return withBodyCap(await resolveHiddenBinaries(units, everyPathHidden, runTextPass, ctx, sizeOf));
 }
 
 // The empty tree's object ID (CHG-15, EXE-02): `git hash-object -t tree --stdin` on empty
