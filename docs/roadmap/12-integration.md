@@ -395,15 +395,15 @@ the reply carries the "guard did not run" notice.
 
 **Blocked by:** INT-02, GRD-13, GRD-15, GRD-17.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q23, Testing seams "ScriptCall round trip", stories 34, 36, 37.
 
-- [ ] Seam 2 then Seam 1: the guard process fed the exact `plan` command in Bash and in
+- [x] Seam 2 then Seam 1: the guard process fed the exact `plan` command in Bash and in
       PowerShell form writes the heartbeat; the following `plan` has no guard notice (the
       `env.guard` state and its `not-seen` cases are GRD-17's `guardState`/`samePathTree`
       tests, not repeated here)
-- [ ] Seam 1: the INT-02 First-slice run with no heartbeat in the Claude home → the
+- [x] Seam 1: the INT-02 First-slice run with no heartbeat in the Claude home → the
       `committed` reply's `notices` hold the exact text "Guard hook did not run: `node`
       missing from the hook's PATH, plugin hooks disabled, or `disableAllHooks` set. Direct
       `git commit` is not blocked." (Q23, `q23-guard-heartbeat.md`)

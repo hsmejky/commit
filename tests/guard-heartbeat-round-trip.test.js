@@ -46,6 +46,22 @@ function writeWorkerPlan(runDir, groups) {
   }));
 }
 
+// review-INT-27-r2 Medium-1: a repo config layer's unknown key (CFG-06, workflows.mjs
+// loadConfigLayers) is a notice `plan` stores that is not the guard notice, so it pins the
+// fix at workflows.mjs:1074 (`[...storedNotices, ...validated.notices]`) against a
+// regression to the old guard-only filter, which every other `check` test here cannot catch
+// since each has only the guard notice stored.
+function writeRepoConfig(c, value) {
+  c.writeFile('.claude/commit.json', JSON.stringify(value));
+}
+
+// review-INT-27-r2 Low-3: a `ghp_` token built at run time (tests/plan-placement-bans-seam1
+// .test.js), used below for a scan-hit notice that is `check`'s own (M14 `validatePlan`),
+// to pin its order after plan's stored notices (the guard notice here).
+function githubToken(fill) {
+  return 'gh' + 'p_' + fill.repeat(36);
+}
+
 for (const toolName of ['Bash', 'PowerShell']) {
   test(`Seam 2 then Seam 1 (${toolName}): the guard fed the exact plan script call writes the heartbeat, and the following plan reports no guard notice`, async (t) => {
     const c = dirtyCase(t);
@@ -82,4 +98,53 @@ test('Seam 1: the INT-02 first-slice run with no heartbeat in the Claude home en
   assert.equal(checked.json.reply.status, 'committed');
   assert.deepEqual(checked.json.notices, [GUARD_NOTICE]);
   assert.deepEqual(checked.json.reply.notices, [GUARD_NOTICE]);
+});
+
+test('Seam 1: no heartbeat plus an unknown config key carries every stored notice, guard first', async (t) => {
+  const c = createCase(t);
+  // The repo config is committed with the seed (not left dirty), so it is not itself a
+  // candidate unit `plan --split` must place.
+  writeRepoConfig(c, { workerModel: 'haiku' });
+  c.git(['add', '--', '.claude/commit.json']);
+  c.writeFile('a.txt', 'one\n');
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  writeWorkerPlan(runDir, [{ header: HEADER, files: ['a.txt'] }]);
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  const configWarning = "the repo config (.claude/commit.json) key 'workerModel' is unknown; ignored";
+  assert.deepEqual(checked.json.notices, [GUARD_NOTICE, configWarning]);
+  assert.deepEqual(checked.json.reply.notices, [GUARD_NOTICE, configWarning]);
+});
+
+test('Seam 1: no heartbeat, the guard notice stored by plan precedes a left-out scan hit, check’s own notice', async (t) => {
+  const c = createCase(t);
+  c.writeFile('src/b.js', 'one\ntwo\n');
+  c.git(['add', '--', 'src/b.js']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('src/b.js', `one\ntwo\nconst token = "${githubToken('f')}";\n`);
+
+  const planned = await runCommit(c, ['plan']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: [],
+    notIncluded: [{ path: 'src/b.js', hunks: null, reason: 'scan: github-token' }],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  // Zero groups: nothing to commit, so (as in plan-placement-bans-seam1.test.js) only
+  // `notices` is asserted; `reply` is a different shape with no groups to report on.
+  assert.deepEqual(checked.json.notices, [GUARD_NOTICE, 'src/b.js:3 github-token left out']);
 });

@@ -63,6 +63,17 @@ fixed, delete it here; IDs are never reused.
   (C:plan-hunks) — out of PLN-04's scope to touch. Fix: store the line per hit alongside its
   pattern ID in `buildScanMap`/`state.json`, and widen `hunk-index.mjs`'s read of it to
   match. Slice: PLN-04 (criterion as pinned), M13.
+- **KD-R92.** `lintFailureOf` (`plugin/scripts/lib/workflows.mjs`) drops `plan`'s stored
+  notices on a lint failure: the interactive `lintFailed` handback's `finalReply` call
+  carries no `notices` at all, and the `--no-user` `failed` reply's `notices` holds only the
+  release notice (`released.notice`), never `ctx.notices`. Per [plan](plan.md) step 8 /
+  [reply-and-handback](reply-and-handback.md), every output that ends the worker's part of a
+  run should carry the notices `plan` stored (the guard notice included), so a
+  heartbeat-less run whose user answers `no` to a lint failure never sees the guard notice.
+  Pre-existing, outside INT-27's ACs (review-INT-27-r2 Low-2). Fix: pass `ctx.notices` (or
+  `[...ctx.notices, released.notice]` for the `--no-user` branch) into both `finalReply`
+  calls. Slice: RUN-27 (`lintFailureOf`'s own comment: "M15 `runEnd` replaces this branch
+  when RUN-27 builds it"), or an earlier RPL slice if one touches this function first.
 
 ## Test mechanisms
 

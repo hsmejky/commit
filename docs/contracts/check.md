@@ -129,9 +129,10 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   .gitignore then hides it from `git status`" when the stored staged-new list marks it
   `ignored`. The reset happens in `commit`, so the note describes what `yes` will do;
   with zero groups, or after `no`, the index is untouched and there is no note.
-- `notices`: every notice `plan` stored in `state.json`'s `notices` (GRD-17; the guard
-  notice (Q23), the signing `prompt` note (Q18), the detached-HEAD warning (Q21), `warnings`,
-  and the sweep's cleanup errors), carried forward in that order ahead of `check`'s own;
+- `notices`: every notice `plan` stored in `state.json`'s `notices` (GRD-17: the guard
+  notice (Q23), the detached-HEAD warning (Q21), `warnings`, the takeover's notices (kept
+  since step 3), the signing `prompt` note (Q18), and the sweep's cleanup errors), carried
+  forward in the order `plan` stored them ([plan](plan.md) step 8) ahead of `check`'s own;
   pattern hits that were left out (Q10), and (`split`, at least one group) one line per
   `indexOnly` path: "x: the staged version differs from your working tree; committing this
   plan discards it — recover with `git cat-file -p <blob>`" (Q11). Never a confirmation
