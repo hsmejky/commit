@@ -377,17 +377,17 @@ the amend, with repo-state refusals specific to reword.
 
 **Blocked by:** EXE-20, GIT-09, MSG-08, RUN-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q20, C:commit-release, C:worker-plan (dictated reword), stories 175-181.
 
-- [ ] Seam 1: `plan --reword` on a clean tree → exit 0 with the lock taken; `check` amends
+- [x] Seam 1: `plan --reword` on a clean tree → exit 0 with the lock taken; `check` amends
       the message, staged changes untouched (story 175)
-- [ ] `--dictated` → no hunk index; a `source: user` plan commits its text as given (story
+- [x] `--dictated` → no hunk index; a `source: user` plan commits its text as given (story
       178)
-- [ ] Pushed, unborn and merge-commit HEAD → exit 6 (`pushed`, `state`); a root commit rewords
+- [x] Pushed, unborn and merge-commit HEAD → exit 6 (`pushed`, `state`); a root commit rewords
       (stories 176, 177)
-- [ ] A first reword never confirms (story 181)
+- [x] A first reword never confirms (story 181)
 
 
 ## INT-27: Guard heartbeat round trip
