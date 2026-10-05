@@ -1031,7 +1031,7 @@ test('peek: no lock is ok and touches nothing', (t) => {
   const toplevel = tempDir(t);
   const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
 
-  assert.deepEqual(provisional.peek({ now: () => T0 }), { ok: true });
+  assert.deepEqual(provisional.peek({ now: () => T0 }), { ok: true, stale: null });
 });
 
 test('peek: a fresh lock held by another planId refuses held with the holder fields, matching acquire\'s shape', (t) => {
@@ -1124,15 +1124,229 @@ test('peek: the holder is named from its single read of the lock, even if the lo
   assert.deepEqual(peeked.holder, { planId: holderId, created, touched });
 });
 
-test('peek: a lock stale by mtime is ok, whatever its content (the automatic takeover is RUN-21\'s)', (t) => {
+// RUN-21: a lock stale by mtime is `ok`, and `stale` carries what `acquire({ takeOver })`
+// verifies the moved lock against (its bytes and its mtime, Q22) and the `planId` the
+// takeover notice names (`null` for a lock with no minted `planId`).
+test('peek: a lock stale by mtime is ok and reports it as stale', (t) => {
   const toplevel = tempDir(t);
   const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
   const runDir = path.join(toplevel, '.commit-plan');
   const holderId = crypto.randomUUID();
-  fs.writeFileSync(path.join(runDir, 'lock'), JSON.stringify({ planId: holderId, created: '2026-09-26T13:58:02.000Z' }));
-  const staleAt = fs.statSync(path.join(runDir, 'lock')).mtimeMs + run.STALE_AFTER_MS;
+  const content = JSON.stringify({ planId: holderId, created: '2026-09-26T13:58:02.000Z' });
+  fs.writeFileSync(path.join(runDir, 'lock'), content);
+  const stats = fs.statSync(path.join(runDir, 'lock'));
+  const staleAt = stats.mtimeMs + run.STALE_AFTER_MS;
 
-  assert.deepEqual(provisional.peek({ now: () => staleAt }), { ok: true });
+  assert.deepEqual(provisional.peek({ now: () => staleAt }), {
+    ok: true,
+    stale: { planId: holderId, touched: stats.mtimeMs, size: stats.size, bytes: Buffer.from(content) },
+  });
+});
+
+test('peek: a stale unparseable lock is stale too, with planId: null', (t) => {
+  const toplevel = tempDir(t);
+  const { provisional } = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false });
+  const runDir = path.join(toplevel, '.commit-plan');
+  fs.writeFileSync(path.join(runDir, 'lock'), 'not json');
+  const stats = fs.statSync(path.join(runDir, 'lock'));
+
+  const peeked = provisional.peek({ now: () => stats.mtimeMs + run.STALE_AFTER_MS });
+
+  assert.deepEqual(peeked, { ok: true, stale: { planId: null, touched: stats.mtimeMs, size: 8, bytes: Buffer.from('not json') } });
+});
+
+// RUN-21 (Q22, C:plan step 3): the automatic takeover. A stale run `X` with its folder, aged
+// past 15 minutes; `peek` reports it and `acquire({ takeOver })` renames it to
+// `lock.<own planId>`, verifies bytes and mtime, and links its own lock.
+function staleRun(t, { content } = {}) {
+  const toplevel = tempDir(t);
+  const created = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: () => {} });
+  const runDir = path.join(toplevel, '.commit-plan');
+  const staleId = crypto.randomUUID();
+  fs.mkdirSync(path.join(runDir, staleId));
+  fs.writeFileSync(path.join(runDir, staleId, 'state.json'), '{}\n');
+  const lock = path.join(runDir, 'lock');
+  const bytes = content ?? JSON.stringify({ planId: staleId, created: '2026-09-26T13:58:02.000Z' });
+  fs.writeFileSync(lock, bytes);
+  const aged = new Date(T0 - run.STALE_AFTER_MS - 60_000);
+  fs.utimesSync(lock, aged, aged);
+  const now = () => T0;
+  const peeked = created.provisional.peek({ now });
+  assert.equal(peeked.ok, true);
+  assert.notEqual(peeked.stale, null);
+  return { provisional: created.provisional, runDir, lock, staleId, bytes, aged, now, stale: peeked.stale };
+}
+
+test('takeoverNotice names the stale planId, or the unreadable lock', () => {
+  const planId = '11111111-1111-4111-8111-111111111111';
+  assert.equal(run.takeoverNotice(planId), 'took over the stale /commit run `11111111-1111-4111-8111-111111111111` (idle for 15 minutes or more)');
+  assert.equal(run.takeoverNotice(null), 'took over a stale, unreadable /commit lock (idle for 15 minutes or more)');
+});
+
+test('acquire takeOver: links its own lock, keeps the renamed lock until finishTakeover, which deletes the old folder and then it', (t) => {
+  const { provisional, runDir, lock, staleId, bytes, now, stale } = staleRun(t);
+  const renamed = path.join(runDir, `lock.${provisional.planId}`);
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, true);
+  assert.deepEqual(acquired.takeover, { planId: staleId, notice: run.takeoverNotice(staleId), killedRun: null });
+  assert.equal(JSON.parse(fs.readFileSync(lock, 'utf8')).planId, provisional.planId);
+  assert.equal(fs.readFileSync(renamed, 'utf8'), bytes, 'the renamed lock keeps the stale bytes');
+  assert.ok(fs.existsSync(path.join(runDir, staleId)), 'the old folder waits for finishTakeover');
+
+  assert.equal(acquired.run.finishTakeover(), null);
+
+  assert.equal(fs.existsSync(path.join(runDir, staleId)), false);
+  assert.equal(fs.existsSync(renamed), false);
+  assert.deepEqual(fs.readdirSync(runDir).sort(), ['lock', provisional.planId].sort());
+});
+
+test('acquire takeOver: the old folder is deleted before the renamed lock (RUN-20b item 2)', (t) => {
+  const { provisional, runDir, staleId, now, stale } = staleRun(t);
+  const acquired = provisional.acquire({ now, takeOver: stale });
+  const realRm = fs.rmSync;
+  const order = [];
+  t.mock.method(fs, 'rmSync', (target, options) => {
+    order.push(path.basename(String(target)));
+    return realRm(target, options);
+  });
+
+  acquired.run.finishTakeover();
+
+  assert.deepEqual(order, [staleId, `lock.${provisional.planId}`]);
+  assert.equal(fs.existsSync(path.join(runDir, staleId)), false);
+});
+
+test('acquire takeOver: a stale unparseable lock is taken over; finishTakeover deletes only the renamed lock', (t) => {
+  const { provisional, runDir, lock, staleId, now, stale } = staleRun(t, { content: 'not json' });
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, true);
+  assert.deepEqual(acquired.takeover, { planId: null, notice: run.takeoverNotice(null), killedRun: null });
+  assert.equal(JSON.parse(fs.readFileSync(lock, 'utf8')).planId, provisional.planId);
+  assert.equal(acquired.run.finishTakeover(), null);
+  assert.equal(fs.existsSync(path.join(runDir, `lock.${provisional.planId}`)), false);
+  assert.ok(fs.existsSync(path.join(runDir, staleId)), 'no planId names a folder to delete');
+});
+
+test('acquire takeOver: a lock touched after the peek is put back byte for byte with its mtime, and refuses held', (t) => {
+  const { provisional, runDir, lock, bytes, now, stale } = staleRun(t);
+  const touchedAgain = new Date(T0 - 1000);
+  fs.utimesSync(lock, touchedAgain, touchedAgain);
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.code, 'held');
+  assert.equal(acquired.holder.touched, touchedAgain.getTime());
+  assert.equal(fs.readFileSync(lock, 'utf8'), bytes);
+  assert.equal(fs.statSync(lock).mtimeMs, touchedAgain.getTime());
+  assert.equal(fs.existsSync(path.join(runDir, `lock.${provisional.planId}`)), false);
+});
+
+test('acquire takeOver: a lock replaced after the peek (same mtime, other bytes) is put back and refuses held', (t) => {
+  const { provisional, lock, aged, now, stale } = staleRun(t);
+  const other = JSON.stringify({ planId: crypto.randomUUID(), created: '2026-09-26T13:58:03.000Z' });
+  fs.writeFileSync(lock, other);
+  fs.utimesSync(lock, aged, aged);
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.code, 'held');
+  assert.equal(fs.readFileSync(lock, 'utf8'), other);
+});
+
+// RUN-20b item 4: a rename that fails with `ENOENT` (another takeover won) re-peeks once.
+test('acquire takeOver: a rename ENOENT with a new lock in place refuses held naming it', (t) => {
+  const { provisional, runDir, lock, staleId, now, stale } = staleRun(t);
+  const winnerId = crypto.randomUUID();
+  const winner = JSON.stringify({ planId: winnerId, created: '2026-09-26T14:20:00.000Z' });
+  const realRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (path.resolve(String(from)) === lock) {
+      realRename(from, path.join(runDir, `lock.${winnerId}`));
+      fs.writeFileSync(lock, winner);
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
+    return realRename(from, to);
+  });
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.code, 'held');
+  assert.equal(acquired.holder.planId, winnerId);
+  assert.equal(fs.readFileSync(lock, 'utf8'), winner);
+  assert.ok(fs.existsSync(path.join(runDir, staleId)), 'nothing of the old run is touched');
+});
+
+test('acquire takeOver: a rename ENOENT with no lock in place links its own lock, with no takeover', (t) => {
+  const { provisional, lock, now, stale } = staleRun(t);
+  const realRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (path.resolve(String(from)) === lock) {
+      fs.unlinkSync(lock);
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
+    return realRename(from, to);
+  });
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.takeover, null);
+  assert.equal(JSON.parse(fs.readFileSync(lock, 'utf8')).planId, provisional.planId);
+});
+
+test('acquire takeOver: a lock linked by another call after the rename refuses held and deletes nothing of the takeover', (t) => {
+  const { provisional, runDir, lock, staleId, bytes, now, stale } = staleRun(t);
+  const otherId = crypto.randomUUID();
+  const realLink = fs.linkSync;
+  t.mock.method(fs, 'linkSync', (existing, target) => {
+    if (path.resolve(String(target)) === lock) {
+      fs.writeFileSync(lock, JSON.stringify({ planId: otherId, created: '2026-09-26T14:20:00.000Z' }));
+    }
+    return realLink(existing, target);
+  });
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.code, 'held');
+  assert.equal(acquired.holder.planId, otherId);
+  assert.equal(fs.readFileSync(path.join(runDir, `lock.${provisional.planId}`), 'utf8'), bytes);
+  assert.ok(fs.existsSync(path.join(runDir, staleId)));
+});
+
+test('acquire takeOver: a file in use on the rename is busy, and the lock stays', (t) => {
+  const { provisional, lock, bytes, now, stale } = staleRun(t);
+  const realRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (path.resolve(String(from)) === lock) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    return realRename(from, to);
+  });
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, false);
+  assert.equal(acquired.code, 'busy');
+  assert.equal(fs.readFileSync(lock, 'utf8'), bytes);
+});
+
+test('finishTakeover: a failed old-folder deletion becomes a notice and keeps the renamed lock', (t) => {
+  const { provisional, runDir, staleId, now, stale } = staleRun(t);
+  const acquired = provisional.acquire({ now, takeOver: stale });
+  const realRm = fs.rmSync;
+  t.mock.method(fs, 'rmSync', (target, options) => {
+    if (path.basename(String(target)) === staleId) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    return realRm(target, options);
+  });
+
+  assert.equal(acquired.run.finishTakeover(), run.discardNotice(staleId, 'EBUSY'));
+  assert.ok(fs.existsSync(path.join(runDir, `lock.${provisional.planId}`)), 'the renamed lock is kept');
 });
 
 test('peek: a lock file in use (Windows) is busy, not held', (t) => {

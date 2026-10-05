@@ -109,8 +109,15 @@ function lockHolder(runDir) {
   return file === null ? null : lockPlanId(file.bytes);
 }
 
-/** A `call.lock` (and, later, the run lock) is stale once its mtime is this old (Q22). */
+/** A `call.lock` and the run lock are stale once their mtime is this old (Q22). */
 export const STALE_AFTER_MS = 15 * 60 * 1000;
+
+/**
+ * A stale run lock as `peek` read it (RUN-21): what the takeover verifies the moved lock
+ * against, and the `planId` its notice names.
+ *
+ * @typedef {{ planId: string | null, touched: number, size: number, bytes: Buffer | null }} StaleLock
+ */
 
 // Windows reports a file another process holds open as one of these on a rename, read or
 // unlink: "someone else is on it", `busy`, never `internal` (Q22, C:run-folder).
@@ -596,11 +603,12 @@ function runFolderRefusal(trackedAs) {
  *   (default a real synchronous sleep).
  * @returns {{ ok: true, provisional: { planId: string, runDir: string,
  *   write: (name: string, data: string | Uint8Array) => void,
- *   peek: (options?: { now?: () => number }) => { ok: true }
+ *   peek: (options?: { now?: () => number }) => { ok: true, stale: StaleLock | null }
  *     | { ok: false, code: 'held', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
- *   acquire: (options?: { now?: () => number }) => { ok: true, run: object, takeover: null }
- *     | { ok: false, code: 'held', message: string,
+ *   acquire: (options?: { now?: () => number, takeOver?: StaleLock }) => { ok: true, run: object,
+ *       takeover: { planId: string | null, notice: string, killedRun: null } | null }
+ *     | { ok: false, code: 'held' | 'busy' | 'run-folder', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
  *   discard: () => string | null } }
  *   | { ok: false, code: 'run-folder', message: string }}
@@ -609,6 +617,8 @@ function runFolderRefusal(trackedAs) {
  *   (temporary name, then rename; KD-R37: `state.json` is written before `acquire`);
  *   `acquire()` takes the run lock with no takeover (CHG-03b) and returns the run, whose
  *   `write` is the same and whose `release()` removes the lock and the folder;
+ *   `acquire({ takeOver })` (RUN-21) takes over the stale lock `peek` reported instead
+ *   (`takeOverLock`), and its run also has `finishTakeover()`;
  *   `discard()` deletes the folder (every outcome that takes no lock).
  *   Inside M12 a local `runDir` is `.commit-plan` itself (`runDirOf`); only this output
  *   field names the `<planId>/` folder, keeping C:plan's `runDir` (review-RUN-05 finding 8).
@@ -641,7 +651,9 @@ export function create({ toplevel, excludePath, tracked, sleep = sleepSync }) {
   };
   const write = (name, data) => writeAtomic(folder, name, data, sleep);
   const peek = ({ now = Date.now } = {}) => peekLock(runDir, now);
-  const acquire = ({ now = Date.now } = {}) => acquireLock(runDir, planId, folder, now, sleep);
+  const acquire = ({ now = Date.now, takeOver } = {}) => (takeOver === undefined
+    ? acquireLock(runDir, planId, folder, now, sleep)
+    : takeOverLock(runDir, planId, folder, now, sleep, takeOver));
   return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), write, peek, acquire, discard } };
 }
 
@@ -756,6 +768,14 @@ function cleanupLockTemp(temp) {
 // still failing after the retries falls back to the hard-link probe above. Any other error
 // (`EIO`, …) still throws, unchanged.
 function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
+  const linked = linkOwnLock(runDir, planId, folder, now, sleep);
+  if (!linked.ok) return linked;
+  return { ok: true, run: ownRun(runDir, planId, folder, sleep), takeover: null };
+}
+
+// The link part of `acquireLock`, shared with `takeOverLock`: `{ ok: true }` once the lock is
+// in place, else the refusal above (`held`, `run-folder`, `busy`); other errors throw.
+function linkOwnLock(runDir, planId, folder, now, sleep) {
   const temp = insideRunDir(runDir, lockTempName(planId));
   const lock = insideRunDir(runDir, 'lock');
   fs.writeFileSync(temp, JSON.stringify({ planId, created: new Date(now()).toISOString() }), { flag: 'wx' });
@@ -783,7 +803,89 @@ function acquireLock(runDir, planId, folder, now, sleep = sleepSync) {
   } catch {
     // Leftover lock temporary file: the sweep's (RUN-07), not this call's to fail over.
   }
-  return { ok: true, run: ownRun(runDir, planId, folder, sleep), takeover: null };
+  return { ok: true };
+}
+
+/**
+ * The automatic takeover's notice (RUN-21, C:plan step 3), naming the stale run's `planId`,
+ * or the unreadable lock when it held none in the minted form.
+ *
+ * @param {string | null} planId
+ * @returns {string}
+ */
+export function takeoverNotice(planId) {
+  const minutes = STALE_AFTER_MS / 60_000;
+  return planId === null
+    ? `took over a stale, unreadable /commit lock (idle for ${minutes} minutes or more)`
+    : `took over the stale /commit run \`${planId}\` (idle for ${minutes} minutes or more)`;
+}
+
+// M12 `acquire({ takeOver })` (RUN-21, Q22, C:plan step 3, C:run-folder): the automatic
+// takeover of the stale lock `peek` reported (`stale`). The lock is renamed to
+// `lock.<own planId>` (only one of several renames succeeds) and verified against the bytes
+// and mtime `peek` judged stale (a rename keeps the mtime): a lock touched or replaced since
+// is put back (`moveAsideVerified`) and refuses `held` naming the lock now in place; a put-back
+// meeting a new lock (`conflict`) keeps the private copy as an orphan (adopted by RUN-25).
+// A rename `ENOENT` (another takeover won) re-peeks once (RUN-20b item 4): a lock in place →
+// `held` with a fresh holder; no lock → this call links its own lock with no takeover (the
+// winner's renamed lock left behind is an orphan, whose adoption is RUN-25's). Once moved,
+// the own lock is linked exactly as `acquireLock` links it; a link `EEXIST` refuses `held`
+// and deletes nothing of the takeover (the renamed lock and the old folder stay for the next
+// `plan`; M18's `finally` discards only this call's provisional folder). `killedRun` is
+// always `null` here: reading the killed run's state is RUN-23's.
+function takeOverLock(runDir, planId, folder, now, sleep, stale) {
+  const lock = insideRunDir(runDir, 'lock');
+  const renamed = insideRunDir(runDir, `lock.${planId}`);
+  const { outcome } = moveAsideVerified({
+    from: lock,
+    to: renamed,
+    verify: (bytes, stats) => stats.isFile()
+      && stats.mtimeMs === stale.touched
+      && stats.size === stale.size
+      && (bytes === null || stale.bytes === null || bytes.equals(stale.bytes)),
+  });
+  if (outcome === 'gone') {
+    let file = null;
+    try {
+      file = readLockFile(lock);
+    } catch (err) {
+      if (!(err instanceof InUse)) throw err;
+      return busy(true);
+    }
+    if (file !== null) return heldBy(file, now);
+    return acquireLock(runDir, planId, folder, now, sleep);
+  }
+  if (outcome === 'busy') return busy(true);
+  if (outcome !== 'moved') return held(runDir, now);
+  const linked = linkOwnLock(runDir, planId, folder, now, sleep);
+  if (!linked.ok) return linked;
+  const run = ownRun(runDir, planId, folder, sleep);
+  run.finishTakeover = () => finishTakeover(runDir, stale.planId, renamed);
+  return { ok: true, run, takeover: { planId: stale.planId, notice: takeoverNotice(stale.planId), killedRun: null } };
+}
+
+// `run.finishTakeover()` (RUN-21, RUN-20b item 2): deletes the taken-over run's folder first
+// (only when the stale lock named a minted `planId`; `rmSync` removes a link entry itself,
+// never what it points to), then the renamed lock last, the same order as `removeOwnRun`: a
+// kill in between leaves a renamed lock whose chain ends at a missing folder. Never throws: a
+// failure becomes the returned notice (`null` when all went), and a folder that could not be
+// deleted keeps the renamed lock as the chain's evidence. Nothing is deleted through a
+// `.commit-plan` swapped for a link meanwhile.
+function finishTakeover(runDir, stalePlanId, renamed) {
+  if (!isPlainDirectory(runDir)) return null;
+  if (stalePlanId !== null) {
+    try {
+      fs.rmSync(insideRunDir(runDir, stalePlanId), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (err) {
+      return discardNotice(stalePlanId, err.code || 'error');
+    }
+  }
+  try {
+    fs.rmSync(renamed, { force: true });
+  } catch (err) {
+    return sweepNotice(path.basename(renamed), err.code || 'error');
+  }
+  return null;
 }
 
 /**
@@ -872,13 +974,15 @@ function lockCreated(bytes) {
  * lost race does (`held`, RUN-06's `held()`), so a `peek` refusal and a lost-race refusal
  * carry the same `planId`/`created`/`touched` holder shape (the handback built on top of it
  * is INT-05's). A file-in-use error reading the lock is `busy`, like every other lock
- * operation (Q22). No lock, and a lock stale by mtime (whatever its content), are `ok`: the
- * automatic takeover of a stale lock, and the orphan renamed locks `peek` also reports then,
- * are RUN-21's; this slice never adopts anything.
+ * operation (Q22). No lock is `ok` with `stale: null`; a lock stale by mtime (whatever its
+ * content) is `ok` with `stale` (RUN-21): what `acquire({ takeOver })` verifies the moved lock
+ * against (its mtime `touched`, `size` and `bytes`, `null` for a non-regular or oversized
+ * file) and the `planId` the takeover notice names (`null` when not in the minted form). The
+ * orphan renamed locks `peek` also reports are RUN-25's; nothing here adopts anything.
  *
  * @param {string} runDir
  * @param {() => number} now
- * @returns {{ ok: true } | { ok: false, code: 'held', message: string,
+ * @returns {{ ok: true, stale: StaleLock | null } | { ok: false, code: 'held', message: string,
  *   holder: { planId: string | null, created: string | null, touched: number } | null }}
  */
 function peekLock(runDir, now) {
@@ -889,8 +993,10 @@ function peekLock(runDir, now) {
     if (!(err instanceof InUse)) throw err;
     return busy(true);
   }
-  if (file === null || now() - file.stats.mtimeMs >= STALE_AFTER_MS) return { ok: true };
-  return heldBy(file, now);
+  if (file === null) return { ok: true, stale: null };
+  if (now() - file.stats.mtimeMs < STALE_AFTER_MS) return heldBy(file, now);
+  const { stats, bytes } = file;
+  return { ok: true, stale: { planId: lockPlanId(bytes), touched: stats.mtimeMs, size: stats.size, bytes } };
 }
 
 // The run `acquire` returns: `write` as before the lock, and `release()`, which removes the
