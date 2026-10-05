@@ -1,10 +1,13 @@
 'use strict';
 
-// RUN-17 (docs/roadmap/09-runs.md, C:confirmation-triggers, Q16): M15 `computeConfirm`'s pure
-// decision — `check`'s `confirm` field from the per-group facts M18 resolves. Pure unit tests
-// (same pattern as tests/check-lint-failures.test.js's `onLintFailure` and
-// tests/run-policy-clean-tree.test.js's `planRefusal`): no git process, so they run on every
-// host. Seam-1 table tests for the wired-in behavior (via `check`'s real output) follow below.
+// RUN-17 (docs/roadmap/09-runs.md, C:confirmation-triggers, Q16): M15 `computeConfirm`'s
+// decision — `check`'s `confirm` field from the per-group facts M18 resolves. Per
+// docs/spec/testing-seams.md:84 ("Nothing else is tested in-process. M15 as a whole
+// ... [is] tested through Seam 1"), every reachable row is exercised through `check`'s real
+// CLI output below. The only in-process `computeConfirm` calls left are the `staged`-mode
+// pure fallbacks right after this comment: `commitAll` throws `notBuilt(..., 'EXE-19')`
+// before a `staged` `check`'s real output (with `confirm`) ever reaches the caller
+// (KD-R94, docs/roadmap/known-deficiencies.md), so Seam 1 cannot reach these rows yet.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,67 +27,37 @@ function group(fields = {}) {
   return { newFiles: [], skippedFiles: [], scanIgnoreFiles: [], ...fields };
 }
 
-test('computeConfirm: one group, no trigger → null', () => {
-  assert.equal(computeConfirm('split', [group()], NOT_RESUMED), null);
-  assert.equal(computeConfirm('staged', [group()], NOT_RESUMED), null);
-  assert.equal(computeConfirm('reword', [group()], NOT_RESUMED), null);
+// --- Pure fallbacks for `staged` (KD-R94): EXE-19 blocks Seam 1 for every staged row, not
+// just the two KD-R94 names, so every staged row of C:confirmation-triggers is pinned here
+// in-process until EXE-19 lands and these move to Seam 1 (dropping this whole block).
+
+test('pure fallback (KD-R94): staged — a new file is never a trigger', () => {
+  assert.equal(computeConfirm('staged', [group({ newFiles: [{ path: 'c.txt', binary: false }] })], NOT_RESUMED), null);
 });
 
-test('computeConfirm: more than one group → "n groups", humanOnly false', () => {
-  assert.deepEqual(
-    computeConfirm('split', [group(), group()], NOT_RESUMED),
-    { reasons: ['2 groups'], humanOnly: false },
-  );
-  assert.deepEqual(
-    computeConfirm('split', [group(), group(), group()], NOT_RESUMED),
-    { reasons: ['3 groups'], humanOnly: false },
-  );
-});
-
-test('computeConfirm: a new file in split → "new file <path>", humanOnly false', () => {
-  assert.deepEqual(
-    computeConfirm('split', [group({ newFiles: ['docs/new.md'] })], NOT_RESUMED),
-    { reasons: ['new file docs/new.md'], humanOnly: false },
-  );
-});
-
-test('computeConfirm: a new file is never a trigger outside split', () => {
-  assert.equal(computeConfirm('staged', [group({ newFiles: ['docs/new.md'] })], NOT_RESUMED), null);
-  assert.equal(computeConfirm('reword', [group({ newFiles: ['docs/new.md'] })], NOT_RESUMED), null);
-});
-
-test('computeConfirm: a skipped file → "skipped file <path>", humanOnly true', () => {
-  assert.deepEqual(
-    computeConfirm('split', [group({ skippedFiles: ['big.bin'] })], NOT_RESUMED),
-    { reasons: ['skipped file big.bin'], humanOnly: true },
-  );
+test('pure fallback (KD-R94): staged — a skipped file → "skipped file <path>", humanOnly true', () => {
   assert.deepEqual(
     computeConfirm('staged', [group({ skippedFiles: ['big.bin'] })], NOT_RESUMED),
     { reasons: ['skipped file big.bin'], humanOnly: true },
   );
 });
 
-test('computeConfirm: a scanIgnore change → "scanIgnore change <path>", humanOnly true', () => {
+test('pure fallback (KD-R94): staged — a scanIgnore change → "scanIgnore change <path>", humanOnly true', () => {
   assert.deepEqual(
-    computeConfirm('split', [group({ scanIgnoreFiles: ['.claude/commit.json'] })], NOT_RESUMED),
+    computeConfirm('staged', [group({ scanIgnoreFiles: ['.claude/commit.json'] })], NOT_RESUMED),
     { reasons: ['scanIgnore change .claude/commit.json'], humanOnly: true },
   );
 });
 
-test('computeConfirm: resumed + interactive → "edited plan"', () => {
+test('pure fallback (KD-R94): staged — resumed + interactive → "edited plan"', () => {
   assert.deepEqual(
-    computeConfirm('split', [group()], { resumed: true, interactive: true }),
+    computeConfirm('staged', [group()], { resumed: true, interactive: true }),
     { reasons: ['edited plan'], humanOnly: false },
   );
 });
 
-test('computeConfirm: resumed but not interactive → no "edited plan"', () => {
-  assert.equal(computeConfirm('split', [group()], { resumed: true, interactive: false }), null);
-});
-
-test('computeConfirm: not resumed → no "edited plan" regardless of interactive', () => {
-  assert.equal(computeConfirm('split', [group()], { resumed: false, interactive: true }), null);
-  assert.equal(computeConfirm('split', [group()], { resumed: false, interactive: false }), null);
+test('pure fallback (KD-R94): staged — resumed but not interactive → no "edited plan"', () => {
+  assert.equal(computeConfirm('staged', [group()], { resumed: true, interactive: false }), null);
 });
 
 // --- Seam-1 table tests (docs/contracts/confirmation-triggers.md), via the real `check` CLI
@@ -178,6 +151,80 @@ test('Seam 1, split: an untracked new file in a group → confirm reasons "new f
   assert.deepEqual(checked.json.confirm, { reasons: ['new file c.txt'], humanOnly: false });
 });
 
+test('Seam 1, split: an untracked new binary file in a group → confirm reasons "new binary file <path>"', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('logo.png', Buffer.from([0, 1, 2, 0, 3, 4]));
+  const { planId, runDir } = await plannedSplit(c);
+  writeWorkerPlan(runDir, oneGroup(['a.txt', 'logo.png']));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.deepEqual(checked.json.confirm, { reasons: ['new binary file logo.png'], humanOnly: false });
+});
+
+test('Seam 1, split: a staged-added (status A) new file in a group → confirm reasons "new file <path>"', async (t) => {
+  const c = createCase(t);
+  const lines = Array.from({ length: 30 }, (_, i) => `${i + 1}\n`);
+  seed(c, { 'a.txt': lines.join('') });
+  const edited = [...lines];
+  edited[0] = 'first\n';
+  edited[29] = 'last\n';
+  c.writeFile('a.txt', edited.join(''));
+  c.writeFile('staged-new.txt', 'three\n');
+  c.git(['add', '--', 'staged-new.txt']);
+  // A staged-new file plus an unstaged-only edit is otherwise Q9's mode-choice handback (1
+  // file staged, 1 other change): `--split` picks split mode up front (same reason as
+  // tests/plan-placement-bans-seam1.test.js's AC3 fixture).
+  const result = await runCommit(c, ['plan', '--split']);
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  const { planId } = result.json;
+  const runDir = path.join(c.repoDir, '.commit-plan', planId);
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  const [h1, h2] = state.units.filter((unit) => unit.path === 'a.txt').map((unit) => unit.id);
+  const [newId] = state.units.filter((unit) => unit.path === 'staged-new.txt').map((unit) => unit.id);
+  // A hunk-level group (KD-R83) never reaches `commitAll`, so this fixture's preStaged
+  // `staged-new.txt` never hits EXE-11 ("the unstaged report for pre-staged paths is not
+  // built yet", confirmed by direct repro of the whole-file form of this same fixture). A
+  // plan never mixes `files` and `hunks` paths, so `staged-new.txt` is named by its own unit
+  // ID too (PLN-03).
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker',
+    groups: [{ header: 'feat: a', body: null, files: [], hunks: [h1, newId] }],
+    notIncluded: [{ path: 'a.txt', hunks: [h2], reason: 'leaving out for now' }],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.deepEqual(checked.json.confirm, { reasons: ['new file staged-new.txt'], humanOnly: false });
+});
+
+test('Seam 1, split: three groups → confirm.reasons ["3 groups"], humanOnly false', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', 'b.txt': 'two\n', 'c.txt': 'three\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.txt', 'two\nmore\n');
+  c.writeFile('c.txt', 'three\nmore\n');
+  const { planId, runDir } = await plannedSplit(c);
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker',
+    groups: [
+      { header: 'feat: a', body: null, files: ['a.txt'], hunks: [] },
+      { header: 'feat: b', body: null, files: ['b.txt'], hunks: [] },
+      { header: 'feat: c', body: null, files: ['c.txt'], hunks: [] },
+    ],
+    notIncluded: [],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.deepEqual(checked.json.confirm, { reasons: ['3 groups'], humanOnly: false });
+});
+
 test('Seam 1, split: a size-skipped file → confirm reasons "skipped file <path>", humanOnly true', async (t) => {
   const c = createCase(t);
   seed(c, { 'big.txt': 'keep\n' });
@@ -207,11 +254,7 @@ test('Seam 1, split: a scanIgnore change on an included file → confirm reasons
   assert.deepEqual(checked.json.confirm, { reasons: ['scanIgnore change .claude/commit.json'], humanOnly: true });
 });
 
-test('Seam 1, staged: a new file is never a trigger (pure unit coverage; EXE-19 blocks Seam 1, KD-R94)', () => {
-  assert.equal(computeConfirm('staged', [group({ newFiles: ['c.txt'] })], NOT_RESUMED), null);
-});
-
-test('Seam 1, reword: confirm is always null', async (t) => {
+test('Seam 1, reword: confirm is null when not resumed', async (t) => {
   const c = createCase(t);
   c.writeFile('file.txt', 'one\n');
   c.git(['add', 'file.txt']);
@@ -227,23 +270,71 @@ test('Seam 1, reword: confirm is always null', async (t) => {
   assert.equal(checked.json.confirm, null);
 });
 
-test('computeConfirm: combination ordering — groups, then new files, then skipped/scanIgnore, then edited plan', () => {
-  const groups = [
-    group({ newFiles: ['a.txt'], skippedFiles: ['big.bin'] }),
-    group({ newFiles: ['b.txt'], scanIgnoreFiles: ['.claude/commit.json'] }),
-  ];
-  assert.deepEqual(
-    computeConfirm('split', groups, { resumed: true, interactive: true }),
-    {
-      reasons: [
-        '2 groups',
-        'new file a.txt',
-        'new file b.txt',
-        'skipped file big.bin',
-        'scanIgnore change .claude/commit.json',
-        'edited plan',
-      ],
-      humanOnly: true,
-    },
-  );
+test('Seam 1, split: resumed + interactive → confirm reasons "edited plan" (any mode, C:confirmation-triggers)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const { planId, runDir } = await plannedSplit(c);
+  const hunksResult = await runCommit(c, ['plan', '--hunks', '--plan', planId]);
+  assert.equal(hunksResult.exitCode, 0, `stdout ${hunksResult.stdout}\nstderr ${hunksResult.stderr}`);
+  writeWorkerPlan(runDir, oneGroup(['a.txt']));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.deepEqual(checked.json.confirm, { reasons: ['edited plan'], humanOnly: false });
+});
+
+test('Seam 1, split --no-user: resumed but not interactive → confirm null', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const result = await runCommit(c, ['plan', '--split', '--no-user']);
+  assert.equal(result.exitCode, 0, `stdout ${result.stdout}\nstderr ${result.stderr}`);
+  const { planId } = result.json;
+  const runDir = path.join(c.repoDir, '.commit-plan', planId);
+  const hunksResult = await runCommit(c, ['plan', '--hunks', '--plan', planId]);
+  assert.equal(hunksResult.exitCode, 0, `stdout ${hunksResult.stdout}\nstderr ${hunksResult.stderr}`);
+  writeWorkerPlan(runDir, oneGroup(['a.txt']));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.equal(checked.json.confirm, null);
+});
+
+test('Seam 1, split: a scan-hit left out in notIncluded gives no confirmation (a hit is never a trigger)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', 'b.js': 'one\ntwo\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.js', `one\ntwo\nconst token = "${'gh' + 'p_' + 'f'.repeat(36)}";\n`);
+  const { planId, runDir } = await plannedSplit(c);
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker',
+    groups: [{ header: 'feat: a', body: null, files: ['a.txt'], hunks: [] }],
+    notIncluded: [{ path: 'b.js', hunks: null, reason: 'scan: github-token' }],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.equal(checked.json.confirm, null);
+});
+
+test('Seam 1, split: a size-skipped file left out in notIncluded gives no confirmation (only an included skipped file triggers)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', 'big.txt': 'keep\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('big.txt', `keep\n${bigAddedContent(1024 * 1024 + 8192)}`);
+  const { planId, runDir } = await plannedSplit(c);
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker',
+    groups: [{ header: 'feat: a', body: null, files: ['a.txt'], hunks: [] }],
+    notIncluded: [{ path: 'big.txt', hunks: null, reason: 'leaving out for now' }],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  assert.equal(checked.json.confirm, null);
 });
