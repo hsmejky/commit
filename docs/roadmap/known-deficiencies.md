@@ -176,6 +176,24 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
+- **KD-R97.** Three of CHG-21's Seam-1 criteria cannot run end to end yet, and M10 is in no
+  in-process seam, so they are untested: (1) the force-added gitignored file in group 2 is
+  pre-staged by `git add -f`, and `commitAll` throws `notBuilt('the unstaged report for
+  pre-staged paths', 'EXE-11')` for any pre-staged path in `split` before the first group;
+  (2) the staged 60-file new directory under `--staged` hits `notBuilt('commit --all in
+  staged mode', 'EXE-19')` (in `split` it is pre-staged, EXE-11); (3) the `core.safecrlf=true`
+  rejection and the missing required filter make `stage` return `stage-failed`, which
+  `commitAll` turns into `notBuilt('the stage-failed failure', 'EXE-10')` instead of
+  unstaging the index and releasing the run. `stage`'s `-f` call for ignored paths and its
+  `stage-failed` result exist (CHG-14, CHG-20) but no test reaches them. Also, the Windows
+  rename criterion's "a few thousand paths" cannot be planned in `split`: a rename's new path
+  is an untracked candidate, and C:untracked-files collapses past 200 of them; the test
+  commits 200 renames whose 400 paths exceed the 32 767-character command line instead.
+  Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`,
+  `tests/stage-whole-file.test.js`. Fix: once EXE-10, EXE-11 and EXE-19 land, add the three
+  cases to `tests/stage-whole-file.test.js` and drop this row; reword the rename criterion
+  to "a rename group whose paths exceed the command-line limit". Slices: EXE-10, EXE-11,
+  EXE-19.
 
 ## Design sync
 
