@@ -29,6 +29,11 @@
 // RUN-16 adds `onLintFailure`, the lint-failure counter that ends the worker's retries.
 //
 // RUN-19 adds `checkGate`, the already-committed-group refusal `check` runs after `open`.
+//
+// RUN-17 adds `computeConfirm`, `check`'s confirmation table (C:confirmation-triggers). It
+// stays data-in/data-out: M18 resolves each group's included unit IDs to paths against
+// `state.json`'s unit table, `scanned` map and `scanIgnoreUnits` list before calling in, so
+// this function never needs a unit table of its own.
 
 /** The oldest supported git (Q1, Q15, story 202). */
 export const MIN_GIT = Object.freeze({ major: 2, minor: 34 });
@@ -382,4 +387,46 @@ export function checkGate(runState) {
     return { refusal: { code: 'already-committed', message: ALREADY_COMMITTED_TEXT } };
   }
   return null;
+}
+
+/**
+ * M15 `computeConfirm(mode, groups, { resumed, interactive })` (RUN-17, C:confirmation-triggers,
+ * Q16): `check`'s `confirm` field. A hit is never a trigger (its unit never reaches a group,
+ * PLN-04). Pure: `groups` is M18's own per-stored-group view, already resolved from unit IDs to
+ * paths against `state.json`'s unit table, `scanned` map and `scanIgnoreUnits` list, so this
+ * function never needs a unit table of its own.
+ *
+ * @param {'split' | 'staged' | 'reword'} mode
+ * @param {Array<{ newFiles: string[], skippedFiles: string[], scanIgnoreFiles: string[] }>}
+ *   groups per stored group, in `n` order: `newFiles` (forced `[]` in `reword`, the same
+ *   derivation as `check`'s own `groups[].newFiles`, C:check) triggers in `split` only;
+ *   `skippedFiles` (a size-skipped path, M8 `scanUnits`'s `skipped`) and `scanIgnoreFiles` (a
+ *   path flagged by a `scanIgnore` change, M8 `scanUnits`'s `scanIgnoreUnits`) are each `[]` in
+ *   `reword`, which never scans, and both set `humanOnly` in `split` and `staged`.
+ * @param {{ resumed: boolean, interactive: boolean }} run `resumed`: set only by a separate
+ *   `plan --hunks` (Q16); interactive only, in every mode — normally asserted by INT-12's own
+ *   separate call instead of here.
+ * @returns {{ reasons: string[], humanOnly: boolean } | null} `null` when no trigger holds.
+ */
+export function computeConfirm(mode, groups, { resumed, interactive }) {
+  const reasons = [];
+  if (groups.length > 1) reasons.push(`${groups.length} groups`);
+  if (mode === 'split') {
+    for (const group of groups) {
+      for (const path of group.newFiles ?? []) reasons.push(`new file ${path}`);
+    }
+  }
+  let humanOnly = false;
+  for (const group of groups) {
+    for (const path of group.skippedFiles ?? []) {
+      reasons.push(`skipped file ${path}`);
+      humanOnly = true;
+    }
+    for (const path of group.scanIgnoreFiles ?? []) {
+      reasons.push(`scanIgnore change ${path}`);
+      humanOnly = true;
+    }
+  }
+  if (resumed === true && interactive !== false) reasons.push('edited plan');
+  return reasons.length === 0 ? null : { reasons, humanOnly };
 }
