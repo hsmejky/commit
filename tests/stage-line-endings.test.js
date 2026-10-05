@@ -133,18 +133,32 @@ test('a .gitattributes eol=crlf file, split into two groups, is committed with n
 });
 
 // A new file is a whole-file unit staged with `git add`, which converts it the same way.
-test('a new CRLF file under core.autocrlf=true and one under eol=crlf are committed with no mismatch', async (t) => {
+test('a new CRLF file under core.autocrlf=true is committed with no mismatch', async (t) => {
   const c = createCase(t);
   c.git(['config', 'core.autocrlf', 'true']);
-  c.writeFile('.gitattributes', 'eol.txt eol=crlf\n');
   seed(c, 'base.txt', 'base\n');
   c.writeFile('auto.txt', 'one\r\ntwo\r\n');
-  c.writeFile('eol.txt', 'three\r\nfour\r\n');
 
   const result = await commitGroups(c, (units) => [units.map((unit) => unit.id)]);
 
   assert.equal(result.json.commits.length, 1);
   assert.deepEqual(blob(c, 'HEAD', 'auto.txt'), Buffer.from('one\ntwo\n'));
+  assert.equal(c.git(['status', '--porcelain']), '');
+});
+
+// Same, but under `core.autocrlf=false` so only the `eol=crlf` attribute (not autocrlf) is
+// what converts the new file.
+test('a new eol=crlf file under core.autocrlf=false is committed with no mismatch', async (t) => {
+  const c = createCase(t);
+  c.git(['config', 'core.autocrlf', 'false']);
+  c.writeFile('.gitattributes', 'eol.txt eol=crlf\n');
+  c.git(['add', '--', '.gitattributes']);
+  seed(c, 'base.txt', 'base\n');
+  c.writeFile('eol.txt', 'three\r\nfour\r\n');
+
+  const result = await commitGroups(c, (units) => [units.map((unit) => unit.id)]);
+
+  assert.equal(result.json.commits.length, 1);
   assert.deepEqual(blob(c, 'HEAD', 'eol.txt'), Buffer.from('three\nfour\n'));
   assert.equal(c.git(['status', '--porcelain']), '');
 });
