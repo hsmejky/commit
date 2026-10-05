@@ -25,6 +25,7 @@ const { parseDomainCodeDocTable, firstColumnKey } = require('./helpers/domain-co
 
 const ROADMAP = path.join(__dirname, '..', 'docs', 'roadmap');
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
+const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const SHIM_SKIP = process.platform === 'win32'
   && 'PATH script shims are not found by shell-less spawn on Windows (KD-R21)';
 const UNKNOWN_PLAN_ID = '11111111-1111-4111-8111-111111111111';
@@ -612,13 +613,29 @@ const ROWS = [
     ],
   },
   {
-    // INT-31 AC2 names the one case this row maps to (EXE-01 item 3); KD-R99 says why it
-    // cannot be built yet.
+    // INT-31 AC2 names one specific case this row maps to (EXE-01 item 3, the `commit --all`
+    // route); KD-R99 says why that one case cannot be built yet. Producer "any" is wider: a
+    // `plan` throw reaches the same kind and exit, and already has a Seam 1 case.
     row: 'unexpected throw -> internal',
     producers: 'any',
     kind: 'internal',
     exitCode: 1,
-    pairs: [{ producer: 'any', gap: { kd: 'KD-R99' } }],
+    pairs: [{
+      producer: 'any',
+      // The FND-10 preload failing a `plan` state.json rename with EIO
+      // (tests/plan-lock.test.js "state.json rename failing with EIO"); a lock-link EPERM
+      // retried six times reaches the same kind and exit (tests/run-file-in-use.test.js "a
+      // state.json rename failing EPERM on every try").
+      async seam1Case(t) {
+        const c = seededCase(t, { 'a.txt': 'one\n', 'b.txt': 'two\n' });
+        c.writeFile('a.txt', 'one\nmore\n');
+        c.writeFile('b.txt', 'changed\n');
+        return runCommit(c, ['plan'], {
+          nodeArgs: ['--import', FAULT_PRELOAD],
+          env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+        });
+      },
+    }],
   },
   {
     row: 'clean tree (nothing)',
@@ -674,7 +691,12 @@ function manifestProblems(docTable, rows) {
     }
     const docKey = firstColumnKey(doc.code);
     const manifestKey = firstColumnKey(entry.row);
-    if (!(manifestKey === docKey || manifestKey.startsWith(docKey))) {
+    // A manifest key naming more than the doc's key passes only when the doc's key is a whole
+    // leading name, not merely a prefix (e.g. "head" must not match a doc key "head-moved").
+    const manifestExtra = manifestKey.slice(docKey.length);
+    const keyMatches = manifestKey === docKey
+      || (manifestKey.startsWith(docKey) && /^[,\s]/.test(manifestExtra));
+    if (!keyMatches) {
       problems.push(`ROWS[${i}] ${JSON.stringify(entry.row)} does not match doc row ${JSON.stringify(doc.code)}`);
     }
     if (entry.producers !== doc.producer) {
@@ -685,6 +707,12 @@ function manifestProblems(docTable, rows) {
       problems.push(`ROWS[${i}] ${entry.kind} ${entry.exitCode} vs doc ${doc.kind} ${doc.exit}`);
     }
     if (entry.pairs.length === 0) problems.push(`ROWS[${i}] names no (row, producer) pair`);
+    // The Producer cell lists its producers separated by "; ", ", " or " and "; the pair count
+    // must track it so dropping a pair (without also removing its producer from the cell) fails.
+    const producerSegments = entry.producers.split(/\s*;\s*|\s*,\s*|\s+and\s+/).filter(Boolean);
+    if (entry.pairs.length !== producerSegments.length) {
+      problems.push(`ROWS[${i}] has ${entry.pairs.length} pair(s) but producers ${JSON.stringify(entry.producers)} splits into ${producerSegments.length}`);
+    }
     for (const pair of entry.pairs) {
       const label = `ROWS[${i}] via ${pair.producer}`;
       if (pair.gap === undefined) {
@@ -706,6 +734,24 @@ test('every (row, producer) pair of docs/spec/domain-code-cli-kind.md has a Seam
   assert.deepEqual(manifestProblems(parseDomainCodeDocTable(), ROWS), []);
 });
 
+test('a table whose header is not "Domain code | Producer | CLI kind | Exit" throws', () => {
+  const content = [
+    '| Producer | Domain code | CLI kind | Exit |',
+    '| --- | --- | --- | --- |',
+    '| `foo` | M1 | `usage` | 1 |',
+  ].join('\n');
+  assert.throws(() => parseDomainCodeDocTable(content), /header is/);
+});
+
+test('a table row that does not split into four cells throws', () => {
+  const content = [
+    '| Domain code | Producer | CLI kind | Exit | extra |',
+    '| --- | --- | --- | --- | --- |',
+    '| `foo` | M1 | `usage` | 1 | extra |',
+  ].join('\n');
+  assert.throws(() => parseDomainCodeDocTable(content), /has 5 cells, not 4/);
+});
+
 test('a doc row added without a manifest entry fails the check', () => {
   const docTable = parseDomainCodeDocTable();
   const added = [...docTable, { code: '`new-code`', producer: 'M16', kind: '`usage`', exit: '1' }];
@@ -715,7 +761,21 @@ test('a doc row added without a manifest entry fails the check', () => {
 test('a changed Producer cell or a gap citing no KD row fails the check', () => {
   const docTable = parseDomainCodeDocTable();
   const changed = docTable.map((row, i) => (i === 0 ? { ...row, producer: 'M1, M99' } : row));
-  assert.notDeepEqual(manifestProblems(changed, ROWS), []);
+  assert.deepEqual(
+    manifestProblems(changed, ROWS),
+    [`ROWS[0] producers ${JSON.stringify(ROWS[0].producers)} vs doc ${JSON.stringify('M1, M99')}`],
+  );
   const stale = ROWS.map((entry, i) => (i === 1 ? { ...entry, pairs: [{ producer: 'M16', gap: { kd: 'KD-R0' } }] } : entry));
   assert.deepEqual(manifestProblems(docTable, stale), ['ROWS[1] via M16 cites KD-R0, not in known-deficiencies.md']);
+});
+
+test('a dropped pair, with the Producer cell left unchanged, fails the check', () => {
+  const docTable = parseDomainCodeDocTable();
+  const configIndex = ROWS.findIndex((entry) => entry.row === 'config');
+  assert.equal(ROWS[configIndex].pairs.length, 2, 'fixture assumption: the config row names two pairs');
+  const dropped = ROWS.map((entry, i) => (i === configIndex ? { ...entry, pairs: [entry.pairs[0]] } : entry));
+  assert.deepEqual(
+    manifestProblems(docTable, dropped),
+    [`ROWS[${configIndex}] has 1 pair(s) but producers ${JSON.stringify(ROWS[configIndex].producers)} splits into 2`],
+  );
 });

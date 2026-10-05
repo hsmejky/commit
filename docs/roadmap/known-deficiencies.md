@@ -164,8 +164,12 @@ fixed, delete it here; IDs are never reused.
 
 ## Coverage
 
-- **KD-R30.** EXE-10 may leave the phase (c) `diff-changed` uncovered, which fails INT-31
-  unless the README lists it. EXE-10 adds the accepted-gap entry.
+- **KD-R30.** EXE-10 may leave `mismatch` (phase (c), staged differs from the stored group)
+  with no Seam 1 case. This no longer risks INT-31's manifest check itself: that check is per
+  (row, producer) pair, and the `unmatched, mismatch` row's producers (`M10 via plan --hunks`
+  and `M16`) already have real cases through `unmatched`, so the row passes regardless.
+  `mismatch` stays an untested domain code until EXE-10 gives it its own case (or the gap is
+  cited explicitly, naming `mismatch` rather than the row's producers).
 - **KD-R31.** GRD-05 tests deny precedence only against the bare row. Add pairs such as
   `--amend --squash=HEAD`, `--squash -n`, `-n --fixup=amend:x` (GRD-11's pairs, `git -c k=v
   commit --amend` and `git --unknown commit --amend`, are in `tests/guard-global-options.test.js`).
@@ -208,18 +212,17 @@ fixed, delete it here; IDs are never reused.
   M16 (EXE-22), `env` via the entry point for an install path with a shell-special character
   (RPL-08), `killed-leftover` (RUN-24), `index-locked` via M18's takeover repair (RUN-23,
   RUN-25), `backstop-hit` (EXE-13), `git-failed` from a failing `git commit` (EXE-12),
-  `stage-failed` (EXE-10) and `timed-out` via M16's `git commit` deadline (EXE-17). INT-31
-  lists most of these slices as blockers but not RPL-08, RUN-23 or RUN-25. Fix: each slice
-  replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices: EXE-10,
-  EXE-12, EXE-13, EXE-17, EXE-22, RPL-08, RUN-23, RUN-24, RUN-25.
-- **KD-R99.** INT-31's `internal` case (EXE-01 item 3: the FND-10 preload failing
+  `stage-failed` (EXE-10) and `timed-out` via M16's `git commit` deadline (EXE-17). Fix: each
+  slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
+  EXE-10, EXE-12, EXE-13, EXE-17, EXE-22, RPL-08, RUN-23, RUN-24, RUN-25.
+- **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws
   `notBuilt('commit --all in staged mode', 'EXE-19')` before any `git commit`, and `split`
   writes `state.json` (`indexReset`) before `git commit`, so the fault fires there with no
-  `sha`; the preload cannot fail only a later rename. The manifest cites this row for the
-  `internal` pair. Fix: once EXE-19 and EXE-17 land, add the case and drop this row. Slices:
-  EXE-17, EXE-19.
+  `sha`; the preload cannot fail only a later rename. AC2 is INT-31's own criterion, not the
+  accepted-gap list: INT-31 cannot close until this case exists. Fix: once EXE-19 and EXE-17
+  land, add the case and drop this row. Slice: INT-31.
 
 ## Design sync
 

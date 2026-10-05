@@ -14,12 +14,16 @@ const path = require('node:path');
 const DOC_PATH = path.join(__dirname, '..', '..', 'docs', 'spec', 'domain-code-cli-kind.md');
 const TABLE_ROW_RE = /^\|(.+)\|$/;
 const SEPARATOR_CELL_RE = /^:?-+:?$/;
+const EXPECTED_HEADER = 'Domain code | Producer | CLI kind | Exit';
 
 /**
  * @param {string} [content] defaults to reading DOC_PATH; a caller can pass fixed text for a
  *   parser test.
  * @returns {{ code: string, producer: string, kind: string, exit: string }[]} each data row's
  *   four cells (Domain code, Producer, CLI kind, Exit), trimmed, in table order.
+ * @throws if the table's header is not exactly "Domain code | Producer | CLI kind | Exit", or
+ *   any row (including the header) does not split into exactly four cells: an escaped `\|` or
+ *   a reordered header would otherwise misparse silently.
  */
 function parseDomainCodeDocTable(content = fs.readFileSync(DOC_PATH, 'utf8')) {
   const lines = content.split(/\r?\n/);
@@ -33,8 +37,16 @@ function parseDomainCodeDocTable(content = fs.readFileSync(DOC_PATH, 'utf8')) {
       continue;
     }
     inTable = true;
-    const [code, producer, kind, exit] = match[1].split('|').map((cell) => cell.trim());
+    const cells = match[1].split('|').map((cell) => cell.trim());
+    if (cells.length !== 4) {
+      throw new Error(`domain-code-cli-kind.md row has ${cells.length} cells, not 4: ${line}`);
+    }
+    const [code, producer, kind, exit] = cells;
     if (!sawHeader) {
+      const header = `${code} | ${producer} | ${kind} | ${exit}`;
+      if (header !== EXPECTED_HEADER) {
+        throw new Error(`domain-code-cli-kind.md header is ${JSON.stringify(header)}, not ${JSON.stringify(EXPECTED_HEADER)}`);
+      }
       sawHeader = true; // the header row itself ("Domain code | Producer | ...")
       continue;
     }
