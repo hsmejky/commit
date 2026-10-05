@@ -3,7 +3,8 @@
 // Parses the data rows of docs/spec/domain-code-cli-kind.md's table (RPL-03), the doc that
 // is the oracle for both `lib/domain-codes.mjs` (tests/domain-codes.test.js) and the
 // reachability manifest (tests/domain-code-reachability.test.js). Only the first column (the
-// domain code or row description) is extracted; callers compare it against their own data.
+// domain code or row description) is extracted by `parseDomainCodeDocRows`; INT-31's manifest
+// also reads the Producer, CLI kind and Exit cells (`parseDomainCodeDocTable`).
 // Modeled on tests/helpers/roadmap-graph.js: read the raw text, find the table by its header,
 // stop at the first line after it that is not a `| ... |` row (the doc's prose resumes there).
 
@@ -17,9 +18,10 @@ const SEPARATOR_CELL_RE = /^:?-+:?$/;
 /**
  * @param {string} [content] defaults to reading DOC_PATH; a caller can pass fixed text for a
  *   parser test.
- * @returns {string[]} the first-column cell text of each data row, in table order.
+ * @returns {{ code: string, producer: string, kind: string, exit: string }[]} each data row's
+ *   four cells (Domain code, Producer, CLI kind, Exit), trimmed, in table order.
  */
-function parseDomainCodeDocRows(content = fs.readFileSync(DOC_PATH, 'utf8')) {
+function parseDomainCodeDocTable(content = fs.readFileSync(DOC_PATH, 'utf8')) {
   const lines = content.split(/\r?\n/);
   const rows = [];
   let inTable = false;
@@ -31,15 +33,23 @@ function parseDomainCodeDocRows(content = fs.readFileSync(DOC_PATH, 'utf8')) {
       continue;
     }
     inTable = true;
-    const firstCell = match[1].split('|')[0].trim();
+    const [code, producer, kind, exit] = match[1].split('|').map((cell) => cell.trim());
     if (!sawHeader) {
       sawHeader = true; // the header row itself ("Domain code | Producer | ...")
       continue;
     }
-    if (SEPARATOR_CELL_RE.test(firstCell)) continue; // the `--- | --- | ...` rule row
-    rows.push(firstCell);
+    if (SEPARATOR_CELL_RE.test(code)) continue; // the `--- | --- | ...` rule row
+    rows.push({ code, producer, kind, exit });
   }
   return rows;
+}
+
+/**
+ * @param {string} [content] defaults to reading DOC_PATH.
+ * @returns {string[]} the first-column cell text of each data row, in table order.
+ */
+function parseDomainCodeDocRows(content) {
+  return parseDomainCodeDocTable(content).map((row) => row.code);
 }
 
 // The part of a row's first-column text that names what it is, ignoring an explanatory
@@ -50,4 +60,4 @@ function firstColumnKey(text) {
   return text.replace(/`/g, '').split('(')[0].trim();
 }
 
-module.exports = { parseDomainCodeDocRows, firstColumnKey, DOC_PATH };
+module.exports = { parseDomainCodeDocTable, parseDomainCodeDocRows, firstColumnKey, DOC_PATH };

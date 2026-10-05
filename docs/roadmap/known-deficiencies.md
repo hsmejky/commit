@@ -194,6 +194,23 @@ fixed, delete it here; IDs are never reused.
   cases to `tests/stage-whole-file.test.js` and drop this row; reword the rename criterion
   to "a rename group whose paths exceed the command-line limit". Slices: EXE-10, EXE-11,
   EXE-19.
+- **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
+  lists eight pairs as gaps because the code producing them is not built: `unconfirmed` via
+  M16 (EXE-22), `env` via the entry point for an install path with a shell-special character
+  (RPL-08), `killed-leftover` (RUN-24), `index-locked` via M18's takeover repair (RUN-23,
+  RUN-25), `backstop-hit` (EXE-13), `git-failed` from a failing `git commit` (EXE-12),
+  `stage-failed` (EXE-10) and `timed-out` via M16's `git commit` deadline (EXE-17). INT-31
+  lists most of these slices as blockers but not RPL-08, RUN-23 or RUN-25. Fix: each slice
+  replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices: EXE-10,
+  EXE-12, EXE-13, EXE-17, EXE-22, RPL-08, RUN-23, RUN-24, RUN-25.
+- **KD-R99.** INT-31's `internal` case (EXE-01 item 3: the FND-10 preload failing
+  `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
+  `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws
+  `notBuilt('commit --all in staged mode', 'EXE-19')` before any `git commit`, and `split`
+  writes `state.json` (`indexReset`) before `git commit`, so the fault fires there with no
+  `sha`; the preload cannot fail only a later rename. The manifest cites this row for the
+  `internal` pair. Fix: once EXE-19 and EXE-17 land, add the case and drop this row. Slices:
+  EXE-17, EXE-19.
 
 ## Design sync
 
