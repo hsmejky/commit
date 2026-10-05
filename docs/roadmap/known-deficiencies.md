@@ -427,7 +427,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
   `attribution` is Seam-1-readable from `state.json` the way the `split` case already reads
   it. Where: `tests/plan-attribution-flag.test.js`. Fix: rebuild the `staged` case at Seam 1
   through that trigger (mechanism ready, out of RUN-18's own acceptance criteria) and drop
-  this row. Slices: none blocking.
+  this row. Slices: INT-09 (same confirm-route trigger as KD-R94).
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose

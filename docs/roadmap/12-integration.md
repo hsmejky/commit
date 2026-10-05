@@ -160,6 +160,9 @@ confirmation is pending is refused.
       kept (story 208)
 - [ ] Running the `no` answer's `release` command verbatim → exit 0, `status: "nothing"`,
       the lock and folder gone, the real index unchanged (story 92)
+- [ ] The `staged` mode's skipped/`scanIgnore` and resumed confirm rows move from pure-unit
+      to Seam 1 through this slice's confirm route (KD-R94); `tests/plan-attribution-flag.test.js`'s
+      `staged` case is rebuilt at Seam 1 through the same trigger (KD-R95)
 
 
 ## INT-10: A new file in `split` triggers confirmation

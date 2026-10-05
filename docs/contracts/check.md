@@ -142,9 +142,10 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   plan discards it — recover with `git cat-file -p <blob>`" (Q11). Never a confirmation
   trigger.
 - `confirm`: `null` when no [trigger](confirmation-triggers.md) for the mode applies. In an
-  interactive run marked `resumed` (a respawn after `edit`, `one` or `retry`), `confirm` is
-  always set, with the reason `edited plan`, in every mode: the user was reviewing this run
-  and sees the result before anything is committed (Q16). The
+  interactive run marked `resumed` (a respawn after `edit`, `one` or `retry`) with at least
+  one group, `confirm` is always set, with the reason `edited plan`, in every mode: the user
+  was reviewing this run and sees the result before anything is committed (Q16). Zero groups
+  is the one exception (below): nothing was committed, so there is nothing to confirm. The
   `confirm` handback's `text` is the one confirmation block (Q16), built from this output.
 - On success the state file stores, per group: `n`, the resolved units (hunk IDs, or in the
   file-level slice the paths resolved to units by `check` itself), the normalised message,
