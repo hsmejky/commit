@@ -27,9 +27,9 @@ function group(fields = {}) {
   return { newFiles: [], skippedFiles: [], scanIgnoreFiles: [], ...fields };
 }
 
-// --- Pure fallbacks for `staged` (KD-R94): EXE-19 blocks Seam 1 for every staged row, not
-// just the two KD-R94 names, so every staged row of C:confirmation-triggers is pinned here
-// in-process until EXE-19 lands and these move to Seam 1 (dropping this whole block).
+// --- Pure fallbacks for `staged` (KD-R94): EXE-19 blocks Seam 1 for every staged row, as
+// KD-R94 names, so every staged row of C:confirmation-triggers is pinned here in-process
+// until EXE-19 lands and these move to Seam 1 (dropping this whole block).
 
 test('pure fallback (KD-R94): staged — a new file is never a trigger', () => {
   assert.equal(computeConfirm('staged', [group({ newFiles: [{ path: 'c.txt', binary: false }] })], NOT_RESUMED), null);
@@ -254,6 +254,34 @@ test('Seam 1, split: a scanIgnore change on an included file → confirm reasons
   assert.deepEqual(checked.json.confirm, { reasons: ['scanIgnore change .claude/commit.json'], humanOnly: true });
 });
 
+test('Seam 1, split: reasons accumulate in order and humanOnly is true when reasons mix (C:check)', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', 'big.txt': 'keep\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('c.txt', 'three\n');
+  c.writeFile('big.txt', `keep\n${bigAddedContent(1024 * 1024 + 8192)}`);
+  const { planId, runDir } = await plannedSplit(c);
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker',
+    groups: [
+      { header: 'feat: a', body: null, files: ['a.txt', 'c.txt'], hunks: [] },
+      { header: 'chore: big', body: null, files: ['big.txt'], hunks: [] },
+    ],
+    notIncluded: [],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
+  // C:check (docs/contracts/check.md:45): groups, then new files, then skipped/scanIgnore —
+  // the non-human "new file" reason does not reset humanOnly once the skipped-file reason
+  // (human-only) joins it, so a single mixed trigger set is still humanOnly: true.
+  assert.deepEqual(checked.json.confirm, {
+    reasons: ['2 groups', 'new file c.txt', 'skipped file big.txt'],
+    humanOnly: true,
+  });
+});
+
 test('Seam 1, reword: confirm is null when not resumed', async (t) => {
   const c = createCase(t);
   c.writeFile('file.txt', 'one\n');
@@ -319,6 +347,9 @@ test('Seam 1, split: a scan-hit left out in notIncluded gives no confirmation (a
 
   assert.equal(checked.exitCode, 0, `stdout ${checked.stdout}\nstderr ${checked.stderr}`);
   assert.equal(checked.json.confirm, null);
+  // Confirms the fixture is a real scan hit (and not a stale token pattern silently matching
+  // nothing), per C:check's `notices`.
+  assert.ok(checked.json.notices.includes('b.js:3 github-token left out'), `notices ${JSON.stringify(checked.json.notices)}`);
 });
 
 test('Seam 1, split: a size-skipped file left out in notIncluded gives no confirmation (only an included skipped file triggers)', async (t) => {
