@@ -38,7 +38,7 @@
 // `notIncluded` extras or notices, since those describe units left out of a group, and
 // `staged`/`reword` leave none out.
 
-import { lint, normalise, normaliseText } from './message-grammar.mjs';
+import { hadAttributionTrailer, lint, normalise, normaliseText } from './message-grammar.mjs';
 import { scanText } from './scanner.mjs';
 
 const WORKER_PLAN = 'plan.groups.json';
@@ -58,6 +58,35 @@ function messageOf(header, body) {
   const normalised = normaliseText(raw);
   if (!normalised.ok) return normalised;
   return { ok: true, text: normalised.text.replace(/\n$/, '') };
+}
+
+// PLN-07 (C:check "the normalised message"): `header`/`body` split back out of the same
+// M6-normalised text `messageOf` computes for lint (MSG-06: CRLF/lone-CR become LF, trailing
+// blank lines trimmed), so the stored message is the one lint and the scanner already saw —
+// a scan span computed over `messageOf`'s text (`lintMessage` below) indexes this same text,
+// header+"\n\n"+body reassembled, byte for byte. A message that failed to normalise already
+// has its own lint error (`lintMessage`), so the overall result is a failure regardless; the
+// raw header/body fallback here is never read in that case.
+function normalisedParts(header, body) {
+  const result = messageOf(header, body);
+  if (!result.ok) return { header, body };
+  if (body === null) return { header: result.text, body: null };
+  const at = result.text.indexOf('\n\n');
+  return at === -1
+    ? { header: result.text, body: null }
+    : { header: result.text.slice(0, at), body: result.text.slice(at + 2) };
+}
+
+// PLN-07 (C:check "attribution: true|false", Q20): `false` whenever the run's resolved
+// attribution trailer is `null` (nothing to append, in any mode); otherwise always `true` in
+// `split`/`staged` (the worker always writes the message there), and in `reword` only when
+// the worker wrote the new message (`source` is `worker`, the default when absent) or the
+// old message already carried an attribution trailer (`hadAttributionTrailer`, M6, shared
+// rather than re-parsed here, Q15).
+function resolveAttributionFlag(mode, source, oldMessage, trailer) {
+  if (trailer === null) return false;
+  if (mode !== 'reword') return true;
+  return source !== 'user' || hadAttributionTrailer(oldMessage);
 }
 
 // M6's lint reasons quote three message fragments verbatim: the type, the scope and a footer
@@ -145,7 +174,10 @@ function validateSingleGroupPlan(mode, workerPlan, runState, options) {
 
   const files = filesOf(runState.units);
   const newFiles = mode === 'reword' ? [] : files.filter((file) => file.new).map((file) => file.path);
-  const stored = [{ n: 1, units: runState.units.map((unit) => unit.id), header: group.header, body: group.body }];
+  const trailer = runState.attribution?.trailer ?? null;
+  const attribution = resolveAttributionFlag(mode, workerPlan.source, runState.oldMessage, trailer);
+  const { header, body } = normalisedParts(group.header, group.body);
+  const stored = [{ n: 1, units: runState.units.map((unit) => unit.id), header, body, attribution }];
   const groups = [{ n: 1, header: group.header, body: group.body, fileCount: files.length, files, newFiles }];
   return { ok: true, groups, notIncluded: [], notices: [], stored };
 }
@@ -156,12 +188,17 @@ function validateSingleGroupPlan(mode, workerPlan, runState, options) {
  * @param {Uint8Array | null} planBytes the bytes of `plan.groups.json`, or `null` when the
  *   run folder holds no such regular file.
  * @param {{ mode: string, units: Array<{ id: string, path: string, oldPath?: string | null,
- *   status: string, identityKey?: string }> }} runState the parsed `state.json`.
+ *   status: string, identityKey?: string }>, attribution?: { trailer: string | null },
+ *   oldMessage?: string }} runState the parsed `state.json`. `attribution.trailer` (PLN-07,
+ *   Q20) drives the stored `attribution` flag below; missing (older fixtures) reads as
+ *   `null`, i.e. no trailer. `oldMessage` (`reword` only) is read only when `source` is
+ *   `"user"` and the trailer is resolved.
  * @param {{ osUser?: string | null }} [options] `osUser` is the entry point's injected OS
  *   user name, passed straight through to M8 `scanText` for each message (never stored,
  *   Q10 as amended by EXE-01).
  * @returns {{ ok: true, groups: object[], notIncluded: object[], notices: string[],
- *   stored: Array<{ n: number, units: string[], header: string, body: string | null }> }
+ *   stored: Array<{ n: number, units: string[], header: string, body: string | null,
+ *   attribution: boolean }> }
  *   | { ok: false, code: 'lint', kind: 'shape' | 'plan', source: 'worker' | 'user' | undefined,
  *   errors: Array<{ group: number | null, reason: string,
  *   spans?: Array<{ patternId: string, start: number, end: number }> }> }}
@@ -193,6 +230,8 @@ export function validatePlan(planBytes, runState, options = {}) {
   const stored = [];
   const messageValues = runState.config.values;
   const osUser = options.osUser ?? null;
+  const trailer = runState.attribution?.trailer ?? null;
+  const attribution = resolveAttributionFlag(runState.mode, workerPlan.source, runState.oldMessage, trailer);
   // PLN-04 (C:check "no unit with a scan hit... is in a group"): the stored scan map
   // (`state.json` `scanned`, C:plan-hunks). A collapsed directory or a `dirtySubmodules`
   // path is never a unit, so resolvePath already refuses it as "not a change" (PLN-02); only
@@ -244,7 +283,8 @@ export function validatePlan(planBytes, runState, options = {}) {
       files,
       newFiles: files.filter((file) => file.new).map((file) => file.path),
     });
-    stored.push({ n, units, header: group.header, body: group.body });
+    const { header, body } = normalisedParts(group.header, group.body);
+    stored.push({ n, units, header, body, attribution });
   });
   for (const entry of workerPlan.notIncluded) {
     const pathUnits = resolvePath(entry.path, table, null, errors);

@@ -329,6 +329,22 @@ export function carryOver(oldMessage) {
 }
 
 /**
+ * Whether `oldMessage`'s footer paragraph already carries a
+ * `Co-Authored-By: … <noreply@anthropic.com>` trailer (whatever the model name) — used by
+ * M14 `check` (PLN-07, Q20) to decide the attribution flag for a dictated `reword`: the
+ * current attribution applies to `source: "user"` text only when the old message already
+ * carried one. Shares `isNoreplyCoAuthor` with `carryOver` above (Q15) so the two reword
+ * rules (drop it on carry-over vs. detect it here) never drift apart.
+ *
+ * @param {string} oldMessage
+ * @returns {boolean}
+ */
+export function hadAttributionTrailer(oldMessage) {
+  const { footer } = parse(oldMessage);
+  return footer !== null && footer.some((entry) => isNoreplyCoAuthor(entry));
+}
+
+/**
  * MSG-07 (C:message-grammar "Trailers"): appends `commit`'s own trailers to a lint-approved
  * `message`, in the fixed order new footers (already in `message`), carried trailers
  * (`carried`, MSG-08's reword carry-over; `[]` here), attribution (`attribution`, a trailer
