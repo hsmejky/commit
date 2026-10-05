@@ -138,8 +138,8 @@ test('a path git quotes, split into two groups, is committed through the built p
 // `kind: "text"` with no `fileHash`, change-set.mjs ~997-1008) must stay a whole-file unit in
 // `stage`, not be mistaken for a real per-hunk `M text` unit (`hunkLevel`, ~1363): re-diffing
 // it with `--text` dropped would make git call it binary again, failing the group with
-// `mismatch` (internal EXE-10). Its own group, beside a split plain file, so `commit --all`
-// exercises both the whole-file and the hunk-patch path in the same run.
+// `mismatch` (exit 6 `diff-changed`, EXE-10). Its own group, beside a split plain file, so
+// `commit --all` exercises both the whole-file and the hunk-patch path in the same run.
 test('a hidden text file (-diff) in its own group is committed whole, not through a hunk patch', async (t) => {
   const c = createCase(t);
   const base = numbered(10);

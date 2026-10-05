@@ -75,6 +75,23 @@ fixed, delete it here; IDs are never reused.
   `[...ctx.notices, released.notice]` for the `--no-user` branch) into both `finalReply`
   calls. Slice: RUN-27 (`lintFailureOf`'s own comment: "M15 `runEnd` replaces this branch
   when RUN-27 builds it"), or an earlier RPL slice if one touches this function first.
+- **KD-R103.** review-EXE-10 Low-1/Low-3: `plugin/scripts/lib/commit-executor.mjs:448` (the
+  `stage-failed`/`mismatch` refusal) and `~515` (the backstop/commit-throw `catch`) both
+  `await unstage(git)` and ignore a non-zero `git reset` from it — `{ ok: false, gitOutput }`
+  at 448, a straight call with no return value read at 515. C:commit-release "On failure"
+  wants the original cause kept, a notice, `unstaged: null`, and the lock and run folder kept
+  for the next run's takeover (EXE-01 item 2) on a failed unstage, same as EXE-17's own
+  skipped-cleanup branch; EXE-17's own criteria test only the deadline (skipped) case, not a
+  `git reset` that actually runs and fails, so that branch is untested. No fixture reaches it
+  without stretching a seam: Seam 1's fault-injection preload (testing-seams.md) only fails
+  named `fs`/`os` calls, not a chosen `git` subprocess call by position, and a repo-content
+  trick (such as a stray `index.lock`) cannot fail only the cleanup `git reset` without also
+  failing the phase-(c) call just before it. Also at 515: `unstage` never throws on git's own
+  exit code (by design, same as the replaced `resetIndex`), but a spawn/timeout throw from M2
+  `run` inside it would replace `err`, masking the original cause the `catch` was reporting.
+  Fix: add a non-zero-`git reset` criterion to EXE-17 once a seam for it exists (a user
+  decision), and guard the 515 call so a throw from `unstage` itself cannot replace `err`.
+  Slice: none yet.
 
 ## Test mechanisms
 
@@ -161,16 +178,17 @@ fixed, delete it here; IDs are never reused.
   committed blob differs from the cleaned form, which is what the criterion guards against.
   Revisit only if a cheap Seam-1-safe way to expose the stored hash appears, or the user
   accepts stretching this file's seam for one assert. Slice: none.
-- **KD-R101.** `tests/change-set-submodules.test.js`'s review-CHG-21 L3 case ("a malformed
-  .gitmodules makes stage return stage-failed, not throw") calls M10 `stage` in-process,
-  outside testing-seams.md's user-confirmed seam list (M10 is Seam 1 only,
+- **KD-R101.** `tests/change-set-submodules.test.js` calls M10 `snapshot` and `inventory`
+  in-process, outside testing-seams.md's user-confirmed seam list (M10 is Seam 1 only,
   testing-modules.md:9), the same gap KD-R77 and KD-R84 name for other modules. KD-R88 used
-  to record this file's in-process M10 calls (`snapshot`, `inventory`), but CHG-20 dropped
-  it once the capped-file split moved to Seam 1, and no row has covered the gap since; this
-  case adds `stage` to it. Since EXE-10, `commitAll` maps `stage-failed` to exit 4, so Seam 1
-  can now reach a malformed `.gitmodules` through `stage`. Fix: either add an "in-process
-  adapter" seam to testing-seams.md (a user decision, as KD-R77's), or rebuild this one case
-  at Seam 1. Slice: none yet (needs the user's seam decision).
+  to record this file's in-process M10 calls, but CHG-20 dropped it once the capped-file
+  split moved to Seam 1, and no row has covered the gap since. (Its review-CHG-21 L3 `stage`
+  case, once part of this row, moved to Seam 1 in `tests/commit-all-stage-failed.test.js`,
+  review-EXE-10 Medium-1, now that EXE-10 maps `stage-failed` to exit 4; it no longer needs a
+  seam decision.) Fix: either add an "in-process adapter" seam to testing-seams.md (a user
+  decision, as KD-R77's), or rewrite `snapshot`/`inventory` at Seam 1 through `plan`'s output
+  and `state.json`, or keep them as a documented KD with no slice. Slice: none yet (needs the
+  user's seam decision).
 
 ## Coverage
 

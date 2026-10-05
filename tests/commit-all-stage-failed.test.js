@@ -129,3 +129,59 @@ test('a verify mismatch (new.txt staged with other content than (b) matched) →
   assert.equal(result.json.gitOutput, null);
   assertUnstagedAndReleased(c, result, { headBefore, runDir });
 });
+
+// A superproject with `a.txt` and a submodule at `libs/x` whose source repo has two commits,
+// checked out at the newer one (tests/stage-whole-file.test.js's fixture).
+function withSubmodule(c) {
+  const sourceDir = path.join(c.root, 'sub');
+  fs.mkdirSync(sourceDir);
+  c.git(['init', '-q', '-b', 'main', '.'], { cwd: sourceDir });
+  fs.writeFileSync(path.join(sourceDir, 'inner.txt'), 'one\n');
+  c.git(['add', 'inner.txt'], { cwd: sourceDir });
+  c.git(['commit', '-q', '-m', 'one'], { cwd: sourceDir });
+  fs.writeFileSync(path.join(sourceDir, 'inner.txt'), 'two\n');
+  c.git(['commit', '-q', '-am', 'two'], { cwd: sourceDir });
+
+  c.writeFile('a.txt', 'a\n');
+  c.git(['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sourceDir, 'libs/x']);
+  c.git(['add', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const inner = path.join(c.repoDir, 'libs', 'x');
+  return { inner, prev: c.git(['rev-parse', 'HEAD~1'], { cwd: inner }).trim() };
+}
+
+// review-CHG-21 L3 (moved from the in-process `change-set-submodules.test.js` case,
+// review-EXE-10 Medium-1): a malformed `.gitmodules` fails `stage`'s own gitlink-ignore read
+// (`git config -f .gitmodules ...`, `ignoreAllGitlinks`), not phase (b)'s diff, so a submodule
+// pointer-change group (staged whole, not a hunk unit) reaches (c) and dies there like any
+// other staging failure.
+test('a malformed .gitmodules at (c) (submodule pointer change) → exit 4 git (stage-failed), gitlink unstaged, the run released', async (t) => {
+  const c = createCase(t);
+  const sub = withSubmodule(c);
+  c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
+  const headBefore = c.git(['rev-parse', 'HEAD']).trim();
+
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.ok(state.units.some((unit) => unit.path === 'libs/x' && unit.kind === 'submodule'),
+    'libs/x is a submodule pointer-change unit, staged whole');
+  state.groups = [{ n: 1, units: state.units.map((unit) => unit.id), header: HEADER, body: null, committed: false }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  fs.writeFileSync(path.join(c.repoDir, '.gitmodules'), 'not a valid ini [[[\n');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 4, detail(result));
+  assert.equal(result.json.error.kind, 'git', detail(result));
+  assert.equal(result.json.error.message, 'staging failed for group 1');
+  assert.match(result.json.gitOutput, /bad config/i);
+  assert.deepEqual(result.json.commits, []);
+  assert.deepEqual(result.json.unstaged, [], 'the group reached (c), so unstaged is present');
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore, 'nothing committed');
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'the gitlink is back at HEAD, nothing left staged');
+  assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});

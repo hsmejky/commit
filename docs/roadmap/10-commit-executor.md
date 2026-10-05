@@ -443,6 +443,10 @@ item 3; its Seam 1 case, which needs `staged` mode and the FND-10 preload, is IN
 
 **Sources:** Q18, M15 `deadline`/`cleanupDeadline`, C:commit-release, stories 165, 174.
 
+KD-R103: EXE-10's own two `unstage` calls (commit-executor.mjs:448, :515) ignore a failed
+`git reset` outright — this slice's "a skipped or failed cleanup call keeps ... a notice"
+has no criterion for the *failed* (not skipped) case, and no seam reaches it yet.
+
 - [ ] Seam 1, clock at 535 s elapsed at the start and a `pre-commit` hook that sleeps →
       exit 5 with that text, the hook's process tree gone, no commit, the run released.
 - [ ] Seam 1: a `post-commit` hook that sleeps → exit 5, `sha` set to the new HEAD, the

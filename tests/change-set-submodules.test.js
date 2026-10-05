@@ -124,22 +124,10 @@ test('a new and a removed submodule are A and D submodule units', async (t) => {
   assert.equal(removed.hash, sha256(`D\0libs/x\0commit ${sub.head} ${ZERO}\0`));
 });
 
-// review-CHG-21 L3: a malformed `.gitmodules` (bad config syntax) must give `stage`'s typed
-// `stage-failed`, never a thrown error. `stage` itself, not the Seam-1 CLI (which cannot reach
-// this path yet, KD-R97), is the only way to observe it without EXE-10 built.
-test('a malformed .gitmodules makes stage return stage-failed, not throw', async (t) => {
-  const c = createCase(t);
-  const sub = withSubmodule(c);
-  c.git(['checkout', '-q', sub.prev], { cwd: sub.inner });
-  const units = await snapshot(c);
-  fs.writeFileSync(path.join(c.repoDir, '.gitmodules'), 'not a valid ini [[[\n');
-
-  const result = await changeSet.stage({ units, toplevel: c.repoDir, env: c.env, now: NOW });
-
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'stage-failed');
-  assert.match(result.gitOutput, /bad config/i);
-});
+// review-CHG-21 L3's malformed-`.gitmodules` `stage` case moved to Seam 1
+// (tests/commit-all-stage-failed.test.js, review-EXE-10 Medium-1): EXE-10 maps `stage-failed`
+// to exit 4, so the CLI can now reach it without an in-process M10 call (KD-R101 narrowed to
+// this file's remaining `snapshot`/`inventory` calls).
 
 test('dirt without a pointer change is in dirtySubmodules, no unit, and the tree is clean', async (t) => {
   const c = createCase(t);
