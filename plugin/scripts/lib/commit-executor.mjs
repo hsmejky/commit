@@ -51,13 +51,13 @@
 // is skipped too (Q20's spec-pass-6 amendment), but `head-moved` still runs. `rewordMessageOf`
 // carries every foreign trailer of the old message (`state.oldMessage`, GIT-09) verbatim, in
 // order, dropping the allowed footer tokens (the new message owns them) and any old
-// `Co-Authored-By: … <noreply@anthropic.com>` (Q20), via M6's own `carryOver`. MSG-08
-// generalises `carryOver` further (dictated-text/conditional-attribution edge cases); this
-// module already calls the shared export, so MSG-08 only extends it, nothing to move later.
-// The current attribution trailer is always appended here too, same as `split`/`staged`; Q20's
-// conditional append (only when the worker wrote the text, or the old message already carried
-// one) is also MSG-08's. The failure paths (EXE-10 to EXE-13) and the tree check (EXE-14) are
-// not built yet: reaching one throws. `staged` (EXE-19) is not built yet either.
+// `Co-Authored-By: … <noreply@anthropic.com>` (Q20), via M6's own `carryOver`. MSG-08 makes
+// the attribution append conditional: `rewordMessageOf` reads the group's own stored
+// `attribution` flag (PLN-07: `false` for a dictated `source: "user"` text whose old message
+// carried no attribution trailer, `true` otherwise) rather than re-deciding with
+// `hadAttributionTrailer` itself, so the two never diverge. The failure paths (EXE-10 to
+// EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. `staged`
+// (EXE-19) is not built yet either.
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
@@ -158,9 +158,9 @@ async function resetIndex({ toplevel, env, now }) {
  * C:run-folder). `normaliseText` cannot fail here (`ok: false`): `group.header`/`group.body`
  * are the exact strings `plan`'s lint already ran through this same composition and
  * `normaliseText` call (plan-validator.mjs `messageOf`), so a lone surrogate would already
- * have failed lint before this group was ever stored. Attribution applies always in the only
- * modes this executor reaches so far (`split`, `staged`, C:message-grammar "Trailers");
- * `reword`'s conditional attribution and carried-trailer rules are MSG-08's.
+ * have failed lint before this group was ever stored. Attribution applies always in `split`
+ * and `staged` (C:message-grammar "Trailers"); `reword`'s conditional attribution and
+ * carried-trailer rules are `rewordMessageOf` below (MSG-08).
  *
  * @param {{ header: string, body: string | null }} group
  * @param {{ attribution: { trailer: string | null, source: string } }} state
@@ -172,17 +172,20 @@ function messageOf({ header, body }, state) {
   return appendTrailers(approved, { attribution: state.attribution.trailer });
 }
 
-// EXE-20: `reword`'s own message composition — the approved new text, M6 `appendTrailers`
-// with the old message's carried trailers (M6 `carryOver`, MSG-08) ahead of the current
-// attribution (C:message-grammar footer order: new footers, carried trailers, attribution).
-// Conditional attribution (Q20: only when the worker wrote the text, or the old message
-// already carried one) is MSG-08's; here the attribution always applies, like `messageOf`
-// above.
-function rewordMessageOf({ header, body }, state) {
+// EXE-20/MSG-08: `reword`'s own message composition — the approved new text, M6
+// `appendTrailers` with the old message's carried trailers (M6 `carryOver`) ahead of the
+// current attribution (C:message-grammar footer order: new footers, carried trailers,
+// attribution). Conditional attribution (Q20: only when the worker wrote the text, or the
+// old message already carried one) reads the group's own stored `attribution` flag
+// (PLN-07), never re-deciding with `hadAttributionTrailer` here — the two must never
+// diverge.
+function rewordMessageOf(group, state) {
+  const { header, body } = group;
   const raw = body === null ? header : `${header}\n\n${body}`;
   const approved = normaliseText(raw).text;
   const carried = carryOver(state.oldMessage);
-  return appendTrailers(approved, { carried, attribution: state.attribution.trailer });
+  const attribution = group.attribution ? state.attribution.trailer : null;
+  return appendTrailers(approved, { carried, attribution });
 }
 
 // The group's own stored units (CHG-20: a file split across groups stages and matches only

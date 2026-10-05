@@ -4,8 +4,11 @@
 // `git commit --amend --only --cleanup=verbatim -F -` with no match, no reset, no staging,
 // no verify and no scan (C:commit-release `reword`, Q20). `index-changed` is skipped
 // (Q20's spec-pass-6 amendment); `head-moved` still runs. The carried-trailer rules
-// (foreign trailers survive, an old Anthropic `Co-Authored-By` is dropped) are Q20's; full
-// generality (dictated text, conditional attribution) is MSG-08's.
+// (foreign trailers survive, an old Anthropic `Co-Authored-By` is dropped) are Q20's.
+// MSG-08 (docs/roadmap/03-message-grammar.md) adds the full generality: every foreign
+// trailer kept verbatim and in order, and conditional attribution driven by the group's own
+// stored `attribution` flag (PLN-07) rather than re-decided here. CHG-16: reword does no
+// content scan, so none of this reads file contents.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,7 +25,11 @@ function detail(result) {
 // the non-root case), runs `plan --reword`, then overwrites the stored single group's
 // header/body with the new message (bypassing the worker/`check`, same pattern as
 // tests/commit-all.test.js's `groupedRunWithMessage`).
-async function rewordRun(t, { oldMessage, header, body = null, stageFile, withParent = false } = {}) {
+// `attribution` stands in for PLN-07's stored per-group flag (computed by `check` from the
+// run's resolved trailer, the plan's `source` and `hadAttributionTrailer(oldMessage)`; not
+// re-derived here since this helper bypasses `check`). Defaults to `true` so tests that don't
+// care about the conditional still see the trailer, matching a worker-authored reword.
+async function rewordRun(t, { oldMessage, header, body = null, stageFile, withParent = false, attribution = true } = {}) {
   const c = createCase(t);
   let parentSha = null;
   if (withParent) {
@@ -43,7 +50,9 @@ async function rewordRun(t, { oldMessage, header, body = null, stageFile, withPa
   }
   const statePath = path.join(runDir, 'state.json');
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  state.groups = [{ n: 1, units: state.units.map((unit) => unit.id), header, body, committed: false }];
+  state.groups = [
+    { n: 1, units: state.units.map((unit) => unit.id), header, body, committed: false, attribution },
+  ];
   fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   return { c, planId, runDir, state, parentSha };
 }
@@ -155,4 +164,86 @@ test('a foreign trailer in the old message survives; the old Anthropic Co-Author
   );
   // Exactly one Co-Authored-By line: the old one was dropped, the current one appended once.
   assert.equal((message.match(/Co-Authored-By:/g) || []).length, 1);
+});
+
+// MSG-08 criterion 1: every foreign trailer survives, verbatim, in its original order, and
+// lands after the new message's own footer paragraph (`Closes #9`).
+test('every foreign trailer is kept verbatim and in order, after the new message\'s own footer', async (t) => {
+  const oldMessage = 'fix: old\n\nSigned-off-by: A <a@b>\nChange-Id: I1\nCo-Authored-By: Human <human@example.com>\n';
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', body: 'Closes #9' });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  const message = raw.slice(raw.indexOf('\n\n') + 2);
+  assert.equal(
+    message,
+    'fix: new message\n\nCloses #9\nSigned-off-by: A <a@b>\nChange-Id: I1\n' +
+      'Co-Authored-By: Human <human@example.com>\nCo-Authored-By: Claude <noreply@anthropic.com>\n',
+  );
+});
+
+// MSG-08 criterion 2: an allowed token (`Refs`) in the old footer is not carried (the new
+// message owns it); the old noreply `Co-Authored-By` is dropped, and since it was present,
+// the resolved attribution is appended once, after the (empty) carried trailers.
+test('an old Refs trailer is not carried; attribution is appended once since the old noreply trailer was present', async (t) => {
+  const oldMessage = 'fix: old\n\nRefs: x\nCo-Authored-By: Claude <noreply@anthropic.com>\n';
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: true });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  const message = raw.slice(raw.indexOf('\n\n') + 2);
+  assert.equal(message, 'fix: new message\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n');
+});
+
+// MSG-08 criterion 3: a dictated reword (`source: "user"`) of an old message with no noreply
+// trailer gets no attribution trailer — the executor reads the stored `attribution` flag
+// (PLN-07) rather than deciding this itself.
+test('a dictated reword with no old attribution trailer gets no attribution trailer', async (t) => {
+  const oldMessage = 'fix: old\n\nSome body text.\n';
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: false });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  const message = raw.slice(raw.indexOf('\n\n') + 2);
+  assert.equal(message, 'fix: new message\n');
+});
+
+// MSG-08 criterion 3 (worker side): the same old message, but the stored flag is `true`
+// (worker-authored text) — the attribution trailer is appended.
+test('the same reword with a worker-authored message gets the attribution trailer', async (t) => {
+  const oldMessage = 'fix: old\n\nSome body text.\n';
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: true });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  const message = raw.slice(raw.indexOf('\n\n') + 2);
+  assert.equal(message, 'fix: new message\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n');
+});
+
+// MSG-08 criterion 4: the old message's last paragraph is body, not a footer paragraph (an
+// earlier paragraph merely looking footer-shaped does not count) — nothing is carried.
+test('an old message whose last paragraph is body carries nothing', async (t) => {
+  const oldMessage = 'fix: old\n\nSigned-off-by: A <a@b>\n\nA trailing body paragraph, not a footer.\n';
+  const { c, planId } = await rewordRun(t, { oldMessage, header: 'fix: new message', attribution: true });
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const [{ sha }] = result.json.commits;
+  const raw = c.git(['cat-file', 'commit', sha]);
+  const message = raw.slice(raw.indexOf('\n\n') + 2);
+  assert.equal(message, 'fix: new message\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n');
+  assert.doesNotMatch(message, /Signed-off-by/);
 });
