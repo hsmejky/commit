@@ -162,6 +162,14 @@ test('check --plan with a one-group plan commits it in the same process: the pla
   assert.deepEqual(json.unstaged, []);
   assert.equal(json.handback, undefined, 'no interim top-level handback');
 
+  // review-RUN-18 Medium-2: `route` (`commitCheckedGroups`'s own internal decision) must never
+  // leak into check's committed output; C:check's output is `commit --all`'s with only
+  // `groups`, `notIncluded`, `confirm` and `notices` merged in.
+  assert.deepEqual(Object.keys(json).sort(), [
+    'commits', 'confirm', 'error', 'failed', 'gitOutput', 'groups', 'notIncluded', 'notices',
+    'ok', 'remaining', 'reply', 'unstaged', 'version',
+  ].sort());
+
   // C:reply-and-handback: no confirmation step, a `committed` reply.
   assert.deepEqual(json.reply, {
     version: 1,

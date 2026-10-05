@@ -1599,7 +1599,10 @@ function checkRefusalEnding(facts, ctx, values) {
 // commits, so it runs against `cleanupDeadline` (M15) rather than the spent `deadline`
 // (review-INT-02 Low-1, documented at C:commit-release's `cleanupDeadline` paragraph).
 async function committedOutput(facts, ctx, callStarted) {
-  const { handback, kept, ...output } = facts;
+  // review-RUN-18 Medium-2: `route` is `commitCheckedGroups`'s own internal decision
+  // (`commitCheckedGroups`'s `commit` branch carries it into `facts` alongside `handback`
+  // and `kept`); C:check's output never has a `route` field, so it is stripped here too.
+  const { handback, kept, route, ...output } = facts;
   const { commits, notices } = output;
   const replyFacts = handback === undefined
     ? { status: 'committed', commits, notices, planId: kept === true ? ctx.values.plan : null }
@@ -1612,11 +1615,17 @@ async function committedOutput(facts, ctx, callStarted) {
 // `confirm` kept the run (`awaitingConfirm` stored), so `planId` stays the run's. The tree
 // read runs against `cleanupDeadline`, same as `committedOutput`: it reports on the state
 // after this call's own work (the release, or nothing at all) is already done.
+// review-RUN-18 Medium-1: `releaseNothing` always nulls the output's `confirm` here, even
+// though `computeConfirm` may have returned a non-null stray `edited plan` reason for a
+// resumed zero-group run (run-policy.mjs `afterCheck`'s own doc comment names this stray
+// value) — C:check's "Zero groups" row fixes `confirm: null` regardless.
 async function routedCheckOutput(facts, ctx, callStarted) {
   const { route, notices, confirm, ...output } = facts;
   const replyDeadline = cleanupDeadline(callStarted);
   let replyFacts;
+  let outputConfirm = confirm;
   if (route === 'releaseNothing') {
+    outputConfirm = null;
     replyFacts = { status: 'nothing', reason: 'zero-groups', notIncluded: facts.notIncluded, notices, planId: null };
   } else if (route === 'handedBack') {
     replyFacts = { status: 'handback', kind: 'handedBack', notices, planId: null };
@@ -1626,7 +1635,7 @@ async function routedCheckOutput(facts, ctx, callStarted) {
       planId: ctx.values.plan,
     };
   }
-  return { ...output, confirm, notices, reply: await finalReply(replyFacts, ctx, { deadline: replyDeadline }) };
+  return { ...output, confirm: outputConfirm, notices, reply: await finalReply(replyFacts, ctx, { deadline: replyDeadline }) };
 }
 
 // RUN-16 (C:check "Lint failure", Q18): a `fix` is exit 2 with the `errors` and no `reply`.

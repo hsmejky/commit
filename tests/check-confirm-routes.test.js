@@ -83,6 +83,36 @@ test('Seam 1 (AC1): a new file in a group, interactive -> confirm handback, run 
   assert.equal(storedState(runDir).awaitingConfirm, true);
   assert.equal(fs.existsSync(lockPath(runDir)), true, 'the run lock is kept');
   assert.equal(fs.existsSync(runDir), true, 'the run folder is kept');
+  // INT-09 depends on this: the kept run is the one `reply.planId` names.
+  assert.equal(checked.json.reply.planId, planId);
+});
+
+// review-RUN-18 Medium-1 (C:check "Zero groups"): a resumed interactive run whose edited plan
+// has zero groups must still emit `confirm: null`. `computeConfirm` adds a stray "edited plan"
+// reason for any resumed run regardless of group count (run-policy.mjs `afterCheck`'s own doc
+// comment names it); `afterCheck` routes on zero groups first so the stray reason never affects
+// routing, but it must not leak into the output either.
+test('Seam 1 (M1): a resumed run with zero groups -> confirm null, nothing, lock and folder gone', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  const { planId, runDir } = await plannedSplit(c);
+  const hunksResult = await runCommit(c, ['plan', '--hunks', '--plan', planId]);
+  assert.equal(hunksResult.exitCode, 0, detail(hunksResult));
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker',
+    groups: [],
+    notIncluded: [{ path: 'a.txt', hunks: null, reason: 'leaving out for now' }],
+  }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.confirm, null, 'C:check "Zero groups": confirm is always null');
+  assert.equal(checked.json.reply.status, 'nothing');
+  assert.equal(checked.json.reply.handback, null);
+  assert.equal(fs.existsSync(lockPath(runDir)), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is deleted');
 });
 
 // AC2: a `humanOnly` reason with `--no-user` -> `handedBack`, lock and folder gone.

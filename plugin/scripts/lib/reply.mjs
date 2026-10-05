@@ -205,7 +205,9 @@ export function reply(facts) {
     handback = { kind: 'confirm', humanOnly: facts.humanOnly === true, question: CONFIRM_QUESTION };
   } else if (facts.status === 'handback' && facts.kind === 'handedBack') {
     // RUN-18 (C:reply-and-handback handback table): information only — nothing to ask, the
-    // run already released.
+    // run already released. Still missing: the handback table's own
+    // `ifNoUser: { returnToParent: true }` for this kind (review-RUN-18 Low-6); INT-17 owns it
+    // (12-integration.md:305).
     firstLines = [HANDED_BACK_TEXT];
     handback = { kind: 'handedBack', question: null };
   } else if (facts.status === 'handback' && facts.kind === 'continue') {
