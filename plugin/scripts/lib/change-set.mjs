@@ -1343,7 +1343,8 @@ function sameHashes(units, hashes) {
  * `apply.whitespace=error|fix` config neither rejects nor changes a planned hunk (Q11, Q18).
  * A hunk whose hash that diff no longer holds is `mismatch`. Every other unit is staged with
  * `git add -A` over its paths (both paths of a rename), on stdin NUL-separated, never on argv;
- * ignored paths in a separate `git add -A -f`. Then verifies that the index diff against HEAD
+ * ignored paths, and a gitlink whose submodule `.gitmodules` sets to `ignore = all` (CHG-21),
+ * in a separate `git add -A -f`. Then verifies that the index diff against HEAD
  * holds exactly the group's hashes (one `check-attr` call over the group's paths first, so a
  * filtered file hashes as its stored unit, CHG-10).
  *
@@ -1384,8 +1385,9 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
       return { ok: false, code: 'stage-failed', gitOutput: `${applied.stdout.toString('utf8')}${applied.stderr}` };
     }
   }
-  const ignored = new Set(ignoredPaths);
-  const paths = [...new Set(units.filter((unit) => !hunkLevel(unit))
+  const wholeFiles = units.filter((unit) => !hunkLevel(unit));
+  const ignored = new Set([...ignoredPaths, ...await ignoreAllGitlinks(wholeFiles, { toplevel, env, now })]);
+  const paths = [...new Set(wholeFiles
     .flatMap((unit) => (unit.oldPath === null ? [unit.path] : [unit.oldPath, unit.path])))];
   for (const [list, flags] of [[paths.filter((p) => !ignored.has(p)), []], [paths.filter((p) => ignored.has(p)), ['-f']]]) {
     if (list.length === 0) continue;
@@ -1408,6 +1410,37 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
   const sizeOf = await bodyRuleSizes(['--cached'], { toplevel, env, now }, attrs, true);
   const staged = withBodyCap(await diffUnits(['--cached'], { toplevel, env, now }, attrs, { sizeOf }));
   return sameHashes(staged, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
+}
+
+// CHG-21: the paths of `stage`'s submodule units whose submodule `.gitmodules` sets to
+// `ignore = all`. A plain `git add -A` on such a gitlink skips it with a hint and exits 0 on
+// newer git (2.54; git 2.34 and 2.43 stage it), so the verify would refuse `mismatch`; they
+// join the `-f` call. Only the working-tree `.gitmodules` counts: on git 2.54 a local
+// `submodule.<name>.ignore` neither causes the skip nor lifts it. No submodule unit or no
+// `.gitmodules` file costs no git call.
+async function ignoreAllGitlinks(units, { toplevel, env, now }) {
+  const gitlinks = new Set(units.filter((unit) => unit.kind === 'submodule').map((unit) => unit.path));
+  if (gitlinks.size === 0 || !existsSync(join(toplevel, '.gitmodules'))) return [];
+  const listed = await run(
+    'git',
+    ['config', '-f', '.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.(path|ignore)$'],
+    { cwd: toplevel, env, now },
+  );
+  if (listed.code === 1) return [];
+  if (listed.code !== 0) throw new Error(`git config failed (${listed.code}): ${listed.stderr}`);
+  const byName = new Map();
+  for (const entry of listed.stdout.toString('utf8').split('\0')) {
+    const newline = entry.indexOf('\n');
+    if (newline === -1) continue;
+    const key = entry.slice(0, newline);
+    const name = key.slice('submodule.'.length, key.lastIndexOf('.'));
+    const fields = byName.get(name) ?? {};
+    fields[key.slice(key.lastIndexOf('.') + 1)] = entry.slice(newline + 1);
+    byName.set(name, fields);
+  }
+  return [...byName.values()]
+    .filter((fields) => fields.ignore === 'all' && gitlinks.has(fields.path))
+    .map((fields) => fields.path);
 }
 
 // CHG-20: the patch for `stage`'s hunk units, or null when the current diff of the (reset)
