@@ -93,16 +93,22 @@ function assertLockRefusal(result, kind) {
 // INT-05 (C:reply-and-handback `lock` row, Q22): the takeover question/answers/ifNoUser shape
 // an interactive refusal of a live, readable-`planId` lock gets, plus the handback-rule
 // addition to `callerRule`. `respawn` has no `mode` line for a bare `plan` call.
-function assertLockHandback(result, { respawn }) {
+function assertLockHandback(result, { respawn, idle = /6\d/ }) {
   const { reply } = result.json;
   assert.equal(reply.status, 'handback');
   assert.equal(reply.handback.kind, 'lock');
-  // The lock's `created` is pinned to '2026-09-26T13:58:02.000Z' and its mtime to a minute
-  // before `placeLock` writes it (TZ=UTC, process-seam.js): exact HH:MM and an idle value in
-  // 60-69 s, loose enough for the time the call itself takes (review-INT-05 finding 3).
+  // The lock's `created` is pinned to '2026-09-26T13:58:02.000Z'. `idle` matches the
+  // "last active" seconds built from the lock's mtime: the default (60-69 s, loose enough
+  // for the time the call itself takes, review-INT-05 finding 3) fits `placeLock`'s
+  // minute-ago backdating. The lost-race case's shim writes the lock fresh mid-run instead,
+  // so its caller passes a tighter match (review-INT-05-r2 finding 1).
   assert.match(
     reply.handback.question,
-    /^A \/commit run started at 13:58 holds the lock, last active 6\d s ago\. It may still be running \(a subagent committing in parallel\); taking it over resets its index mid-commit\. Take it over\?$/,
+    new RegExp(
+      `^A /commit run started at 13:58 holds the lock, last active ${idle.source} s ago\\. `
+        + 'It may still be running \\(a subagent committing in parallel\\); taking it over '
+        + 'resets its index mid-commit\\. Take it over\\?$',
+    ),
   );
   assert.equal(reply.handback.question, reply.text.split('\n')[0]);
   assert.deepEqual(reply.handback.answers, [
@@ -229,8 +235,10 @@ test('plan that loses the lock race to a lock placed after its folder exists exi
   assert.equal(fs.readFileSync(path.join(runDirOf(c), 'lock'), 'utf8'), placed);
   assert.equal(fs.readFileSync(path.join(runDirOf(c), OTHER_PLAN_ID, 'state.json'), 'utf8'), 'kept');
   assert.deepEqual(folderNames(c), [OTHER_PLAN_ID]);
-  // INT-05: a lost race at `acquire` gets the same `lock` handback as a `peek` refusal.
-  assertLockHandback(result, { respawn: `takeOver: ${OTHER_PLAN_ID}` });
+  // INT-05: a lost race at `acquire` gets the same `lock` handback as a `peek` refusal. The
+  // shim above writes the lock fresh mid-run (no backdating), so unlike the peek cases its
+  // idle seconds read low, not 60-69 (review-INT-05-r2 finding 1).
+  assertLockHandback(result, { respawn: `takeOver: ${OTHER_PLAN_ID}`, idle: /\d+/ });
 });
 
 test('plan whose lock link fails with EEXIST exits 6 lock and deletes its own provisional folder', async (t) => {
