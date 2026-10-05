@@ -301,6 +301,33 @@ export function lint(message, values, options = {}) {
   return reasons;
 }
 
+// An old `Co-Authored-By` trailer naming the plugin's own attribution address, whatever the
+// model name in its value — dropped on carry-over so the current attribution is never
+// doubled (EXE-20, MSG-08, Q20).
+function isNoreplyCoAuthor(entry) {
+  return entry.token === 'Co-Authored-By' && /<noreply@anthropic\.com>$/i.test(entry.value);
+}
+
+/**
+ * M6 `carryOver` (EXE-20, MSG-08, C:message-grammar "Trailers", Q20): a reworded message's
+ * carried trailers — `oldMessage`'s foreign trailers, verbatim and in their original order,
+ * everything in its footer paragraph except the allowed agent footer tokens
+ * (`ALLOWED_FOOTER_TOKENS`; the new message owns them) and every
+ * `Co-Authored-By: … <noreply@anthropic.com>` (dropped so the current attribution is never
+ * doubled). `null` (the old message's last paragraph was not a footer paragraph) carries
+ * nothing. `appendTrailers` below writes the result ahead of the current attribution.
+ *
+ * @param {string} oldMessage
+ * @returns {string[]}
+ */
+export function carryOver(oldMessage) {
+  const { footer } = parse(oldMessage);
+  if (footer === null) return [];
+  return footer
+    .filter((entry) => !ALLOWED_FOOTER_TOKENS.has(entry.token) && !isNoreplyCoAuthor(entry))
+    .map((entry) => entry.raw);
+}
+
 /**
  * MSG-07 (C:message-grammar "Trailers"): appends `commit`'s own trailers to a lint-approved
  * `message`, in the fixed order new footers (already in `message`), carried trailers

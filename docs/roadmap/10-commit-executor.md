@@ -155,7 +155,11 @@ each `git commit`, M16 reads HEAD and checks that HEAD's first parent is the exp
 pre-commit HEAD (for an unborn branch, HEAD has no parent). If it is, HEAD is the group's
 SHA. If not, a hook or another process committed as well: the group is reported committed
 with the SHA HEAD holds, plus a notice ("another commit was made during group `<n>`; later
-groups refused"), and the next group is refused `head-moved`.
+groups refused"), and the next group is refused `head-moved`. `reword` (EXE-20) is the
+exception: there the new HEAD is `--amend --only` of the old one, so it always keeps the old
+commit's own parent; the check compares the amended HEAD's first parent against the
+*expected* HEAD's own first parent (both `null` on a root commit), not against the expected
+HEAD itself.
 
 **Blocked by:** EXE-04.
 

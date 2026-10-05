@@ -193,7 +193,9 @@ the lint-approved message plus these trailers.
 keeps every foreign trailer (`Signed-off-by`, a human `Co-Authored-By`, `Change-Id`, …)
 verbatim and in order, drops the allowed tokens (the new message owns them) and every
 `Co-Authored-By: … <noreply@anthropic.com>`; `appendTrailers` then writes new footers,
-carried trailers, attribution.
+carried trailers, attribution. EXE-20 already built this base `carryOver` in
+`message-grammar.mjs` and calls it from the executor; this slice only adds the
+dictated-text/conditional-attribution behaviour below (Seams 3-4).
 
 **Blocked by:** MSG-07, EXE-20, PLN-07.
 

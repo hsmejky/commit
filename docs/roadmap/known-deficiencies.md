@@ -204,7 +204,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   in place (as Q9's was, restored by RUN-20b): restore it.
 - **KD-R42.** The tree check has no reference tree in `reword` (EXE-20). Skip it there or
   compare with the expected HEAD's tree.
-- **KD-R43.** EXE-06 states the first-parent rule without its `reword` exception. Add it.
 - **KD-R44.** The mismatch notice says "later groups refused" in single-group modes. Drop
   the clause there (contract, Q18, criteria).
 - **KD-R45.** A hook-made commit is reported with the hook's SHA (EXE-06); no disposition is

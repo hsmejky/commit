@@ -51,9 +51,9 @@
 // is skipped too (Q20's spec-pass-6 amendment), but `head-moved` still runs. `rewordMessageOf`
 // carries every foreign trailer of the old message (`state.oldMessage`, GIT-09) verbatim, in
 // order, dropping the allowed footer tokens (the new message owns them) and any old
-// `Co-Authored-By: … <noreply@anthropic.com>` (Q20); this is a narrow EXE-20-only version of
-// the carry-over, kept local to this module — MSG-08 generalises it into M6's own `carryOver`
-// (dictated-text/conditional-attribution edge cases) and this module then calls that instead.
+// `Co-Authored-By: … <noreply@anthropic.com>` (Q20), via M6's own `carryOver`. MSG-08
+// generalises `carryOver` further (dictated-text/conditional-attribution edge cases); this
+// module already calls the shared export, so MSG-08 only extends it, nothing to move later.
 // The current attribution trailer is always appended here too, same as `split`/`staged`; Q20's
 // conditional append (only when the worker wrote the text, or the old message already carried
 // one) is also MSG-08's. The failure paths (EXE-10 to EXE-13) and the tree check (EXE-14) are
@@ -65,7 +65,7 @@ import {
   writeTree,
 } from './change-set.mjs';
 import { run } from './process-adapter.mjs';
-import { appendTrailers, normaliseText, parse } from './message-grammar.mjs';
+import { appendTrailers, carryOver, normaliseText } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
@@ -172,37 +172,16 @@ function messageOf({ header, body }, state) {
   return appendTrailers(approved, { attribution: state.attribution.trailer });
 }
 
-// EXE-20, Q20: the footer tokens the *new* message owns; never carried over from the old one.
-const REWORD_CARRY_DROPPED_TOKENS = new Set(['BREAKING CHANGE', 'BREAKING-CHANGE', 'Refs', 'Closes', 'Fixes']);
-
-// EXE-20, Q20: an old `Co-Authored-By` trailer naming the plugin's own attribution address,
-// whatever the model name in its value — dropped so the current attribution is never doubled.
-function isOldAnthropicCoAuthor(entry) {
-  return entry.token === 'Co-Authored-By' && /<noreply@anthropic\.com>$/i.test(entry.value);
-}
-
-// EXE-20, Q20: the old message's foreign trailers (`Signed-off-by`, a human `Co-Authored-By`,
-// `Change-Id`, …), verbatim and in their original order — everything in its footer paragraph
-// except the dropped tokens above. `null` (the old message's last paragraph was not a footer
-// paragraph) carries nothing. A narrow, EXE-20-only stand-in for M6's own `carryOver`
-// (MSG-08); see the module header note.
-function rewordCarriedTrailers(oldMessage) {
-  const { footer } = parse(oldMessage);
-  if (footer === null) return [];
-  return footer
-    .filter((entry) => !REWORD_CARRY_DROPPED_TOKENS.has(entry.token) && !isOldAnthropicCoAuthor(entry))
-    .map((entry) => entry.raw);
-}
-
 // EXE-20: `reword`'s own message composition — the approved new text, M6 `appendTrailers`
-// with the old message's carried trailers ahead of the current attribution (C:message-grammar
-// footer order: new footers, carried trailers, attribution). Conditional attribution (Q20: only
-// when the worker wrote the text, or the old message already carried one) is MSG-08's; here
-// the attribution always applies, like `messageOf` above.
+// with the old message's carried trailers (M6 `carryOver`, MSG-08) ahead of the current
+// attribution (C:message-grammar footer order: new footers, carried trailers, attribution).
+// Conditional attribution (Q20: only when the worker wrote the text, or the old message
+// already carried one) is MSG-08's; here the attribution always applies, like `messageOf`
+// above.
 function rewordMessageOf({ header, body }, state) {
   const raw = body === null ? header : `${header}\n\n${body}`;
   const approved = normaliseText(raw).text;
-  const carried = rewordCarriedTrailers(state.oldMessage);
+  const carried = carryOver(state.oldMessage);
   return appendTrailers(approved, { carried, attribution: state.attribution.trailer });
 }
 
