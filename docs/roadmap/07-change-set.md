@@ -494,19 +494,19 @@ raw hunk bytes, `git apply --cached --whitespace=nowarn`, then verify the staged
 
 **Blocked by:** CHG-06, CHG-19, INT-02, EXE-04, GIT-05, CHG-07.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Q18, C:commit-release, stories 64, 67, 162, M10.
 
-KD-R69: `unstagedAfterReset(preStaged, indexOnly)` cannot report a path's intent-to-add
-mark, which CHG-05 already leaves out of `preStaged`; if that path's group never commits,
-the loss of the mark is silent.
+KD-R69: EXE-11's `unstagedAfterReset(preStaged, indexOnly)` cannot report a path's
+intent-to-add mark, which CHG-05 already leaves out of `preStaged`; if that path's group
+never commits, the loss of the mark is silent.
 
-- [ ] Seam 1: three hunks of one file in two groups → group 2's hunks staged at their shifted ranges after group 1 committed; each commit holds exactly its hunks.
-- [ ] Seam 1: a file past the 3000-line body cap (`body: "cap"`, CHG-17) with two hunks in two groups → each commit holds exactly its hunk (M10 keeps capped bodies; drop KD-R88's in-process case then).
-- [ ] Seam 1: a trailing-whitespace hunk under `apply.whitespace=error` → committed as planned.
-- [ ] Seam 1: paths with quotes, tabs and (POSIX) newlines split into two groups → committed through the built patch.
-- [ ] Seam 1: the sparse-checkout fixture of CHG-07 committed → the out-of-cone and `skip-worktree` paths keep their HEAD content.
+- [x] Seam 1: three hunks of one file in two groups → group 2's hunks staged at their shifted ranges after group 1 committed; each commit holds exactly its hunks.
+- [x] Seam 1: a file past the 3000-line body cap (`body: "cap"`, CHG-17) with two hunks in two groups → each commit holds exactly its hunk (M10 keeps capped bodies; drop KD-R88's in-process case then).
+- [x] Seam 1: a trailing-whitespace hunk under `apply.whitespace=error` → committed as planned.
+- [x] Seam 1: paths with quotes, tabs and (POSIX) newlines split into two groups → committed through the built patch.
+- [x] Seam 1: the sparse-checkout fixture of CHG-07 committed → the out-of-cone and `skip-worktree` paths keep their HEAD content.
 
 
 ## CHG-21: Whole-file staging edge cases and `stage-failed`

@@ -338,8 +338,9 @@ test('AC3: no snapshot git calls on the temporary index follow the last group\'s
 // review-CHG-20 Medium-2 (KD-S84): `ownHashes` (commit-executor.mjs ~460-462) is the group's
 // own hashes, from `groupUnits` matched in the current snapshot — not derived from
 // whole-file units alone, which would miss a hunk-level group's hash entirely. One file,
-// two hunks in two groups, the first hunk adding a line so hunk 2's range shifts once group
-// 1 lands: without the fix, group 1's own (correctly excluded) hash would still look like an
+// two hunks in two groups, the first hunk adding a line (hunk 2's range also shifts once
+// group 1 lands, but the hash tracks content, not range, so that shift is incidental):
+// without the fix, group 1's own (correctly excluded) hash would still look like an
 // unexplained diff and set `treeChangedDuringCommit` on a clean run with no repo hook at all.
 async function oneFileTwoHunkRun(t) {
   const c = createCase(t);
