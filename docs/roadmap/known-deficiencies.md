@@ -385,10 +385,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   spawn options. Fix: none needed beyond GIT-08 landing as scheduled; this row documents the
   gap until then. Slice: GIT-08 (closes this row; also blocked on PRE-13, RUN-04, RUN-20,
   INT-02, so this window may be long).
-- **KD-R93.** The `modeChoice` handback (RUN-13) is still a stub, `{kind, question}` with no `answers`,
-  yet RPL-08 made `reply()` append the handback rule to every handback, so its `callerRule` describes
-  answers the reply does not carry. Where: `plugin/scripts/lib/reply.mjs` `modeChoice`. Fix: INT-13
-  adds the real answers. Slice: INT-13 (closes this row).
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose

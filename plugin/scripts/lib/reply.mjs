@@ -7,8 +7,8 @@
 // C:reply-and-handback). RPL-04 adds the `failed` status for a pre-folder refusal (`text`:
 // the refusal's own message, then the tree state); the trailer line and the notices block in
 // `text` are later slices'. CHG-04 adds the "N files
-// left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers
-// and `ifNoUser` are INT-13's (KD-R93). RUN-16 adds the `lintFailed` handback's question
+// left" tree state. RUN-13 adds the `modeChoice` handback's counts question; INT-13 its answers
+// and `ifNoUser` (KD-R93). RUN-16 adds the `lintFailed` handback's question
 // and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
 // run's `planId`; RPL-08 adds its answers and `ifNoUser`; the quoted rejected messages are RPL-07's. INT-02
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
@@ -336,6 +336,16 @@ export function reply(facts) {
     firstLines = [...renderCommits(commits), ...renderUnstaged(facts.unstaged)];
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
     firstLines = [modeChoiceQuestion(facts)];
+    handback = {
+      kind: 'modeChoice',
+      question: firstLines[0],
+      // The answer's `mode` replaces the call's mode flag (Q9, RUN-20): the respawn holds it alone.
+      answers: [
+        { label: 'staged', respawn: 'mode: staged' },
+        { label: 'split', respawn: 'mode: split' },
+      ],
+      ifNoUser: { answer: 'split' },
+    };
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
     if (facts.scriptPath === undefined) throw new Error('reply: a lintFailed handback needs scriptPath');
     firstLines = [LINT_FAILED_QUESTION];

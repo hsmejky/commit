@@ -5,7 +5,7 @@
 // (exit 1 `usage`); an empty or fully staged index plans `split`; a mixed index (staged
 // changes plus unstaged tracked changes or candidates, counted after the hidden rule and
 // before the caps) ends with a `modeChoice` carrying counts only, `planId: null` and no run
-// folder (C:plan `mode`, Q9, Q16). The `modeChoice` handback's answers are INT-13's.
+// folder (C:plan `mode`, Q9, Q16). Its answers are tests/plan-mode-choice.test.js (INT-13).
 
 const fs = require('node:fs');
 const path = require('node:path');
