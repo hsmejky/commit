@@ -468,3 +468,69 @@ export function computeConfirm(mode, groups, { resumed, interactive }) {
   if (resumed === true && interactive !== false) reasons.push('edited plan');
   return reasons.length === 0 ? null : { reasons, humanOnly };
 }
+
+// RUN-27 (C:cli-and-exit-codes error table, C:run-folder): the refusal codes that keep the run
+// (`usage`, `lint` and `lock` kinds: the run can go on, or the lock is not this run's). Every
+// other refusal code that reaches `runEnd` ends it: `diff-changed`, `head-moved`, `index-lock`
+// and the exit 3-5 kinds (`scan`, `git`, `timeout`) release the lock and delete the folder,
+// and so does each `plan` refusal that takes the lock after a takeover.
+const KEEP_REFUSALS = new Set([
+  'unconfirmed', 'no-groups', 'already-committed', 'lint',
+  'held', 'taken-over', 'ended', 'busy',
+]);
+
+/**
+ * M15 `runEnd(event, runState)` (RUN-27, C:cli-and-exit-codes, C:run-folder, Q18, Q22): the
+ * single source of which ending outcomes release the run (the lock goes, the run folder is
+ * deleted) and which keep it; M18 releases (M12 `releaseOpen`) only on a `release` verdict.
+ *
+ * Events (`kind`):
+ * - `refusal`, `code`: a refusal's domain code. `usage`, `lint` and `lock` codes keep;
+ *   `diff-changed`, `head-moved`, `index-lock` and exits 3-5 release.
+ * - `lintFailure`, `ending` (`fix` | `lintFailed`, M15 `onLintFailure`): `fix` keeps (the
+ *   worker retries), an interactive `lintFailed` keeps for its `resume`, a `--no-user` one
+ *   releases (`runState.interactive === false`).
+ * - `checkResult`, `route` (M15 `afterCheck`): `confirm` keeps; `handedBack` and
+ *   `releaseNothing` release; `commit` is not an ending of its own (`commitOutcome` decides).
+ * - `commitOutcome`, `remaining` (count), optional `code` (the refusal): no refusal and
+ *   nothing remaining releases; a budget stop (`remaining` left, no refusal) keeps;
+ *   a refusal follows `refusal`.
+ * - `release`, optional `timedOut`: `release` ends the run, except its own `timeout`, which
+ *   keeps both for the next `plan`'s takeover.
+ * - `internal`: an unexpected throw releases.
+ * - `plan`, `hunks` (boolean): `plan` releases on every ending but the hunk index it hands
+ *   to the worker with the lock held.
+ *
+ * Any event whose `unstageKept` is true (the unstage of a group that reached phase (c)
+ * failed or was skipped past `cleanupDeadline`, so the state still holds `indexReset` and the
+ * unfinished group) keeps: the next run's takeover repair resets the index.
+ *
+ * @param {{ kind: string, code?: string, ending?: string, route?: string, remaining?: number,
+ *   timedOut?: boolean, hunks?: boolean, unstageKept?: boolean }} event
+ * @param {{ interactive?: boolean }} [runState] the run state (`interactive: false` is
+ *   `--no-user`; absent or `true` is interactive).
+ * @returns {'keep' | 'release'}
+ */
+export function runEnd(event, runState = {}) {
+  if (event.unstageKept === true) return 'keep';
+  switch (event.kind) {
+    case 'refusal':
+      return KEEP_REFUSALS.has(event.code) ? 'keep' : 'release';
+    case 'lintFailure':
+      if (event.ending === 'fix') return 'keep';
+      return runState.interactive === false ? 'release' : 'keep';
+    case 'checkResult':
+      return event.route === 'confirm' ? 'keep' : 'release';
+    case 'commitOutcome':
+      if (event.code !== undefined) return runEnd({ kind: 'refusal', code: event.code });
+      return event.remaining === 0 ? 'release' : 'keep';
+    case 'release':
+      return event.timedOut === true ? 'keep' : 'release';
+    case 'internal':
+      return 'release';
+    case 'plan':
+      return event.hunks === true ? 'keep' : 'release';
+    default:
+      throw new Error(`runEnd: unknown event kind ${event.kind}`);
+  }
+}

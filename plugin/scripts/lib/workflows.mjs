@@ -79,7 +79,7 @@ import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import {
   afterCheck, checkGate, cleanupDeadline, computeConfirm, deadline, onLintFailure, planRefusal,
-  releaseDeadline, resolveMode,
+  releaseDeadline, resolveMode, runEnd,
 } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig, readLayers, scanIgnoreChanged, isRepoConfigPath, REPO_CONFIG_PATH } from './config.mjs';
@@ -959,7 +959,6 @@ const PLAN_HUNKS_STEPS = Object.freeze([probeRepo, planHunksRefusals, openRun, r
 // CHG-19 (C:cli-and-exit-codes): the `plan --hunks` refusals that end the run — `head-moved`,
 // `diff-changed` (`unmatched`) and exits 3-5 — release the lock and delete the run folder;
 // a `lock` refusal (`taken-over`, `ended`, `busy`) keeps it.
-const PLAN_HUNKS_RUN_ENDING = new Set(['head-moved', 'unmatched', 'git-failed', 'timed-out']);
 
 /**
  * `release`/`commit` step 2: the probe's `env` refusal, the only refusal either shares with
@@ -1040,7 +1039,8 @@ async function commitGroups(ctx) {
   // read them first; they go into the reply's notices only (`committedOutput`).
   if (ctx.checked === undefined) ctx.storedNotices = readState(run).notices ?? [];
   const outcome = await commitAll(run, {
-    now, osUser, env, deadline: ctx.deadline, scriptPath: ctx.injected.scriptPath,
+    now, osUser, env, deadline: ctx.deadline, cleanupDeadline: ctx.cleanupDeadline,
+    scriptPath: ctx.injected.scriptPath,
     // EXE-22: `check`'s own `SUBCOMMAND_OPTIONS` declares no `confirmed` flag (M1), so
     // `ctx.values.confirmed` is always `undefined` on `commitCheckedGroups`'s own call here
     // — harmless, since that path never runs with `awaitingConfirm` still set (`check`
@@ -1048,26 +1048,17 @@ async function commitGroups(ctx) {
     // before this function is called at all).
     confirmed: ctx.values.confirmed === true,
   });
-  // `remaining.length === 0` is also required for the no-refusal case (not just
-  // `!outcome.refusal`): EXE-16's budget stop ends `commitAll` with no `refusal` but a
-  // non-empty `remaining`, and that outcome must keep the run (EXE-16 AC1), same as a
-  // mid-loop `taken-over`/`busy` refusal does today. `head-moved` releases regardless of
-  // `remaining` (review-EXE-06 Medium-1): C:cli-and-exit-codes lists it with
-  // `diff-changed`/`index-lock`/`internal` among the refusals that "end the run: they
-  // release the lock and delete the run folder, so the next `/commit` starts fresh" — a
-  // moved HEAD is not something a retry within this run can fix. Once RUN-27's `runEnd`
-  // lands, it replaces this condition outright.
-  // EXE-07's `index-changed` (CLI kind `diff-changed`) and EXE-08's `index-locked` (CLI kind
-  // `index-lock`) end the run the same way, and so do EXE-09's phase (b) `unmatched` (CLI
-  // kind `diff-changed`) and `git-failed` (exit 4: "exits 3-5 end the run"), and EXE-10's
-  // phase (c) `stage-failed` (exit 4) and `mismatch` (`diff-changed`), after their unstage.
-  if ((!outcome.refusal && outcome.remaining.length === 0)
-    || outcome.refusal?.code === 'head-moved' || outcome.refusal?.code === 'index-changed'
-    || outcome.refusal?.code === 'index-locked' || outcome.refusal?.code === 'unmatched'
-    || outcome.refusal?.code === 'git-failed' || outcome.refusal?.code === 'stage-failed'
-    || outcome.refusal?.code === 'mismatch'
-    // EXE-13: the backstop's `backstop-hit` (exit 3 `scan`), after its unstage.
-    || outcome.refusal?.code === 'backstop-hit') {
+  // RUN-27: M15 `runEnd` is the single source of which `commitAll` outcomes end the run: no
+  // refusal and nothing remaining (the last group committed), or a refusal that is not a
+  // `usage`/`lint`/`lock` one (`head-moved`, `index-changed`, `index-locked`, `unmatched`,
+  // `git-failed`, `stage-failed`, `mismatch`, `backstop-hit`, `timed-out`: C:cli-and-exit-codes
+  // "exits 3-5 end the run"). EXE-16's budget stop (no refusal, groups remaining) and a
+  // mid-loop `taken-over`/`busy` keep it. `outcome.unstageKept` (a failed or skipped unstage of
+  // a group that reached phase (c), KD-R103; set by M16 `commitAll`, EXE-17) keeps it too.
+  if (runEnd({
+    kind: 'commitOutcome', remaining: outcome.remaining.length, code: outcome.refusal?.code,
+    unstageKept: outcome.unstageKept === true,
+  }) === 'release') {
     const released = releaseOpen(run);
     if (released.notice !== null) outcome.notices.push(released.notice);
     // review-INT-02 Low-3: a `release()` that could not remove the lock (`busy`) reports
@@ -1209,7 +1200,7 @@ async function commitCheckedGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const state = readState(run);
   const route = afterCheck(confirm, groups, state);
-  if (route === 'releaseNothing' || route === 'handedBack') {
+  if (runEnd({ kind: 'checkResult', route }) === 'release' && route !== 'commit') {
     const released = releaseOpen(run);
     return {
       groups, notIncluded, confirm, route,
@@ -1367,8 +1358,15 @@ export async function plan(values, injected, { cwd }) {
     // lock and its folder stay consistent for the next `/commit` (review-CHG-03b finding 2);
     // a `nothing`/`failed` reply carries notices since RPL-04 (`planRefusalFailure` below),
     // an `internal` throw's since RUN-12 (`planInternalFailure`).
-    if (facts === undefined || facts.hunks === undefined) {
-      const released = ctx.run?.release() ?? { notice: null, kept: false };
+    // RUN-27: M15 `runEnd` decides which endings release. `plan` releases every ending but the
+    // hunk index it hands to the worker with the lock held; an `internal` throw releases too. A
+    // `keep` verdict (a `held`/`taken-over`/... refusal) leaves a held lock alone — `ctx.run`
+    // is only set once `acquire` took one — but a provisional folder is still discarded.
+    const verdict = thrown !== undefined ? runEnd({ kind: 'internal' })
+      : facts.refusal !== undefined ? runEnd({ kind: 'refusal', code: facts.refusal.code })
+        : runEnd({ kind: 'plan', hunks: facts.hunks !== undefined });
+    if (verdict === 'release' || ctx.run == null) {
+      const released = (verdict === 'release' ? ctx.run?.release() : null) ?? { notice: null, kept: false };
       if (released.notice !== null) ctx.notices.push(released.notice);
       if (!released.kept) {
         const discarded = ctx.provisional?.discard() ?? null;
@@ -1431,7 +1429,12 @@ async function planHunks(values, injected, { cwd }) {
       facts = { refusal: { code: 'timed-out', message: DEADLINE_TEXT } };
       thrown = undefined;
     }
-    if (ctx.opened && (thrown !== undefined || PLAN_HUNKS_RUN_ENDING.has(facts.refusal?.code))) {
+    // RUN-27: M15 `runEnd` decides (`head-moved`, `diff-changed`, exit 3-5 and `internal` end
+    // the run; a `lock` refusal keeps it).
+    const verdict = thrown !== undefined ? runEnd({ kind: 'internal' })
+      : facts.refusal !== undefined ? runEnd({ kind: 'refusal', code: facts.refusal.code })
+        : 'keep';
+    if (ctx.opened && verdict === 'release') {
       const released = releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
       if (released.notice !== null) ctx.notices.push(released.notice);
     }
@@ -1503,7 +1506,10 @@ export async function commit(values, injected, { cwd }) {
   // `commitAll`'s budget check (`nextStep`) across every group; read once at dispatch
   // (GIT-07, `injected.callStarted`), here only for a direct call that did not pass one.
   const callStarted = injected.callStarted ?? injected.now();
-  const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
+  const ctx = {
+    injected, cwd, values, opened: false, notices: [],
+    deadline: deadline(callStarted), cleanupDeadline: cleanupDeadline(callStarted),
+  };
   try {
     const facts = await runSteps(COMMIT_STEPS, ctx);
     // EXE-06 AC3: a mid-run refusal (`head-moved` or `index-changed` here (EXE-06, EXE-07);
@@ -1521,6 +1527,8 @@ export async function commit(values, injected, { cwd }) {
     // INT-09: the success path now carries the `committed`/`continue` reply, as `check`'s
     // in-process `commit --all` does; the failure path above stays reply-less (KD-R73).
     return { output: await committedOutput(facts, ctx, callStarted) };
+  } catch (err) {
+    return await runInternalFailure(err, ctx, values);
   } finally {
     // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
     // `ended`, `busy`) leaves no `call.lock` of this call's own to close.
@@ -1619,6 +1627,8 @@ export async function check(values, injected, { cwd }) {
     }
     if (checked.commits === undefined) return { output: checked };
     return { output: await committedOutput(checked, ctx, callStarted) };
+  } catch (err) {
+    return await runInternalFailure(err, ctx, values);
   } finally {
     if (ctx.opened) close({ toplevel: ctx.toplevel, planId: values.plan });
   }
@@ -1637,11 +1647,18 @@ function checkRefusalEnding(facts, ctx, values) {
   // `commitGroups` already decided whether to release (its own rule, matching `commit()`);
   // double-releasing here would delete the run folder out from under staging `commitAll`
   // deliberately kept (EXE-16's budget stop, a mid-loop `taken-over`/`busy`).
-  if (ctx.opened && facts.refusal.code === 'timed-out' && facts.commits === undefined) {
-    releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
+  // RUN-27: M15 `runEnd` decides. The release's own notice (a busy lock rename keeps the run, a
+  // folder-removal error) joins the failure's `notices`: this refusal has no `reply` to carry
+  // it yet (KD-R73), and the caller must learn that a kept run is still there.
+  let released = { notice: null };
+  if (ctx.opened && facts.commits === undefined
+    && runEnd({ kind: 'refusal', code: facts.refusal.code }) === 'release') {
+    released = releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
   }
   if (facts.commits !== undefined) return commitAllFailure(facts);
-  return refusalFailure(facts.refusal);
+  const ending = refusalFailure(facts.refusal);
+  if (released.notice !== null) ending.failure.notices = [released.notice];
+  return ending;
 }
 
 // INT-02 (C:check `confirm: null`, C:reply-and-handback): `check`'s in-process `commit --all`
@@ -1706,14 +1723,14 @@ async function routedCheckOutput(facts, ctx, callStarted) {
 // A `lintFailed` adds one: interactive, the `lintFailed` handback, keeping the run for its
 // `resume`; with `--no-user` (`interactive: false`), the run ends here (M12 `releaseOpen`:
 // the lock and the folder go, so the `finally`'s `close` finds nothing) and the reply is
-// `failed` with the errors. M15 `runEnd` replaces this branch when RUN-27 builds it.
+// `failed` with the errors. M15 `runEnd` (RUN-27) decides keep or release.
 async function lintFailureOf(facts, ctx) {
   const count = facts.lint.length;
   const message = `${count} ${count === 1 ? 'error' : 'errors'}`;
   const failure = { kind: kindForDomainCode('lint'), message, errors: facts.lint };
   if (facts.lintEnding === 'fix') return { failure };
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
-  if (facts.interactive !== false) {
+  if (runEnd({ kind: 'lintFailure', ending: facts.lintEnding }, { interactive: facts.interactive }) === 'keep') {
     failure.reply = await finalReply(
       { status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint, shapeOnly: facts.shapeOnly },
       ctx,
@@ -1832,6 +1849,18 @@ async function lockHandbackFailure(refusal, ctx, toplevel, replyDeadline, clock)
       errorFields: holderFields(refusal.holder),
     },
   };
+}
+
+// RUN-27 (C:cli-and-exit-codes `internal`): an unexpected throw in `check` or `commit` ends the
+// call as `internal` through M15 `runEnd` like `plan`'s: after `open` it releases the run
+// (lock and folder, the release's notice in the reply's `notices`), then `planInternalFailure`
+// builds the `failed` reply. `close` in the caller's `finally` finds nothing left to close.
+async function runInternalFailure(err, ctx, values) {
+  if (ctx.opened && runEnd({ kind: 'internal' }) === 'release') {
+    const released = releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
+    if (released.notice !== null) ctx.notices.push(released.notice);
+  }
+  return await planInternalFailure(err, ctx);
 }
 
 // KD-R64 (RUN-12): an unexpected throw inside `plan`'s steps ends the call as `internal`
