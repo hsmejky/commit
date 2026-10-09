@@ -82,7 +82,7 @@ test('M15 resolveMode: killedLeftover with othersOnly words the files as staged 
   assert.equal(reword.notice, 'files staged after the killed run: `a.txt`');
   const { message } = runPolicy.resolveMode({ ...NO_FLAGS, noUser: true }, { staged: 1, other: 0 }, true, ['a.txt'], true).refusal;
   assert.equal(message, 'files were staged after a killed /commit run: `a.txt`; unstage them or commit by hand, then run /commit again');
-  const long = (n) => `dir${n}/${'\xE2\x82\xAC'.repeat(60)}/file${n}.txt`;
+  const long = (n) => `dir${n}/${'\\xE2\\x82\\xAC'.repeat(60)}/file${n}.txt`;
   const trimmed = runPolicy.resolveMode({ ...NO_FLAGS, noUser: true }, { staged: 6, other: 0 }, true, [1, 2, 3, 4, 5, 6].map(long), true).refusal.message;
   assert.ok(Buffer.byteLength(JSON.stringify(trimmed), 'utf8') - 2 <= 900);
   assert.match(trimmed, /^files were staged after a killed \/commit run: `…/);

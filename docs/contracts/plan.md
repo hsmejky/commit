@@ -52,7 +52,7 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    request", or for an orphan-only adoption the wording of
    [run folder](run-folder.md) ("adopted the leftover of a killed takeover ..."); the reset
    notice; the `unstaged` report; with `killedLeftover` the killed group's paths still
-   staged) are kept from here on and go into the reply's notices of every output `plan`
+   staged, or the files staged after the kill when none of those paths is) are kept from here on and go into the reply's notices of every output `plan`
    ends with, whatever step it ends at: a clean tree, `modeChoice`, `staged-empty`,
    `staged-hit`, `signing`, `killed-leftover`, `git-failed`, `timeout`, `head-moved`,
    `index-changed` and `internal` included. The taken-over run's folder is gone by then, so

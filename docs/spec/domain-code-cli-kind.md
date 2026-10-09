@@ -61,6 +61,9 @@ beyond that set) it leaves the index untouched and sets `killedLeftover` for `re
 still staged; `--no-user` without `--reword` refuses with `killed-leftover` (exit 6
 `state`, text naming those paths; the lock is released and the folder deleted); `--reword`
 goes on with a notice naming those paths, since `--amend --only` never touches the index.
+When none of the killed group's paths is still staged but other files are, the same handling
+applies, with the notices and the refusal worded as files staged after the killed run rather
+than as its leftovers ([run folder](../contracts/run-folder.md)).
 So the leftover is never committed unasked. A kill during the repair leaves the old folder
 and its `indexReset` for the next takeover (C:run-folder: the renamed lock file names the
 run to read). A repair whose `git reset -q -- .` fails (a foreign `index.lock` → `index-lock`,

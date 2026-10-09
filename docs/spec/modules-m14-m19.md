@@ -16,14 +16,16 @@ by M18 on every call and never stored in the run state (Q10 as amended by EXE-01
 Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
 
 **M15 Run policy.** Every pure decision of a run; one entry per contracts table:
-- `resolveMode(flags, indexState, killedLeftover, leftoverPaths)`: `killedLeftover` is true when a takeover
+- `resolveMode(flags, indexState, killedLeftover, leftoverPaths, othersOnly)`: `killedLeftover` is true when a takeover
   finds staging it did not reset (the index holds paths beyond the killed group's paths,
   C:run-folder); when true: with `--reword` (with or without `--no-user`) the mode stays
   `reword` plus a notice naming the killed group's paths still staged (`--amend --only`
   never touches the index); else with `--no-user` the refusal `killed-leftover` (exit 6
   `state`, its text naming those paths; M18 releases the lock and deletes the folder, the
   index untouched); else `modeChoice` whatever the flags (`--staged` included) and the
-  index shape. Otherwise: flags (`--staged` with an empty index → `staged-empty`);
+  index shape. `othersOnly` is true when none of the killed group's paths is still staged but
+  other files are: the same handling, with the notice and the refusal worded as files staged
+  after the killed run, not as its leftovers (C:run-folder). Otherwise: flags (`--staged` with an empty index → `staged-empty`);
   empty or fully staged index → `split`; a mixed index (staged plus unstaged tracked changes
   or candidates) → `modeChoice`. Candidates are counted after M9 `hideFilter` and before
   the caps, so a large new directory beside a fully staged index still asks `modeChoice`.
