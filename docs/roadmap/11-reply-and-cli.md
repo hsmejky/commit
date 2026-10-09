@@ -235,6 +235,3 @@ plus the `mode` flag of the `plan` call that built it (read from `argv`); `takeO
       `mode: staged` and no `takeOver`; running that `plan --staged` finds no lock and plans
       `staged`
 - [ ] No respawn holds `intent` or `reword`; `edit` respawns mark the user's text as `{text}`
-- [ ] Seam 1 (RUN-20 item 6): a forced `modeChoice` from `plan --take-over <planId> --staged`
-      with `killedLeftover` answered `split` → the respawn holds `mode: split` alone (the
-      answer replaces the refused call's mode flag) and no `takeOver`

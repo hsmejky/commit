@@ -744,7 +744,8 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
 
 **Status:** ready-for-agent
 
-**Sources:** Q17, Q22, C:run-folder, C:plan (mode), M15 `resolveMode`, domain-code table, story 227.
+**Sources:** Q17, Q22, C:run-folder, C:plan (mode), M15 `resolveMode`, domain-code table, story 227,
+RUN-20 item 6.
 
 - [ ] Seam 1: kill in phase (c), then the user stages another file, then `plan
       --take-over <id> --staged` → no reset, and a `modeChoice` naming the killed group's
@@ -758,6 +759,9 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
       interactive run → the forced `modeChoice` carrying the takeover, `killedLeftover`
       and `unstaged` notices; a repair that resets under `--take-over <id> --staged` →
       `staged-empty` carrying the reset notice.
+- [ ] Seam 1 (RUN-20 item 6): a forced `modeChoice` from `plan --take-over <planId> --staged`
+      with `killedLeftover` answered `split` → the respawn holds `mode: split` alone (the
+      answer replaces the refused call's mode flag) and no `takeOver`
 
 
 ## RUN-25: a killed takeover is recovered through the renamed lock chain
