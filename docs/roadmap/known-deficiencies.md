@@ -50,7 +50,9 @@ fixed, delete it here; IDs are never reused.
   refusal, but `release`'s and `commit`'s own `env` refusals, and `commit`'s and `check`'s
   lint/scan failures, still go through the plain `refusalFailure` with no `reply` at all. No
   roadmap criterion currently names this gap. (INT-09 gave a direct `commit --all`'s success
-  path its `committed`/`continue` reply; its failure path is still reply-less.) Fix: add it as an explicit INT-02-or-later
+  path its `committed`/`continue` reply; its failure path is still reply-less, except RPL-06's `failed` reply on a git-output refusal (`git-failed`,
+  `stage-failed`), which carries only the message, the escaped and capped git output and the tree
+  state, not the group lists.) Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
 - **KD-R106.** EXE-11 AC5's "the report says the index is untouched" is not reachable: a
   `commit --all` refusal before any group reached (c) has `unstaged: null` (asserted at

@@ -1513,7 +1513,7 @@ export async function commit(values, injected, { cwd }) {
     // C:commit-release, not only the refusal's own `kind`/`message` (review-EXE-04 Medium-1).
     // EXE-09: `gitOutput` too, git's verbatim output on a `git-failed` exit 4 (`null` on
     // every other refusal), so that failure never reads as success.
-    if (facts.refusal !== undefined) return commitAllFailure(facts);
+    if (facts.refusal !== undefined) return gitFailedReply(commitAllFailure(facts), facts, ctx, callStarted);
     // review-INT-02 N1: `commitGroups`' own `kept` (Low-3, review-INT-02 r2) is read by
     // `check`'s `committedOutput`, not reported here — C:commit-release's output shape has
     // no `kept` field, so a direct `commit --all` strips it the same way `committedOutput`
@@ -1551,6 +1551,21 @@ function commitAllFailure(facts) {
       ...(facts.hits ? { hits: facts.hits.map(({ path, line, patternId }) => ({ path, line, pattern: patternId })) } : {}),
     },
   };
+}
+
+// RPL-06 (Q18, C:reply-and-handback `text`): a refusal that carries git's output (`git-failed`,
+// `stage-failed`) gets a `failed` reply whose `text` relays that output escaped and capped to its
+// last 2000 characters; the full output stays in the failure's `gitOutput`. Other `commitAll`
+// refusals still go out reply-less (KD-R73).
+async function gitFailedReply(ending, facts, ctx, callStarted) {
+  if (typeof facts.gitOutput !== 'string') return ending;
+  const { failure } = ending;
+  const replyFacts = { status: 'failed', message: failure.message, gitOutput: facts.gitOutput, notices: facts.notices ?? [] };
+  // A tree-state read that throws too (the repository that broke git may break `git status`)
+  // never replaces the refusal: the reply then omits the tree state.
+  failure.reply = await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) })
+    .catch(() => reply({ ...replyFacts, treeState: undefined }));
+  return ending;
 }
 
 /**
@@ -1598,7 +1613,7 @@ export async function check(values, injected, { cwd }) {
     // the way `runStepsWithin` blanks its own steps' outcome on `scope.expired`.
     const checked = await runSteps([commitCheckedGroups], ctx);
     const commitEnding = checkRefusalEnding(checked, ctx, values);
-    if (commitEnding !== undefined) return commitEnding;
+    if (commitEnding !== undefined) return gitFailedReply(commitEnding, checked, ctx, callStarted);
     if (checked.route === 'releaseNothing' || checked.route === 'handedBack' || checked.route === 'confirm') {
       return { output: await routedCheckOutput(checked, ctx, callStarted) };
     }

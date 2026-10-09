@@ -71,6 +71,20 @@ export function escapePath(p) {
   });
 }
 
+// RPL-06 (Q18, C:reply-and-handback `text`): git or hook output relayed through `text`. Control
+// characters are escaped like a path's except that \n and \t stay (ESC is escaped, so ANSI
+// sequences are neutralised); only the last 2000 characters are kept, behind a "[… N
+// characters cut]" marker when cut. The full, raw output stays in `gitOutput`.
+const MAX_RELAYED_CHARS = 2000;
+const RELAY_CONTROL_CHAR = /[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]/g;
+
+export function relayOutput(raw) {
+  const escaped = raw.replace(/\n+$/, '').replace(RELAY_CONTROL_CHAR, escapePath);
+  if (escaped.length <= MAX_RELAYED_CHARS) return escaped;
+  const cut = escaped.length - MAX_RELAYED_CHARS;
+  return `[… ${cut} characters cut]\n${escaped.slice(cut)}`;
+}
+
 // The tree state line (C:reply-and-handback): "working tree clean", or the count and the
 // paths left (CHG-04), each escaped (RPL-06) and capped at 10 plus "+N more" (RPL-05); the
 // full cap and escape layout, shared with the other lists in `text`, is RPL-05/RPL-06's.
@@ -116,7 +130,7 @@ function renderUnstaged(unstaged) {
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
 // use (C:reply-and-handback); RPL-06 owns the escaping of both renderings.
 function renderNotIncluded(notIncluded) {
-  return notIncluded.map(({ path, reason }) => `${path}: ${reason}`);
+  return notIncluded.map(({ path, reason }) => `${escapePath(path)}: ${reason}`);
 }
 
 // RUN-18 (C:reply-and-handback handback table, fixed text): the `handedBack` handback's only
@@ -266,6 +280,8 @@ function modeChoiceQuestion({ staged, other }) {
  *   `treeState`: `undefined` when it was never read (`release` past its 45 s
  *   `releaseDeadline`, or a case with no working tree to read) — the tree-state line is then
  *   left off `text` entirely, not rendered as if clean (C:reply-and-handback).
+ *   `gitOutput` (a `failed` commit, RPL-06): git's or a hook's raw output, relayed in `text` after
+ *   the message, escaped and capped to its last 2000 characters (`relayOutput`).
  *   `failed`'s `message` is the refusal's own text (C:cli-and-exit-codes), the first line of
  *   `text` (RPL-04); its `commits` stays `[]` and its `handback` stays `null`, since no
  *   pre-folder refusal commits anything or offers one yet.
@@ -323,6 +339,7 @@ export function reply(facts) {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
   const lines = [...firstLines, ...renderErrors(facts.errors ?? [])];
+  if (typeof facts.gitOutput === 'string' && facts.gitOutput !== '') lines.push(relayOutput(facts.gitOutput));
   if (facts.treeState !== undefined) lines.push(renderTreeState(facts.treeState));
   const text = lines.join('\n');
   if (facts.status === 'handback' && handback === null) handback = { kind: facts.kind, question: firstLines[0] };
