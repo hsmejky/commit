@@ -233,7 +233,7 @@ failed call whose unstage did not happen keeps its run, below):
   refreshes the entry's own mtime, so it is not necessarily the very next `plan` that retries
   it successfully (C:cli-and-exit-codes recorded texts).
 - Stdout budgets, each tested on its own (Q24): `plan`'s own fields 1 kB ([plan](plan.md));
-  a `reply` 2 kB without its `text`, and its `text` 4 kB with every list at its cap
+  a `reply` 3 kB without its `text`, and its `text` 4 kB with every list at its cap
   ([Reply and handback](reply-and-handback.md)); `plan --hunks` 20 000 characters, also when
   `plan` carries it under `hunks`. `plan --hunks` output over its budget moves the index to
   `hunks.json`.

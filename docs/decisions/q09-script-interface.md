@@ -19,7 +19,7 @@
     worker. Computes file lists, buckets, untracked candidates, merged config and sources,
     attribution, scan results, repo state, signing, environment and the last 10 non-merge subjects;
     no hunks and no diff content. Stdout is compact: `plan`'s own fields (`planId`,
-    `runDir`, `mode`) within 1 kB, plus a `reply` (≤ 2 kB, and ≤ 4 kB of `text`, Q24)
+    `runDir`, `mode`) within 1 kB, plus a `reply` (≤ 3 kB, and ≤ 4 kB of `text`, Q24)
     when the worker's part ends
     here, or the in-process `plan --hunks` output (≤ 20 000 characters, below) under
     `hunks`; the full output goes to

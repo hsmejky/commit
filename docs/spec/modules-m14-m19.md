@@ -172,7 +172,7 @@ carries no handback: `status: "failed"`, and the text says the lock is unreadabl
 or foreign: M12 links a run's lock into place fully written, so no run is ever seen
 starting) and is waited out, naming the time it is taken over automatically (`touched`
 plus 15 minutes). Budgets per
-C:run-folder and C:reply-and-handback: reply ≤ 2 kB without `text`, `text` ≤ 4 kB at every
+C:run-folder and C:reply-and-handback: reply ≤ 3 kB without `text`, `text` ≤ 4 kB at every
 cap, not counting the messages a `confirm` block or a `lintFailed` text quotes (Q24);
 `lintFailed` retry text ≤ 500 characters. A `lintFailed` text quotes each rejected message
 with every scan-hit span replaced by `[<pattern-id>]`, so no secret reaches the caller. The

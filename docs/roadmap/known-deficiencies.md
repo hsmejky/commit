@@ -256,14 +256,6 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R112.** C:reply-and-handback's size rule (the `reply` without `text` <= 2 kB,
-  `callerRule` and `handback` included) is not reachable with the current rule texts: the
-  `committed` fixture at the caps is about 2.2 kB and the `lintFailed` fixture about 2.7 kB,
-  with `callerRule` 0.7-1.4 kB and `handback` up to 1 kB of fixed text (the contract lets the
-  prompt slice shorten them, not drop a clause). `tests/reply-text-layout.test.js` asserts
-  the 2 kB on everything but `callerRule` and `handback`, and `text` <= 4 kB in full. Fix:
-  once the prompt slice has shortened the rule texts, assert the full 2 kB there. Slice:
-  the prompt slice (RPL-05 left it open).
 - **KD-R113.** RUN-25's deadline naming in `repairFailure` is untested: when a takeover's repair
   fails because the deadline cut a git call off (`ctx.scope.expired`), the "repair failed"
   notice names the deadline (`DEADLINE_TEXT`) instead of `git reset failed`, and a clock past

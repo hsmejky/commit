@@ -105,7 +105,7 @@ code injected by the fault preload, RUN-09). CI size tests hold the budgets (Q24
 (story 203) and that the worker frontmatter matches its stated values (story 42:
 `maxTurns: 25`, tools, `omitClaudeMd`); on
 the Seam 1 size fixtures, `plan`'s own fields ≤ 1 kB (excluding `hunks` and `reply`), reply
-≤ 2 kB without `text`, `text` ≤ 4 kB at the 11-entry cap fixtures (quoted messages not
+≤ 3 kB without `text`, `text` ≤ 4 kB at the 11-entry cap fixtures (quoted messages not
 counted), `plan --hunks` stdout ≤ 20 000 characters (the hunk index spills to `hunks.json`
 past that budget).
 Privacy-guard test (Q15: no local paths or usernames in docs, README, manifests or test

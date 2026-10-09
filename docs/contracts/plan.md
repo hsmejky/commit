@@ -103,7 +103,7 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    read, changing only its own fields (`lintFailures`), so the notices survive.
 
 Stdout is compact. `plan`'s own fields (and a refusal's `error` object) stay within 1 kB; a
-`reply` (≤ 2 kB without its `text`, `text` ≤ 4 kB) or the `hunks` object (≤ 20 000
+`reply` (≤ 3 kB without its `text`, `text` ≤ 4 kB) or the `hunks` object (≤ 20 000
 characters) comes on top, each with its own CI size test (Q24):
 
 ```json

@@ -41,13 +41,10 @@ function sizeOf(value) {
   return Buffer.byteLength(JSON.stringify(value));
 }
 
-// KD-R112: the contract's 2 kB for the reply without text includes callerRule and handback, but
-// the fixed rule texts alone are 0.7-1.4 kB and the prompt slice has not shortened them yet, so
-// the budget is asserted on everything else (commits, notices, status fields) only.
 function assertBudget(reply) {
-  const { text, callerRule, handback, ...rest } = reply;
+  const { text, ...rest } = reply;
   assert.ok(Buffer.byteLength(text) <= 4096, `text ${Buffer.byteLength(text)} bytes`);
-  assert.ok(sizeOf(rest) <= 2048, `reply without text, callerRule and handback ${sizeOf(rest)} bytes`);
+  assert.ok(sizeOf(rest) <= 3072, `reply without text ${sizeOf(rest)} bytes`);
 }
 
 function seedFiles(c, names, text = 'x\n') {

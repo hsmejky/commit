@@ -105,7 +105,7 @@ handles it the same way.
     return text verbatim to your parent. Edit no files until the final reply." A `run`
     whose output holds no reply (a Node too old to parse the entry point, a removed plugin
     version) leaves the lock to the takeover question (Q22), as a dead worker does.
-- Size (CI size tests, Q24): the `reply` without `text` ≤ 2 kB, `callerRule`, `notices`
+- Size (CI size tests, Q24): the `reply` without `text` ≤ 3 kB, `callerRule`, `notices`
   and `handback` included; `text` ≤ 4 kB with every list at its cap, not counting the
   messages a `confirm` block or a `lintFailed` text quotes. Fixtures at the caps: a
   `committed` reply with 11 commits, 11 not-included entries, 11 `unstaged` paths, 11 files

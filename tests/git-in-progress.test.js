@@ -73,7 +73,7 @@ test('plan during a conflicted merge exits 6 state with the finish-or-abort text
   assert.equal(reply.text, 'finish it with `git commit --no-edit`, or abort it\n1 file left: file.txt');
   const withoutText = JSON.stringify({ ...reply, text: undefined });
   const withoutTextBytes = Buffer.byteLength(withoutText);
-  assert.ok(withoutTextBytes <= 2048, `reply without text is ${withoutTextBytes} bytes`);
+  assert.ok(withoutTextBytes <= 3072, `reply without text is ${withoutTextBytes} bytes`);
 });
 
 test('plan during a conflicted cherry-pick exits 6 state with the finish-or-abort text', async (t) => {

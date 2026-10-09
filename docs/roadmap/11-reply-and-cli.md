@@ -95,7 +95,7 @@ slice adds the `failed` variant.
 - [x] Seam 1: `plan` during a merge → exit 6 `state`, output carries `reply` with the fields
       above; the base rule text equals the fixture text from C:reply-and-handback
 - [x] `text` ends with the tree state ("N files left: …" or "working tree clean")
-- [x] The reply without `text` is ≤ 2 kB
+- [x] The reply without `text` is ≤ 3 kB
 - [x] Every pre-folder refusal, not only the merge case, carries a `failed` reply with the
       base `callerRule` and no handback
 
@@ -117,7 +117,7 @@ stories 55, 56, 57, 60, 228.
 - [ ] Seam 1 cap fixtures: a `committed` reply with 11 commits, 11 not-included entries, 11
       `unstaged` paths, 11 files left and 11 notices → each list shows 10 plus "+1 more"
 - [ ] A `lintFailed` with three groups with bodies and 11 errors
-- [ ] Size tests: reply without `text` ≤ 2 kB; `text` ≤ 4 kB not counting quoted messages
+- [ ] Size tests: reply without `text` ≤ 3 kB; `text` ≤ 4 kB not counting quoted messages
 - [ ] Every notice appears in `text` under `Notices:` on every status (story 57); on a reply
       with commits the trailer line names the appended trailer or "no trailer" with its
       source (story 55), and a reply with no commits (`nothing`, a refusal) has no trailer

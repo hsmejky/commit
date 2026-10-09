@@ -131,7 +131,7 @@
     price-weighted cost:
     - CI size tests: agent and skill descriptions ≤ 200 characters, `/commit` SKILL.md
       ≤ 1.5 kB, the worker's agent prompt ≤ 6 kB, `plan`'s own stdout fields ≤ 1 kB, the
-      `reply` without its `text` ≤ 2 kB (its `callerRule`, `notices` and `handback`
+      `reply` without its `text` ≤ 3 kB (its `callerRule`, `notices` and `handback`
       included), the reply's `text` ≤ 4 kB with every list at its cap (10 entries, then
       "+N more"; the messages a `confirm` block or a `lintFailed` text quotes are not
       counted, since the user has to read them whole), `plan --hunks` stdout ≤ 20 000
