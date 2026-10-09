@@ -366,13 +366,13 @@ object.
 
 **Blocked by:** INT-09, PRE-10, CHG-21.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Further Notes "First slice" widenings, stories 72, 144.
 
-- [ ] Seam 1: a `sed` clean filter → the committed blob is the cleaned content; the scan saw
+- [x] Seam 1: a `sed` clean filter → the committed blob is the cleaned content; the scan saw
       the cleaned lines (story 144)
-- [ ] If `git-lfs` is on the runner: the staged diff matches the planned hash and the object is
+- [x] If `git-lfs` is on the runner: the staged diff matches the planned hash and the object is
       under `.git/lfs/objects`; skipped otherwise, never faked
 
 
