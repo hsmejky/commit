@@ -710,7 +710,7 @@ that fails, and an adopted orphan chain, are RUN-25's (RUN-20b items 1 and 3).
 
 **Blocked by:** RUN-21, RUN-20b, CHG-20, EXE-11, EXE-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, Q22, C:run-folder (takeover paragraph), M12 `acquire`, M18 (killed-process paragraph), stories 210, 227.
 
@@ -719,15 +719,15 @@ does; also open is whether the repair's "staged" check uses `--ita-visible-in-in
 would put a pre-run i-t-a path outside the killed group's paths and turn the repair into
 `killedLeftover`.
 
-- [ ] Seam 1: a `commit` call SIGKILLed while its pre-commit hook sleeps (the group is
+- [x] Seam 1: a `commit` call SIGKILLed while its pre-commit hook sleeps (the group is
       staged, `indexReset` is set), then the lock is aged and `plan` runs → the index is
       reset, inventory sees a clean index, and the reply carries the takeover, reset and
       `unstaged` notices.
-- [ ] Seam 1: group 1 committed, then a kill in phase (a) of group 2, then a takeover →
+- [x] Seam 1: group 1 committed, then a kill in phase (a) of group 2, then a takeover →
       no reset and no reset notice, and the `unstaged` notice is still given.
-- [ ] Seam 1: the old run's folder still exists when the repair runs (asserted through a
+- [x] Seam 1: the old run's folder still exists when the repair runs (asserted through a
       repair-time marker or equivalent observable), and it is gone after the takeover.
-- [ ] Seam 1: the `unstaged` reset notice survives a later refusal of the same `plan`
+- [x] Seam 1: the `unstaged` reset notice survives a later refusal of the same `plan`
       (`staged-empty`, `timeout`), and, on a modified tree needing confirmation, reaches
       the `committed` reply and the text of a `confirm` handback.
 
