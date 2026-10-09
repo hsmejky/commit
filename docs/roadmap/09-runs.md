@@ -778,24 +778,24 @@ never deletes a renamed lock.
 
 **Blocked by:** RUN-23, RUN-20b.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q22, C:run-folder (takeover paragraph), M12 `acquire`/`finishTakeover`/`sweep`, M18 (killed-process paragraph), story 227.
 
-- [ ] Seam 1: a takeover killed during its repair, then taken over → the repair uses the
+- [x] Seam 1: a takeover killed during its repair, then taken over → the repair uses the
       first run's facts, and every folder on the chain plus the renamed files are gone.
-- [ ] Seam 1 (RUN-20b item 3): a foreign `index.lock` blocking the repair → exit 6
+- [x] Seam 1 (RUN-20b item 3): a foreign `index.lock` blocking the repair → exit 6
       `index-lock` with the notices so far and the "repair failed" notice; the taken-over
       folder and the renamed lock remain, the new run's lock and folder are gone; once the
       `index.lock` is removed, the next `plan` adopts the chain and repairs.
-- [ ] Seam 1 (RUN-20b item 1): an orphan `lock.<planId>` with no lock in place (a takeover
+- [x] Seam 1 (RUN-20b item 1): an orphan `lock.<planId>` with no lock in place (a takeover
       killed between its rename and its link) → `plan` adopts it at step 3: the repair
       uses the chain's facts, then the chain's folders and the renamed file are gone.
-- [ ] M12 test row: `sweep` over an orphan renamed lock and its chain folder, both aged
+- [x] M12 test row: `sweep` over an orphan renamed lock and its chain folder, both aged
       past 24 hours, leaves both in place.
-- [ ] Seam 1 (RUN-20b item 2): a renamed lock whose chain ends at a missing folder →
+- [x] Seam 1 (RUN-20b item 2): a renamed lock whose chain ends at a missing folder →
       counted done, no repair, and deleted.
-- [ ] Seam 1 (RUN-20b item 1, step 7): an orphan `lock.<planId>` whose chain has
+- [x] Seam 1 (RUN-20b item 1, step 7): an orphan `lock.<planId>` whose chain has
       `indexReset` and an uncommitted group, placed after `peek` (injected between steps 3
       and 7) → exit 6 `diff-changed` (`index-changed`) with the repair-first notice; the
       chain remains, and the run's own lock and folder are gone.
