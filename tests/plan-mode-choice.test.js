@@ -95,9 +95,6 @@ test('plan --take-over on a mixed index answers staged with mode alone; the resp
   assert.equal(result.exitCode, 0, detail(result));
   const { handback } = result.json.reply;
   assert.equal(handback.kind, 'modeChoice');
-  for (const answer of handback.answers) {
-    assert.doesNotMatch(answer.respawn, /takeOver|intent|reword/);
-  }
   assert.deepEqual(handback.answers, [
     { label: 'staged', respawn: 'mode: staged' },
     { label: 'split', respawn: 'mode: split' },

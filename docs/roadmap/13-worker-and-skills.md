@@ -67,6 +67,8 @@ Q25, Prompt-only and manifest blocks, stories 41, 43, 44, 58, 226.
 - [ ] With `reword: <text>`, the prompt runs `plan --reword --dictated` (no hunk index) and
       writes `plan.groups.json` as `{ "version": 1, "source": "user", "groups": [...],
       "notIncluded": [] }` before running `check` (C:worker-plan, C:worker-input)
+- [ ] With `reword` plus `takeOver`, the prompt runs `plan --reword [--dictated] --take-over
+      <planId>` (the caller adds the `reword` line itself; the script never repeats it)
 - [ ] Final report is the reply JSON verbatim; one lint retry without replying; nothing
       is written after a failed script call (story 44)
 - [ ] CI size test: the prompt is ≤ 6 kB (story 228)

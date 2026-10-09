@@ -97,6 +97,19 @@ test('plan (no mode flag) refused by a live lock gets a lock handback whose resp
   assert.deepEqual(folderNames(c), []);
 });
 
+test('plan --reword refused by a live lock gets a lock handback whose respawn has takeOver only', async (t) => {
+  const { c, result } = await placeLockAndPlan(t, 'reword');
+
+  assertLockRefusal(result, 'lock');
+  const { reply } = result.json;
+  assert.equal(reply.status, 'handback');
+  assert.deepEqual(reply.handback.answers, [
+    { label: 'take over', respawn: `takeOver: ${OTHER_PLAN_ID}` },
+    { label: 'wait' },
+  ]);
+  assert.deepEqual(folderNames(c), []);
+});
+
 // review-INT-05 finding 2: a live lock with a readable `planId` but a `created` that is
 // garbage (plan-step7.test.js's sibling case has it missing instead) reads as unreadable, the
 // same as `heldMessage`'s own text (`lockHolderClock`, run.mjs) — no `lock` handback, no

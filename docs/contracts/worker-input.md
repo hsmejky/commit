@@ -19,7 +19,7 @@ interactive: false
 | `interactive` | public | `true` (default), `false` | `false`: the caller cannot ask a user (Q17); the worker runs `plan --split --no-user` or `plan --reword --no-user` |
 | `reword` | public | `true`, or the dictated text | reword the last commit (Q20); with text, the worker runs `plan --reword --dictated` (no hunk index) and writes the text as `"source": "user"` worker plan. Ignored with `resume` (the mode comes from the state file) |
 | `mode` | respawn-only | `staged`, `split` | from a `modeChoice` answer (which replaces the refused call's mode flag, Q9), or repeated from the refused call in a `lock` handback's `respawn` |
-| `takeOver` | respawn-only | a `planId` | from a `lock` handback's `take over` only (a `modeChoice` never repeats it: the takeover has already finished at `plan` step 3, [mode](plan.md)); the worker runs `plan --take-over <planId>` with the `mode` flag if one is given |
+| `takeOver` | respawn-only | a `planId` | from a `lock` handback's `take over` only (a `modeChoice` never repeats it: the takeover has already finished at `plan` step 3, [mode](plan.md)); the worker runs `plan --take-over <planId>` with `--staged`/`--split` from `mode`, or `--reword [--dictated]` from `reword` |
 | `resume` | respawn-only | a `planId` | from a `confirm` or `lintFailed` handback's `respawn`; the worker skips `plan` and starts at `plan --hunks --plan <planId>`, which marks the run `resumed`, so its next `check` always asks (Q16) |
 | `edit` | respawn-only | free text, or `one` | with `resume`: the user's instruction; `one` means "single group, all included files" (Q16). Applies to the plan in `plan.groups.json` |
 
