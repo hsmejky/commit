@@ -120,6 +120,34 @@ test('a zero-groups not-included reason escapes the control characters of a path
 });
 
 
+// The confirmation block's "Not included:" lines repeat the path of an embedded repository in
+// their reason; they are escaped like the zero-groups rendering.
+test('a confirm handback escapes the control characters of a path in a Not included reason', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'one\n');
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('c.txt', 'three\n');
+  const dir = path.join(c.repoDir, 'e\u0085m\x7fb');
+  fs.mkdirSync(dir);
+  c.git(['init', '-q', dir]);
+  fs.writeFileSync(path.join(dir, 'f.txt'), 'x\n');
+  const planned = await runCommit(c, ['plan']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const group = { header: 'feat: x', body: null, files: ['a.txt', 'c.txt'], hunks: [] };
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({ version: 1, source: 'worker', groups: [group], notIncluded: [] }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.json.reply?.handback?.kind, 'confirm', detail(checked));
+  const { text } = checked.json.reply;
+  assert.ok(text.includes('e\\xc2\\x85m\\x7fb: e\\xc2\\x85m\\x7fb is an embedded'), text);
+  assert.doesNotMatch(text, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+});
+
+
 test('a hook printing ANSI and 5000 characters -> ESC escaped, last 2000 kept behind the marker, gitOutput whole', async (t) => {
   const c = createCase(t);
   c.writeFile('a.txt', 'a\n');

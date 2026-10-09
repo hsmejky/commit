@@ -169,7 +169,7 @@ function renderConfirmBlock({ groups = [], notIncluded = [], reasons = [] }) {
     lines.push('Not included:');
     for (const { path, hunks, reason } of notIncluded) {
       const ids = Array.isArray(hunks) && hunks.length > 0 ? ` ${hunks.join(' ')}` : '';
-      lines.push(`- ${escapePath(path)}${ids}: ${reason}`);
+      lines.push(`- ${escapePath(path)}${ids}: ${escapePath(reason)}`);
     }
   }
   lines.push(`Confirm: ${reasons.map(escapePath).join(', ')}`);
