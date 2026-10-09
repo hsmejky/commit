@@ -371,13 +371,13 @@ index"), and the commit is kept.
 
 **Blocked by:** EXE-13.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, story 167.
 
-- [ ] Seam 1: a `pre-commit` hook that `git add`s another file → exit 0, the commit holds
+- [x] Seam 1: a `pre-commit` hook that `git add`s another file → exit 0, the commit holds
       that file, the reply notice names group 1.
-- [ ] Seam 1: no hook → no notice.
+- [x] Seam 1: no hook → no notice.
 
 
 ## EXE-15: hook-rewrite detection names the likely cause
