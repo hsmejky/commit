@@ -490,16 +490,16 @@ EXE-10, EXE-11, EXE-12, EXE-13, EXE-16, EXE-17, EXE-22, GIT-09, GIT-12, INT-01, 
 INT-09, INT-14, INT-15, INT-24, RPL-01, RPL-02, RPL-08, RUN-02, RUN-04, RUN-05, RUN-06,
 RUN-07, RUN-12, RUN-13, RUN-14, RUN-15, RUN-19, RUN-24, RUN-25, EXE-19, FND-10.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Domain code → CLI kind, C:cli-and-exit-codes, M1, M17.
 
-- [ ] A test walks every (row, producer) pair of `docs/spec/domain-code-cli-kind.md` and maps
+- [x] A test walks every (row, producer) pair of `docs/spec/domain-code-cli-kind.md` and maps
       it to the Seam 1 case that reaches it, failing on any pair with none
-- [ ] The unexpected-throw row (`internal`) maps to this Seam 1 case (EXE-01 item 3), not to
+- [x] The unexpected-throw row (`internal`) maps to this Seam 1 case (EXE-01 item 3), not to
       the accepted-gap list: the FND-10 preload failing `fs.renameSync` on `state.json` with
       `EIO`, on a `staged` run whose `commit --all` writes no `state.json` before `git
       commit` (the stored group written by the fixture, no `awaitingConfirm`) → exit 1
       `internal`, `sha` set to the new HEAD, "committed as `<sha>`, but the script failed"
       (EXE-17), the run released
-- [ ] Adding a row to the table without a case makes the test fail
+- [x] Adding a row to the table without a case makes the test fail
