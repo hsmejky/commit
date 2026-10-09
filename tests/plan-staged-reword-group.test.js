@@ -48,10 +48,10 @@ async function plan(c, flags) {
 
 // --- `staged`: real `plan --staged` state, M14 `validatePlan` called directly -------------
 //
-// `check`'s success path goes straight on to `commit --all` in the same process (INT-02),
-// and M16's execution for `staged` is not built yet (EXE-19/EXE-20) — a different roadmap
-// slice. So these two read the real `state.json` a `plan --staged` run built (Seam 1) and
-// call `validatePlan` on it directly, the same split PLN-01's own direct cases use.
+// `check`'s success path goes straight on to `commit --all` in the same process (INT-02).
+// These two read the real `state.json` a `plan --staged` run built (Seam 1) and call
+// `validatePlan` on it directly, the same split PLN-01's own direct cases use; the
+// end-to-end `check --plan` success case follows them.
 
 function readState(runDir) {
   return JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
@@ -90,10 +90,27 @@ test('staged: a staged new file is listed in newFiles', async (t) => {
   assert.deepEqual(result.groups[0].newFiles, ['c.txt']);
 });
 
+test('staged: check --plan with a partial files list commits every staged unit and reports newFiles', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n', 'b.txt': 'two\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('c.txt', 'three\n');
+  c.git(['add', '--', 'a.txt', 'c.txt']);
+  const { planId, runDir } = await plan(c, ['--staged']);
+  writeWorkerPlan(runDir, oneGroup({ files: ['a.txt'] }));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.commits.length, 1);
+  assert.deepEqual(checked.json.groups[0].files.map((f) => f.path).sort(), ['a.txt', 'c.txt']);
+  assert.deepEqual(checked.json.groups[0].newFiles, ['c.txt']);
+  assert.deepEqual(c.git(['show', '--name-only', '--format=', 'HEAD']).trim().split('\n').sort(), ['a.txt', 'c.txt']);
+});
+
 // --- `reword`: real `plan --reword` state, M14 `validatePlan` called directly ------------
 //
-// Same reason as the `staged` block above: M16's execution for `staged` is not built yet
-// (EXE-19). Reword's own Seam 1 case lives in `tests/reword-workflow.test.js` (INT-24).
+// Same split as the `staged` block above. Reword's own Seam 1 case lives in `tests/reword-workflow.test.js` (INT-24).
 
 test('reword: a real plan --reword run holds every unit; a file added in HEAD is new but not in newFiles', async (t) => {
   const c = createCase(t);

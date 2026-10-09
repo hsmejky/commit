@@ -4,10 +4,8 @@
 // decision — `check`'s `confirm` field from the per-group facts M18 resolves. Per
 // docs/spec/testing-seams.md:84 ("Nothing else is tested in-process. M15 as a whole
 // ... [is] tested through Seam 1"), every reachable row is exercised through `check`'s real
-// CLI output below. The only in-process `computeConfirm` calls left are the `staged`-mode
-// pure fallbacks right after this comment: the `staged` no-trigger row, whose `commitAll`
-// throws `notBuilt(..., 'EXE-19')` before the real output reaches the caller (KD-R94,
-// docs/roadmap/known-deficiencies.md), and the unreachable not-interactive row.
+// CLI output below. The only in-process `computeConfirm` call left is the `staged` pure
+// fallback right after this comment: the unreachable "resumed but not interactive" row.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -27,24 +25,17 @@ function group(fields = {}) {
   return { newFiles: [], skippedFiles: [], scanIgnoreFiles: [], ...fields };
 }
 
-// --- Pure fallbacks for `staged` (KD-R94): the two `staged` rows that stay unreachable at Seam 1
-// until EXE-19 lands (no trigger: `commitAll` throws `notBuilt` first; "resumed but not
-// interactive": `staged` is always interactive). The skipped/`scanIgnore`/resumed rows are
-// Seam-1 tests below (INT-09's confirm route).
+// --- Pure fallback for `staged`: the one row unreachable at Seam 1 ("resumed but not
+// interactive": `staged` is always interactive). The skipped/`scanIgnore`/resumed/no-trigger rows
+// are Seam-1 tests below (INT-09's confirm route, EXE-19).
 
-test('pure fallback (KD-R94): staged — a new file is never a trigger', () => {
-  assert.equal(computeConfirm('staged', [group({ newFiles: [{ path: 'c.txt', binary: false }] })], NOT_RESUMED), null);
-});
-
-test('pure fallback (KD-R94): staged — resumed but not interactive → no "edited plan"', () => {
+test('pure fallback: staged — resumed but not interactive → no "edited plan"', () => {
   assert.equal(computeConfirm('staged', [group()], { resumed: true, interactive: false }), null);
 });
 
 // --- Seam-1 table tests (docs/contracts/confirmation-triggers.md), via the real `check` CLI
 // over a temp repo (the table-driven fixture generator paragraph, docs/spec/testing-seams.md).
-// The `staged` no-trigger row is not covered: `commitAll` throws `notBuilt('... staged ...',
-// 'EXE-19')` before `check`'s real output can reach the caller — KD-R94. The other `staged`
-// rows are at the end of this file (INT-09).
+// The `staged` rows are at the end of this file (INT-09, EXE-19).
 
 function seed(c, files) {
   for (const [name, text] of Object.entries(files)) c.writeFile(name, text);
@@ -347,7 +338,7 @@ test('Seam 1, split: a size-skipped file left out in notIncluded gives no confir
   assert.equal(checked.json.confirm, null);
 });
 
-// --- `staged` rows at Seam 1 (KD-R94, INT-09): a `staged` run is always interactive, and a
+// --- `staged` rows at Seam 1 (INT-09, EXE-19): a `staged` run is always interactive, and a
 // `confirm` stops `check` at the handback before `commitAll` is ever called.
 
 function detail(result) {
@@ -406,4 +397,21 @@ test('Seam 1, staged: resumed + interactive → confirm reasons "edited plan"', 
 
   assert.equal(checked.exitCode, 0, detail(checked));
   assert.deepEqual(checked.json.confirm, { reasons: ['edited plan'], humanOnly: false });
+});
+
+test('Seam 1, staged: a new file is never a trigger → confirm null, check goes on to commit', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('c.txt', 'three\n');
+  c.git(['add', '--', 'a.txt', 'c.txt']);
+  const { planId, runDir } = await plannedStaged(c);
+  writeWorkerPlan(runDir, oneGroup(['a.txt', 'c.txt']));
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.confirm, null);
+  assert.equal(checked.json.commits.length, 1);
+  assert.deepEqual(checked.json.groups[0].newFiles, ['c.txt']);
 });

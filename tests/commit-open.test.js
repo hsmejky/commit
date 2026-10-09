@@ -214,9 +214,9 @@ test('commit --plan X --all on a run left in confirm by a real check, no --confi
 });
 
 // review-EXE-05 Low-3: phase (a) is mode-independent (C:commit-release, M16), so `no-groups`
-// must fire even for a mode `commitAll` does not build yet (EXE-19, EXE-20) — a `plan
-// --reword` run has no stored groups either, and `commit --all` on it must refuse
-// `no-groups` (`usage`), not throw the not-built-yet error (`internal`).
+// must fire for every mode, `staged` and `reword` included — a `plan --reword` run has no
+// stored groups either, and `commit --all` on it must refuse `no-groups` (`usage`), not fail
+// `internal` on a missing group.
 test('commit --plan X --all on a plan --reword run with no stored groups → no-groups, not internal', async (t) => {
   const c = createRepo(t);
   const planned = await runCommit(c, ['plan', '--reword']);
@@ -238,7 +238,7 @@ test('commit --plan X --all on a plan --reword run with no stored groups → no-
 // a reversed check order would hit a missing state.json (likely `internal`) rather than
 // `no-groups`, so the test would not actually catch that ordering bug. Its state.json
 // carries a valid `mode: 'split'` (and `preStaged: []`) so that a reversed order actually
-// surfaces as `no-groups`, as this comment claims, rather than the not-built-yet throw for
+// surfaces as `no-groups`, as this comment claims, rather than an `internal` failure for
 // a missing/invalid mode.
 test('commit --plan X --all with the lock held by a different planId and no groups stored anywhere → taken-over, not no-groups', async (t) => {
   const c = createRepo(t);

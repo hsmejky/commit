@@ -197,10 +197,6 @@ function stagingMayRemainNotice(n) {
   return `group ${n} staging may remain, the next /commit repairs it`;
 }
 
-// EXE-19: `staged`'s verify found the index differs from what `plan` stored (`unmatched`, CLI kind
-// `diff-changed`, exit 6); the index is left as it is.
-const STAGED_CHANGED_TEXT = 'the staged changes differ from the plan, run /commit again';
-
 // EXE-13: the backstop's refusal (`backstop-hit`, CLI kind `scan`, exit 3).
 function backstopText(n) {
   return `the scan before committing group ${n} found a possible secret`;
@@ -569,7 +565,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
       if (staged) {
         const verified = await verifyIndex(units, git);
         if (!verified.ok) {
-          return refused(state, group, commits, { code: 'unmatched', message: STAGED_CHANGED_TEXT }, notices);
+          return refused(state, group, commits, { code: 'unmatched', message: UNMATCHED_TEXT }, notices);
         }
       }
       // EXE-17: true when the group's staging is back out (or never happened, `staged`).
@@ -724,7 +720,13 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
         // non-zero `git commit` is mapped above, EXE-12) never leaves the real index
         // staged for the run to repair later.
         // EXE-17 (KD-R103): `cleanup` never throws, so it cannot replace `err`.
-        await cleanup();
+        // RUN-27: a failed or skipped unstage rides on `err` (`unstageKept`, with the notice),
+        // so the caller's `internal` ending keeps the run for the next takeover's repair.
+        const unstaged = await cleanup();
+        if (!unstaged && err !== null && typeof err === 'object') {
+          err.unstageKept = true;
+          err.stagingNotice = stagingMayRemainNotice(group.n);
+        }
         throw err;
       }
       sha = await head({ cwd: toplevel, env, now });

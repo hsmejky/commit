@@ -110,7 +110,8 @@ in `staged`, always `[]` in `reword`; no `split`-only extras.
 
 **Note (review-PLN-05):** AC1/AC2 are asserted on M14 `validatePlan` directly rather than
 through `check`'s subprocess output, and AC3's assertion cannot fail until PLN-04 lands.
-See KD-R89 (`docs/roadmap/known-deficiencies.md`).
+The end-to-end `check --plan` case (a partial `files` list, `newFiles`) landed with EXE-19
+(`tests/plan-staged-reword-group.test.js`); KD-R89 is closed.
 
 
 ## PLN-06: Message lint and message scan per group

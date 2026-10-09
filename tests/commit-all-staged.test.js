@@ -82,6 +82,8 @@ test('EXE-19 AC2: a hunk staged after plan → exit 6, the index unchanged, unst
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.ok, false);
   assert.equal(result.json.unstaged, null);
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, 'the index changed since plan (staged elsewhere?), run /commit again');
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), head, 'nothing committed');
   assert.equal(c.git(['ls-files', '--stage']), indexBefore, 'the index is left as it is');
 });
@@ -104,6 +106,8 @@ test('EXE-19 AC2: verifyIndex itself refuses a differing index hash set (fingerp
   assert.equal(result.json.unstaged, null);
   assert.equal(result.json.failed, 1);
   assert.deepEqual(result.json.remaining, [1]);
+  assert.equal(result.json.error.kind, 'diff-changed', detail(result));
+  assert.equal(result.json.error.message, 'files changed since plan, run /commit again');
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), head);
   assert.equal(c.git(['ls-files', '--stage']), indexBefore);
 });

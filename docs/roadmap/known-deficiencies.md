@@ -157,17 +157,6 @@ fixed, delete it here; IDs are never reused.
 - **KD-R26.** RUN-04's late-`ENOENT` → `taken-over` case has no trigger (the stub call ends
   at once). Move it after EXE-02 or add an FND-10 fault mode.
 - **KD-R29.** FND-10's ESM check does not import `node:fs/promises`; add it.
-- **KD-R89.** PLN-05's `staged` AC1 ("a group naming only some files still holds
-  every unit") and AC2 (`newFiles`) are asserted on M14 `validatePlan` directly
-  (`tests/plan-staged-reword-group.test.js`), not through `check`'s own output: `check`'s
-  success path goes straight on to `commit --all` in-process, and M16's execution for
-  `staged` is not built yet (EXE-19). INT-14 covers a staged commit
-  end-to-end but no criterion checks that a plan naming only some files still commits every
-  staged unit, or `newFiles` in `check`'s output (INT-24's
-  `tests/reword-workflow.test.js` covers reword's `newFiles: []` through `check`). Fix:
-  once EXE-19 lands, add a subprocess `check --plan` success case to
-  `tests/plan-staged-reword-group.test.js`: staged with a partial `files` list still
-  commits every unit and reports `newFiles` from the index diff. Slice: PLN-05, EXE-19.
 - **KD-R77.** GIT-07's M2 and M11 cases (`tests/git-timeout-tree-kill.test.js`,
   `tests/signing-probe-deadline.test.js`), like GIT-05's and GIT-12's own M2 cases, call
   `run`/`withDeadline`/`probeSigning` in-process, outside testing-seams.md's user-confirmed
@@ -285,12 +274,12 @@ fixed, delete it here; IDs are never reused.
   RPL-08, RUN-23, RUN-24, RUN-25.
 - **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
-  `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws
-  `notBuilt('commit --all in staged mode', 'EXE-19')` before any `git commit`, and `split`
-  writes `state.json` (`indexReset`) before `git commit`, so the fault fires there with no
-  `sha`; the preload cannot fail only a later rename. AC2 is INT-31's own criterion, not the
-  accepted-gap list: INT-31 cannot close until this case exists. Fix: once EXE-19 and EXE-17
-  land, add the case and drop this row. Slice: INT-31.
+  `sha` and "committed as `<sha>`, but the script failed") is still missing. EXE-19 and EXE-17
+  have landed, so `staged` now reaches `git commit`, but the preload cannot fail only a later
+  rename: the first `state.json` rename of the run (before `git commit`) is hit, so the fault
+  fires with no `sha`. AC2 is INT-31's own criterion, not the accepted-gap list: INT-31 cannot
+  close until this case exists. Fix: add the case in INT-31 (a "fail the Nth call" option on the
+  preload, or a holder released after the commit) and drop this row. Slice: INT-31.
 - **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
   `confirm` handback and of the `committed` reply) is covered only in part by
   `tests/plan-takeover.test.js`: the `confirm` handback and `commit --confirmed`'s
@@ -460,16 +449,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   kind-specific rule text is wanted instead and amend the contract). Slices: RPL-08 (Handback
   commands and caller-trust fixtures) closes this row once every handback kind carries real
   answers and the rule.
-- **KD-R94.** RUN-17's Seam-1 coverage of C:confirmation-triggers' `staged` no-trigger row
-  (`confirm: null`) is missing. INT-09 moved the skipped/`scanIgnore` and `resumed` `staged`
-  rows to Seam 1 (`tests/run-policy-confirm.test.js`, through the `confirm` route). The
-  no-trigger row still routes to `commit`, where `commitAll` throws `notBuilt('commit --all in
-  staged mode', 'EXE-19')` before `check`'s real output can reach the caller, caught only by
-  `commit.cjs`'s top-level handler as an `internal` failure with no `confirm` field; it and
-  the unreachable "resumed but not interactive" row stay pure-unit ("pure fallback
-  (KD-R94)"). Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`;
-  `tests/run-policy-confirm.test.js`. Fix: rebuild the no-trigger row once EXE-19 lands; then
-  drop this row. Slice: EXE-19.
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose
