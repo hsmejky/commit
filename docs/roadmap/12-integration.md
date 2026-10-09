@@ -266,16 +266,16 @@ hit fails lint in `check`.
 
 **Blocked by:** INT-07, INT-10, SCN-15, PLN-06, EXE-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, C:scan-patterns, C:plan-hunks, C:reply-and-handback, stories 96, 135-141.
 
-- [ ] Seam 1: a file adding a GitHub token → its unit's body withheld, the hit reported by
+- [x] Seam 1: a file adding a GitHub token → its unit's body withheld, the hit reported by
       pattern ID and `path:line` only, never the value, in any output or file of the run
-- [ ] The worker plan with that unit in `notIncluded` commits the rest; the reply notice names
+- [x] The worker plan with that unit in `notIncluded` commits the rest; the reply notice names
       `path:line pattern-id left out`
-- [ ] A hit alone is not a confirmation trigger (story 96)
-- [ ] A commit message containing a token → exit 2 `lint` naming the pattern ID (M14 scans
+- [x] A hit alone is not a confirmation trigger (story 96)
+- [x] A commit message containing a token → exit 2 `lint` naming the pattern ID (M14 scans
       with the `osUser` M18 passes, EXE-01 item 1)
 
 
