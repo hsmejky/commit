@@ -742,24 +742,24 @@ without `--reword` → `killed-leftover` (exit 6 `state`, run released, index un
 
 **Blocked by:** RUN-23, RUN-20b, RUN-13, RPL-09.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q17, Q22, C:run-folder, C:plan (mode), M15 `resolveMode`, domain-code table, story 227,
 RUN-20 item 6.
 
-- [ ] Seam 1: kill in phase (c), then the user stages another file, then `plan
+- [x] Seam 1: kill in phase (c), then the user stages another file, then `plan
       --take-over <id> --staged` → no reset, and a `modeChoice` naming the killed group's
       paths. Its `staged` answer respawns without `takeOver` and plans the index as
       staged.
-- [ ] Seam 1: the same with an automatic takeover under `--split --no-user` → exit 6
+- [x] Seam 1: the same with an automatic takeover under `--split --no-user` → exit 6
       `state` (`killed-leftover`) naming those paths. The index is unchanged, and the lock
       and the folder are gone.
-- [ ] Seam 1: the same under `--reword` → the run goes on with a notice naming the paths.
-- [ ] Seam 1 (RUN-20b item 5): an automatic stale takeover with `killedLeftover` in an
+- [x] Seam 1: the same under `--reword` → the run goes on with a notice naming the paths.
+- [x] Seam 1 (RUN-20b item 5): an automatic stale takeover with `killedLeftover` in an
       interactive run → the forced `modeChoice` carrying the takeover, `killedLeftover`
       and `unstaged` notices; a repair that resets under `--take-over <id> --staged` →
       `staged-empty` carrying the reset notice.
-- [ ] Seam 1 (RUN-20 item 6): a forced `modeChoice` from `plan --take-over <planId> --staged`
+- [x] Seam 1 (RUN-20 item 6): a forced `modeChoice` from `plan --take-over <planId> --staged`
       with `killedLeftover` answered `split` → the respawn holds `mode: split` alone (the
       answer replaces the refused call's mode flag) and no `takeOver`
 
