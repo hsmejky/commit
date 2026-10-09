@@ -347,8 +347,9 @@ async function repairFailure(ctx, git, gitOutput) {
   } catch {
     // The cause stays `git-failed`.
   }
-  // A deadline that ended the reset is the cause, whatever `plan` then maps the refusal to.
-  const timedOut = ctx.scope?.expired === true || ctx.injected.now() >= ctx.deadline;
+  // A deadline that cut a git call off is the cause, whatever `plan` then maps the refusal to; a
+  // clock past the deadline alone is not (a reset failing for another reason stays that reason).
+  const timedOut = ctx.scope?.expired === true;
   let cause = 'git reset failed';
   if (timedOut) cause = DEADLINE_TEXT;
   else if (locked) cause = INDEX_LOCK_TEXT;
