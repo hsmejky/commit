@@ -112,9 +112,17 @@ fixed, delete it here; IDs are never reused.
   position, and a repo-content trick (such as a stray `index.lock`) cannot fail only the cleanup
   `git reset` without also failing the phase-(c) call just before it. Likewise the `internal`
   ending with a kept run (a throw after phase (c) whose unstage failed or was skipped) has no
-  Seam 1 fixture: the fault preload fails every `state.json` rename from the first one, so the
-  throw lands at the `indexReset` write before anything is staged, never at the post-commit write.
-  Fix: add the non-zero-`git reset` criterion once a seam for it exists (a user decision).
+  Seam 1 fixture, for two reasons: (a) nothing inside the `try` (stage, `writeTree`,
+  `treeDiffUnits`, `scanUnits`, `commitGuarded`) calls an `fs`/`os` function the preload can fail,
+  so no fixture makes it throw (the post-commit `writeState` is outside that try/catch anyway);
+  (b) the unstage itself would also have to fail (a failing `git reset`, no seam) or be skipped
+  (past `cleanupDeadline`).
+  Also: the `internal` output never carries `unstaged`. C:commit-release's `internal` row asks for
+  output with `unstaged` (`unstaged: null` when the unstage is kept), but `planInternalFailure`
+  (workflows.mjs) builds `failure.reply` from `status`, `message` and `notices` only. This
+  predates RUN-27 and is not its AC; the kept case is signalled by the notice alone.
+  Fix: add the non-zero-`git reset` criterion once a seam for it exists (a user decision), and
+  thread `unstaged` into `planInternalFailure` or narrow the contract row.
   Slice: none yet.
 - **KD-R110.** EXE-17 AC3's last clause ("the next `plan --take-over <planId>` resets the staging
   and releases the run") is not tested: `tests/commit-all-timeout.test.js` AC3 proves the staging
