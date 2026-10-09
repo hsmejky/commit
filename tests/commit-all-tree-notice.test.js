@@ -37,10 +37,10 @@ async function oneGroupRun(t) {
   return { c, planId };
 }
 
-function installNodeHook(c, script) {
-  const scriptPath = path.join(c.root, 'pre-commit-hook.js');
+function installNodeHook(c, script, hookName = 'pre-commit') {
+  const scriptPath = path.join(c.root, `${hookName}-hook.js`);
   fs.writeFileSync(scriptPath, script);
-  const hook = path.join(c.repoDir, '.git', 'hooks', 'pre-commit');
+  const hook = path.join(c.repoDir, '.git', 'hooks', hookName);
   const slash = (p) => p.replace(/[\\]/g, '/');
   fs.writeFileSync(hook, `#!/bin/sh\nexec "${slash(process.execPath)}" "${slash(scriptPath)}"\n`);
   fs.chmodSync(hook, 0o755);
@@ -65,6 +65,7 @@ test('a pre-commit hook that git-adds another file → exit 0, the commit holds 
   const sha = c.git(['rev-parse', 'HEAD']).trim();
   assert.deepEqual(result.json.commits, [{ n: 1, sha, header: HEADER }]);
   assert.deepEqual(result.json.notices, [TREE_NOTICE]);
+  assert.ok(result.json.reply.notices.includes(TREE_NOTICE), detail(result));
 });
 
 test('no hook → no tree notice', async (t) => {
@@ -74,4 +75,28 @@ test('no hook → no tree notice', async (t) => {
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.deepEqual(result.json.notices, []);
+});
+
+test('a post-commit hook that adds a new file and commits it → only the another-commit notice, no tree notice', async (t) => {
+  const { c, planId } = await oneGroupRun(t);
+  const marker = path.join(c.root, 'extra-commit-done');
+  installNodeHook(c, [
+    "const fs = require('node:fs');",
+    "const { execFileSync } = require('node:child_process');",
+    `const marker = ${JSON.stringify(marker)};`,
+    `const repoDir = ${JSON.stringify(c.repoDir)};`,
+    'if (!fs.existsSync(marker)) {',
+    '  fs.writeFileSync(marker, "1");',
+    "  fs.writeFileSync(repoDir + '/hook-added.txt', 'from the hook');",
+    "  execFileSync('git', ['add', '--', 'hook-added.txt'], { cwd: repoDir });",
+    "  execFileSync('git', ['commit', '-q', '-m', 'extra'], { cwd: repoDir });",
+    '}',
+    '',
+  ].join('\n'), 'post-commit');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  // The tree check runs only when HEAD's first parent matched this group's own commit.
+  assert.deepEqual(result.json.notices, ['another commit was made during group 1; later groups refused']);
 });

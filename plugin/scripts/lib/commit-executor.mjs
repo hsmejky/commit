@@ -574,7 +574,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
 
     let sha;
     // EXE-14: the tree M10 `writeTree` recorded for the backstop; stays null in `reword` (no scan,
-    // KD-R42), where the tree check is skipped.
+    // Q18), where the tree check is skipped.
     let recordedTree = null;
     if (state.mode === 'reword') {
       // EXE-20, Q20: no match, no reset, no staging, no verify, no scan — `--amend --only`
@@ -787,7 +787,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
     if (state.mode !== 'reword') state.indexFingerprint = await indexFingerprint(git);
     if (parentBefore === expectedParent) {
       state.head = sha;
-      // EXE-14 (KD-R41): only when HEAD is this group's own commit; with an extra commit the
+      // EXE-14: only when HEAD is this group's own commit; with an extra commit the
       // first-parent notice below already says the story.
       if (recordedTree !== null && await headTree({ cwd: toplevel, env, now }) !== recordedTree) {
         notices.push(treeDiffersNotice(group.n));

@@ -365,8 +365,9 @@ unstaged.
 ## EXE-14: notice when the committed tree differs from the scanned one
 
 **What to build:** after a commit, M3 `headTree()` against the recorded tree ID; on a
-difference (with no extra commit — this is EXE-06's case) a notice names the group
-("committed tree differs from the scanned index"), and the commit is kept.
+difference (with no extra commit; an extra commit is EXE-06's case, whose notice
+replaces this one) a notice names the group ("committed tree differs from the scanned
+index"), and the commit is kept.
 
 **Blocked by:** EXE-13.
 

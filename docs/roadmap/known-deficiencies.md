@@ -42,8 +42,6 @@ fixed, delete it here; IDs are never reused.
   remain. Say "no `.commit-plan/lock`".
 - **KD-R17.** CHG-23's `index.lock` grep trips on M16's expected notice and on
   `index-lock`. Have M10 return the notice text; grep fs calls only, fixed-string.
-- **KD-R18.** EXE-14's "(with no extra commit — this is EXE-06's case)" reads backwards.
-  Reword (see KD-R41).
 - **KD-R19.** MSG-01's header-mismatch criterion lacks its seam ("Seam 3 table").
 - **KD-R73.** C:cli-and-exit-codes says every output that ends the worker's part of a run,
   failures included, carries `reply`. RPL-04 built the `failed` reply for every `plan`
@@ -300,12 +298,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 - **KD-R38.** C:plan and C:run-folder say `plan.json` holds `hunks`; M18 writes it at step 8,
   before `plan --hunks`. Pick one.
 - **KD-R39.** MSG-03 and INF-04 use an M6 case-check export the spec does not list. Add it.
-- **KD-R41. Tree notice alongside the first-parent notice** (EXE-06, EXE-14). Both checks
-  are independent, so a hook commit fires both. State that the tree check runs only when
-  the first parent matches; assert no tree notice in EXE-06. Q4's body was also rewritten
-  in place (as Q9's was, restored by RUN-20b): restore it.
-- **KD-R42.** The tree check has no reference tree in `reword` (EXE-20). Skip it there or
-  compare with the expected HEAD's tree.
+- **KD-R111.** Q4's body was rewritten in place (as Q9's was, restored by RUN-20b): restore it.
 - **KD-R44.** The mismatch notice says "later groups refused" in single-group modes. Drop
   the clause there (contract, Q18, criteria).
 - **KD-R45.** A hook-made commit is reported with the hook's SHA (EXE-06); no disposition is
@@ -465,7 +458,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 3. KD-R16, KD-R29, KD-R51 and KD-R4 (optional).
 4. The CHG-03b area: KD-R60.
 5. KD-R5, KD-R6.
-6. Design sync: KD-R38, KD-R39; KD-R41 with KD-R42 to KD-R44 and KD-R18; KD-R47;
+6. Design sync: KD-R38, KD-R39; KD-R44; KD-R47;
    KD-R49, KD-R50, KD-R45.
 7. Edges: KD-R7, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R26.
