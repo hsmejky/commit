@@ -427,13 +427,13 @@ passes.
 
 **Blocked by:** GRD-13, GRD-14, INT-05, INT-09, INT-13, INT-17, RPL-08.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Testing seams "ScriptCall round trip", Q23, Q25, stories 38, 39.
 
-- [ ] Seam 3 via `runHook`: each handback kind's `run`, with paths holding spaces and drive
+- [x] Seam 3 via `runHook`: each handback kind's `run`, with paths holding spaces and drive
       letters, parses to the same subcommand and arguments in both shells
-- [ ] Seam 2: the same `commit` and `release` commands with `agent_type:
+- [x] Seam 2: the same `commit` and `release` commands with `agent_type:
       commit:commit-worker` → deny; without it → no output (story 39, 38)
 
 
