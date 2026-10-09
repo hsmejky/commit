@@ -74,7 +74,7 @@
 // `staged`: M10 `verifyIndex` replaces (b) and (c), the backstop and the commit run on the index
 // as it is, and no failure unstages (`indexReset` is never set, `unstaged` stays `null`).
 
-import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
+import { HEAD_MOVED_TEXT, firstParent, head, headTree } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, indexLockExists, matchIds, snapshot, stage, treeDiffUnits,
   unstage, unstagedAfterReset, verifyIndex, writeTree,
@@ -155,6 +155,12 @@ function sameHashSet(units, hashes) {
 // group's own commit landed but is not HEAD's first parent any more.
 function anotherCommitNotice(n) {
   return `another commit was made during group ${n}; later groups refused`;
+}
+
+// EXE-14: the notice when the committed tree is not the tree the backstop recorded (a hook staged
+// or rewrote something between the scan and the commit). The commit is kept, never undone.
+function treeDiffersNotice(n) {
+  return `committed tree differs from the scanned index (group ${n})`;
 }
 
 // EXE-11 (KD-R108): `git status` failed after the run, so `unstaged` is the stored lists unfiltered.
@@ -538,6 +544,9 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
     }
 
     let sha;
+    // EXE-14: the tree M10 `writeTree` recorded for the backstop; stays null in `reword` (no scan,
+    // KD-R42), where the tree check is skipped.
+    let recordedTree = null;
     if (state.mode === 'reword') {
       // EXE-20, Q20: no match, no reset, no staging, no verify, no scan — `--amend --only`
       // changes the message only; whatever is staged stays staged and untouched. On failure
@@ -640,6 +649,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
         // pass. Paths are exempted only by the patterns `plan` stored, recompiled here, never
         // by a fresh read of HEAD that an earlier group of this run may have moved (CFG-01).
         const tree = await writeTree(git);
+        recordedTree = tree;
         const { hits } = scanUnits(await treeDiffUnits(state.head, tree, git), {
           scanIgnore: storedScanIgnore(state), osUser,
         });
@@ -748,6 +758,11 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
     if (state.mode !== 'reword') state.indexFingerprint = await indexFingerprint(git);
     if (parentBefore === expectedParent) {
       state.head = sha;
+      // EXE-14 (KD-R41): only when HEAD is this group's own commit; with an extra commit the
+      // first-parent notice below already says the story.
+      if (recordedTree !== null && await headTree({ cwd: toplevel, env, now }) !== recordedTree) {
+        notices.push(treeDiffersNotice(group.n));
+      }
     } else {
       notices.push(anotherCommitNotice(group.n));
     }

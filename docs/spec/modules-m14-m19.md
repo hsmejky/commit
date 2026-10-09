@@ -128,7 +128,7 @@ created between groups are both caught:
   (a) check then finds HEAD moved from the expected SHA and refuses `head-moved`;
   separately, when M3 `headTree()` differs from the
   recorded tree ID (a hook or another process changed the index between the backstop and the
-  commit, with no extra commit), a notice names the group ("committed tree differs from the scanned index"); after any failure or timeout re-read HEAD (within
+  commit, with no extra commit: the check runs only when HEAD's first parent matched, never in `reword`), a notice names the group ("committed tree differs from the scanned index (group <n>)"); after any failure or timeout re-read HEAD (within
   `cleanupDeadline`), so a commit git made anyway is reported with its `sha`; hook-rewrite detection
   (`treeChangedDuringCommit`, stored in the run state); on a match, mark the group committed
   and advance the expected HEAD to the SHA just determined; on a mismatch, mark it committed
