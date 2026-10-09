@@ -326,16 +326,16 @@ exactly its planned hunks, identical hunks stay together.
 
 **Blocked by:** INT-09, CHG-06, PLN-03, CHG-20.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, C:plan-hunks, C:worker-plan, stories 63, 64, 67.
 
-- [ ] Seam 1: one file with two distant hunks in two groups → two commits, each diff equal to
+- [x] Seam 1: one file with two distant hunks in two groups → two commits, each diff equal to
       its planned hunk
-- [ ] The confirm block shows a hunk count per file for a hunk plan (story 91)
-- [ ] Identical hunks of one file split across groups → lint error (story 67)
-- [ ] The commits' blobs equal the working-tree bytes after the last group
-- [ ] The INT-02 whole-file gate in `commitCheckedGroups` (any group with a hunk-level file
+- [x] The confirm block shows a hunk count per file for a hunk plan (story 91)
+- [x] Identical hunks of one file split across groups → lint error (story 67)
+- [x] The commits' blobs equal the working-tree bytes after the last group
+- [x] The INT-02 whole-file gate in `commitCheckedGroups` (any group with a hunk-level file
       entry keeps the run instead of committing, KD-R83) is removed: a hunk-level `check`
       commits in-process the same way a whole-file one does
 
