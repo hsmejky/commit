@@ -287,13 +287,13 @@ hit fails lint in `check`.
 
 **Blocked by:** INT-09, INT-15, SCN-14, CFG-07, RUN-17, CFG-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q10, Q16, Q17, C:confirmation-triggers, stories 89, 90, 149.
 
-- [ ] Seam 1: an included over-1 MB file → `confirm` with
+- [x] Seam 1: an included over-1 MB file → `confirm` with
       `humanOnly: true`, `ifNoUser` `no` plus `returnToParent`
-- [ ] An edited `scanIgnore` in the repo config → `humanOnly` confirm; an edit to another key
+- [x] An edited `scanIgnore` in the repo config → `humanOnly` confirm; an edit to another key
       of that file alone → no trigger; both in one diff, with only the other key's hunk
       included → still `humanOnly`, since every unit of the file is flagged (CFG-01 item 2)
 
