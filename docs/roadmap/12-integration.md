@@ -224,17 +224,17 @@ with counts only and releases its lock; an index holding every change plans `spl
 
 **Blocked by:** INT-10, RUN-13, CHG-14, RUN-20.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q16, M18 `plan` step 4, C:plan, C:reply-and-handback (`modeChoice`), stories
 81, 82.
 
-- [ ] Seam 1: some files staged, others not → `modeChoice` with the counts question, answers
+- [x] Seam 1: some files staged, others not → `modeChoice` with the counts question, answers
       `staged` and `split` as respawns with `mode`, `ifNoUser` `split`; no lock or folder left;
       each respawn holds the answer's `mode` only (RUN-20 item 6: the answer replaces the
       call's mode flag)
-- [ ] Hidden files are not counted (story 81)
-- [ ] Every change staged (as after `git add -A`) → plans `split` with no question (story 82)
+- [x] Hidden files are not counted (story 81)
+- [x] Every change staged (as after `git add -A`) → plans `split` with no question (story 82)
 
 
 ## INT-14: `staged` mode commits the pre-staged set as-is
