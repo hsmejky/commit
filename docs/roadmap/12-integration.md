@@ -198,22 +198,22 @@ groups.
 
 **Blocked by:** CHG-19, INT-09, RUN-16, PLN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M18 `plan --hunks`, Q16, C:worker-input (`resume`, `edit`), stories 47, 93, 94,
 95, 181, 222.
 
-- [ ] Seam 1: `plan --hunks --plan` as a separate call keeps the unit IDs and every stored
+- [x] Seam 1: `plan --hunks --plan` as a separate call keeps the unit IDs and every stored
       notice, and resets the lint counter; a bad `check` after it → exit 2 with no `reply`
       (RUN-16)
-- [ ] A following `check` with one tracked group returns a `confirm` whose reason is the edited
+- [x] A following `check` with one tracked group returns a `confirm` whose reason is the edited
       plan (story 95)
-- [ ] The `one` answer is absent from a single-group and from a `staged` confirmation (story
+- [x] The `one` answer is absent from a single-group and from a `staged` confirmation (story
       94); a one-group plan written after `one` commits all included files (story 222)
-- [ ] An edit to a known path between `plan` and `plan --hunks` → `diff-changed`, run ended
-- [ ] Seam 1: `resumed` alone triggers `confirm` (no `humanOnly`) in `split` and in `staged`,
+- [x] An edit to a known path between `plan` and `plan --hunks` → `diff-changed`, run ended
+- [x] Seam 1: `resumed` alone triggers `confirm` (no `humanOnly`) in `split` and in `staged`,
       even with one group and no other trigger, per C:confirmation-triggers' `resumed` row
-- [ ] Seam 1: `resumed` triggers `confirm` in a `reword` run (story 181); under `--no-user`
+- [x] Seam 1: `resumed` triggers `confirm` in a `reword` run (story 181); under `--no-user`
       the row gives no `confirm`
 
 
