@@ -102,31 +102,25 @@ fixed, delete it here; IDs are never reused.
   `notIncludedResult`, or decide in docs that the gap is permanent and narrow C:check's
   wording instead. Slice: a later one touching `stagedExcludedOf`/C:check (none assigned
   yet).
-- **KD-R103.** (EXE-17 built the behavior: `cleanUnstage` in `commit-executor.mjs` treats a failed
-  or skipped `git reset` as `unstageKept` with the notice and `unstaged: null`, and its
-  `catch` cleanup cannot replace the original error; only the *failed* (not skipped) case
-  remains untested, for the reason below.) review-EXE-10 Low-1/Low-3: `plugin/scripts/lib/commit-executor.mjs:448` (the
-  `stage-failed`/`mismatch` refusal) and `~515` (the backstop/commit-throw `catch`) both
-  `await unstage(git)` and ignore a non-zero `git reset` from it — `{ ok: false, gitOutput }`
-  at 448, a straight call with no return value read at 515. C:commit-release "On failure"
-  wants the original cause kept, a notice, `unstaged: null`, and the lock and run folder kept
-  for the next run's takeover (EXE-01 item 2) on a failed unstage, same as EXE-17's own
-  skipped-cleanup branch; EXE-17's own criteria test only the deadline (skipped) case, not a
-  `git reset` that actually runs and fails, so that branch is untested. No fixture reaches it
-  without stretching a seam: Seam 1's fault-injection preload (testing-seams.md) only fails
-  named `fs`/`os` calls, not a chosen `git` subprocess call by position, and a repo-content
-  trick (such as a stray `index.lock`) cannot fail only the cleanup `git reset` without also
-  failing the phase-(c) call just before it. Also at 515: `unstage` never throws on git's own
-  exit code (by design, same as the replaced `resetIndex`), but a spawn/timeout throw from M2
-  `run` inside it would replace `err`, masking the original cause the `catch` was reporting.
-  Fix: add a non-zero-`git reset` criterion to EXE-17 once a seam for it exists (a user
-  decision), and guard the 515 call so a throw from `unstage` itself cannot replace `err`.
-  RUN-27 review: the same gap covers the `internal` ending. A throw after phase (c) whose unstage
-  failed or was skipped now carries `unstageKept` on the error (`commitGroups`' `catch`) and
-  `runInternalFailure` keeps the run with the staging notice, but no Seam 1 fixture reaches it:
-  the fault preload fails every `state.json` rename from the first one, so the throw lands at
-  the `indexReset` write before anything is staged, never at the post-commit write.
+- **KD-R103.** EXE-17 built the behavior: `cleanUnstage` in `commit-executor.mjs` treats a failed or
+  skipped `git reset` as `unstageKept` with the "staging may remain" notice and `unstaged: null`,
+  and the `catch` cleanup in `commitGroups` cannot replace the original error (it carries
+  `unstageKept` and `stagingNotice` on it for `runEnd`, RUN-27). Untested: a `git reset` that
+  actually runs and *fails* (C:commit-release "On failure" wants the same outcome as the skipped
+  case). No fixture reaches it without stretching a seam: Seam 1's fault-injection preload
+  (testing-seams.md) only fails named `fs`/`os` calls, not a chosen `git` subprocess call by
+  position, and a repo-content trick (such as a stray `index.lock`) cannot fail only the cleanup
+  `git reset` without also failing the phase-(c) call just before it. Likewise the `internal`
+  ending with a kept run (a throw after phase (c) whose unstage failed or was skipped) has no
+  Seam 1 fixture: the fault preload fails every `state.json` rename from the first one, so the
+  throw lands at the `indexReset` write before anything is staged, never at the post-commit write.
+  Fix: add the non-zero-`git reset` criterion once a seam for it exists (a user decision).
   Slice: none yet.
+- **KD-R110.** EXE-17 AC3's last clause ("the next `plan --take-over <planId>` resets the staging
+  and releases the run") is not tested: `tests/commit-all-timeout.test.js` AC3 proves the staging
+  stays and the run is kept (lock, folder, `indexReset`), but M12 `acquire`'s takeover repair is
+  RUN-23's and RUN-25's. Fix: add the takeover step to that case once RUN-23/RUN-25 land.
+  Slices: RUN-23, RUN-25.
 
 ## Test mechanisms
 
@@ -266,7 +260,10 @@ fixed, delete it here; IDs are never reused.
   `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
   RPL-08, RUN-23, RUN-24, RUN-25.
-- **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
+- **KD-R99.** (EXE-17 built the production path: `commitAll` re-reads HEAD when anything throws, and
+  `planInternalFailure` reports "committed as `<sha>`, but the script failed" with `sha`; its case in
+  `tests/commit-all-timeout.test.js` reaches it with a post-commit hook that garbles the index, not
+  with the FND-10 preload. Only INT-31's preload-based case remains.) INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") is still missing. EXE-19 and EXE-17
   have landed, so `staged` now reaches `git commit`, but the preload cannot fail only a later

@@ -15,6 +15,8 @@ const assert = require('node:assert/strict');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
+const SPAWN_RECORD_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'spawn-record-preload.mjs')).href;
+const HEAD_UNREAD_NOTICE = 'HEAD could not be read after the failure; a commit may exist';
 const TEST_TIMEOUT = { timeout: 90_000 };
 const TIMEOUT_TEXT = 'git commit did not finish in 9 min — a pre-commit hook or a signing prompt may be waiting';
 const slash = (p) => p.replace(/\\/g, '/');
@@ -75,6 +77,11 @@ function runAt535(c, planId) {
     nodeArgs: ['--import', CLOCK_PRELOAD],
     env: { COMMIT_TEST_CLOCK_SCHEDULE: schedule(c, [{ event: { type: 'path', path: marker }, elapsedMs: 535_000 }]) },
   });
+}
+
+function spawnedGit(log) {
+  return fs.readFileSync(log, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+    .filter((e) => e.file === 'git');
 }
 
 function pidGone(pidFile) {
@@ -140,15 +147,23 @@ test('AC3: the clock stepped past 580 s before cleanup -> unstage not spawned, e
     { event: { type: 'path', path: started }, elapsedMs: 590_000 },
   ];
 
+  const spawnLog = path.join(c.root, 'spawns.jsonl');
+
   const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
-    nodeArgs: ['--import', CLOCK_PRELOAD],
-    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedule(c, steps) },
+    nodeArgs: ['--import', CLOCK_PRELOAD, '--import', SPAWN_RECORD_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedule(c, steps), COMMIT_TEST_SPAWN_LOG: spawnLog },
   });
 
   assert.equal(result.exitCode, 5, detail(result));
   assert.equal(result.json.error.kind, 'timeout', detail(result));
   assert.equal(result.json.error.message, TIMEOUT_TEXT);
   assert.equal(result.json.unstaged, null);
+  // The spawn record proves it: after the `git commit` spawn no git call was spawned
+  // (not the `git reset`, not the HEAD re-read; both are past `cleanupDeadline`).
+  const gitCalls = spawnedGit(spawnLog);
+  const commitAt = gitCalls.findIndex((e) => e.args[0] === 'commit');
+  assert.notEqual(commitAt, -1, 'git commit was spawned');
+  assert.deepEqual(gitCalls.slice(commitAt + 1).map((e) => e.args[0]), [], JSON.stringify(gitCalls.slice(commitAt)));
   assert.ok(result.json.notices.includes('group 1 staging may remain, the next /commit repairs it'),
     JSON.stringify(result.json.notices));
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), seed);
@@ -197,4 +212,53 @@ test('AC4: check --plan, group 2 timed out after group 1 committed -> the run is
   assert.ok(fs.existsSync(lockPath), 'the run lock is kept');
   assert.ok(fs.existsSync(runDir), 'the run folder is kept');
   assert.equal(fs.existsSync(path.join(runDir, 'call.lock')), false, 'call.lock is gone');
+});
+
+// Review Medium-4: a post-commit hook that hangs past the deadline while the clock then steps past
+// 580 s: the commit exists, but the HEAD re-read is not spawned, so the reply cannot name it.
+// It must not read as a plain "no commit": a notice says a commit may exist.
+test('a skipped HEAD re-read after a killed git commit adds a notice (a commit may exist)', TEST_TIMEOUT, async (t) => {
+  const { c, planId, seed } = await twoGroupRun(t);
+  const started = path.join(c.root, 'hook.started');
+  sleepingHook(c, 'post-commit', path.join(c.root, 'hook.pid'), started);
+  const marker = path.join(c.root, 'clock-marker');
+  fs.writeFileSync(marker, '');
+  const steps = [
+    { event: { type: 'path', path: marker }, elapsedMs: 535_000 },
+    { event: { type: 'path', path: started }, elapsedMs: 590_000 },
+  ];
+  const spawnLog = path.join(c.root, 'spawns.jsonl');
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD, '--import', SPAWN_RECORD_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedule(c, steps), COMMIT_TEST_SPAWN_LOG: spawnLog },
+  });
+
+  assert.equal(result.exitCode, 5, detail(result));
+  assert.equal(result.json.error.message, TIMEOUT_TEXT);
+  assert.notEqual(c.git(['rev-parse', 'HEAD']).trim(), seed, 'git committed anyway');
+  assert.equal(result.json.sha, undefined, 'the unread HEAD cannot be named');
+  assert.ok(result.json.notices.includes(HEAD_UNREAD_NOTICE), JSON.stringify(result.json.notices));
+  const gitCalls = spawnedGit(spawnLog);
+  const commitAt = gitCalls.findIndex((e) => e.args[0] === 'commit');
+  assert.deepEqual(gitCalls.slice(commitAt + 1).map((e) => e.args[0]), [], 'no git call after the commit');
+});
+
+// EXE-01 item 3 / "…, but the script failed": an unexpected throw after `git commit` landed. The
+// post-commit hook garbles the index, so the library's own index read right after the commit
+// throws; HEAD (re-read in `commitAll`'s cleanup) is not the expected one.
+test('an internal throw after git commit landed -> exit 1, sha, "committed as <sha>, but the script failed"', TEST_TIMEOUT, async (t) => {
+  const { c, planId, runDir, seed, lockPath } = await twoGroupRun(t);
+  installHook(c, 'post-commit', ['printf "garbage" > "$(git rev-parse --git-path index)"']);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'internal', detail(result));
+  const headNow = c.git(['rev-parse', 'HEAD']).trim();
+  assert.notEqual(headNow, seed, 'git committed');
+  assert.equal(result.json.sha, headNow);
+  assert.equal(result.json.error.message, `committed as \`${headNow}\`, but the script failed`);
+  assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });

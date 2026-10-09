@@ -141,7 +141,8 @@ created between groups are both caught:
   `cleanupDeadline`, `unstaged` is `null`, the outcome keeps its original cause, and the run
   is kept for the next run's takeover repair (M15 `cleanupDeadline`, C:run-folder).
 
-`commitAll(run, { now, osUser, env, deadline, scriptPath }) → Outcome` (`env`: the injected environment its M10/M3 calls take;
+`commitAll(run, { now, osUser, env, deadline, cleanupDeadline, scriptPath, confirmed }) → Outcome` (`env`: the injected environment its M10/M3 calls take;
+`cleanupDeadline`: M15's, bounding the unstage and the HEAD and tree re-reads (EXE-17); an `Outcome` whose unstage failed or was skipped carries `unstageKept: true` for M15 `runEnd`;
 `deadline`: this call's M15 `deadline()`, read by M15 `nextStep` for the budget stop, EXE-16), with `osUser` passed by M18 for the backstop's
 M8 `scanUnits` and never stored in the run state (Q10 as amended by EXE-01), where `Outcome` holds the output fields of
 C:commit-release, plus `refusal: { code, message } | null`: how a phase (a) or (b) check hands a mid-run refusal to M18, which

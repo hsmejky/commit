@@ -163,6 +163,10 @@ function treeDiffersNotice(n) {
   return `committed tree differs from the scanned index (group ${n})`;
 }
 
+// EXE-17 (review Medium-4, C:commit-release): the HEAD re-read after a failed or killed `git commit`
+// (or an `internal` throw) was skipped or failed, so a commit may exist that the reply cannot name.
+const HEAD_UNREAD_NOTICE = 'HEAD could not be read after the failure; a commit may exist';
+
 // EXE-11 (KD-R108): `git status` failed after the run, so `unstaged` is the stored lists unfiltered.
 const UNSTAGED_UNREAD_NOTICE = 'git status failed after the run; unstaged lists every path that was '
   + 'staged before it, some may not differ from HEAD';
@@ -334,6 +338,9 @@ async function gitCommitFailed({ state, run, group, commits, notices, committed,
   const timedOut = committed.timedOut === true;
   const code = timedOut ? 'timed-out' : 'git-failed';
   const read = await inCleanup(cx, () => head({ cwd: cx.toplevel, env: cx.env, now: cx.now }));
+  // A HEAD that could not be read (skipped past `cleanupDeadline`, or failed) is read as unmoved,
+  // and the reply says so.
+  if (!read.ok) notices.push(HEAD_UNREAD_NOTICE);
   const headAfter = read.ok ? read.value : state.head;
   if (headAfter === state.head) {
     const message = timedOut ? COMMIT_TIMED_OUT_TEXT : commitFailedText(group.n);
@@ -427,7 +434,13 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  */
 export async function commitAll(run, options) {
   const state = readState(run);
-  const output = await commitGroups(run, state, options);
+  let output;
+  try {
+    output = await commitGroups(run, state, options);
+  } catch (err) {
+    await noteCommitBeforeThrow(err, run, state, options);
+    throw err;
+  }
   // EXE-11 (C:commit-release `unstaged`): on every output, run-ending or mid-run, gated only
   // by `indexReset` (`[]` from the groups below once it is set); the list is read after
   // their last git call, from the state file's `preStaged` and `indexOnly` (KD-R69).
@@ -457,6 +470,22 @@ export async function commitAll(run, options) {
     }
   }
   return output;
+}
+
+// EXE-17 (EXE-01 item 3): an unexpected throw may come after `git commit` landed (a state write
+// that fails, a hook that moved HEAD). HEAD is re-read against `cleanupDeadline`: one that is not
+// the HEAD the run expects rides on the error as `committedSha` (M18 reports "committed as
+// `<sha>`, but the script failed" with `sha`); one that cannot be read adds `headNotice`
+// instead. Never throws, so the original error stays the cause.
+async function noteCommitBeforeThrow(err, run, state, options) {
+  if (err === null || typeof err !== 'object') return;
+  const cx = { toplevel: run.toplevel, env: options.env, now: options.now, cleanupDeadline: options.cleanupDeadline };
+  const read = await inCleanup(cx, () => head({ cwd: cx.toplevel, env: cx.env, now: cx.now }));
+  if (!read.ok) {
+    err.headNotice = HEAD_UNREAD_NOTICE;
+  } else if (typeof read.value === 'string' && read.value !== state.head) {
+    err.committedSha = read.value;
+  }
 }
 
 // `commitAll`'s per-group loop over the state it read; `unstaged` here is only `[]` or

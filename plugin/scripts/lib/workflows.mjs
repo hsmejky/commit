@@ -1872,6 +1872,8 @@ async function runInternalFailure(err, ctx, values) {
   // `plan`'s takeover repairs the index (C:cli-and-exit-codes `internal`).
   const unstageKept = err?.unstageKept === true;
   if (unstageKept && typeof err.stagingNotice === 'string') ctx.notices.push(err.stagingNotice);
+  // EXE-17: the HEAD re-read after the throw could not run (`commitAll` set `headNotice`).
+  if (typeof err?.headNotice === 'string') ctx.notices.push(err.headNotice);
   if (ctx.opened && runEnd({ kind: 'internal', unstageKept }) === 'release') {
     const released = releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
     if (released.notice !== null) ctx.notices.push(released.notice);
@@ -1885,7 +1887,12 @@ async function runInternalFailure(err, ctx, values) {
 // The message keeps `commit.cjs`'s backstop wording, which still catches throws outside the
 // step table (an unbuilt flag, a module that fails to load).
 async function planInternalFailure(err, ctx) {
-  const message = `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
+  // EXE-17 (EXE-01 item 3): a throw after `git commit` landed (`commitAll` set `committedSha`)
+  // reports the commit, with `sha`, instead of the bare error; the error text stays on stderr.
+  const committedSha = typeof err?.committedSha === 'string' ? err.committedSha : undefined;
+  const message = committedSha !== undefined
+    ? `committed as \`${committedSha}\`, but the script failed`
+    : `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
   // C:cli-and-exit-codes: "stderr carries debug output only." Before this function existed, a
   // throw inside `plan` always escaped to `commit.cjs`'s backstop, which wrote the stack there
   // (`commit: unexpected error\n<stack>`). Since RUN-12 catches the throw here instead (so the
@@ -1899,7 +1906,11 @@ async function planInternalFailure(err, ctx) {
   // never replaces the original error: the reply then omits the tree state.
   const failedReply = await finalReply(facts, ctx, { toplevel: usableToplevel(ctx), deadline: ctx.cleanupDeadline })
     .catch(() => reply({ ...facts, treeState: undefined }));
-  return { failure: { kind: 'internal', message, reply: failedReply } };
+  return {
+    failure: {
+      kind: 'internal', message, reply: failedReply, ...(committedSha !== undefined ? { sha: committedSha } : {}),
+    },
+  };
 }
 
 // The usable worktree's top level from the probe (`undefined` when there is none, or the
