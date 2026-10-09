@@ -1,7 +1,7 @@
 'use strict';
 
 // RUN-13 (docs/roadmap/09-runs.md): M15 `resolveMode` at `plan` step 4, with no takeover
-// (`killedLeftover: false`). Flags win; `--staged` with an empty index refuses `staged-empty`
+// (`killedLeftover: false`; the takeover's is tests/plan-killed-leftover.test.js). Flags win; `--staged` with an empty index refuses `staged-empty`
 // (exit 1 `usage`); an empty or fully staged index plans `split`; a mixed index (staged
 // changes plus unstaged tracked changes or candidates, counted after the hidden rule and
 // before the caps) ends with a `modeChoice` carrying counts only, `planId: null` and no run
@@ -93,10 +93,6 @@ test('M15 resolveMode: a mode flag wins over a mixed index', () => {
 test('M15 resolveMode: --staged with an empty index refuses staged-empty', () => {
   const decision = runPolicy.resolveMode({ split: false, staged: true }, { staged: 0, other: 2 }, false);
   assert.deepEqual(decision, { refusal: { code: 'staged-empty', message: runPolicy.STAGED_EMPTY_MESSAGE } });
-});
-
-test('M15 resolveMode: killedLeftover is not built yet (RUN-24)', () => {
-  assert.throws(() => runPolicy.resolveMode(NO_FLAGS, { staged: 1, other: 1 }, true), /RUN-24/);
 });
 
 // --- Seam 1 ------------------------------------------------------------------------------

@@ -296,7 +296,7 @@ const KILLED_UNSTAGED_NOTICE = 'the killed run\'s reset had unstaged:';
 // and its current group was not `committed`. Nothing staged: no reset, no reset notice. Every
 // staged path within the killed group's paths (the current group's unit paths, `preStaged`,
 // `indexOnly`): `git reset -q -- .` and the reset notice. Anything else is left untouched
-// (`killedLeftover` is RUN-24's). The `unstaged` report (M10 `unstagedAfterReset` over the stored
+// (RUN-24: `ctx.killedLeftover`). The `unstaged` report (M10 `unstagedAfterReset` over the stored
 // lists) follows in every case. A failing reset throws (`internal` for now) before
 // `finishTakeover`, so the chain stays (RUN-25): a refusal (`index-locked` for a foreign
 // `index.lock`, `timed-out`, else `git-failed`) after the "repair failed" notice.
@@ -307,7 +307,13 @@ async function repairKilledIndex(ctx, killedRun) {
   const belongs = new Set([
     ...killedRun.groupPaths, ...killedRun.preStaged, ...killedRun.indexOnly.map((entry) => entry.path),
   ]);
-  if (staged.length > 0 && staged.every((entry) => belongs.has(entry))) {
+  if (staged.length > 0 && !staged.every((entry) => belongs.has(entry))) {
+    // RUN-24: staging beyond the killed group's paths; the index stays untouched. Step 4 decides
+    // by the run's flags, naming the killed group's paths still staged (all the staged paths when
+    // none of the group's remain).
+    const named = staged.filter((entry) => belongs.has(entry));
+    ctx.killedLeftover = (named.length > 0 ? named : staged).map(escapePath);
+  } else if (staged.length > 0) {
     let reset;
     try {
       reset = await unstage(git);
@@ -366,19 +372,24 @@ async function inventory(ctx) {
 
 /**
  * Step 4, the mode decision (RUN-13, C:plan step 4, review-RUN-06 finding 7): `--reword`
- * keeps `reword`; otherwise M15 `resolveMode` (no takeover yet: `killedLeftover: false`,
+ * keeps `reword`; otherwise M15 `resolveMode` (`killedLeftover` from the takeover repair,
  * RUN-24) over the inventory's counts. `staged-empty` refuses; a `modeChoice` ends the call
  * with counts only, `mode: null` and no run folder (the provisional one is discarded by
  * `plan`'s `finally`).
  */
 async function resolveRunMode(ctx) {
-  if (ctx.values.reword === true) {
+  const leftover = ctx.killedLeftover ?? null;
+  if (ctx.values.reword === true && leftover === null) {
     ctx.mode = 'reword';
     return undefined;
   }
-  const flags = { split: ctx.values.split === true, staged: ctx.values.staged === true };
-  const decision = resolveMode(flags, indexState(ctx.inventory), false);
+  const flags = {
+    split: ctx.values.split === true, staged: ctx.values.staged === true,
+    reword: ctx.values.reword === true, noUser: ctx.values['no-user'] === true,
+  };
+  const decision = resolveMode(flags, indexState(ctx.inventory), leftover !== null, leftover ?? []);
   if (decision.refusal !== undefined) return { refusal: decision.refusal };
+  if (decision.notice !== undefined) ctx.notices.push(decision.notice);
   if (decision.modeChoice !== undefined) return { status: 'handback', kind: 'modeChoice', ...decision.modeChoice };
   ctx.mode = decision.mode;
   return undefined;

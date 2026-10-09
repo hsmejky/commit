@@ -24,7 +24,7 @@
 //
 // RUN-03 adds `releaseDeadline`, `release`'s 45 s budget on its tree-state read.
 //
-// RUN-13 adds `resolveMode`, without a takeover (`killedLeftover: false`; RUN-24 adds it).
+// RUN-13 adds `resolveMode`, without a takeover (RUN-24 adds `killedLeftover`).
 //
 // RUN-16 adds `onLintFailure`, the lint-failure counter that ends the worker's retries.
 //
@@ -250,26 +250,62 @@ function stagedHitMessage({ hidden = [], hits = [], notUtf8 = [] }) {
 // never typed `--staged` themselves, with a next step, not CLI vocabulary.
 export const STAGED_EMPTY_MESSAGE = 'nothing is staged any more: stage the changes again, or run /commit to group all changes';
 
+// RUN-24 (Q17, Q22, C:run-folder takeover): the `killedLeftover` texts. The paths are the
+// killed group's paths still staged, already escaped (M17 `escapePath`), five at most.
+const LEFTOVER_SHOWN = 5;
+function leftoverList(paths) {
+  const shown = paths.slice(0, LEFTOVER_SHOWN).map((p) => `\`${p}\``).join(', ');
+  const more = paths.length > LEFTOVER_SHOWN ? ` and ${paths.length - LEFTOVER_SHOWN} more` : '';
+  return `${shown}${more}`;
+}
+
+/** `killed-leftover`'s text (C:run-folder): the refusal of a `--no-user` run without `--reword`. */
+export function killedLeftoverMessage(paths) {
+  return 'a killed /commit run left staging behind, and more was staged since: '
+    + `${leftoverList(paths)}; unstage them or commit by hand, then run /commit again`;
+}
+
+/** The notice naming the killed group's paths still staged (a forced `modeChoice`, a `reword`). */
+export function killedLeftoverNotice(paths) {
+  return `a killed /commit run left its group's paths staged: ${leftoverList(paths)}`;
+}
+
 /**
- * M15 `resolveMode(flags, indexState, killedLeftover)` (RUN-13, C:plan `mode`, Q9, Q16):
- * `plan`'s mode at step 4. A mode flag wins: `--split` plans `split`, `--staged` plans
- * `staged`, or refuses `staged-empty` (exit 1 `usage`) when nothing is staged. Without a
- * flag `plan` never picks `staged`: an empty or fully staged index plans `split`, and a
- * mixed index (staged changes plus other changes) is a `modeChoice` with counts only. M18
- * counts `indexState` from M10's inventory (candidates after the hidden rule, before the
- * caps) and handles `--reword` itself; `killedLeftover` (a takeover's leftover staging,
- * C:run-folder) is RUN-24's.
+ * M15 `resolveMode(flags, indexState, killedLeftover, leftoverPaths)` (RUN-13, RUN-24,
+ * C:plan `mode`, Q9, Q16, Q17): `plan`'s mode at step 4. A mode flag wins: `--split` plans
+ * `split`, `--staged` plans `staged`, or refuses `staged-empty` (exit 1 `usage`) when nothing
+ * is staged. Without a flag `plan` never picks `staged`: an empty or fully staged index plans
+ * `split`, and a mixed index (staged changes plus other changes) is a `modeChoice` with counts
+ * only. M18 counts `indexState` from M10's inventory (candidates after the hidden rule, before
+ * the caps).
  *
- * @param {{ split: boolean, staged: boolean }} flags the call's mode flags.
+ * `killedLeftover` (a takeover found staging beyond the killed group's paths, C:run-folder)
+ * overrides all of that: `--reword` stays `reword` plus a notice naming `leftoverPaths`;
+ * else `--no-user` refuses `killed-leftover` (exit 6 `state`, index untouched); else a
+ * `modeChoice` whatever the flags (`--staged` included) and the index shape, carrying the
+ * same notice.
+ *
+ * @param {{ split: boolean, staged: boolean, reword?: boolean, noUser?: boolean }} flags the
+ *   call's flags (`reword` and `noUser` matter to `killedLeftover` only).
  * @param {{ staged: number, other: number }} indexState `staged`: the staged files;
  *   `other`: the unstaged tracked changes and candidates.
- * @param {boolean} killedLeftover always `false` until RUN-24.
- * @returns {{ mode: 'split' | 'staged' } | { modeChoice: { staged: number, other: number } }
- *   | { refusal: { code: 'staged-empty', message: string } }}
- * @throws {Error} for `killedLeftover: true`, not built yet.
+ * @param {boolean} killedLeftover whether a takeover left staging beyond the killed group's paths.
+ * @param {string[]} [leftoverPaths] the killed group's paths still staged, escaped.
+ * @returns {{ mode: 'split' | 'staged' } | { mode: 'reword', notice: string }
+ *   | { modeChoice: { staged: number, other: number }, notice?: string }
+ *   | { refusal: { code: 'staged-empty' | 'killed-leftover', message: string } }}
  */
-export function resolveMode(flags, indexState, killedLeftover) {
-  if (killedLeftover) throw new Error('resolveMode with killedLeftover is not built yet (RUN-24)');
+export function resolveMode(flags, indexState, killedLeftover, leftoverPaths = []) {
+  if (killedLeftover) {
+    if (flags.reword === true) return { mode: 'reword', notice: killedLeftoverNotice(leftoverPaths) };
+    if (flags.noUser === true) {
+      return { refusal: { code: 'killed-leftover', message: killedLeftoverMessage(leftoverPaths) } };
+    }
+    return {
+      modeChoice: { staged: indexState.staged, other: indexState.other },
+      notice: killedLeftoverNotice(leftoverPaths),
+    };
+  }
   if (flags.staged) {
     if (indexState.staged === 0) return { refusal: { code: 'staged-empty', message: STAGED_EMPTY_MESSAGE } };
     return { mode: 'staged' };

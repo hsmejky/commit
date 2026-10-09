@@ -336,7 +336,33 @@ const ROWS = [
     producers: 'M15 `resolveMode` via M18',
     kind: 'state',
     exitCode: 6,
-    pairs: [{ producer: 'M15 resolveMode via M18', gap: { kd: 'KD-R98' } }],
+    pairs: [{
+      producer: 'M15 resolveMode via M18',
+      message: /^a killed \/commit run left staging behind, and more was staged since: `a\.txt`; /,
+      // RUN-24: a killed run's staging plus another staged file, an aged lock, `--no-user`
+      // (tests/plan-killed-leftover.test.js drives the real SIGKILL).
+      async seam1Case(t) {
+        const c = seededCase(t, { 'a.txt': 'one\n', 'b.txt': 'two\n' });
+        c.writeFile('a.txt', 'one\nmore\n');
+        c.writeFile('b.txt', 'two\nmore\n');
+        c.git(['add', '--', 'a.txt']);
+        const planned = await runCommit(c, ['plan', '--split']);
+        assert.equal(planned.exitCode, 0, detail(planned));
+        const statePath = path.join(planned.json.runDir, 'state.json');
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        state.groups = [{
+          n: 1, units: state.units.filter((unit) => unit.path === 'a.txt').map((unit) => unit.id),
+          header: 'feat: change a', body: null, committed: false,
+        }];
+        state.indexReset = true;
+        fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+        c.git(['add', '--', 'b.txt']);
+        const lockPath = path.join(path.dirname(planned.json.runDir), 'lock');
+        const then = new Date(Date.now() - 20 * 60_000);
+        fs.utimesSync(lockPath, then, then);
+        return runCommit(c, ['plan', '--split', '--no-user']);
+      },
+    }],
   },
   {
     row: 'case-rename',

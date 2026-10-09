@@ -255,12 +255,6 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists one pair as a gap because the code producing it is not built: `killed-leftover`
-  (RUN-24); RUN-25 replaced the `index-locked` via M18's takeover repair entry with a Seam 1
-  case, EXE-12 its `git-failed` one (`tests/commit-all-git-failed.test.js`) and EXE-17 its
-  `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: RUN-24 replaces its gap entry
-  with a Seam 1 case and drops this row. Slice: RUN-24.
 - **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
   `confirm` handback and of the `committed` reply) is covered only in part by
   `tests/plan-takeover.test.js`: the `confirm` handback and `commit --confirmed`'s

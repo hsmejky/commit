@@ -16,7 +16,7 @@ by M18 on every call and never stored in the run state (Q10 as amended by EXE-01
 Q9, Q10, Q11, Q16, Q20, C:worker-plan, C:check.
 
 **M15 Run policy.** Every pure decision of a run; one entry per contracts table:
-- `resolveMode(flags, indexState, killedLeftover)`: `killedLeftover` is true when a takeover
+- `resolveMode(flags, indexState, killedLeftover, leftoverPaths)`: `killedLeftover` is true when a takeover
   finds staging it did not reset (the index holds paths beyond the killed group's paths,
   C:run-folder); when true: with `--reword` (with or without `--no-user`) the mode stays
   `reword` plus a notice naming the killed group's paths still staged (`--amend --only`
