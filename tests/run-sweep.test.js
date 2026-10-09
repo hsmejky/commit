@@ -62,6 +62,17 @@ test('sweep keeps every folder on a renamed lock file\'s chain, and the renamed 
   assert.deepEqual(left, [A, B, C, E, 'lock', `lock.${A}`, `lock.${B}`].sort(), 'only D is swept');
 });
 
+test('sweep keeps an orphan renamed lock and its chain folder with no lock in place (aged past 24 hours)', (t) => {
+  const toplevel = toplevelOf(t);
+  folder(toplevel, A);
+  folder(toplevel, B);
+  lockFile(toplevel, `lock.${A}`, B);
+
+  assert.deepEqual(run.sweep({ toplevel, now: later }), []);
+
+  assert.deepEqual(fs.readdirSync(path.join(toplevel, '.commit-plan')).sort(), [A, B, `lock.${A}`].sort());
+});
+
 test('sweep keeps the renaming run\'s folder of a renamed lock whose content is unreadable', (t) => {
   const toplevel = toplevelOf(t);
   folder(toplevel, A);

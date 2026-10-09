@@ -11,9 +11,11 @@ const { spawn, spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { pathToFileURL } = require('node:url');
 const { COMMIT_ENTRY, createCase, runCommit } = require('./helpers/process-seam.js');
 
 const TEST_TIMEOUT = { timeout: 90_000 };
+const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 const slash = (p) => p.replace(/\\/g, '/');
 const HEADERS = ['feat: change a', 'feat: change b'];
 const RENAMER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -152,6 +154,10 @@ test('Seam 1: an orphan lock.<planId> with no lock in place -> plan adopts it at
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(c.git(['diff', '--cached', '--name-only']), '');
   assert.deepEqual(entries(commitPlan), ['lock', result.json.planId].sort());
+  // Review RUN-25 finding 4: no lock was in place, so no run is said to have been idle.
+  const notices = JSON.parse(fs.readFileSync(path.join(result.json.runDir, 'state.json'), 'utf8')).notices.join('\n');
+  assert.match(notices, new RegExp('adopted the leftover of a killed takeover of the /commit run .' + planId), notices);
+  assert.doesNotMatch(notices, /idle for/, notices);
 });
 
 test('Seam 1: a renamed lock whose chain ends at a missing folder -> counted done, no repair, deleted', TEST_TIMEOUT, async (t) => {
@@ -160,6 +166,8 @@ test('Seam 1: a renamed lock whose chain ends at a missing folder -> counted don
   c.git(['add', '--', 'a.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
   c.writeFile('a.txt', 'a\nmore\n');
+  // Staged, so a repair that wrongly ran would show as a reset.
+  c.git(['add', '--', 'a.txt']);
   const commitPlan = path.join(c.repoDir, '.commit-plan');
   fs.mkdirSync(commitPlan);
   fs.writeFileSync(path.join(commitPlan, `lock.${RENAMER}`), JSON.stringify({ planId: MISSING, created: '2026-09-26T13:58:02.000Z' }));
@@ -168,6 +176,10 @@ test('Seam 1: a renamed lock whose chain ends at a missing folder -> counted don
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.deepEqual(entries(commitPlan), ['lock', result.json.planId].sort());
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'a.txt\n', 'no repair reset the staging');
+  const notices = JSON.parse(fs.readFileSync(path.join(result.json.runDir, 'state.json'), 'utf8')).notices.join('\n');
+  assert.doesNotMatch(notices, /reset the partial staging/, notices);
+  assert.match(notices, /its run had already ended/, notices);
 });
 
 test('Seam 1: an orphan that appears after peek and needs the repair -> exit 6 diff-changed, chain kept, own lock and folder gone', TEST_TIMEOUT, async (t) => {
@@ -191,4 +203,52 @@ test('Seam 1: an orphan that appears after peek and needs the repair -> exit 6 d
   assert.equal(result.json.error.kind, 'diff-changed', detail(result));
   assert.match(result.json.reply.notices.join('\n'), /staging must be repaired first/, detail(result));
   assert.deepEqual(entries(commitPlan), [planId, `lock.${RENAMER}`].sort(), 'only the chain remains');
+});
+
+// Review RUN-25 finding 1: a repair whose reset the deadline ended is a timeout, and its
+// "repair failed" notice names the deadline, not "git reset failed".
+test('Seam 1: the deadline ending the repair reset -> exit 5 timeout, the repair-failed notice names the deadline, chain kept', TEST_TIMEOUT, async (t) => {
+  const { c, planId, commitPlan } = await killableRun(t);
+  await killMidCommit(c, planId);
+  ageFile(path.join(commitPlan, 'lock'));
+  const marker = path.join(c.root, 'clock-marker');
+  fs.writeFileSync(marker, '');
+  const schedulePath = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedulePath, JSON.stringify([{ event: { type: 'path', path: marker }, elapsedMs: 535_000 }]));
+  // `git reset` writes the index: the hook stalls it until the deadline kills the call.
+  installHook(c, 'post-index-change', ['exec sleep 120']);
+
+  const result = await runCommit(c, ['plan', '--split'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+    timeoutMs: 60_000,
+  });
+
+  assert.equal(result.exitCode, 5, detail(result));
+  assert.equal(result.json.error.kind, 'timeout', detail(result));
+  const notices = result.json.reply.notices.join('\n');
+  assert.match(notices, /index repair failed \(\/commit passed its 540-second deadline\)/, notices);
+  const left = entries(commitPlan);
+  assert.equal(left.includes(planId), true, 'the taken-over folder remains');
+  assert.equal(left.includes('lock'), false, 'the new run lock is gone');
+});
+
+// Review RUN-25 finding 5: a step-7 orphan with no facts to check is finished there.
+test('Seam 1: an orphan that appears after peek and has no facts -> finished at step 7, plan goes on', TEST_TIMEOUT, async (t) => {
+  const { c, commitPlan } = await killableRun(t);
+  fs.rmSync(path.join(commitPlan, 'lock'));
+  const orphan = path.join(commitPlan, `lock.${RENAMER}`);
+  installHook(c, 'post-index-change', [
+    `if [ -d '${slash(commitPlan)}' ] && [ ! -e '${slash(orphan)}' ]; then`,
+    `  printf '{"planId":"${MISSING}","created":"2026-09-26T13:58:02.000Z"}' > '${slash(orphan)}'`,
+    'fi',
+    'exit 0',
+  ]);
+
+  const result = await runCommit(c, ['plan', '--split']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(fs.existsSync(orphan), false, 'the orphan was deleted');
+  const notices = JSON.parse(fs.readFileSync(path.join(result.json.runDir, 'state.json'), 'utf8')).notices.join('\n');
+  assert.match(notices, /its run had already ended/, notices);
 });

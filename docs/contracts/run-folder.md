@@ -177,6 +177,16 @@ failed call whose unstage did not happen keeps its run, below):
     releases its own lock and deletes its own folder. The reply carries the notices
     collected so far plus "the takeover's index repair failed (<cause>); the next /commit
     retries it". The kept renamed lock is then an orphan, which the next `plan` adopts.
+    The cause is the call's deadline text when the deadline ended the reset.
+  - **Notice of an orphan-only adoption.** With no lock in place no run is known to have been
+    idle, so the notice does not claim it: "adopted the leftover of a killed takeover of the
+    /commit run `<planId>`" while that run's folder exists, else "adopted the leftover of a
+    killed takeover (its run had already ended)".
+  - **An acquirer's own run is never an orphan chain.** A `lock.<planId>` file naming the
+    acquirer's own run (a `--take-over` of its lock landing between its link and its scan) is
+    not adopted, and nothing of the acquirer is deleted through it. A renamed lock that cannot
+    be read (file in use) leaves the takeover's chain unknown: the facts and the folder come
+    from the stale run the takeover named, and the renamed lock stays.
 - A cleanup error after a successful commit (for example a Windows file lock on a temporary
   file) never changes the outcome: it becomes a notice, and the sweep removes the leftovers.
   The same holds when `plan` cannot discard its provisional folder: the notice is "run folder

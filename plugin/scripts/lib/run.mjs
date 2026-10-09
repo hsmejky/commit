@@ -841,7 +841,8 @@ export function takeoverNotice(planId) {
 // the own lock is linked exactly as `acquireLock` links it; a link `EEXIST` refuses `held`
 // and deletes nothing of the takeover (the renamed lock and the old folder stay for the next
 // `plan`; M18's `finally` discards only this call's provisional folder). `killedRun` is
-// the stale run's facts for M18's index repair (`readKilledRun`, RUN-23), nothing deleted.
+// the facts for M18's index repair, merged across the adopted chains (`adoptedAcquire`,
+// RUN-23, RUN-25), nothing deleted.
 function takeOverLock(runDir, planId, folder, now, sleep, stale) {
   if (stale.orphansOnly === true) {
     // RUN-25: no lock in place, only orphan renamed locks: nothing to rename, the own lock is
@@ -1000,7 +1001,7 @@ function readKilledRun(runDir, stalePlanId) {
 // (file in use, so the chain is unknown) yields an empty chain: nothing of it is adopted or
 // deleted. Read-only; never follows a link (`readLockFile` reads by `lstat`).
 function walkChain(runDir, renamerId, includeRenamer) {
-  const empty = { folders: [], locks: [], facts: null, named: null };
+  const empty = { folders: [], locks: [], facts: null, named: null, unreadable: true };
   const folders = includeRenamer ? [renamerId] : [];
   const locks = [];
   const seen = new Set();
@@ -1027,7 +1028,7 @@ function walkChain(runDir, renamerId, includeRenamer) {
     if (facts !== null) break;
     current = next;
   }
-  return { folders, locks, facts, named };
+  return { folders, locks, facts, named, unreadable: false };
 }
 
 // The orphan renamed locks of `.commit-plan/`: `lock.<planId>` files in the minted form not in
@@ -1052,11 +1053,19 @@ function orphansOnlyPeek(runDir) {
 
 // The chains an `acquire` adopts once its own link succeeded: its own (when it renamed a
 // lock) and every orphan not on it, each orphan chain walked once.
-function collectChains(runDir, planId, hasOwn) {
+function collectChains(runDir, planId, base) {
   const chains = [];
   const skip = new Set([`${RENAMED_LOCK_PREFIX}${planId}`]);
-  if (hasOwn) {
-    const own = walkChain(runDir, planId, false);
+  if (base !== null) {
+    let own = walkChain(runDir, planId, false);
+    if (own.unreadable) {
+      // File in use: the chain is unknown, so the facts and the folder come from the run the
+      // takeover named (as before the chains) and the renamed lock stays.
+      const named = base.planId !== null && isValidPlanId(base.planId) ? base.planId : null;
+      own = {
+        folders: named === null ? [] : [named], locks: [], facts: readKilledRun(runDir, named), named, unreadable: true,
+      };
+    }
     chains.push(own);
     for (const name of own.locks) skip.add(name);
   }
@@ -1064,6 +1073,9 @@ function collectChains(runDir, planId, hasOwn) {
     if (skip.has(name)) continue;
     const chain = walkChain(runDir, name.slice(RENAMED_LOCK_PREFIX.length), true);
     if (chain.locks.length === 0) continue;
+    // A live `--take-over` of this acquirer's own lock landing between its link and this scan
+    // renamed it: that file names this run, which is no orphan to delete.
+    if (chain.folders.includes(planId)) continue;
     for (const lockName of chain.locks) skip.add(lockName);
     chains.push(chain);
   }
@@ -1088,6 +1100,16 @@ function unitedFacts(chains) {
   };
 }
 
+// The notice of an orphan-only adoption (no lock was in place, so no run is known to have been
+// idle): names the first orphan's run only while its folder still exists, else says it had
+// already ended.
+function orphanNotice(runDir, named) {
+  const exists = named !== null && isValidPlanId(named) && fs.existsSync(insideRunDir(runDir, named));
+  return exists
+    ? `adopted the leftover of a killed takeover of the /commit run \`${named}\``
+    : 'adopted the leftover of a killed takeover (its run had already ended)';
+}
+
 // What every `acquire` returns once its own lock is linked (RUN-25): the run, and the takeover
 // it carries. `base` is the takeover the caller made (`{ planId, notice }`, a stale lock or
 // `--take-over`), `null` without one; the chains (its own renamed lock's, and the orphans')
@@ -1095,10 +1117,10 @@ function unitedFacts(chains) {
 // `takeover: null`; orphans alone -> a takeover naming the first orphan's taken-over run.
 function adoptedAcquire(runDir, planId, folder, sleep, base) {
   const run = ownRun(runDir, planId, folder, sleep);
-  const chains = collectChains(runDir, planId, base !== null);
+  const chains = collectChains(runDir, planId, base);
   if (base === null && chains.length === 0) return { ok: true, run, takeover: null };
   run.finishTakeover = () => finishTakeover(runDir, chains);
-  const adopted = base ?? { planId: chains[0].named, notice: takeoverNotice(chains[0].named) };
+  const adopted = base ?? { planId: chains[0].named, notice: orphanNotice(runDir, chains[0].named) };
   return { ok: true, run, takeover: { ...adopted, killedRun: unitedFacts(chains) } };
 }
 
@@ -1257,8 +1279,8 @@ function ownRun(runDir, planId, folder, sleep) {
     write: (name, data) => writeAtomic(folder, name, data, sleep),
     release: () => releaseOwn(runDir, planId),
     // M12 spec (docs/spec/modules-m10-m13.md:279): "a no-op without a takeover". A real
-    // takeover's `acquire` (`takeOverLock`) overwrites this with the one that deletes the
-    // old folder and the renamed lock.
+    // takeover's `acquire` (`adoptedAcquire`, RUN-25: also any adopted orphan) sets the one that
+    // deletes the chain folders and then the renamed locks.
     finishTakeover: () => null,
   };
 }

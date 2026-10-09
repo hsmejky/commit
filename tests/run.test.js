@@ -1620,3 +1620,107 @@ test('releaseOpen: a lock holding another planId is left alone, with the folders
   assert.equal(fs.existsSync(path.join(f.runDir, 'lock')), true);
   assert.equal(fs.existsSync(f.folder), true);
 });
+
+// --- Review RUN-25 findings (renamed lock chains) ---------------------------------------------
+
+function chainFolder(runDir, planId, state) {
+  fs.mkdirSync(path.join(runDir, planId));
+  if (state !== undefined) fs.writeFileSync(path.join(runDir, planId, 'state.json'), `${JSON.stringify(state)}\n`);
+}
+
+function killedState(name) {
+  return {
+    units: [{ id: 'u1', path: `${name}.txt` }],
+    groups: [{ n: 1, units: ['u1'], committed: false }],
+    preStaged: [],
+    indexOnly: [],
+    indexReset: true,
+  };
+}
+
+function freshRun(t) {
+  const toplevel = tempDir(t);
+  const created = run.create({ toplevel, excludePath: path.join(toplevel, 'exclude'), tracked: false, sleep: () => {} });
+  return { provisional: created.provisional, runDir: path.join(toplevel, '.commit-plan') };
+}
+
+test('acquire: facts merged across several orphan chains, every chain folder and renamed lock deleted', (t) => {
+  const { provisional, runDir } = freshRun(t);
+  const [r1, r2, x1, x2] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  chainFolder(runDir, r1);
+  chainFolder(runDir, r2);
+  chainFolder(runDir, x1, killedState('a'));
+  chainFolder(runDir, x2, killedState('b'));
+  fs.writeFileSync(path.join(runDir, `lock.${r1}`), JSON.stringify({ planId: x1, created: '2026-09-26T13:58:02.000Z' }));
+  fs.writeFileSync(path.join(runDir, `lock.${r2}`), JSON.stringify({ planId: x2, created: '2026-09-26T13:58:02.000Z' }));
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.equal(acquired.ok, true);
+  assert.deepEqual([...acquired.takeover.killedRun.groupPaths].sort(), ['a.txt', 'b.txt']);
+  assert.equal(acquired.takeover.killedRun.indexReset, true);
+  assert.equal(acquired.takeover.killedRun.groupStatus, 'uncommitted');
+  assert.equal(acquired.run.finishTakeover(), null);
+  assert.deepEqual(fs.readdirSync(runDir).sort(), ['lock', provisional.planId].sort());
+});
+
+test('acquire: an orphan whose run folder still exists is named in the notice; a missing one is said to have ended', (t) => {
+  const { provisional, runDir } = freshRun(t);
+  const [renamer, present] = [crypto.randomUUID(), crypto.randomUUID()];
+  chainFolder(runDir, present, {});
+  fs.writeFileSync(path.join(runDir, `lock.${renamer}`), JSON.stringify({ planId: present, created: '2026-09-26T13:58:02.000Z' }));
+
+  const named = provisional.acquire({ now: () => T0 });
+
+  assert.equal(named.takeover.notice, `adopted the leftover of a killed takeover of the /commit run \`${present}\``);
+  assert.doesNotMatch(named.takeover.notice, /idle/);
+
+  const second = freshRun(t);
+  const [renamer2, gone] = [crypto.randomUUID(), crypto.randomUUID()];
+  fs.writeFileSync(path.join(second.runDir, `lock.${renamer2}`), JSON.stringify({ planId: gone, created: '2026-09-26T13:58:02.000Z' }));
+
+  const ended = second.provisional.acquire({ now: () => T0 });
+
+  assert.equal(ended.takeover.notice, 'adopted the leftover of a killed takeover (its run had already ended)');
+  assert.equal(ended.takeover.killedRun, null);
+});
+
+test('acquire takeOver: a renamed lock that cannot be read (file in use) falls back to the stale run facts and folder', (t) => {
+  const { provisional, runDir, staleId, now, stale } = staleRun(t);
+  fs.writeFileSync(path.join(runDir, staleId, 'state.json'), `${JSON.stringify(killedState('a'))}\n`);
+  const renamed = path.join(runDir, `lock.${provisional.planId}`);
+  const real = fs.readFileSync;
+  let reads = 0;
+  t.mock.method(fs, 'readFileSync', (target, ...rest) => {
+    if (path.resolve(String(target)) === renamed) {
+      reads += 1;
+      // The takeover's own verification read goes through; the chain walk's does not.
+      if (reads > 1) throw Object.assign(new Error('EBUSY: fault injected by test'), { code: 'EBUSY' });
+    }
+    return real(target, ...rest);
+  });
+
+  const acquired = provisional.acquire({ now, takeOver: stale });
+
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.takeover.planId, staleId);
+  assert.deepEqual(acquired.takeover.killedRun.groupPaths, ['a.txt']);
+  t.mock.restoreAll();
+  assert.equal(acquired.run.finishTakeover(), null);
+  assert.equal(fs.existsSync(path.join(runDir, staleId)), false, 'the stale folder is deleted');
+  assert.equal(fs.existsSync(renamed), true, 'the unreadable renamed lock stays');
+});
+
+test('acquire: an orphan renamed lock naming this run (a live take-over landing after its link) is not adopted or deleted', (t) => {
+  const { provisional, runDir } = freshRun(t);
+  const other = crypto.randomUUID();
+  fs.writeFileSync(path.join(runDir, `lock.${other}`), JSON.stringify({ planId: provisional.planId, created: '2026-09-26T13:58:02.000Z' }));
+
+  const acquired = provisional.acquire({ now: () => T0 });
+
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.takeover, null);
+  assert.equal(acquired.run.finishTakeover(), null);
+  assert.equal(fs.existsSync(path.join(runDir, `lock.${other}`)), true);
+  assert.equal(fs.existsSync(path.join(runDir, provisional.planId)), true, 'this run\'s own folder is kept');
+});

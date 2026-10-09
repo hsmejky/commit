@@ -341,9 +341,13 @@ async function repairFailure(ctx, git, gitOutput) {
   } catch {
     // The cause stays `git-failed`.
   }
-  const cause = locked ? INDEX_LOCK_TEXT : 'git reset failed';
+  // A deadline that ended the reset is the cause, whatever `plan` then maps the refusal to.
+  const timedOut = ctx.scope?.expired === true || ctx.injected.now() >= ctx.deadline;
+  let cause = 'git reset failed';
+  if (timedOut) cause = DEADLINE_TEXT;
+  else if (locked) cause = INDEX_LOCK_TEXT;
   ctx.notices.push(`the takeover's index repair failed (${cause}); the next /commit retries it`);
-  if (locked) return { refusal: { code: 'index-locked', message: INDEX_LOCK_TEXT } };
+  if (locked && !timedOut) return { refusal: { code: 'index-locked', message: INDEX_LOCK_TEXT } };
   return { refusal: { code: 'git-failed', message: `git reset failed while repairing a killed run's staging: ${gitOutput}`.trim() } };
 }
 
@@ -1414,6 +1418,7 @@ export async function plan(values, injected, { cwd }) {
   // GIT-07: every M2 call of the steps takes `deadline - now()` at its own start (M2
   // `withDeadline`); `run` marks the scope `expired` when that deadline ended or skipped one.
   const scope = { deadline: ctx.deadline, now: injected.now };
+  ctx.scope = scope;
   try {
     facts = await withDeadline(scope, () => runSteps(PLAN_STEPS, ctx));
   } catch (err) {
