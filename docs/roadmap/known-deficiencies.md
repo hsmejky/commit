@@ -50,7 +50,9 @@ fixed, delete it here; IDs are never reused.
   roadmap criterion currently names this gap. (INT-09 gave a direct `commit --all`'s success
   path its `committed`/`continue` reply; its failure path is still reply-less, except RPL-06's `failed` reply on a git-output refusal (`git-failed`,
   `stage-failed`), which carries only the message, the escaped and capped git output and the tree
-  state, not the group lists.) Fix: add it as an explicit INT-02-or-later
+  state, not the group lists; `timed-out` (exit 5) is reply-less too, and `gitFailedReply`
+  builds its reply without `commits`, so `reply.commits` is `[]` after earlier groups
+  committed.) Owner: RPL-05 (`commits` AC). Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
 - **KD-R106.** EXE-11 AC5's "the report says the index is untouched" is not reachable: a
   `commit --all` refusal before any group reached (c) has `unstaged: null` (asserted at
@@ -58,7 +60,7 @@ fixed, delete it here; IDs are never reused.
   `refusalFailure` with no `failed` reply and so no report text (KD-R73). Fix: when KD-R73's
   `failed` reply lands for `commit --all`, add a line saying the index is untouched (Q18,
   C:commit-release `unstaged: null`) after the failed group in `reply.mjs`'s `failed`
-  text, and assert it on the same refusal. Slice: whichever lands KD-R73.
+  text, and assert it on the same refusal. Slice: RPL-05 (owns the `commits` gap; KD-R73).
 - **KD-R107.** EXE-12 AC2's reply-text half (story 160: the `failed` reply's `text` naming
   the committed group 1, the failed group 2 and the remaining group 3) is not reachable for a
   direct `commit --all`: its failure goes out through `commitAllFailure` with no `reply`
@@ -66,7 +68,7 @@ fixed, delete it here; IDs are never reused.
   folder gone). Fix: when KD-R73's `failed` reply lands for `commit --all`, assert the
   group lists in `reply.text` on the exit-4 case of that test file, including the Q18
   "committed as `<sha>`, but git did not exit cleanly" case, whose group is listed as
-  committed. Slice: whichever lands KD-R73.
+  committed. Slice: RPL-05 (owns the `commits` gap; KD-R73).
 - **KD-R108.** C:commit-release has no "unknown" value for `unstaged`. When `git status`
   fails after the last commit and the release (EXE-11 review finding 3), `commitAll` keeps the
   commit list and lists every `preStaged` and `indexOnly` path (`ignored: false`, `blob` where

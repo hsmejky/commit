@@ -136,6 +136,10 @@ stories 55, 56, 57, 60, 228.
 - [ ] Once the `Notices:` block exists, assert RUN-21's takeover notice in a `confirm`
       handback's own `text` too (not just `reply.notices`); closes KD-R102's RPL-05 half
       (docs/roadmap/known-deficiencies.md)
+- [ ] `gitFailedReply` passes `commits: facts.commits` into `replyFacts` (one-line fix): on a
+      `commit --all` exit 4 (`stage-failed`, `git-failed`) and exit 5 (`timed-out`) after earlier
+      groups already committed, `reply.commits` lists those commits and `text` names them
+      (today it is `[]`); closes the KD-R73 and KD-R107 `commits` gap
 
 
 ## RPL-06: Escaping paths and relayed git or hook output
