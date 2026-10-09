@@ -110,6 +110,8 @@ test('Seam 1 (AC3, stories 94, 222): `one` is absent from a single-group confirm
   writeGroups(runDir, [group('feat: a', ['a.txt']), group('fix: b', ['b.txt'])]);
   const several = await check(c, planId);
   assert.deepEqual(labels(several), ['yes', 'edit', 'one', 'no']);
+  const one = several.json.reply.handback.answers.find((a) => a.label === 'one');
+  assert.equal(one.respawn, `resume: ${planId}\nedit: one`);
 
   // The `one` respawn re-plans: a separate `plan --hunks`, then one group over everything.
   await resume(c, planId);
