@@ -48,7 +48,8 @@ their own fixed short timeout (M2); either one passing it also ends `plan` with 
    takeover notice, naming the stale run's `planId` for an automatic takeover: "took over
    the stale /commit run `` `<planId>` `` (idle for 15 minutes or more)", or for a lock with
    no `planId` in the minted form "took over a stale, unreadable /commit lock (idle for 15
-   minutes or more)"; the reset
+   minutes or more)", or for `--take-over <planId>` "replaced the /commit run `` `<planId>` `` at your
+   request"; the reset
    notice; the `unstaged` report; with `killedLeftover` the killed group's paths still
    staged) are kept from here on and go into the reply's notices of every output `plan`
    ends with, whatever step it ends at: a clean tree, `modeChoice`, `staged-empty`,

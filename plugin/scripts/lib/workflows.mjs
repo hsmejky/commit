@@ -260,7 +260,9 @@ async function createRunFolder(ctx) {
   // RUN-07: a read-only `peek` before any inventory work. A live lock refuses `lock` the
   // same way a lost race at step 7 does (RUN-06), carrying the same `holder` shape; `plan`'s
   // `finally` discards this call's own provisional folder since `ctx.run` is never set here.
-  const peeked = ctx.provisional.peek({ now: ctx.injected.now });
+  // RUN-22: `--take-over <planId>` skips `peek` and takes over the named lock whatever its age.
+  const named = ctx.values['take-over'];
+  const peeked = named === undefined ? ctx.provisional.peek({ now: ctx.injected.now }) : { ok: true, stale: named };
   if (!peeked.ok) return { refusal: { code: peeked.code, message: peeked.message, holder: peeked.holder } };
   if (peeked.stale === null) return undefined;
   // RUN-21 (Q22, C:plan step 3): the automatic takeover of a stale lock. A takeover that
@@ -1327,15 +1329,6 @@ export async function plan(values, injected, { cwd }) {
   // GIT-07: read once at dispatch (`cli.mjs`'s `main`, `injected.callStarted`), here only
   // for a direct call that did not pass one.
   const callStarted = injected.callStarted ?? injected.now();
-  // Only bare `plan`, `plan --split`, `plan --reword` (RUN-06: the lock on a clean tree;
-  // its reword facts GIT-09's, its snapshot CHG-15's; `--dictated` INT-24's, which skips
-  // the hunk step) and `plan --staged` (RUN-13: its mode decision; its index-only snapshot
-  // is CHG-14's) are built: every other flag changes the mode or the clean-tree outcome
-  // (C:plan `mode`).
-  const unbuilt = ['take-over'].filter((f) => values[f] !== undefined);
-  if (unbuilt.length > 0) {
-    throw new Error(`plan ${unbuilt.map((f) => `--${f}`).join(' ')} is not built yet`);
-  }
   // GIT-02: `notices` lives on `ctx` from the start, so `probeRepo` (step 1) can queue the
   // detached-HEAD notice before any later step runs.
   const ctx = {

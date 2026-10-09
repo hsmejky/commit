@@ -606,9 +606,9 @@ function runFolderRefusal(trackedAs) {
  *   peek: (options?: { now?: () => number }) => { ok: true, stale: StaleLock | null }
  *     | { ok: false, code: 'held', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
- *   acquire: (options?: { now?: () => number, takeOver?: StaleLock }) => { ok: true, run: object,
+ *   acquire: (options?: { now?: () => number, takeOver?: StaleLock | string }) => { ok: true, run: object,
  *       takeover: { planId: string | null, notice: string, killedRun: null } | null }
- *     | { ok: false, code: 'held' | 'busy' | 'run-folder', message: string,
+ *     | { ok: false, code: 'held' | 'busy' | 'ended' | 'run-folder', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
  *   discard: () => string | null } }
  *   | { ok: false, code: 'run-folder', message: string }}
@@ -618,7 +618,8 @@ function runFolderRefusal(trackedAs) {
  *   `acquire()` takes the run lock with no takeover (CHG-03b) and returns the run, whose
  *   `write` is the same and whose `release()` removes the lock and the folder;
  *   `acquire({ takeOver })` (RUN-21) takes over the stale lock `peek` reported instead
- *   (`takeOverLock`), and its run also has `finishTakeover()`;
+ *   (`takeOverLock`), and its run also has `finishTakeover()`; `acquire({ takeOver: <planId> })`
+ *   (RUN-22) takes over the named run's lock whatever its age (`takeOverNamed`);
  *   `discard()` deletes the folder (every outcome that takes no lock).
  *   Inside M12 a local `runDir` is `.commit-plan` itself (`runDirOf`); only this output
  *   field names the `<planId>/` folder, keeping C:plan's `runDir` (review-RUN-05 finding 8).
@@ -651,9 +652,14 @@ export function create({ toplevel, excludePath, tracked, sleep = sleepSync }) {
   };
   const write = (name, data) => writeAtomic(folder, name, data, sleep);
   const peek = ({ now = Date.now } = {}) => peekLock(runDir, now);
-  const acquire = ({ now = Date.now, takeOver } = {}) => (takeOver === undefined
-    ? acquireLock(runDir, planId, folder, now, sleep)
-    : takeOverLock(runDir, planId, folder, now, sleep, takeOver));
+  const acquire = ({ now = Date.now, takeOver } = {}) => {
+    if (takeOver === undefined) return acquireLock(runDir, planId, folder, now, sleep);
+    // A string is the `--take-over <planId>` form (RUN-22); an object is the stale holder
+    // `peek` reported (RUN-21).
+    return typeof takeOver === 'string'
+      ? takeOverNamed(runDir, planId, folder, now, sleep, takeOver)
+      : takeOverLock(runDir, planId, folder, now, sleep, takeOver);
+  };
   return { ok: true, provisional: { planId, runDir: folder.split(path.sep).join('/'), write, peek, acquire, discard } };
 }
 
@@ -862,6 +868,82 @@ function takeOverLock(runDir, planId, folder, now, sleep, stale) {
   const run = ownRun(runDir, planId, folder, sleep);
   run.finishTakeover = () => finishTakeover(runDir, stale.planId, renamed);
   return { ok: true, run, takeover: { planId: stale.planId, notice: takeoverNotice(stale.planId), killedRun: null } };
+}
+
+/**
+ * The `--take-over <planId>` notice (RUN-22): names the replaced run; the lock's age is not
+ * part of it, since `--take-over` takes a fresh lock too.
+ *
+ * @param {string} planId
+ * @returns {string}
+ */
+export function namedTakeoverNotice(planId) {
+  return `replaced the /commit run \`${planId}\` at your request`;
+}
+
+// `--take-over`'s own `ended` text (Q22, KD-S3): the handback was answered after the named run
+// ended on its own. Apart from `ended()`, whose text is about the calling run.
+function namedRunEnded() {
+  return { ok: false, code: 'ended', message: 'that run has already ended; run /commit again' };
+}
+
+// M12 `acquire({ takeOver: <planId> })` (RUN-22, Q9, Q22, C:plan `--take-over`): skips `peek`
+// and takes over the lock of the run the user was asked about, whatever its age. The lock is
+// renamed to `lock.<own planId>` and verified to hold `target` (not its age; an unparseable
+// lock never matches): a mismatch is put back (`moveAsideVerified`) and refuses `held` naming
+// the holder now in place; a put-back meeting a new lock keeps the private copy as an orphan
+// (adopted by RUN-25). A rename `ENOENT` re-peeks once (RUN-20b item 4): a lock in place →
+// `held` naming it, no lock → `ended`. Once moved, the old run's `call.lock` is taken before
+// the own lock is linked (`takeCallLock`): a live one → `busy`, the lock put back so the old
+// run goes on; a folder that is gone → `ended`, after deleting the renamed lock (its chain
+// ends at a missing folder). The own lock is then linked exactly as `acquireLock` links it.
+// `killedRun` is `null` here: reading the killed run's state is RUN-23's.
+function takeOverNamed(runDir, planId, folder, now, sleep, target) {
+  const lock = insideRunDir(runDir, 'lock');
+  const renamed = insideRunDir(runDir, `lock.${planId}`);
+  const { outcome } = moveAsideVerified({
+    from: lock,
+    to: renamed,
+    verify: (bytes) => lockPlanId(bytes) === target,
+  });
+  if (outcome === 'gone') {
+    let file = null;
+    try {
+      file = readLockFile(lock);
+    } catch (err) {
+      if (!(err instanceof InUse)) throw err;
+      return busy(true);
+    }
+    return file === null ? namedRunEnded() : heldBy(file, now);
+  }
+  if (outcome === 'busy') return busy(true);
+  if (outcome !== 'moved') return held(runDir, now);
+  const call = takeCallLock(runDir, target, { now, pid: process.pid, host: os.hostname(), isAlive: isPidAlive });
+  if (!call.ok) {
+    putBack(renamed, lock);
+    return call;
+  }
+  if (call.path === null) {
+    fs.rmSync(renamed, { force: true });
+    return namedRunEnded();
+  }
+  const linked = linkOwnLock(runDir, planId, folder, now, sleep);
+  if (!linked.ok) return linked;
+  const run = ownRun(runDir, planId, folder, sleep);
+  run.finishTakeover = () => finishTakeover(runDir, target, renamed);
+  return { ok: true, run, takeover: { planId: target, notice: namedTakeoverNotice(target), killedRun: null } };
+}
+
+// Links the renamed lock back as `lock` and drops the private name. A link that fails (a new
+// lock already in place, a file in use) keeps the private copy, an orphan for the next adopter,
+// like `moveAsideVerified`'s put-back.
+function putBack(renamed, lock) {
+  try {
+    fs.linkSync(renamed, lock);
+    fs.rmSync(renamed, { force: true });
+  } catch {
+    // Kept as the orphan.
+  }
 }
 
 // `run.finishTakeover()` (RUN-21, RUN-20b item 2): deletes the taken-over run's folder first
