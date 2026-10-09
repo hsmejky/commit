@@ -315,18 +315,19 @@ set; the index unstaged; HEAD re-read within `cleanupDeadline` (unmoved → no `
 
 **Blocked by:** EXE-04, EXE-10.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, C:cli-and-exit-codes, stories 160, 163, 165.
 
-- [ ] Seam 1: a `pre-commit` hook that rejects group 2 and appends to a counter file →
+- [x] Seam 1: a `pre-commit` hook that rejects group 2 and appends to a counter file →
       exit 4, `commits` holds group 1, `failed: 2`, `remaining: [2, 3]`, the counter shows
       exactly one run (so the hook was neither skipped nor retried), `gitOutput` holds the
       hook's output with control characters as sent.
-- [ ] Seam 1: the run is released after the failure (lock and folder gone), and the
+- [x] Seam 1: the run is released after the failure (lock and folder gone), and the
       `failed` reply's `text` names the committed group 1, the failed group 2 and the
-      remaining group 3 (story 160).
-- [ ] Seam 1: a `pre-commit` hook that itself makes a commit then exits 1 → exit 4, `sha`
+      remaining group 3 (story 160). Lock and folder half done; the reply-text half
+      is deferred via KD-R107.
+- [x] Seam 1: a `pre-commit` hook that itself makes a commit then exits 1 → exit 4, `sha`
       set to the new HEAD, error text "committed as `<sha>`, but git did not exit cleanly"
       (`commit-release.md`).
 
