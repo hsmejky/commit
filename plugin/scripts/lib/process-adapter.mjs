@@ -336,13 +336,15 @@ export async function gitPath(names, { cwd, env, now }) {
  *   process tree is killed (POSIX: `SIGTERM` to the child's process group, `SIGKILL` after
  *   `KILL_GRACE_MS`; Windows: `taskkill /T`, then `/T /F` after the same grace, `taskkill`
  *   from `%SystemRoot%\System32`) and the call resolves `timedOut: true`, `code: null`,
- *   without waiting for a process that escaped the tree and still holds the pipes.
+ *   without waiting for a process that escaped the tree and still holds the pipes;
+ *   `beforeKill` (M10 `commitGuarded` only, CHG-23): a synchronous callback run once, right
+ *   before the tree kill of a timeout starts (not for an `onStdout` failure); a throw is ignored.
  * @returns {Promise<{ code: number|null, stdout: Buffer, stderr: string, timedOut: boolean,
  *   spawnedAt: number|null }>} `stdout` is the raw bytes, never decoded here, and empty with
  *   `onStdout`; `spawnedAt` is `null` without `now`. `timedOut` is `true` only past (or
  *   at a spent) timeout.
  */
-export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit, input, onStdout, timeoutMs }) {
+export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit, input, onStdout, timeoutMs, beforeKill }) {
   if (commit && (readOnly || history || index != null)) {
     throw new Error('run: commit cannot be combined with readOnly, history or index');
   }
@@ -392,6 +394,13 @@ export function run(cmd, args, { cwd, env, now, readOnly, index, history, commit
     if (budget.ms !== Infinity) {
       timer = setTimeout(() => {
         if (budget.scope !== undefined) budget.scope.expired = true;
+        if (beforeKill !== undefined) {
+          try {
+            beforeKill();
+          } catch {
+            // the kill must go ahead
+          }
+        }
         stopTree(() => resolve({
           code: null,
           stdout: Buffer.concat(stdout),

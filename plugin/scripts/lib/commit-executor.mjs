@@ -336,6 +336,8 @@ function withUnstageResult(outcome, n, unstaged) {
 async function gitCommitFailed({ state, run, group, commits, notices, committed, cx }) {
   const gitOutput = `${committed.stdout}${committed.stderr}`;
   const timedOut = committed.timedOut === true;
+  // CHG-23 (Q18): M10 returns the notice text when a killed `git commit` left `index.lock`.
+  if (committed.lockNotice) notices.push(committed.lockNotice);
   const code = timedOut ? 'timed-out' : 'git-failed';
   const read = await inCleanup(cx, () => head({ cwd: cx.toplevel, env: cx.env, now: cx.now }));
   // A HEAD that could not be read (skipped past `cleanupDeadline`, or failed) is read as unmoved,
@@ -617,6 +619,8 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
         input: rewordMessageOf(group, state),
         ...git,
         timeoutMs: commitBudget(),
+        // CHG-23 (Q18): `--amend --only` holds `index.lock` across its hooks until the kill.
+        partial: true,
       });
       // EXE-12: a failing `--amend --only` (a rejecting pre-commit hook) is the same exit 4 as
       // `split`'s; `reword` never touches the index, so there is nothing to unstage.

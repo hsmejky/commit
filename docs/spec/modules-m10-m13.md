@@ -158,7 +158,7 @@ and of the real index.
   `git apply` parses it back; the builder never formats a path itself.
   `verifyIndex(groupUnits)` for `staged`; `unstage()`; `indexLockExists()`;
   `commitGuarded({ args, input, timeoutMs, partial }) → { code, stdout, stderr, timedOut,
-  lockRemoved, lockLeft }`: the whole stale-`index.lock` mechanism, so no other module
+  lockRemoved, lockLeft, lockNotice }`: the whole stale-`index.lock` mechanism, so no other module
   writes a marker or touches the lock. It resolves the lock path through M2
   `gitPath('index.lock')` (the per-worktree git directory), brackets the `git commit` spawn
   and a timeout's tree kill with two marker files next to it. With `partial` (reword's
@@ -167,7 +167,7 @@ and of the real index.
   lock; without it (a plain commit, `split` and `staged`, where git released the lock before
   the hooks ran) it never removes the lock and sets `lockLeft` when one exists, which M16
   turns into the notice "index.lock was left in place — if no git process is running, check
-  it and remove it by hand". A lock it keeps is also reported by the next `index-lock`
+  it and remove it by hand" (M10 returns the text as `lockNotice`, KD-R17; the lock is looked at only after a timeout). A lock it keeps is also reported by the next `index-lock`
   refusal (story 166; the mtime rule is in Q18). The stale-lock case is covered by a
   fixture with a real `git commit` timeout, shortened by a clock step that holds at start
   (Clock at Seam 1);

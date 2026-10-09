@@ -11,9 +11,9 @@
 // a plain `commitGuarded` (CHG-19 to CHG-23 widen them).
 
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, rmSync, statSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { copyFile, utimes } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { hideFilter, summaryOnly } from './path-classifier.mjs';
 import { gitPath, run } from './process-adapter.mjs';
 
@@ -1621,29 +1621,84 @@ async function isShallowRepository({ toplevel, env, now }) {
   return out.toString('utf8').trim() === 'true';
 }
 
+/** The notice M16 shows when a killed `git commit` left `index.lock` (Q18, CHG-23). */
+export const LOCK_LEFT_NOTICE = 'index.lock was left in place — if no git process is running, check it and remove it by hand';
+
+// The two marker files of the stale-lock rule sit next to `index.lock` (same directory, so
+// the same filesystem and clock, Q18).
+const MARKER_START = 'commit-guard-start';
+const MARKER_KILL = 'commit-guard-kill';
+// The lower bound of the rule is widened by the filesystem's mtime resolution (Q18).
+const MTIME_SLACK_MS = 2000;
+
 /**
- * M10 `commitGuarded`, the plain form (EXE-02): one `git commit` spawn through M2 in its
- * `commit` environment (GIT-06: only the redirecting `GIT_*` removed, no pins), with no
- * markers, no timeout kill and no `index.lock` handling yet (EXE-17, EXE-18, EXE-21).
+ * M10 `commitGuarded` (EXE-02, CHG-23): one `git commit` spawn through M2 in its `commit`
+ * environment (GIT-06: only the redirecting `GIT_*` removed, no pins), and the whole stale
+ * `index.lock` mechanism of Q18, so no other module writes a marker or touches the lock.
+ * The lock path resolves through M2 `gitPath`; a marker file is written right before the
+ * spawn and a second one right before a timeout's tree kill starts. After a timeout:
+ * with `partial` (reword's `--amend --only`, where git holds the lock until the kill) a
+ * leftover lock is removed only when its mtime is at least the first marker's minus 2
+ * seconds and strictly below the second marker's, so a foreign lock is never removed;
+ * without it (a plain commit released the lock before its hooks ran) it is never removed.
+ * A lock still there afterwards sets `lockLeft` and `lockNotice`. The markers are gone
+ * again when the call returns.
  *
  * @param {{ args: string[], input: string, toplevel: string, env: object,
- *   now?: () => number, timeoutMs?: number }} options `args`: `git commit`'s argv after
- *   `git`; `input`: the message on stdin.
+ *   now?: () => number, timeoutMs?: number, partial?: boolean }} options `args`: `git commit`'s
+ *   argv after `git`; `input`: the message on stdin.
  * @returns {Promise<{ code: number | null, stdout: string, stderr: string, timedOut: boolean,
- *   lockRemoved: false, lockLeft: false }>}
+ *   lockRemoved: boolean, lockLeft: boolean, lockNotice: string | null }>}
  */
-export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs }) {
-  const result = await run('git', args, {
-    cwd: toplevel, env, now, commit: true, input: Buffer.from(input, 'utf8'), timeoutMs,
-  });
-  return {
-    code: result.code,
-    stdout: result.stdout.toString('utf8'),
-    stderr: result.stderr,
-    timedOut: result.timedOut,
-    lockRemoved: false,
-    lockLeft: false,
-  };
+export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs, partial = false }) {
+  const [lockPath] = await gitPath(['index.lock'], { cwd: toplevel, env, now });
+  const startMarker = join(dirname(lockPath), MARKER_START);
+  const killMarker = join(dirname(lockPath), MARKER_KILL);
+  let result;
+  try {
+    writeFileSync(startMarker, '');
+    result = await run('git', args, {
+      cwd: toplevel,
+      env,
+      now,
+      commit: true,
+      input: Buffer.from(input, 'utf8'),
+      timeoutMs,
+      beforeKill: () => writeFileSync(killMarker, ''),
+    });
+    let lockRemoved = false;
+    let lockLeft = false;
+    if (result.timedOut && existsSync(lockPath)) {
+      if (partial && existsSync(killMarker) && isStaleLock(lockPath, startMarker, killMarker)) {
+        try {
+          rmSync(lockPath, { force: true });
+          lockRemoved = true;
+        } catch {
+          // still there: reported as left below
+        }
+      }
+      lockLeft = existsSync(lockPath);
+    }
+    return {
+      code: result.code,
+      stdout: result.stdout.toString('utf8'),
+      stderr: result.stderr,
+      timedOut: result.timedOut,
+      lockRemoved,
+      lockLeft,
+      lockNotice: lockLeft ? LOCK_LEFT_NOTICE : null,
+    };
+  } finally {
+    rmSync(startMarker, { force: true });
+    rmSync(killMarker, { force: true });
+  }
+}
+
+// The two-marker rule (Q18): the lock's mtime is at least the first marker's minus 2 seconds
+// and strictly below the second marker's. All three come from the same filesystem.
+function isStaleLock(lockPath, startMarker, killMarker) {
+  const lock = statSync(lockPath).mtimeMs;
+  return lock >= statSync(startMarker).mtimeMs - MTIME_SLACK_MS && lock < statSync(killMarker).mtimeMs;
 }
 
 // One `git status --porcelain -z --untracked-files=<untracked>` call, as `{ xy, path }`

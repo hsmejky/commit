@@ -51,8 +51,8 @@ as it arrives and nothing is buffered. M2 tracks the child it is running; `killA
 kills that child's tree the same way, for the entry point's `SIGINT`/`SIGTERM`/`SIGHUP`
 handler.
 
-`run(cmd, args, { cwd, env, now, index?, input?, timeoutMs, readOnly?, history?, commit?, onStdout? }) →
-{ code, stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`);
+`run(cmd, args, { cwd, env, now, index?, input?, timeoutMs, readOnly?, history?, commit?, onStdout?, beforeKill? }) →
+{ code, stdout: Buffer, stderr, timedOut, spawnedAt }` (`stdout` empty with `onStdout`; `beforeKill` is a synchronous callback run right before a timeout's tree kill starts, used only by M10 `commitGuarded` to write its second marker);
 `withDeadline({ deadline, now }, fn) → fn()`; `toplevel(fromCwd, { env })`; `gitVersion({ cwd, env })`; `gitPath(names, { cwd, env, now })` (one
 `rev-parse --git-path` call, absolute paths); `killActive()`. Sources: Q9, Q18.
 
