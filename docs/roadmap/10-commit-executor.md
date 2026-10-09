@@ -443,7 +443,7 @@ item 3; its Seam 1 case, which needs `staged` mode and the FND-10 preload, is IN
 
 **Blocked by:** EXE-12, GIT-07, FND-05, EXE-01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, M15 `deadline`/`cleanupDeadline`, C:commit-release, stories 165, 174.
 
@@ -451,17 +451,17 @@ KD-R103: EXE-10's own two `unstage` calls (commit-executor.mjs:448, :515) ignore
 `git reset` outright — this slice's "a skipped or failed cleanup call keeps ... a notice"
 has no criterion for the *failed* (not skipped) case, and no seam reaches it yet.
 
-- [ ] Seam 1, clock at 535 s elapsed at the start and a `pre-commit` hook that sleeps →
+- [x] Seam 1, clock at 535 s elapsed at the start and a `pre-commit` hook that sleeps →
       exit 5 with that text, the hook's process tree gone, no commit, the run released.
-- [ ] Seam 1: a `post-commit` hook that sleeps → exit 5, `sha` set to the new HEAD, the
+- [x] Seam 1: a `post-commit` hook that sleeps → exit 5, `sha` set to the new HEAD, the
       "did not exit in time" text.
-- [ ] Seam 1: the clock stepped past 580 s before cleanup → the cleanup git calls are not
+- [x] Seam 1: the clock stepped past 580 s before cleanup → the cleanup git calls are not
       spawned, observed through the PATH git shim that logs its argv
       (`docs/spec/testing-modules.md`), and the reply still comes: exit 5 `timeout`,
       `unstaged: null`, the notice "group 1 staging may remain, the next /commit repairs
       it", the lock and run folder kept with `indexReset` set, `call.lock` gone; the next
       `plan --take-over <planId>` resets the staging (EXE-01 item 2).
-- [ ] Seam 1, through `check --plan`: once `commitAll` can end a group `timed-out` with an
+- [x] Seam 1, through `check --plan`: once `commitAll` can end a group `timed-out` with an
       earlier group already committed, INT-02's `checkRefusalEnding` keeps the run (lock and
       folder kept) instead of releasing it out from under that kept staging (review-INT-02
       N2, KD-R86).
