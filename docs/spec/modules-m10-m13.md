@@ -171,6 +171,9 @@ and of the real index.
   refusal (story 166; the mtime rule is in Q18). The stale-lock case is covered by a
   fixture with a real `git commit` timeout, shortened by a clock step that holds at start
   (Clock at Seam 1);
+  `stagedPaths() → string[]` (every path whose index content differs from HEAD: `git diff
+  --cached --ita-invisible-in-index --no-renames --name-only -z`, byte order; an intent-to-add
+  path is left out, KD-R69; read by M18's takeover repair, RUN-23);
   `unstagedAfterReset(preStaged, indexOnly)`; `indexFingerprint()` (a hash of
   `git ls-files --stage -z`: read-only, takes no index lock, works while an `index.lock`
   exists and never rewrites the index; an intent-to-add entry and a staged empty file look

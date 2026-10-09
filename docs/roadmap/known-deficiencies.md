@@ -255,10 +255,10 @@ fixed, delete it here; IDs are never reused.
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
   lists two pairs as gaps because the code producing them is not built: `killed-leftover`
-  (RUN-24) and `index-locked` via M18's takeover repair (RUN-23, RUN-25); EXE-12 already
+  (RUN-24) and `index-locked` via M18's takeover repair (RUN-25); EXE-12 already
   replaced its `git-failed` entry (`tests/commit-all-git-failed.test.js`) and EXE-17 its
   `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: each
-  slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices: RUN-23, RUN-24, RUN-25.
+  slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices: RUN-24, RUN-25.
 - **KD-R99.** (Resolved in EXE-17's second fix round.) EXE-17 built the production path:
   `commitAll` re-reads HEAD when anything throws and compares it with the HEAD the group
   expected before its own `git commit` (not the in-memory `state.head`, already moved by then),

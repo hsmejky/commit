@@ -11,7 +11,11 @@ const { spawn, spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { pathToFileURL } = require('node:url');
+
 const { COMMIT_ENTRY, createCase, runCommit } = require('./helpers/process-seam.js');
+
+const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 
 const TEST_TIMEOUT = { timeout: 90_000 };
 const slash = (p) => p.replace(/\\/g, '/');
@@ -27,15 +31,16 @@ function installHook(c, name, lines) {
   fs.chmodSync(hook, 0o755);
 }
 
-// Two committed files, both modified, `a.txt` staged (so `preStaged` is `[a.txt]`), a
-// `plan --split` run and two stored groups, one file each, as in commit-all-timeout.test.js.
-async function killableRun(t) {
+// Two committed files, both modified, `staged` (default `a.txt`) staged (so `preStaged` is
+// that path), a `plan --split` run and two stored groups, one file each, as in
+// commit-all-timeout.test.js.
+async function killableRun(t, staged = 'a.txt') {
   const c = createCase(t);
   for (const name of ['a', 'b']) c.writeFile(`${name}.txt`, `${name}\n`);
   c.git(['add', '--', 'a.txt', 'b.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
   for (const name of ['a', 'b']) c.writeFile(`${name}.txt`, `${name}\nmore\n`);
-  c.git(['add', '--', 'a.txt']);
+  c.git(['add', '--', staged]);
   const planned = await runCommit(c, ['plan', '--split']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
@@ -131,13 +136,17 @@ test('Seam 1: a SIGKILLed commit, lock aged, plan -> index reset, takeover/reset
   assert.equal(fs.existsSync(runDir), false, 'the old folder is gone after the takeover');
 });
 
-test('Seam 1: group 1 committed, killed in phase (a) of group 2, takeover -> no reset, no reset notice, unstaged notice given', TEST_TIMEOUT, async (t) => {
-  const { c, planId, statePath } = await killableRun(t);
+test('Seam 1: group 1 really committed, killed in phase (a) of group 2, takeover -> no reset, no reset notice, unstaged names the later group\'s path', TEST_TIMEOUT, async (t) => {
+  // `preStaged` is `[b.txt]`, a later group's path; group 1 (`a.txt`) is committed for real.
+  const { c, planId, statePath } = await killableRun(t, 'b.txt');
   c.git(['reset', '-q', '--', '.']);
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', HEADERS[0]]);
   setState(statePath, (state) => {
     state.groups[0].committed = true;
     state.indexReset = true;
   });
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'phase (a): nothing staged');
 
   const result = await runCommit(c, ['plan', '--split', '--take-over', planId]);
 
@@ -145,8 +154,14 @@ test('Seam 1: group 1 committed, killed in phase (a) of group 2, takeover -> no 
   const notices = storedNotices(result);
   assert.match(notices, /replaced the \/commit run/, notices);
   assert.doesNotMatch(notices, /reset the partial staging/, notices);
-  assert.match(notices, /the killed run's reset had unstaged: a\.txt/, notices);
+  assert.match(notices, /the killed run's reset had unstaged: b\.txt(?!.*a\.txt)/, notices);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '');
 });
+
+function assertRepairNotices(notices) {
+  assert.match(notices, /reset the partial staging/, notices);
+  assert.match(notices, /the killed run's reset had unstaged: a\.txt/, notices);
+}
 
 test('Seam 1: the unstaged and reset notices survive a later staged-empty refusal', TEST_TIMEOUT, async (t) => {
   const { c, planId, statePath } = await killableRun(t);
@@ -155,10 +170,75 @@ test('Seam 1: the unstaged and reset notices survive a later staged-empty refusa
   const result = await runCommit(c, ['plan', '--staged', '--take-over', planId]);
 
   assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'usage', detail(result));
   assert.equal(c.git(['diff', '--cached', '--name-only']), '');
-  const notices = result.json.reply.notices.join('\n');
-  assert.match(notices, /reset the partial staging/, notices);
-  assert.match(notices, /the killed run's reset had unstaged: a\.txt/, notices);
+  assertRepairNotices(result.json.reply.notices.join('\n'));
+});
+
+test('Seam 1: the repair notices survive a later timeout', TEST_TIMEOUT, async (t) => {
+  const { c, planId, runDir, statePath } = await killableRun(t);
+  setState(statePath, (state) => { state.indexReset = true; });
+  // The clock steps past 540 s once the old folder is gone, which is after the repair.
+  const schedulePath = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedulePath, JSON.stringify([
+    { event: { type: 'pathGone', path: path.join(runDir, 'state.json') }, elapsedMs: 541_000 },
+  ]));
+
+  const result = await runCommit(c, ['plan', '--split', '--take-over', planId], {
+    nodeArgs: ['--import', CLOCK_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+  });
+
+  assert.equal(result.exitCode, 5, detail(result));
+  assert.equal(result.json.error.kind, 'timeout', detail(result));
+  assertRepairNotices(result.json.reply.notices.join('\n'));
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'the repair stays done');
+});
+
+// A plan after a repairing takeover on a tree with an untracked file (a `confirm` reason), with
+// the worker plan written; returns the case and the new run's `planId`.
+async function plannedAfterRepair(t) {
+  const { c, planId, statePath } = await killableRun(t);
+  setState(statePath, (state) => { state.indexReset = true; });
+  c.writeFile('c.txt', 'three\n');
+  const planned = await runCommit(c, ['plan', '--split', '--take-over', planId]);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  fs.writeFileSync(path.join(planned.json.runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: [{ header: 'feat: x', body: null, files: ['a.txt', 'b.txt', 'c.txt'], hunks: [] }],
+    notIncluded: [],
+  }));
+  return { c, planId: planned.json.planId };
+}
+
+test('Seam 1: the repair notices reach the confirm handback and the committed reply', TEST_TIMEOUT, async (t) => {
+  const { c, planId } = await plannedAfterRepair(t);
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
+  assertRepairNotices(checked.json.reply.notices.join('\n'));
+
+  const committed = await runCommit(c, ['commit', '--plan', planId, '--all', '--confirmed']);
+
+  assert.equal(committed.exitCode, 0, detail(committed));
+  assert.equal(committed.json.reply.status, 'committed', detail(committed));
+  assertRepairNotices(committed.json.reply.notices.join('\n'));
+});
+
+test('Seam 1 (KD-R69): a pre-run intent-to-add path does not count as staged, so the repair still resets', TEST_TIMEOUT, async (t) => {
+  const { c, planId, statePath } = await killableRun(t);
+  setState(statePath, (state) => { state.indexReset = true; });
+  c.writeFile('c.txt', 'three\n');
+  c.git(['add', '-N', '--', 'c.txt']);
+
+  const result = await runCommit(c, ['plan', '--split', '--take-over', planId]);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.match(storedNotices(result), /reset the partial staging/);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'a.txt reset; the i-t-a mark is dropped (accepted loss)');
 });
 
 test('Seam 1: no indexReset in the old state -> no repair, the index is left alone', TEST_TIMEOUT, async (t) => {
@@ -176,7 +256,8 @@ test('Seam 1: staging beyond the killed group is left untouched (killedLeftover 
   setState(statePath, (state) => { state.indexReset = true; state.preStaged = []; });
   c.git(['add', '--', 'b.txt']);
 
-  await runCommit(c, ['plan', '--split', '--no-user', '--take-over', planId]);
+  const result = await runCommit(c, ['plan', '--split', '--take-over', planId]);
+  assert.equal(result.exitCode, 0, detail(result));
 
   assert.equal(c.git(['diff', '--cached', '--name-only']), 'a.txt\nb.txt\n', 'nothing was reset');
 });
