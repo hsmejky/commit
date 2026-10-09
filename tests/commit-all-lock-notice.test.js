@@ -63,11 +63,14 @@ const lockOf = (c) => path.join(c.repoDir, '.git', 'index.lock');
 for (const mode of ['split', 'staged']) {
   test(`AC1: ${mode}, a hook that creates index.lock then sleeps, killed at the deadline -> exit 5, lock kept, notice`, TEST_TIMEOUT, async (t) => {
     const { c, planId } = await modeRun(t, mode);
-    installHook(c, 'pre-commit', [`: > '${slash(lockOf(c))}'`, 'exec sleep 120']);
+    const started = path.join(c.root, 'hook.started');
+    installHook(c, 'pre-commit', [`: > '${slash(lockOf(c))}'`, `: > '${slash(started)}'`, 'exec sleep 120']);
 
     const result = await runAt535(c, planId);
 
     assert.equal(result.exitCode, 5, detail(result));
+    assert.ok(fs.existsSync(started), 'the hook ran before the timeout');
+    assert.ok(fs.existsSync(started), 'the hook ran before the timeout');
     assert.equal(result.json.error.kind, 'timeout', detail(result));
     assert.ok(fs.existsSync(lockOf(c)), 'a plain commit never removes the lock');
     assert.ok(result.json.notices.includes(LEFT_NOTICE), JSON.stringify(result.json.notices));
@@ -75,11 +78,14 @@ for (const mode of ['split', 'staged']) {
 
   test(`AC2: ${mode}, no lock left after a killed commit -> no index.lock notice`, TEST_TIMEOUT, async (t) => {
     const { c, planId } = await modeRun(t, mode);
-    installHook(c, 'pre-commit', ['exec sleep 120']);
+    const started = path.join(c.root, 'hook.started');
+    installHook(c, 'pre-commit', [`: > '${slash(started)}'`, 'exec sleep 120']);
 
     const result = await runAt535(c, planId);
 
     assert.equal(result.exitCode, 5, detail(result));
+    assert.equal(result.json.error.kind, 'timeout', detail(result));
+    assert.ok(fs.existsSync(started), 'the hook ran before the timeout');
     assert.equal(fs.existsSync(lockOf(c)), false);
     assert.ok(!result.json.notices.some((n) => /index\.lock/.test(n)), JSON.stringify(result.json.notices));
   });
