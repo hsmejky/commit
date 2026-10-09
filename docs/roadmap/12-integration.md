@@ -139,31 +139,31 @@ confirmation is pending is refused.
 
 **Blocked by:** EXE-04, EXE-22, INT-02, RUN-18.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q16, C:confirmation-triggers, C:check, C:commit-release, C:reply-and-handback
 (`confirm` row), architectural decision "Confirmation is bound to its answer", stories 87,
 91, 92, 208.
 
-- [ ] Seam 1: two groups → `check` exits 0 with a `confirm` handback: `yes` (`run` with
+- [x] Seam 1: two groups → `check` exits 0 with a `confirm` handback: `yes` (`run` with
       `--confirmed`, `timeoutMs` 600000), `edit`, `one`, `no`; `ifNoUser` `yes` without
       `humanOnly`
-- [ ] The question text is exactly "Commit as proposed? To change it, type your changes under
+- [x] The question text is exactly "Commit as proposed? To change it, type your changes under
       Other."; `edit` is the `needsText` (`Other`) answer, its `respawn` `resume` plus the
       user's words as `{text}`; `one` is offered only in `split` with more than one group and
       its `respawn` holds `resume: <id>` then `edit: one`
-- [ ] The confirm block shows each group's header, body and files (cap 20 per group) (story
+- [x] The confirm block shows each group's header, body and files (cap 20 per group) (story
       91)
-- [ ] Running the `yes` command verbatim commits both groups in order and replies
+- [x] Running the `yes` command verbatim commits both groups in order and replies
       `committed`
-- [ ] `commit --plan <id> --all` without `--confirmed` → exit 1 `usage` `unconfirmed`, run
+- [x] `commit --plan <id> --all` without `--confirmed` → exit 1 `usage` `unconfirmed`, run
       kept (story 208)
-- [ ] Running the `no` answer's `release` command verbatim → exit 0, `status: "nothing"`,
+- [x] Running the `no` answer's `release` command verbatim → exit 0, `status: "nothing"`,
       the lock and folder gone, the real index unchanged (story 92)
-- [ ] The `staged` mode's skipped/`scanIgnore` and resumed confirm rows move from pure-unit
+- [x] The `staged` mode's skipped/`scanIgnore` and resumed confirm rows move from pure-unit
       to Seam 1 through this slice's confirm route (KD-R94); `tests/plan-attribution-flag.test.js`'s
       `staged` case is rebuilt at Seam 1 through the same trigger (KD-R95)
-- [ ] Once this slice's `commit --confirmed` reply exists, assert RUN-21's takeover notice
+- [x] Once this slice's `commit --confirmed` reply exists, assert RUN-21's takeover notice
       in it on a tree needing confirmation after a takeover; closes KD-R102's INT-09 half
       (docs/roadmap/known-deficiencies.md)
 
@@ -183,6 +183,9 @@ stories 88, 152, 153.
 - [ ] Seam 1: one modified file plus one new file in one group → `confirm` handback naming
       the new file; `yes` commits both
 - [ ] Gitignored and hidden files are not units and are not in `notIncluded`
+- [ ] KD-R104: rebuild the forged-`awaitingConfirm` three-group case in `tests/commit-all.test.js`
+      over a real `check` confirm handback, and add the zero-stored-groups `unconfirmed` vs
+      `no-groups` pair
 
 
 ## INT-12: Resumed runs always confirm; `one` re-plans as one group
