@@ -47,10 +47,13 @@ test('story 83: a staged subset → one commit of exactly the staged content, th
   seed(c, { 'a.txt': 'a\n', 'b.txt': 'b\n', 'c.txt': 'c\n' });
   c.writeFile('a.txt', 'a2\n');
   c.git(['add', '--', 'a.txt']);
+  c.writeFile('a.txt', 'a3 unstaged\n');
   c.writeFile('b.txt', 'b2\n');
   c.writeFile('new.txt', 'n\n');
   const planned = await runCommit(c, ['plan', '--staged']);
   assert.equal(planned.exitCode, 0, detail(planned));
+  assert.equal(planned.json.mode, 'staged', detail(planned));
+  assert.equal(planned.json.hunks.counts.units, 1, detail(planned));
   const { planId, runDir } = planned.json;
   writeGroup(runDir, 'feat: change a');
 
@@ -60,8 +63,9 @@ test('story 83: a staged subset → one commit of exactly the staged content, th
   assert.equal(checked.json.commits.length, 1, detail(checked));
   assert.equal(c.git(['show', '--format=', '--name-only', 'HEAD']).trim(), 'a.txt');
   assert.equal(c.git(['rev-list', '--count', 'HEAD']).trim(), '2');
-  assert.equal(c.git(['status', '--porcelain']).split('\n').filter(Boolean).sort().join('|'), ' M b.txt|?? new.txt');
-  assert.match(String(checked.json.reply.text ?? checked.stdout), /2 files|b\.txt/, detail(checked));
+  assert.equal(c.git(['status', '--porcelain']).split('\n').filter(Boolean).sort().join('|'), ' M a.txt| M b.txt|?? new.txt');
+  assert.equal(c.git(['show', 'HEAD:a.txt']), 'a2\n', 'commit holds the staged text');
+  assert.match(checked.json.reply.text, /3 files left: a\.txt, b\.txt, new\.txt/, detail(checked));
 });
 
 test('story 84: a staged new directory of 60 files commits whole', async (t) => {
@@ -89,7 +93,7 @@ test('story 225: --staged with an empty index → exit 1 usage (domain code stag
 
   assert.equal(result.exitCode, 1, detail(result));
   assert.equal(result.json.error.kind, 'usage', detail(result));
-  assert.match(result.json.error.message, /nothing is staged/, detail(result));
+  assert.equal(result.json.error.message, 'nothing is staged any more: stage the changes again, or run /commit to group all changes', detail(result));
   assertGone(c);
 });
 
