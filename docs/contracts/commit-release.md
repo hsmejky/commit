@@ -182,8 +182,8 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
   `remaining` the groups not committed. A stop on the budget is not a failure: exit 0,
   `failed: null`, `remaining` set, and a `continue` handback in `reply`. M16 `commitAll`
   builds this handback itself (EXE-16); `check`'s in-process `commit --all` puts it in
-  `reply.handback` (INT-02). Interim: a direct `commit --all` call has no `reply` yet
-  (KD-R73), so it still returns the handback as a top-level `handback` field.
+  `reply.handback` (INT-02). A direct `commit --all` that ends without
+  a failure carries the same `reply` (INT-09); its failure path has none yet (KD-R73).
 - Exit 4 fills `gitOutput` with git's stdout and stderr verbatim (unescaped, uncut); what a
   caller shows through `text` is the capped, escaped copy of it ([Reply and
   handback](reply-and-handback.md)). Exit 3 fills `error` and adds `hits`.
@@ -191,9 +191,10 @@ A failed call (group 2 of 3 fails at `git commit`, exit 4):
   "another commit was made during group `n`; later groups refused" case, or the release
   after the last group could not remove the run folder (a cleanup notice, [run
   folder](run-folder.md)). `check`'s in-process `commit --all` merges them with `check`'s own
-  into `notices` and `reply.notices` (INT-02, [check](check.md)). Interim: a direct
-  `commit --all` call has no `reply` yet (KD-R73), so this top-level field stays until it
-  does.
+  into `notices` and `reply.notices` (INT-02, [check](check.md)). A direct `commit --all`'s `reply.notices`
+  also lead with the notices `plan` stored (a takeover, [run folder](run-folder.md)); this
+  top-level field keeps only the call's own (INT-09). Its failure path has no `reply` yet
+  (KD-R73).
 - `unstaged`: present on every `commit --all` output, run-ending or mid-run (e.g. a `lock`
   refusal between groups), gated only by the state file's `indexReset: true`; `indexReset`
   decides only this report, never whether to unstage. `[]` once `indexReset` is true (an

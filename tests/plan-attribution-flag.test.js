@@ -12,9 +12,8 @@
 // AC1 (split, below) runs through a real Seam-1 `check`. MSG-08's own tests
 // (tests/commit-all-reword.test.js) now rebuild the `reword` cases at Seam 1 too, reading the
 // committed message's trailer as the oracle instead of the stored flag (KD-R95, narrowed).
-// The `staged` case below still calls M14 `validatePlan` in-process: KD-R95
-// (docs/roadmap/known-deficiencies.md) explains why a real `check` cannot reach its stored
-// `attribution` flag yet.
+// The `staged` case below is Seam 1 too (INT-09, KD-R95): a size-skipped file makes `check`
+// stop at a `confirm` handback with the run kept, so its stored flag is readable.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,10 +21,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
-const { loadLib } = require('./helpers/load-lib.js');
-const { Q6_DEFAULT_VALUES: DEFAULT_VALUES } = require('./helpers/q6-defaults.js');
 
-const DEFAULT_TRAILER = 'Co-Authored-By: Claude <noreply@anthropic.com>';
 
 function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
@@ -86,17 +82,25 @@ test('Seam 1: attribution resolved to null stores attribution: false on every gr
 
 // --- `staged`: attribution always applies when a trailer is resolved -----------------------
 
-test('validatePlan: staged stores attribution: true when a trailer is resolved', () => {
-  const UNITS = [{ id: 'h1', path: 'a.txt', status: 'M' }];
-  const state = { mode: 'staged', units: UNITS, config: { values: DEFAULT_VALUES }, attribution: { trailer: DEFAULT_TRAILER } };
+// Real Seam 1 (KD-R95, INT-09): a `staged` run with a size-skipped file gets a `confirm`
+// handback, which keeps the run, so `state.json`'s stored groups can be read back.
+test('Seam 1: staged stores attribution: true when a trailer is resolved', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'big.txt': 'keep' + String.fromCharCode(10) });
+  // Added lines well past the scanner's 1 MB size skip.
+  c.writeFile('big.txt', 'keep' + String.fromCharCode(10) + ('y'.repeat(1023) + String.fromCharCode(10)).repeat(1100));
+  c.git(['add', '--', 'big.txt']);
+  const planned = await runCommit(c, ['plan', '--staged']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId } = planned.json;
+  const runDir = path.join(c.repoDir, '.commit-plan', planId);
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker', groups: [{ header: 'feat: x', body: null, files: ['big.txt'], hunks: [] }], notIncluded: [],
+  }));
 
-  return (async () => {
-    const { validatePlan } = await loadLib('plan-validator');
-    const out = validatePlan(Buffer.from(JSON.stringify({
-      groups: [{ header: 'feat: x', body: null, files: [], hunks: [] }],
-      notIncluded: [],
-    })), state);
-    assert.equal(out.ok, true);
-    assert.equal(out.stored[0].attribution, true);
-  })();
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
+  assert.equal(readState(runDir).groups[0].attribution, true);
 });

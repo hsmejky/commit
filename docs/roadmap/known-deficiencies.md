@@ -49,7 +49,8 @@ fixed, delete it here; IDs are never reused.
   failures included, carries `reply`. RPL-04 built the `failed` reply for every `plan`
   refusal, but `release`'s and `commit`'s own `env` refusals, and `commit`'s and `check`'s
   lint/scan failures, still go through the plain `refusalFailure` with no `reply` at all. No
-  roadmap criterion currently names this gap. Fix: add it as an explicit INT-02-or-later
+  roadmap criterion currently names this gap. (INT-09 gave a direct `commit --all`'s success
+  path its `committed`/`continue` reply; its failure path is still reply-less.) Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
 - **KD-R106.** EXE-11 AC5's "the report says the index is untouched" is not reachable: a
   `commit --all` refusal before any group reached (c) has `unstaged: null` (asserted at
@@ -296,14 +297,12 @@ fixed, delete it here; IDs are never reused.
   accepted-gap list: INT-31 cannot close until this case exists. Fix: once EXE-19 and EXE-17
   land, add the case and drop this row. Slice: INT-31.
 - **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
-  `confirm` handback and the `committed` reply on a tree needing confirmation) is covered
-  only in part by `tests/plan-takeover.test.js`: the `confirm` handback carries the notice
-  in `reply.notices`, and the `--no-user` route's in-process `committed` reply from `check`
-  carries it, but no reply `text` renders notices yet (the `Notices:` block is RPL-05's),
-  and the interactive route's `committed` reply comes from `commit --confirmed`, whose reply
-  is INT-09's (`commit --plan --all` today outputs no `reply` and `notices: []`). Fix: once
-  RPL-05 and INT-09 land, assert the notice in the handback's `text` and in the `commit
-  --confirmed` reply, and drop this row. Slice: RUN-21 (with RPL-05, INT-09).
+  `confirm` handback and of the `committed` reply) is covered only in part by
+  `tests/plan-takeover.test.js`: the `confirm` handback and `commit --confirmed`'s
+  `committed` reply (INT-09) carry the notice in `reply.notices`, but no reply `text` renders
+  notices yet (the `Notices:` block is RPL-05's). Fix: once RPL-05 lands, assert the notice in
+  the handback's and the `committed` reply's `text`, and drop this row. Slice: RUN-21 (with
+  RPL-05).
 - **KD-R104.** EXE-22's AC2/AC3 case (`tests/commit-all.test.js`, the `--confirmed` test)
   still forges `state.awaitingConfirm = true` through `threeGroupRun`'s `edit` hook instead
   of reaching `confirm` through a real `check` (RUN-18's route), unlike AC1
@@ -466,40 +465,16 @@ Plan text that depends on a design fix; fix the design and the slice together.
   kind-specific rule text is wanted instead and amend the contract). Slices: RPL-08 (Handback
   commands and caller-trust fixtures) closes this row once every handback kind carries real
   answers and the rule.
-- **KD-R94.** RUN-17's Seam-1 coverage of C:confirmation-triggers' `staged` row is missing.
-  Every `staged` row (no trigger despite a new file; a skipped/`scanIgnore` file; the
-  `resumed` "edited plan" row) is pure-unit-tested only, labeled "pure fallback (KD-R94)" and
-  not "Seam 1" (`tests/run-policy-confirm.test.js`'s `computeConfirm` cases), per the mode
-  gate RUN-17 added. Since RUN-18, a `staged` run (always interactive: `--no-user` needs
-  `--split` or `--reword`) whose `confirm` is set routes to M15 `afterCheck`'s `confirm` and
-  keeps the run without calling `commitAll`, so the skipped/`scanIgnore` and `resumed` rows
-  are reachable at Seam 1 now (a probe of the skipped row returned `confirm: { reasons:
-  ["skipped file big.txt"], humanOnly: true }` and a `confirm` handback) but are not rebuilt
-  yet. The no-trigger row (`confirm: null`) still routes to `commit`, where `commitAll`
-  throws `notBuilt('commit --all in staged mode', 'EXE-19')` before `check`'s real output
-  can reach the caller, caught only by `commit.cjs`'s top-level handler as an `internal`
-  failure with no `confirm` field. Where: `plugin/scripts/lib/commit-executor.mjs`
-  `commitAll`; `tests/run-policy-confirm.test.js`. Fix: rebuild the skipped/`scanIgnore` and
-  `resumed` `staged` cases as Seam-1 rows now (the `confirm` route), and the no-trigger row
-  once EXE-19 lands; then drop this row. Slices: INT-09 (confirm-route tests), EXE-19 (the
-  no-trigger row).
-- **KD-R95.** PLN-07's `staged` attribution-flag case (`tests/plan-attribution-flag.test.js`,
-  the `staged stores attribution: true` test) calls M14 `validatePlan` in-process over a real
-  Seam-1 `plan`/`state.json` state, not through `check`'s own output. The `split` case was
-  rebuilt at Seam 1 (a hunk-level worker plan: INT-02 routes only whole-file groups into
-  `commit --all`, so a hunk-level `check` stops at its validated `state.json` groups, nothing
-  committed), and MSG-08 rebuilt the three `reword` cases at Seam 1 too
-  (`tests/commit-all-reword.test.js`: a real `check --plan` commits a whole-file reword for
-  real, so the committed message's trailer — not the released run's `state.json` — is the
-  observable oracle for the stored `attribution` flag). `staged` never produces a hunk-level
-  `files` entry (`plan-validator.mjs`'s `validateSingleGroupPlan` always stores `hunks:
-  null`), so its `check` call is always whole-file and throws `notBuilt` first (KD-R94)
-  before a real commit exists to observe. RUN-18 (landed) gives it a kept run instead: a
-  `staged` run with a skipped/`scanIgnore` file gets a `confirm` handback, so its stored
-  `attribution` is Seam-1-readable from `state.json` the way the `split` case already reads
-  it. Where: `tests/plan-attribution-flag.test.js`. Fix: rebuild the `staged` case at Seam 1
-  through that trigger (mechanism ready, out of RUN-18's own acceptance criteria) and drop
-  this row. Slices: INT-09 (same confirm-route trigger as KD-R94).
+- **KD-R94.** RUN-17's Seam-1 coverage of C:confirmation-triggers' `staged` no-trigger row
+  (`confirm: null`) is missing. INT-09 moved the skipped/`scanIgnore` and `resumed` `staged`
+  rows to Seam 1 (`tests/run-policy-confirm.test.js`, through the `confirm` route). The
+  no-trigger row still routes to `commit`, where `commitAll` throws `notBuilt('commit --all in
+  staged mode', 'EXE-19')` before `check`'s real output can reach the caller, caught only by
+  `commit.cjs`'s top-level handler as an `internal` failure with no `confirm` field; it and
+  the unreachable "resumed but not interactive" row stay pure-unit ("pure fallback
+  (KD-R94)"). Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`;
+  `tests/run-policy-confirm.test.js`. Fix: rebuild the no-trigger row once EXE-19 lands; then
+  drop this row. Slice: EXE-19.
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose
