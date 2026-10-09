@@ -364,6 +364,7 @@ test('Seam 1, staged: a size-skipped file → confirm reasons "skipped file <pat
   assert.equal(checked.exitCode, 0, detail(checked));
   assert.deepEqual(checked.json.confirm, { reasons: ['skipped file big.txt'], humanOnly: true });
   assert.equal(checked.json.reply.handback.kind, 'confirm');
+  assert.deepEqual(checked.json.reply.handback.ifNoUser, { answer: 'no', returnToParent: true });
 });
 
 test('Seam 1, staged: a scanIgnore change → confirm reasons "scanIgnore change <path>", humanOnly true', async (t) => {

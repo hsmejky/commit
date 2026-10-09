@@ -3,7 +3,9 @@
 // INT-16 (docs/roadmap/12-integration.md; Q10, Q16, Q17, C:confirmation-triggers, stories 89, 90,
 // 149) at Seam 1: an included size-skipped file, or a change to the repo config's `scanIgnore`,
 // makes the confirmation `humanOnly` in every mode (`ifNoUser` `no` plus `returnToParent`); an
-// edit to another key of that file alone is no trigger.
+// edit to another key of that file alone is no trigger. The `staged` rows of the same triggers
+// (Seam 1, `plan --staged`) are in run-policy-confirm.test.js (:354, :369). A reword has no scan,
+// so it is never a trigger (C:confirmation-triggers row 3).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -117,7 +119,12 @@ test('both keys edited, only the other key hunk included -> still humanOnly (eve
   const { planId, runDir } = planned.json;
   const ids = unitIds(runDir, CONFIG);
   assert.ok(ids.length >= 2, `two hunks expected: ${ids}`);
-  const bodyHunk = state(runDir).units.filter((unit) => unit.path === CONFIG).at(-1).id;
+  // Pick the hunk by content: the block of hunks.txt that carries the `body` key edit.
+  const blocks = fs.readFileSync(path.join(runDir, 'hunks.txt'), 'utf8').split(/^(?=### )/m);
+  const bodyBlock = blocks.filter((block) => block.startsWith('### ') && block.includes('+  "body": "optional"'));
+  assert.equal(bodyBlock.length, 1, `one body hunk expected: ${blocks.join('|')}`);
+  const bodyHunk = /^### (\S+)/.exec(bodyBlock[0])[1];
+  assert.ok(ids.includes(bodyHunk), `known unit ${bodyHunk} in ${ids}`);
   const rest = ids.filter((id) => id !== bodyHunk);
   writeGroups(
     runDir,
@@ -129,4 +136,5 @@ test('both keys edited, only the other key hunk included -> still humanOnly (eve
 
   assert.equal(checked.exitCode, 0, detail(checked));
   assertHumanOnly(checked);
+  assert.deepEqual(checked.json.confirm.reasons, [`scanIgnore change ${CONFIG}`]);
 });
