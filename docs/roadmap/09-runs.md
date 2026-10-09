@@ -799,6 +799,8 @@ never deletes a renamed lock.
       `indexReset` and an uncommitted group, placed after `peek` (injected between steps 3
       and 7) → exit 6 `diff-changed` (`index-changed`) with the repair-first notice; the
       chain remains, and the run's own lock and folder are gone.
+  Not covered (KD-R113): the repair-failure notice naming the deadline when the scope
+      expired has no Seam 1 trigger.
 
 
 ## RUN-26: manual check: a lock put-back that meets `EEXIST`

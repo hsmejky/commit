@@ -260,6 +260,15 @@ fixed, delete it here; IDs are never reused.
   the 2 kB on everything but `callerRule` and `handback`, and `text` <= 4 kB in full. Fix:
   once the prompt slice has shortened the rule texts, assert the full 2 kB there. Slice:
   the prompt slice (RPL-05 left it open).
+- **KD-R113.** RUN-25's deadline naming in `repairFailure` is untested: when a takeover's repair
+  fails because the deadline cut a git call off (`ctx.scope.expired`), the "repair failed"
+  notice names the deadline (`DEADLINE_TEXT`) instead of `git reset failed`, and a clock past
+  the deadline alone does not (`plugin/scripts/lib/workflows.mjs`, `repairFailure`). No case
+  covers it because Seam 1 has no deterministic deadline trigger (the stepping clock does not
+  make a scoped M2 git call expire at a chosen point), and stretching a seam is not allowed.
+  Fix: once a Seam 1 fault or clock shape can expire the scope during the repair's `git reset`,
+  assert the notice text on that run (and the `timed-out` ending); otherwise a user seam
+  decision (as KD-R77's). Slice: RUN-25 follow-up.
 
 ## Design sync
 
