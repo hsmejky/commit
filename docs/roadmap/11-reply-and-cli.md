@@ -170,14 +170,14 @@ replaces every scan-hit span of a quoted message with `[<pattern-id>]`.
 
 **Blocked by:** INT-15, RUN-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M17, C:reply-and-handback, C:scan-patterns, Q10, stories 140, 141.
 
-- [ ] Seam 1: a bare path → two lines, unquoted; a path with a space → single-quoted; a path
+- [x] Seam 1: a bare path → two lines, unquoted; a path with a space → single-quoted; a path
       with `'` or `’` → only "commit by hand"
-- [ ] No `&&` joins the two lines
-- [ ] A message whose `generic-secret` span contains a `github-token` span → one
+- [x] No `&&` joins the two lines
+- [x] A message whose `generic-secret` span contains a `github-token` span → one
       `[generic-secret]`, no part of the value in any output
 
 
