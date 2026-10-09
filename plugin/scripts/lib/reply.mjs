@@ -42,8 +42,7 @@ export const BASE_CALLER_RULE = 'Show text to the user verbatim; a subagent puts
 
 /**
  * INT-05 (C:reply-and-handback "Handback rule, added when `handback` is set"): appended to
- * `BASE_CALLER_RULE` for a `lock` handback only — the other handback kinds' own rule text is
- * later slices' (`modeChoice` INT-13's, `lintFailed` and `continue` RPL's).
+ * `BASE_CALLER_RULE` for every handback (RPL-08, KD-R93).
  */
 export const HANDBACK_RULE = 'If question is null, run the only answer. Otherwise ask question '
   + 'with AskUserQuestion; the answers without needsText are the options, and the user\'s own '
@@ -211,6 +210,35 @@ function confirmHandback(facts) {
 export const LINT_FAILED_QUESTION = 'Lint failed. Let a new worker fix it, or stop? To dictate the '
   + 'message, type it under Other.';
 
+// RPL-08 (C:reply-and-handback handback table, `lintFailed`): the `retry` answer's edit text is
+// at most this many characters, cut at the end when the errors run longer.
+const MAX_RETRY_EDIT_CHARS = 500;
+const RETRY_EDIT_PREFIX = 'fix these lint errors: ';
+
+// The `lintFailed` handback's answers: `retry` (a new worker fixes the errors), `edit` (the
+// user dictates; none when every error is a shape error, since dictated text cannot fix a
+// shape) and `no` (`release`). Neither `run` carries `--confirmed`.
+function lintFailedHandback(facts) {
+  const { planId, scriptPath } = facts;
+  const errors = renderErrors(facts.errors ?? []).join('; ');
+  const retryText = Array.from(`${RETRY_EDIT_PREFIX}${errors}`).slice(0, MAX_RETRY_EDIT_CHARS).join('');
+  const answers = [{ label: 'retry', respawn: `resume: ${planId}\nedit: ${retryText}` }];
+  if (facts.shapeOnly !== true) {
+    answers.push({ label: 'edit', respawn: `resume: ${planId}\nedit: {text}`, needsText: true });
+  }
+  answers.push({
+    label: 'no',
+    run: build({ scriptPath, subcommand: 'release', args: ['--plan', planId] }),
+    timeoutMs: 60_000,
+  });
+  return {
+    kind: 'lintFailed',
+    question: LINT_FAILED_QUESTION,
+    answers,
+    ifNoUser: { answer: 'no', returnToParent: true },
+  };
+}
+
 // A lint failure's errors as `check` gives them (C:check), one per line.
 function renderErrors(errors) {
   // A reason can repeat a path, so its control characters are escaped here (RPL-06).
@@ -309,7 +337,9 @@ export function reply(facts) {
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
     firstLines = [modeChoiceQuestion(facts)];
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
+    if (facts.scriptPath === undefined) throw new Error('reply: a lintFailed handback needs scriptPath');
     firstLines = [LINT_FAILED_QUESTION];
+    handback = lintFailedHandback(facts);
   } else if (facts.status === 'handback' && facts.kind === 'confirm') {
     // INT-09: the confirmation block (Q16) and the answers; every caller injects `scriptPath`.
     if (facts.scriptPath === undefined) {
@@ -353,9 +383,8 @@ export function reply(facts) {
     text,
     commits: commits.map((commit) => ({ ...commit })),
     notices: facts.notices === undefined ? [] : [...facts.notices],
-    // INT-05, INT-09: the `lock` and `confirm` handbacks add the handback rule so far.
-    callerRule: facts.status === 'handback' && (facts.kind === 'lock'
-      || facts.kind === 'confirm')
+    // RPL-08 (KD-R93): every handback adds the handback rule (C:reply-and-handback `callerRule`).
+    callerRule: facts.status === 'handback'
       ? `${BASE_CALLER_RULE} ${HANDBACK_RULE}`
       : BASE_CALLER_RULE,
     handback,

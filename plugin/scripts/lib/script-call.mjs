@@ -114,3 +114,21 @@ export function build({ scriptPath, subcommand, args = [] }) {
   }
   return [`node "${quoted}"`, subcommand, ...args].join(' ');
 }
+
+/**
+ * RPL-08 (C:cli-and-exit-codes `env`, C:reply-and-handback `run`): the `env` refusal message for
+ * an install path `build` could not emit unescaped, or null. Checked on the path with Windows
+ * separators converted to `/` (the form `build` emits), so a native Windows path is not
+ * refused for its separators; a `\` left after the conversion is part of a POSIX file name.
+ * Besides `build`'s own forbidden characters, `\` is refused here.
+ *
+ * @param {string} scriptPath the entry point's own path.
+ * @returns {string | null}
+ */
+export function installPathRefusal(scriptPath) {
+  const quoted = WINDOWS_ABSOLUTE.test(scriptPath) ? scriptPath.replaceAll('\\', '/') : scriptPath;
+  if (!PATH_REFUSED.test(quoted) && !quoted.includes('\\')) return null;
+  return 'the install path of commit.cjs holds a character a shell would read specially ($, a backtick, '
+    + '", \\, a typographic double quote, ! or a control character); install the plugin under a '
+    + 'path without one';
+}

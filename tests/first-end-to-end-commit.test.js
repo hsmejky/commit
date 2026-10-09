@@ -31,11 +31,12 @@ const GUARD_NOTICE = 'Guard hook did not run: `node` missing from the hook\'s PA
   + 'disabled, or `disableAllHooks` set. Direct `git commit` is not blocked.';
 
 let BASE_CALLER_RULE;
+let HANDBACK_RULE;
 let scriptCall;
 let workflows;
 let lockKeptNotice;
 beforeEach(async () => {
-  ({ BASE_CALLER_RULE } = await loadLib('reply'));
+  ({ BASE_CALLER_RULE, HANDBACK_RULE } = await loadLib('reply'));
   scriptCall = await loadLib('script-call');
   workflows = await loadLib('workflows');
   ({ lockKeptNotice } = await loadLib('run'));
@@ -234,7 +235,7 @@ test('a budget stop after group 1 under check: the continue handback moves into 
   assert.equal(json.reply.planId, planId);
   assert.deepEqual(json.reply.commits, json.commits);
   assert.deepEqual(json.reply.notices, [GUARD_NOTICE]);
-  assert.equal(json.reply.callerRule, BASE_CALLER_RULE);
+  assert.equal(json.reply.callerRule, `${BASE_CALLER_RULE} ${HANDBACK_RULE}`, "every handback adds the handback rule (KD-R93)");
   assert.deepEqual(json.reply.handback, {
     kind: 'continue',
     question: null,

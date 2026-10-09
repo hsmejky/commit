@@ -15,6 +15,7 @@ import { parseArgs } from 'node:util';
 // The minted `planId` form is M12's (C:run-folder); M1 refuses any other `--plan` or
 // `--take-over` value as `usage`.
 import { isValidPlanId } from './run.mjs';
+import { installPathRefusal } from './script-call.mjs';
 import * as workflows from './workflows.mjs';
 
 // The M18 workflow each subcommand routes to, as far as built. `plan --hunks` is its own
@@ -233,6 +234,10 @@ export function parseArgv(subcommand, args) {
  *   print on stdout and the exit code.
  */
 export async function main(argv, env) {
+  // RPL-08 (C:cli-and-exit-codes `env`): before any work, so every `run` the replies build is literal.
+  const { scriptPath } = env;
+  const installRefusal = typeof scriptPath === 'string' ? installPathRefusal(scriptPath) : null;
+  if (installRefusal !== null) return failure('env', installRefusal);
   const subcommand = argv[0];
   const expected = `expected one of ${SUBCOMMANDS.join(', ')}`;
   if (subcommand === undefined) {

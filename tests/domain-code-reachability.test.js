@@ -278,9 +278,17 @@ const ROWS = [
     kind: 'env',
     exitCode: 1,
     pairs: [
-      // The entry point's own refusals: an install path with a shell-special character is
-      // RPL-08's, not built yet; a Node below 22 is an accepted gap (REL-04).
-      { producer: 'entry point', gap: { kd: 'KD-R98', accepted: 'Only a Node below 22' } },
+      // The entry point's own refusals: an install path with a shell-special character
+      // (tests/handback-commands.test.js); a Node below 22 stays an accepted gap (REL-04).
+      {
+        producer: 'entry point',
+        async seam1Case(t) {
+          const c = createCase(t);
+          const dest = path.join(c.root, 'in$stall');
+          fs.cpSync(path.join(__dirname, '..', 'plugin', 'scripts'), dest, { recursive: true });
+          return runCommit(c, ['plan'], { script: path.join(dest, 'commit.cjs') });
+        },
+      },
       {
         producer: 'M3',
         // GIT-01: no git on PATH (tests/plan-pre-folder-refusals.test.js).

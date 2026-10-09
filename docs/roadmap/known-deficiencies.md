@@ -254,13 +254,11 @@ fixed, delete it here; IDs are never reused.
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists three pairs as gaps because the code producing them is not built: `env` via the entry
-  point for an install path with a shell-special character (RPL-08), `killed-leftover`
+  lists two pairs as gaps because the code producing them is not built: `killed-leftover`
   (RUN-24) and `index-locked` via M18's takeover repair (RUN-23, RUN-25); EXE-12 already
   replaced its `git-failed` entry (`tests/commit-all-git-failed.test.js`) and EXE-17 its
   `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: each
-  slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
-  RPL-08, RUN-23, RUN-24, RUN-25.
+  slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices: RUN-23, RUN-24, RUN-25.
 - **KD-R99.** (Resolved in EXE-17's second fix round.) EXE-17 built the production path:
   `commitAll` re-reads HEAD when anything throws and compares it with the HEAD the group
   expected before its own `git commit` (not the in-memory `state.head`, already moved by then),
@@ -394,14 +392,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   the stored `kind` instead of a fresh call) if this is wanted, then land the code change
   and a seam test for the probe above. Slice: CHG-10 (done; this is accepted interim
   behavior, fails safe, until revisited).
-- **KD-R76.** A budget stop (EXE-16) builds its `continue` handback with S2 `build()`
-  (`commit-executor.mjs`), which throws a `TypeError` for an install path holding `"`, `$`,
-  a backtick, `!` or a control character. Until RPL-08 adds the up-front `env` refusal for
-  such a path, a budget stop that lands on one turns group 1's otherwise-clean exit 0 into an
-  `internal` exit 1 after that group was already committed (review-EXE-16-r2 finding L3).
-  Where: `plugin/scripts/lib/commit-executor.mjs` `budgetStop`. Fix: none needed in EXE-16;
-  RPL-08's `env` refusal runs before any group starts, so this stops being reachable once
-  RPL-08 lands. Slice: RPL-08 (closes this row).
 - **KD-R81.** POSIX detached session: `process-adapter.mjs`'s `run` spawns every git child with
   `detached: process.platform !== 'win32'`, which calls `setsid`, so each child gets a new
   session and process group. Until GIT-08's `killActive` lands, two effects stay unwritten: (a)
@@ -414,20 +404,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   spawn options. Fix: none needed beyond GIT-08 landing as scheduled; this row documents the
   gap until then. Slice: GIT-08 (closes this row; also blocked on PRE-13, RUN-04, RUN-20,
   INT-02, so this window may be long).
-- **KD-R93.** C:reply-and-handback's `callerRule` entry says the handback rule is "added
-  when `handback` is set" — every kind, not only `lock`. `reply` (`plugin/scripts/lib/reply.mjs`)
-  only appends `HANDBACK_RULE` for a `lock` handback; `modeChoice` (RUN-13) and `continue`
-  (INT-02) replies still carry the base rule alone, with no handback rule at all. Today's
-  `modeChoice` and `lintFailed` (RUN-16) handbacks are stubs — `{kind, question}` with no
-  `answers` yet — so a rule saying "run the only answer" / "ask with `AskUserQuestion`; the
-  answers..." has nothing to act on; applying it now would describe a shape the reply does
-  not yet carry. The code comment on `HANDBACK_RULE` defers the other kinds to "later slices"
-  without a KD row (review-INT-05 finding 4). Where: `plugin/scripts/lib/reply.mjs` `reply()`,
-  the `callerRule` ternary. Fix: once the slice that completes those handbacks lands, apply
-  `HANDBACK_RULE` whenever `handback !== null` and drop the `lock`-only ternary (or confirm a
-  kind-specific rule text is wanted instead and amend the contract). Slices: RPL-08 (Handback
-  commands and caller-trust fixtures) closes this row once every handback kind carries real
-  answers and the rule.
 - **KD-R96.** CHG-18's stdout budget (C:plan-hunks, Q9) covers only the hunk index: past it,
   the full index spills to `hunks.json` and stdout "keeps everything else". `oldMessage`
   (reword) and `recentSubjects` carry no bound of their own, so a reword of a commit whose
