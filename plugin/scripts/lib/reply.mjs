@@ -164,7 +164,14 @@ function manualLines(path, hits) {
 // the same per-entry line as the confirmation block's (hunk IDs after the path), capped at 10.
 function renderNotIncludedBlock(notIncluded, hits) {
   if (!Array.isArray(notIncluded) || notIncluded.length === 0) return [];
-  return ['Not included:', ...capLines(notIncluded.map((entry) => renderNotIncludedEntry(entry, hits)))];
+  const given = new Set();
+  const lines = notIncluded.map((entry) => {
+    // Review-RPL-07: a path with several entries gets its manual lines once.
+    const shown = given.has(entry.path) ? [] : hits;
+    given.add(entry.path);
+    return renderNotIncludedEntry(entry, shown);
+  });
+  return ['Not included:', ...capLines(lines)];
 }
 
 function renderNotIncludedEntry({ path, hunks, reason }, hits) {

@@ -8,7 +8,7 @@ its new path only); IDs exist, are used once and are not mixed with `files`; com
 `dirtySubmodules` path in a group; exactly one group in `staged` and `reword`; lint (M6) and
 scan (M8) each message; add the `notIncluded` extras and notices; derive new files, file lists and the
 attribution flag per group. `validatePlan(planBytes, runState, { osUser })` (typed: `{ groups,
-notIncluded, notices, stored }` or `lint` with errors; `stored` is the per-group rows
+notIncluded, notices, scanLeftOut, stored }` (`scanLeftOut`: paths of units left out on a scan hit, for M17's manual lines) or `lint` with errors (the failure also carries a non-enumerable `messages`); `stored` is the per-group rows
 `check` writes into `state.json`, PLN-01; a message's scan errors, one per pattern ID,
 carry the M8 `scanText` spans for M17's redaction, and an M6 reason quoting a fragment that
 overlaps a span quotes `[<pattern-id>]` instead, C:check). `osUser` is the entry point's injected value, passed

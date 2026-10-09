@@ -1114,7 +1114,12 @@ async function commitGroups(ctx) {
   // takeover, RUN-21) into its outcome, and the run is gone once `commitAll` releases it, so
   // read them first; they go into the reply's notices only (`committedOutput`).
   const stored = readState(run);
-  if (ctx.checked === undefined) ctx.storedNotices = stored.notices ?? [];
+  if (ctx.checked === undefined) {
+    ctx.storedNotices = stored.notices ?? [];
+    // Review-RPL-07: what `check` left out (stored with `awaitingConfirm`) is reported again here.
+    ctx.storedNotIncluded = stored.notIncluded;
+    ctx.storedScanLeftOut = stored.scanLeftOut;
+  }
   // RPL-05: the reply's trailer line, read now for the same reason. No trailer when the run
   // resolved none, or when no stored group carries the attribution flag (PLN-07).
   const resolved = stored.attribution ?? { trailer: null, source: 'default' };
@@ -1291,7 +1296,8 @@ async function commitCheckedGroups(ctx) {
     };
   }
   if (route === 'confirm') {
-    writeState(run, { ...state, awaitingConfirm: true });
+    // Review-RPL-07: the confirmed `commit` is a separate call; it names what was left out.
+    writeState(run, { ...state, awaitingConfirm: true, notIncluded, scanLeftOut: ctx.checked.scanLeftOut });
     return { groups, notIncluded, confirm, notices, route };
   }
   const outcome = await commitGroups(ctx);
@@ -1776,11 +1782,11 @@ async function committedOutput(facts, ctx, callStarted) {
   const replyFacts = handback === undefined
     ? {
       status: 'committed', commits, unstaged, notices, planId: kept === true ? ctx.values.plan : null,
-      notIncluded: output.notIncluded, trailer: ctx.replyTrailer,
+      notIncluded: output.notIncluded ?? ctx.storedNotIncluded, trailer: ctx.replyTrailer,
     }
     : {
       status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, unstaged, notices, handback,
-      notIncluded: output.notIncluded, trailer: ctx.replyTrailer,
+      notIncluded: output.notIncluded ?? ctx.storedNotIncluded, trailer: ctx.replyTrailer,
     };
   return { ...output, reply: await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) }) };
 }
@@ -2066,7 +2072,8 @@ function holderFields(holder) {
 // `deadline()` function this module imports (review-RUN-12 finding 2).
 async function finalReply(facts, ctx, { deadline: readDeadline, toplevel = ctx.toplevel } = {}) {
   // RPL-07: `check` knows which left-out units hold a scan hit; the reply gives them manual lines.
-  if (ctx.checked?.scanLeftOut !== undefined) facts = { ...facts, scanLeftOut: ctx.checked.scanLeftOut };
+  const scanLeftOut = ctx.checked?.scanLeftOut ?? ctx.storedScanLeftOut;
+  if (scanLeftOut !== undefined) facts = { ...facts, scanLeftOut };
   const { env, now } = ctx.injected;
   if (toplevel === undefined || (readDeadline !== undefined && now() >= readDeadline)) {
     return reply({ ...facts, treeState: undefined });

@@ -96,3 +96,52 @@ test('Seam 1: a lintFailed message with a generic-secret span around a github-to
   assert.equal(reply.text.includes(mixed.slice(-10)), false, reply.text);
   assert.equal(JSON.stringify(reply).includes(mixed.slice(4, 20)), false);
 });
+
+// Review-RPL-07 finding 1: the final committed reply of check -> confirm -> commit --confirmed
+// still names the hit unit left out, with its manual lines (rebuilt from the stored run).
+test('Seam 1: a confirmed commit reply keeps the Not included entry and its manual lines', { timeout: 180_000 }, async (t) => {
+  const c = createCase(t);
+  const files = { 'a.txt': 'one\n', 'b.txt': 'two\n', 'hit.js': 'x\n', '.claude/commit.json': '{ "body": "optional" }\n' };
+  for (const [name, text] of Object.entries(files)) c.writeFile(name, text);
+  c.git(['add', '--', ...Object.keys(files)]);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.txt', 'two\nmore\n');
+  c.writeFile('hit.js', `x\nconst t = "${token}";\n`);
+  const planned = await runCommit(c, ['plan']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  writeWorkerPlan(runDir, {
+    groups: [
+      { header: 'feat: change a', body: null, files: [], hunks: unitIds(runDir, 'a.txt') },
+      { header: 'fix: change b', body: null, files: [], hunks: unitIds(runDir, 'b.txt') },
+    ],
+    notIncluded: [{ path: 'hit.js', hunks: unitIds(runDir, 'hit.js'), reason: 'left out' }],
+  });
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
+
+  const done = await runCommit(c, ['commit', '--plan', planId, '--all', '--confirmed']);
+
+  assert.equal(done.exitCode, 0, detail(done));
+  const { text } = done.json.reply;
+  assert.match(text, /Not included:\n- hit\.js/, text);
+  const lines = text.split('\n');
+  const at = lines.indexOf('!git --literal-pathspecs add -- hit.js');
+  assert.ok(at >= 0, text);
+  assert.equal(lines[at + 1], '!git commit -m "<message>"');
+  assert.equal(done.stdout.includes(token), false);
+});
+
+test('Seam 1: paths with U+201A and U+201B get only "commit by hand"', { timeout: 120_000 }, async (t) => {
+  const names = ['low‚.js', 'rev‛.js'];
+  const checked = await leftOut(t, names);
+  const lines = checked.json.reply.text.split('\n');
+  assert.equal(lines.some((line) => line.startsWith('!git')), false, checked.json.reply.text);
+  for (const name of names) {
+    const entry = lines.findIndex((line) => line.includes(name) && line.includes('left out'));
+    assert.ok(entry >= 0, checked.json.reply.text);
+    assert.match(lines[entry + 1], /commit by hand/);
+  }
+});
