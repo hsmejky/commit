@@ -718,27 +718,36 @@ const ROWS = [
     ],
   },
   {
-    // INT-31 AC2 names one specific case this row maps to (EXE-01 item 3, the `commit --all`
-    // route); KD-R99 says why that one case cannot be built yet. Producer "any" is wider: a
-    // `plan` throw reaches the same kind and exit, and already has a Seam 1 case.
+    // INT-31 AC2: the EXE-01 item 3 case (tests/commit-all-timeout.test.js "the state.json
+    // write failing after git commit landed"). A `staged` run's `commit --all` writes no
+    // state.json before `git commit`, so the FND-10 preload failing the state.json rename with
+    // EIO first hits the write after the commit landed. Producer "any" is wider: a `plan`
+    // throw reaches the same kind and exit (tests/plan-lock.test.js, tests/run-file-in-use.test.js).
     row: 'unexpected throw -> internal',
     producers: 'any',
     kind: 'internal',
     exitCode: 1,
     pairs: [{
       producer: 'any',
-      // The FND-10 preload failing a `plan` state.json rename with EIO
-      // (tests/plan-lock.test.js "state.json rename failing with EIO"); a lock-link EPERM
-      // retried six times reaches the same kind and exit (tests/run-file-in-use.test.js "a
-      // state.json rename failing EPERM on every try").
+      message: /^committed as `[0-9a-f]{40}`, but the script failed$/,
       async seam1Case(t) {
-        const c = seededCase(t, { 'a.txt': 'one\n', 'b.txt': 'two\n' });
+        const c = seededCase(t, { 'a.txt': 'one\n' });
         c.writeFile('a.txt', 'one\nmore\n');
-        c.writeFile('b.txt', 'changed\n');
-        return runCommit(c, ['plan'], {
+        c.git(['add', '--', 'a.txt']);
+        const planned = await runCommit(c, ['plan', '--staged']);
+        assert.equal(planned.exitCode, 0, detail(planned));
+        const statePath = path.join(planned.json.runDir, 'state.json');
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        state.groups = [{
+          n: 1, units: state.units.map((unit) => unit.id), header: 'feat: staged change', body: null, committed: false,
+        }];
+        fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+        const result = await runCommit(c, ['commit', '--plan', planned.json.planId, '--all'], {
           nodeArgs: ['--import', FAULT_PRELOAD],
           env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
         });
+        assert.equal(result.json.sha, c.git(['rev-parse', 'HEAD']).trim(), detail(result));
+        return result;
       },
     }],
   },

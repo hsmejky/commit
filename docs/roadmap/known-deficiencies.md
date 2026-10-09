@@ -261,16 +261,6 @@ fixed, delete it here; IDs are never reused.
   case, EXE-12 its `git-failed` one (`tests/commit-all-git-failed.test.js`) and EXE-17 its
   `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: RUN-24 replaces its gap entry
   with a Seam 1 case and drops this row. Slice: RUN-24.
-- **KD-R99.** (Resolved in EXE-17's second fix round.) EXE-17 built the production path:
-  `commitAll` re-reads HEAD when anything throws and compares it with the HEAD the group
-  expected before its own `git commit` (not the in-memory `state.head`, already moved by then),
-  and `planInternalFailure` reports "committed as `<sha>`, but the script failed" with `sha`.
-  INT-31 AC2's case (EXE-01 item 3: the FND-10 preload failing `fs.renameSync` on `state.json`
-  with `EIO` on a `staged` run's `commit --all`) is built in
-  `tests/commit-all-timeout.test.js` ("the state.json write failing after git commit landed"):
-  a `staged` run writes no `state.json` before `git commit`, so the preload's first hit is the
-  write after it. Fix: INT-31 only maps that case in its completeness test and drops this row.
-  Slice: INT-31.
 - **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
   `confirm` handback and of the `committed` reply) is covered only in part by
   `tests/plan-takeover.test.js`: the `confirm` handback and `commit --confirmed`'s
