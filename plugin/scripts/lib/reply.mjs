@@ -8,7 +8,7 @@
 // the refusal's own message, then the tree state); the trailer line and the notices block in
 // `text` are later slices'. CHG-04 adds the "N files
 // left" tree state. RUN-13 adds the `modeChoice` handback's counts question; INT-13 its answers
-// and `ifNoUser` (KD-R93). RUN-16 adds the `lintFailed` handback's question
+// and `ifNoUser`. RUN-16 adds the `lintFailed` handback's question
 // and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
 // run's `planId`; RPL-08 adds its answers and `ifNoUser`; the quoted rejected messages are RPL-07's. INT-02
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
@@ -42,7 +42,7 @@ export const BASE_CALLER_RULE = 'Show text to the user verbatim; a subagent puts
 
 /**
  * INT-05 (C:reply-and-handback "Handback rule, added when `handback` is set"): appended to
- * `BASE_CALLER_RULE` for every handback (RPL-08, KD-R93).
+ * `BASE_CALLER_RULE` for every handback (RPL-08).
  */
 export const HANDBACK_RULE = 'If question is null, run the only answer. Otherwise ask question '
   + 'with AskUserQuestion; the answers without needsText are the options, and the user\'s own '
@@ -393,7 +393,7 @@ export function reply(facts) {
     text,
     commits: commits.map((commit) => ({ ...commit })),
     notices: facts.notices === undefined ? [] : [...facts.notices],
-    // RPL-08 (KD-R93): every handback adds the handback rule (C:reply-and-handback `callerRule`).
+    // RPL-08: every handback adds the handback rule (C:reply-and-handback `callerRule`).
     callerRule: facts.status === 'handback'
       ? `${BASE_CALLER_RULE} ${HANDBACK_RULE}`
       : BASE_CALLER_RULE,

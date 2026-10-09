@@ -235,7 +235,7 @@ test('a budget stop after group 1 under check: the continue handback moves into 
   assert.equal(json.reply.planId, planId);
   assert.deepEqual(json.reply.commits, json.commits);
   assert.deepEqual(json.reply.notices, [GUARD_NOTICE]);
-  assert.equal(json.reply.callerRule, `${BASE_CALLER_RULE} ${HANDBACK_RULE}`, "every handback adds the handback rule (KD-R93)");
+  assert.equal(json.reply.callerRule, `${BASE_CALLER_RULE} ${HANDBACK_RULE}`, "every handback adds the handback rule");
   assert.deepEqual(json.reply.handback, {
     kind: 'continue',
     question: null,
