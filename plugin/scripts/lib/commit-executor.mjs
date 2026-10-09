@@ -483,10 +483,15 @@ async function noteCommitBeforeThrow(err, run, state, options) {
   const read = await inCleanup(cx, () => head({ cwd: cx.toplevel, env: cx.env, now: cx.now }));
   if (!read.ok) {
     err.headNotice = HEAD_UNREAD_NOTICE;
-  } else if (typeof read.value === 'string' && read.value !== state.head) {
+  } else if (typeof read.value === 'string' && read.value !== (expectedBeforeCommit.get(state) ?? state.head)) {
     err.committedSha = read.value;
   }
 }
+
+// The HEAD each group expected just before its own `git commit`, per state object. A throw
+// after the commit (the state write, `headTree`) comes after `state.head` was already moved
+// to the new SHA, so `noteCommitBeforeThrow` compares against this, not `state.head`.
+const expectedBeforeCommit = new WeakMap();
 
 // `commitAll`'s per-group loop over the state it read; `unstaged` here is only `[]` or
 // `null` (`indexReset`), filled in by `commitAll`.
@@ -547,6 +552,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
     if (headNow !== state.head) {
       return refused(state, group, commits, { code: 'head-moved', message: HEAD_MOVED_TEXT }, notices);
     }
+    expectedBeforeCommit.set(state, headNow);
 
     // (a) EXE-07: the index must still be the one this run left (`plan`'s, then the one read
     // after each of this run's own commits) — any outside `git add`/`reset` shows up here,

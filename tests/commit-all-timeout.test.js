@@ -15,6 +15,7 @@ const assert = require('node:assert/strict');
 const { createCase, runCommit } = require('./helpers/process-seam.js');
 
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
+const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const SPAWN_RECORD_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'spawn-record-preload.mjs')).href;
 const HEAD_UNREAD_NOTICE = 'HEAD could not be read after the failure; a commit may exist';
 const TEST_TIMEOUT = { timeout: 90_000 };
@@ -173,8 +174,14 @@ test('AC3: the clock stepped past 580 s before cleanup -> unstage not spawned, e
   assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).indexReset, true);
   assert.equal(fs.existsSync(path.join(runDir, 'call.lock')), false, 'call.lock is gone');
 
-  // The criterion's last clause (the next `plan --take-over <planId>` resets the staging) is the
-  // takeover repair's own (RUN-23/RUN-25, EXE-01 item 2): M12 `acquire` does not build it yet.
+  // The criterion's last clause (KD-R110, RUN-23): the next `plan --take-over <planId>` resets
+  // the staging and releases the run.
+  const takeover = await runCommit(c, ['plan', '--split', '--take-over', planId]);
+  assert.equal(takeover.exitCode, 0, detail(takeover));
+  assert.equal(c.git(['diff', '--cached', '--name-only']), '', 'the takeover reset the staging');
+  assert.equal(fs.existsSync(runDir), false, 'the old run folder is gone');
+  const stored = JSON.parse(fs.readFileSync(path.join(takeover.json.runDir, 'state.json'), 'utf8'));
+  assert.ok(stored.notices.some((notice) => /reset the partial staging/.test(notice)), JSON.stringify(stored.notices));
 });
 
 // AC4: through `check --plan`. Group 1 commits; its post-commit hook flags it, and group 2's
@@ -261,4 +268,65 @@ test('an internal throw after git commit landed -> exit 1, sha, "committed as <s
   assert.equal(result.json.error.message, `committed as \`${headNow}\`, but the script failed`);
   assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+// EXE-17 / INT-31 AC2 (EXE-01 item 3): a `staged` run's stored group writes no state.json before
+// `git commit`, so the FND-10 preload failing the `state.json` rename with EIO first hits the
+// write after the commit landed.
+async function stagedRun(t) {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'a\n');
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  c.writeFile('a.txt', 'a\nmore\n');
+  c.git(['add', '--', 'a.txt']);
+  const planned = await runCommit(c, ['plan', '--staged']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = [{
+    n: 1, units: state.units.map((unit) => unit.id), header: 'feat: staged change', body: null, committed: false,
+  }];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return { c, planId, runDir, seed, lockPath: path.join(path.dirname(runDir), 'lock') };
+}
+
+test('the state.json write failing after git commit landed -> exit 1, sha, "committed as <sha>, but the script failed"', TEST_TIMEOUT, async (t) => {
+  const { c, planId, runDir, seed, lockPath } = await stagedRun(t);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+  });
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'internal', detail(result));
+  const headNow = c.git(['rev-parse', 'HEAD']).trim();
+  assert.notEqual(headNow, seed, 'git committed');
+  assert.equal(result.json.sha, headNow);
+  assert.equal(result.json.error.message, `committed as \`${headNow}\`, but the script failed`);
+  assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+// The same internal throw, but the clock has passed `cleanupDeadline` (a post-commit hook's marker
+// steps it to 590 s): the HEAD re-read is not spawned, so no `sha`; the notice says it.
+test('the state.json write failing after git commit with the cleanup budget spent -> exit 1, no sha, HEAD-unread notice', TEST_TIMEOUT, async (t) => {
+  const { c, planId, seed } = await stagedRun(t);
+  const started = path.join(c.root, 'hook.started');
+  installHook(c, 'post-commit', [`: > '${slash(started)}'`]);
+  const steps = [{ event: { type: 'path', path: started }, elapsedMs: 590_000 }];
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+    nodeArgs: ['--import', CLOCK_PRELOAD, '--import', FAULT_PRELOAD],
+    env: { COMMIT_TEST_CLOCK_SCHEDULE: schedule(c, steps), COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+  });
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'internal', detail(result));
+  assert.notEqual(c.git(['rev-parse', 'HEAD']).trim(), seed, 'git committed');
+  assert.equal(result.json.sha, undefined, 'the unread HEAD cannot be named');
+  assert.ok(result.json.reply.notices.includes(HEAD_UNREAD_NOTICE), JSON.stringify(result.json.reply.notices));
 });

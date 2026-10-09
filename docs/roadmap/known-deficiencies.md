@@ -266,17 +266,16 @@ fixed, delete it here; IDs are never reused.
   `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
   RPL-08, RUN-23, RUN-24, RUN-25.
-- **KD-R99.** (EXE-17 built the production path: `commitAll` re-reads HEAD when anything throws, and
-  `planInternalFailure` reports "committed as `<sha>`, but the script failed" with `sha`; its case in
-  `tests/commit-all-timeout.test.js` reaches it with a post-commit hook that garbles the index, not
-  with the FND-10 preload. Only INT-31's preload-based case remains.) INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
-  `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
-  `sha` and "committed as `<sha>`, but the script failed") is still missing. EXE-19 and EXE-17
-  have landed, so `staged` now reaches `git commit`, but the preload cannot fail only a later
-  rename: the first `state.json` rename of the run (before `git commit`) is hit, so the fault
-  fires with no `sha`. AC2 is INT-31's own criterion, not the accepted-gap list: INT-31 cannot
-  close until this case exists. Fix: add the case in INT-31 (a "fail the Nth call" option on the
-  preload, or a holder released after the commit) and drop this row. Slice: INT-31.
+- **KD-R99.** (Resolved in EXE-17's second fix round.) EXE-17 built the production path:
+  `commitAll` re-reads HEAD when anything throws and compares it with the HEAD the group
+  expected before its own `git commit` (not the in-memory `state.head`, already moved by then),
+  and `planInternalFailure` reports "committed as `<sha>`, but the script failed" with `sha`.
+  INT-31 AC2's case (EXE-01 item 3: the FND-10 preload failing `fs.renameSync` on `state.json`
+  with `EIO` on a `staged` run's `commit --all`) is built in
+  `tests/commit-all-timeout.test.js` ("the state.json write failing after git commit landed"):
+  a `staged` run writes no `state.json` before `git commit`, so the preload's first hit is the
+  write after it. Fix: INT-31 only maps that case in its completeness test and drops this row.
+  Slice: INT-31.
 - **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
   `confirm` handback and of the `committed` reply) is covered only in part by
   `tests/plan-takeover.test.js`: the `confirm` handback and `commit --confirmed`'s
@@ -299,6 +298,13 @@ Plan text that depends on a design fix; fix the design and the slice together.
   before `plan --hunks`. Pick one.
 - **KD-R39.** MSG-03 and INF-04 use an M6 case-check export the spec does not list. Add it.
 - **KD-R111.** Q4's body was rewritten in place (as Q9's was, restored by RUN-20b): restore it.
+- **KD-R112.** An `internal` failure after `git commit` landed (EXE-17) sets `sha` and the
+  "committed as `<sha>`, but the script failed" message, but the group is not in `commits`/
+  `failed`/`remaining` and `reply.commits` is `[]`, while C:commit-release says it counts as
+  committed in the report for exits 4, 5 and 1. EXE-17's slice text only asks for `sha` and the
+  message, and the throw carries no group identity today. Fix: `noteCommitBeforeThrow` also
+  rides the group's `n`/`header` on the error, `planInternalFailure` fills `commits`/`failed`/
+  `remaining` and the reply's `commits`. Slice: a follow-up to EXE-17.
 - **KD-R44.** The mismatch notice says "later groups refused" in single-group modes. Drop
   the clause there (contract, Q18, criteria).
 - **KD-R45.** A hook-made commit is reported with the hook's SHA (EXE-06); no disposition is
