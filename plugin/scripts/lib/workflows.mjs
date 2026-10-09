@@ -1201,7 +1201,7 @@ async function validateWorkerPlan(ctx) {
     // KD-R92: the notices `plan` stored ride with the lint facts, so `lintFailureOf`'s replies carry
     // them (`ctx.notices` holds none of them in `check`).
     return {
-      lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape',
+      lint: validated.errors, messages: validated.messages, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape',
       notices: Array.isArray(state.notices) ? state.notices : [],
     };
   }
@@ -1249,7 +1249,7 @@ async function validateWorkerPlan(ctx) {
     resumed: state.resumed === true, interactive: state.interactive !== false,
   });
   ctx.checked = {
-    groups: validated.groups, notIncluded: validated.notIncluded, confirm,
+    groups: validated.groups, notIncluded: validated.notIncluded, scanLeftOut: validated.scanLeftOut, confirm,
     notices: [...storedNotices, ...validated.notices],
   };
   // Terminates `CHECK_STEPS` with a defined value (`runSteps` throws on falling off the end).
@@ -1831,7 +1831,7 @@ async function lintFailureOf(facts, ctx) {
   if (runEnd({ kind: 'lintFailure', ending: facts.lintEnding }, { interactive: facts.interactive }) === 'keep') {
     failure.reply = await finalReply(
       {
-        status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint,
+        status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint, messages: facts.messages,
         shapeOnly: facts.shapeOnly, notices: facts.notices, scriptPath: ctx.injected.scriptPath,
       },
       ctx,
@@ -2065,6 +2065,8 @@ function holderFields(holder) {
 // `ctx.cleanupDeadline`); read into `readDeadline` here only, so it never shadows the M15
 // `deadline()` function this module imports (review-RUN-12 finding 2).
 async function finalReply(facts, ctx, { deadline: readDeadline, toplevel = ctx.toplevel } = {}) {
+  // RPL-07: `check` knows which left-out units hold a scan hit; the reply gives them manual lines.
+  if (ctx.checked?.scanLeftOut !== undefined) facts = { ...facts, scanLeftOut: ctx.checked.scanLeftOut };
   const { env, now } = ctx.injected;
   if (toplevel === undefined || (readDeadline !== undefined && now() >= readDeadline)) {
     return reply({ ...facts, treeState: undefined });

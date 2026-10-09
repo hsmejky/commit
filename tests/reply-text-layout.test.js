@@ -84,7 +84,8 @@ test('Seam 1: a committed reply with every list one past its cap shows 10 plus "
   const lines = reply.text.split('\n');
   const section = (header) => lines.slice(lines.indexOf(header) + 1);
   assert.equal(lines.filter((line) => /^[0-9a-f]{40} feat: change /.test(line)).length, 10);
-  assert.equal(section('Not included:').slice(0, 11).filter((line) => line.startsWith('- s')).length, 10);
+  const notIncludedLines = section('Not included:');
+  assert.equal(notIncludedLines.slice(0, notIncludedLines.indexOf('your earlier staging was reset:')).filter((line) => line.startsWith('- s')).length, 10);
   assert.equal(section('your earlier staging was reset:').slice(0, 11).filter((line) => /^s\d\d\.js/.test(line)).length, 10);
   assert.equal(section('Notices:').slice(0, 11).filter((line) => line.startsWith('- ')).length, 10);
   assert.equal(lines.filter((line) => line === '+1 more').length, 4, reply.text);

@@ -140,20 +140,36 @@ function renderUnstaged(unstaged) {
 // RUN-18 (C:check "Zero groups", story 97): one line per `notIncluded` entry, naming the path
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
 // use (C:reply-and-handback); RPL-06 owns the escaping of both renderings.
-function renderNotIncluded(notIncluded) {
-  return capLines(notIncluded.map(({ path, reason }) => `${escapePath(path)}: ${escapePath(reason)}`));
+function renderNotIncluded(notIncluded, hits) {
+  return capLines(notIncluded.map(({ path, reason }) => {
+    return `${escapePath(path)}: ${escapePath(reason)}${manualLines(path, hits)}`;
+  }));
+}
+
+// RPL-07 (C:reply-and-handback `text`, Q10): a unit left out on a scan hit gets two manual lines,
+// no `&&` (Windows PowerShell 5.1 cannot parse it). The path is bare when it holds only
+// `[A-Za-z0-9._/@+-]`, else in single quotes (literal in Bash and PowerShell); one holding `'`,
+// U+2018-U+201B (single quotes to PowerShell) or a control character gets only "commit by hand".
+// `<message>` stays a placeholder (`-m`: a `!` command has no terminal for an editor).
+const BARE_PATH = /^[A-Za-z0-9._/@+-]+$/;
+const UNQUOTABLE_PATH = /['‘-‛\x00-\x1f\x7f\x80-\x9f]/;
+function manualLines(path, hits) {
+  if (!Array.isArray(hits) || !hits.includes(path)) return '';
+  if (UNQUOTABLE_PATH.test(path)) return '\ncommit by hand';
+  const arg = BARE_PATH.test(path) ? path : `'${path}'`;
+  return `\n!git --literal-pathspecs add -- ${arg}\n!git commit -m "<message>"`;
 }
 
 // RPL-05 (C:reply-and-handback `text`): a `committed` or `failed` reply's "Not included:" block,
 // the same per-entry line as the confirmation block's (hunk IDs after the path), capped at 10.
-function renderNotIncludedBlock(notIncluded) {
+function renderNotIncludedBlock(notIncluded, hits) {
   if (!Array.isArray(notIncluded) || notIncluded.length === 0) return [];
-  return ['Not included:', ...capLines(notIncluded.map(renderNotIncludedEntry))];
+  return ['Not included:', ...capLines(notIncluded.map((entry) => renderNotIncludedEntry(entry, hits)))];
 }
 
-function renderNotIncludedEntry({ path, hunks, reason }) {
+function renderNotIncludedEntry({ path, hunks, reason }, hits) {
   const ids = Array.isArray(hunks) && hunks.length > 0 ? ` ${hunks.join(' ')}` : '';
-  return `- ${escapePath(path)}${ids}: ${escapePath(reason)}`;
+  return `- ${escapePath(path)}${ids}: ${escapePath(reason)}${manualLines(path, hits)}`;
 }
 
 // RPL-05: the `Notices:` block, one `- ` line per notice (control characters escaped like relayed
@@ -191,7 +207,7 @@ function renderConfirmFile({ path, new: isNew, hunks }) {
 
 // The confirmation block (Q16): per group the header, body and files (20, then "+N more"),
 // then the not-included lines and the "Confirm:" reasons.
-function renderConfirmBlock({ groups = [], notIncluded = [], reasons = [] }) {
+function renderConfirmBlock({ groups = [], notIncluded = [], reasons = [], scanLeftOut }) {
   const lines = ['Proposed commits:'];
   for (const group of groups) {
     lines.push(`${group.n}. ${group.header}`);
@@ -204,7 +220,7 @@ function renderConfirmBlock({ groups = [], notIncluded = [], reasons = [] }) {
     lines.push(`   ${files.join(', ')}`);
   }
   if (notIncluded.length > 0) {
-    lines.push(...renderNotIncludedBlock(notIncluded));
+    lines.push(...renderNotIncludedBlock(notIncluded, scanLeftOut));
   }
   lines.push(`Confirm: ${reasons.map(escapePath).join(', ')}`);
   return lines;
@@ -272,6 +288,34 @@ function lintFailedHandback(facts) {
     answers,
     ifNoUser: { answer: 'no', returnToParent: true },
   };
+}
+
+// RPL-07 (C:scan-patterns, C:reply-and-handback `lintFailed`): each rejected message quoted with the
+// union of its scan-hit spans (the errors' `spans`) replaced by `[<pattern-id>]`, the first hit's ID
+// where spans overlap, so no secret reaches the caller. Only messages of a group with an error.
+function redact(message, spans) {
+  const sorted = [...spans].sort((a, b) => a.start - b.start);
+  let out = '';
+  let at = 0;
+  for (let i = 0; i < sorted.length;) {
+    const { patternId, start } = sorted[i];
+    let end = sorted[i].end;
+    for (i += 1; i < sorted.length && sorted[i].start < end; i += 1) end = Math.max(end, sorted[i].end);
+    out += `${message.slice(at, start)}[${patternId}]`;
+    at = end;
+  }
+  return out + message.slice(at);
+}
+
+function renderRejectedMessages(messages, errors) {
+  const lines = [];
+  for (const { group, message } of messages) {
+    const spans = errors.filter((error) => error.group === group).flatMap((error) => error.spans ?? []);
+    if (!errors.some((error) => error.group === group)) continue;
+    lines.push(`Rejected message (group ${group}):`);
+    for (const line of redact(message, spans).split('\n')) lines.push(`  ${escapePath(line)}`);
+  }
+  return lines;
 }
 
 // A lint failure's errors as `check` gives them (C:check), one per line.
@@ -366,7 +410,7 @@ export function reply(facts) {
     // RUN-15: M15 `planRefusal` already built this text (the clean-tree breakdown, named).
     firstLines = [facts.cleanText];
   } else if (facts.status === 'nothing' && facts.reason === 'zero-groups') {
-    firstLines = [NOTHING_LINES['zero-groups'], ...renderNotIncluded(facts.notIncluded ?? [])];
+    firstLines = [NOTHING_LINES['zero-groups'], ...renderNotIncluded(facts.notIncluded ?? [], facts.scanLeftOut)];
   } else if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
     firstLines = [NOTHING_LINES[facts.reason]];
   } else if (facts.status === 'failed') {
@@ -374,7 +418,7 @@ export function reply(facts) {
     firstLines = [facts.message, ...(commits.length > 0 ? [COMMITTED_BEFORE_LINE, ...renderCommits(commits)] : [])];
   } else if (facts.status === 'committed') {
     firstLines = [
-      ...renderCommits(commits), ...renderNotIncludedBlock(facts.notIncluded), ...renderUnstaged(facts.unstaged),
+      ...renderCommits(commits), ...renderNotIncludedBlock(facts.notIncluded, facts.scanLeftOut), ...renderUnstaged(facts.unstaged),
     ];
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
     firstLines = [modeChoiceQuestion(facts)];
@@ -390,7 +434,7 @@ export function reply(facts) {
     };
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
     if (facts.scriptPath === undefined) throw new Error('reply: a lintFailed handback needs scriptPath');
-    firstLines = [LINT_FAILED_QUESTION];
+    firstLines = [LINT_FAILED_QUESTION, ...renderRejectedMessages(facts.messages ?? [], facts.errors ?? [])];
     handback = lintFailedHandback(facts);
   } else if (facts.status === 'handback' && facts.kind === 'confirm') {
     // INT-09: the confirmation block (Q16) and the answers; every caller injects `scriptPath`.
@@ -407,7 +451,7 @@ export function reply(facts) {
     handback = { kind: 'handedBack', question: null, ifNoUser: { returnToParent: true } };
   } else if (facts.status === 'handback' && facts.kind === 'continue') {
     firstLines = [
-      ...renderCommits(commits), ...renderNotIncludedBlock(facts.notIncluded), ...renderUnstaged(facts.unstaged),
+      ...renderCommits(commits), ...renderNotIncludedBlock(facts.notIncluded, facts.scanLeftOut), ...renderUnstaged(facts.unstaged),
     ];
     handback = facts.handback;
   } else if (facts.status === 'handback' && facts.kind === 'lock') {

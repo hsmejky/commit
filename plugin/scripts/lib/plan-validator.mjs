@@ -126,13 +126,14 @@ function spansByPattern(hits) {
 // Validates one group's message (PLN-06) and pushes its lint and scan errors (`group: n`)
 // onto `errors`. Shared by the `split` loop below and `validateSingleGroupPlan` (PLN-05),
 // so `staged` and `reword` lint their one group exactly like every `split` group.
-function lintMessage(header, body, n, messageValues, osUser, errors) {
+function lintMessage(header, body, n, messageValues, osUser, errors, messages) {
   const normalisedMessage = messageOf(header, body);
   if (!normalisedMessage.ok) {
     errors.push({ group: n, reason: normalisedMessage.reason });
     return;
   }
   const message = normalisedMessage.text;
+  messages.push({ group: n, message });
   const hits = scanText(message, { osUser });
   for (const reason of lint(message, messageValues, { quote: redactingQuote(message, hits) })) {
     errors.push({ group: n, reason });
@@ -169,8 +170,9 @@ function validateSingleGroupPlan(mode, workerPlan, runState, options) {
   }
   const [group] = workerPlan.groups;
   const errors = [];
-  lintMessage(group.header, group.body, 1, runState.config.values, options.osUser ?? null, errors);
-  if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source);
+  const messages = [];
+  lintMessage(group.header, group.body, 1, runState.config.values, options.osUser ?? null, errors, messages);
+  if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source, messages);
 
   const files = filesOf(runState.units);
   const newFiles = mode === 'reword' ? [] : files.filter((file) => file.new).map((file) => file.path);
@@ -226,6 +228,7 @@ export function validatePlan(planBytes, runState, options = {}) {
   const table = unitTable(runState.units);
   const placement = new Placement();
   const errors = [];
+  const messages = [];
   const groups = [];
   const stored = [];
   const messageValues = runState.config.values;
@@ -242,7 +245,7 @@ export function validatePlan(planBytes, runState, options = {}) {
   }
   workerPlan.groups.forEach((group, index) => {
     const n = index + 1;
-    lintMessage(group.header, group.body, n, messageValues, osUser, errors);
+    lintMessage(group.header, group.body, n, messageValues, osUser, errors, messages);
     const files = [];
     const units = [];
     for (const path of new Set(group.files)) {
@@ -316,9 +319,9 @@ export function validatePlan(planBytes, runState, options = {}) {
     const places = new Set(ids.filter((id) => placement.has(id)).map((id) => placement.of(id)));
     if (places.size > 1) errors.push({ group: null, reason: `${listOf(ids)} are identical; place them together` });
   }
-  if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source);
-  const { notIncluded, notices } = notIncludedResult(runState, workerPlan, placement, workerPlan.groups.length > 0);
-  return { ok: true, groups, notIncluded, notices, stored };
+  if (errors.length > 0) return lintFailure(errors, 'plan', workerPlan.source, messages);
+  const { notIncluded, notices, scanLeftOut } = notIncludedResult(runState, workerPlan, placement, workerPlan.groups.length > 0);
+  return { ok: true, groups, notIncluded, notices, scanLeftOut, stored };
 }
 
 // PLN-04 (C:check "no unit with a scan hit... is in a group"): one error per unit a group
@@ -377,12 +380,14 @@ function notIncludedResult(runState, workerPlan, placement, hasGroups) {
   }
 
   const notices = [];
+  const scanLeftOut = new Set();
   const seenNotices = new Set();
   const scanned = runState.scanned ?? {};
   const scanLines = runState.scanLines ?? {};
   for (const unit of runState.units) {
     const hit = scanned[unit.id];
     if (Array.isArray(hit) && placement.of(unit.id) === null) {
+      scanLeftOut.add(unit.path);
       const lines = scanLines[unit.id] ?? [];
       hit.forEach((patternId, index) => {
         const notice = `${unit.path}:${lines[index]} ${patternId} left out`;
@@ -397,7 +402,7 @@ function notIncludedResult(runState, workerPlan, placement, hasGroups) {
       notices.push(`${path}: the staged version differs from your working tree; committing this plan discards it — recover with \`git cat-file -p ${blob}\``);
     }
   }
-  return { notIncluded, notices };
+  return { notIncluded, notices, scanLeftOut: [...scanLeftOut] };
 }
 
 // "; committing this plan unstages it" (C:check; Q11), "unstages them" for a `stagedExcluded`
@@ -514,8 +519,12 @@ function describePlace(group) {
   return group === null ? 'notIncluded' : `group ${group}`;
 }
 
-function lintFailure(errors, kind, source) {
-  return { ok: false, code: 'lint', kind, source, errors };
+// RPL-07: `messages` (each group's normalised message, for M17's redaction by the errors' `spans`)
+// is non-enumerable, so a serialised or compared failure never holds a raw message.
+function lintFailure(errors, kind, source, messages = []) {
+  const failure = { ok: false, code: 'lint', kind, source, errors };
+  Object.defineProperty(failure, 'messages', { value: messages, enumerable: false });
+  return failure;
 }
 
 // Parses the plan bytes into the C:worker-plan shape, or names the first way it fails. Every
