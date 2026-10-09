@@ -73,16 +73,18 @@ export function escapePath(p) {
 
 // RPL-06 (Q18, C:reply-and-handback `text`): git or hook output relayed through `text`. Control
 // characters are escaped like a path's except that \n and \t stay (ESC is escaped, so ANSI
-// sequences are neutralised); only the last 2000 characters are kept, behind a "[… N
+// sequences are neutralised); the raw output is cut first, to its last 2000 characters (code
+// points, so no surrogate pair is split and no escape is), then escaped, behind a "[… N
 // characters cut]" marker when cut. The full, raw output stays in `gitOutput`.
 const MAX_RELAYED_CHARS = 2000;
 const RELAY_CONTROL_CHAR = /[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]/g;
 
 export function relayOutput(raw) {
-  const escaped = raw.replace(/\n+$/, '').replace(RELAY_CONTROL_CHAR, escapePath);
-  if (escaped.length <= MAX_RELAYED_CHARS) return escaped;
-  const cut = escaped.length - MAX_RELAYED_CHARS;
-  return `[… ${cut} characters cut]\n${escaped.slice(cut)}`;
+  const trimmed = raw.replace(/\n+$/, '');
+  const chars = Array.from(trimmed);
+  if (chars.length <= MAX_RELAYED_CHARS) return trimmed.replace(RELAY_CONTROL_CHAR, escapePath);
+  const cut = chars.length - MAX_RELAYED_CHARS;
+  return `[… ${cut} characters cut]\n${chars.slice(cut).join('').replace(RELAY_CONTROL_CHAR, escapePath)}`;
 }
 
 // The tree state line (C:reply-and-handback): "working tree clean", or the count and the
@@ -130,7 +132,7 @@ function renderUnstaged(unstaged) {
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
 // use (C:reply-and-handback); RPL-06 owns the escaping of both renderings.
 function renderNotIncluded(notIncluded) {
-  return notIncluded.map(({ path, reason }) => `${escapePath(path)}: ${reason}`);
+  return notIncluded.map(({ path, reason }) => `${escapePath(path)}: ${escapePath(reason)}`);
 }
 
 // RUN-18 (C:reply-and-handback handback table, fixed text): the `handedBack` handback's only
@@ -211,7 +213,8 @@ export const LINT_FAILED_QUESTION = 'Lint failed. Let a new worker fix it, or st
 
 // A lint failure's errors as `check` gives them (C:check), one per line.
 function renderErrors(errors) {
-  return errors.map((error) => (error.group === null ? error.reason : `group ${error.group}: ${error.reason}`));
+  // A reason can repeat a path, so its control characters are escaped here (RPL-06).
+  return errors.map((error) => escapePath(error.group === null ? error.reason : `group ${error.group}: ${error.reason}`));
 }
 
 // The `sha subject` lines of a `committed` reply (Q18, C:reply-and-handback): one per commit,
