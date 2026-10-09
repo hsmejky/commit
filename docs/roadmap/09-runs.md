@@ -678,22 +678,22 @@ lock → `lock` naming it (RUN-20b item 4).
 
 **Blocked by:** RUN-21.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q9, Q22, C:plan (`--take-over`), C:run-folder (`call.lock` row), M12 `acquire`, stories 190, 191, 206.
 
-- [ ] Seam 1: a fresh lock held by X, then `plan --take-over X` → the new run holds the
+- [x] Seam 1: a fresh lock held by X, then `plan --take-over X` → the new run holds the
       lock, and X's folder is gone.
-- [ ] Seam 1: the lock holds Y, then `plan --take-over X` → exit 6 `lock` naming Y, and
+- [x] Seam 1: the lock holds Y, then `plan --take-over X` → exit 6 `lock` naming Y, and
       Y's lock is back in place, byte for byte, with its mtime.
-- [ ] Seam 1: X's `call.lock` holds a live pid → `busy`. With a dead pid → the takeover
+- [x] Seam 1: X's `call.lock` holds a live pid → `busy`. With a dead pid → the takeover
       succeeds.
-- [ ] Seam 1: a fresh unparseable lock and `--take-over` with any `planId` → `lock`, and
+- [x] Seam 1: a fresh unparseable lock and `--take-over` with any `planId` → `lock`, and
       the lock is untouched. A traversal `planId` in the flag → `usage`, and nothing
       outside `.commit-plan/` is touched.
-- [ ] Seam 1 (RUN-20b item 4): no lock in place, then `plan --take-over X` → exit 6
+- [x] Seam 1 (RUN-20b item 4): no lock in place, then `plan --take-over X` → exit 6
       `lock` (`ended`), and no lock or folder of the new run is left.
-- [ ] Seam 1 (RUN-20b item 4): X's lock in place but X's folder gone, then
+- [x] Seam 1 (RUN-20b item 4): X's lock in place but X's folder gone, then
       `plan --take-over X` → exit 6 `lock` (`ended`); no `lock.<planId>` and no lock or
       folder of the new run is left.
 
