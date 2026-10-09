@@ -359,13 +359,14 @@ export function reply(facts) {
     handback = confirmHandback(facts);
   } else if (facts.status === 'handback' && facts.kind === 'handedBack') {
     // RUN-18 (C:reply-and-handback handback table): information only — nothing to ask, the
-    // run already released. Still missing: the handback table's own
-    // `ifNoUser: { returnToParent: true }` for this kind (review-RUN-18 Low-6); INT-17 owns it
-    // (12-integration.md:305).
+    // run already released. INT-17: the table's `ifNoUser: { returnToParent: true }` (a
+    // `handedBack` only ever arises without a user, so the parent gets the text).
     firstLines = [HANDED_BACK_TEXT];
-    handback = { kind: 'handedBack', question: null };
+    handback = { kind: 'handedBack', question: null, ifNoUser: { returnToParent: true } };
   } else if (facts.status === 'handback' && facts.kind === 'continue') {
-    firstLines = [...renderCommits(commits), ...renderUnstaged(facts.unstaged)];
+    firstLines = [
+      ...renderCommits(commits), ...renderNotIncludedBlock(facts.notIncluded), ...renderUnstaged(facts.unstaged),
+    ];
     handback = facts.handback;
   } else if (facts.status === 'handback' && facts.kind === 'lock') {
     firstLines = [lockQuestion(facts.hhmm, facts.idleSeconds)];
