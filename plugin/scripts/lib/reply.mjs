@@ -5,16 +5,16 @@
 // clean working tree, with the base `callerRule`; RUN-01 adds `release`'s two `nothing`
 // texts. RUN-03 adds the omitted tree state (past `release`'s 45 s `releaseDeadline`,
 // C:reply-and-handback). RPL-04 adds the `failed` status for a pre-folder refusal (`text`:
-// the refusal's own message, then the tree state); the trailer line and the notices block in
-// `text` are later slices'. CHG-04 adds the "N files
+// the refusal's own message, then the tree state). CHG-04 adds the "N files
 // left" tree state. RUN-13 adds the `modeChoice` handback's counts question; INT-13 its answers
 // and `ifNoUser`. RUN-16 adds the `lintFailed` handback's question
 // and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
 // run's `planId`; RPL-08 adds its answers and `ifNoUser`; the quoted rejected messages are RPL-07's. INT-02
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
 // state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
-// with the commits made before the budget stop; the not-included lines, the trailer line and
-// the notices block in `text` are later slices'. EXE-11 adds the `unstaged` lines after the
+// with the commits made before the budget stop. RPL-05 adds the shared 10-entry cap with
+// "+N more", the "Not included:" block, the "Notices:" block, the trailer line and the
+// commits in a `failed` reply. EXE-11 adds the `unstaged` lines after the
 // commit lines of both (Q18: "your earlier staging was reset:"). RUN-15 adds `cleanText`,
 // M15 `planRefusal`'s own text for a clean tree that still has something to name. RUN-18 adds
 // the `nothing`/`zero-groups` reason (`check`'s own "zero groups" ending, C:check, story 97,
@@ -55,6 +55,15 @@ export const HANDBACK_RULE = 'If question is null, run the only answer. Otherwis
   + 'Edit no files until the final reply.';
 
 const MAX_TREE_PATHS = 10;
+// RPL-05 (C:reply-and-handback `text`): every list in `text` holds at most this many entries,
+// then "+N more": commit lines, not included, `unstaged`, lint errors, notices and the "N files
+// left" paths. The confirmation block keeps its own 20 files per group.
+const MAX_LIST_ENTRIES = 10;
+
+function capLines(lines) {
+  if (lines.length <= MAX_LIST_ENTRIES) return lines;
+  return [...lines.slice(0, MAX_LIST_ENTRIES), `+${lines.length - MAX_LIST_ENTRIES} more`];
+}
 const MAX_CONFIRM_FILES = 20;
 
 // Every C0 control character, DEL and C1 control character (C:reply-and-handback, RPL-06),
@@ -112,26 +121,56 @@ const NOTHING_LINES = Object.freeze({
 // EXE-11 (Q18, C:commit-release `unstaged`): what the run's index reset unstaged, one line per
 // entry after the commit lines; none for `null` (index untouched) or `[]`. A gitignored entry
 // "is no longer shown by `git status`", an index-only one names its discarded blob. Paths are
-// escaped (RPL-06); the 10-entry cap with "+N more" is RPL-05's.
+// escaped (RPL-06) and capped at 10 plus "+N more" (RPL-05).
+const COMMITTED_BEFORE_LINE = 'committed before the failure:';
 const UNSTAGED_LINE = 'your earlier staging was reset:';
 
 function renderUnstaged(unstaged) {
   if (!Array.isArray(unstaged) || unstaged.length === 0) return [];
-  return [UNSTAGED_LINE, ...unstaged.map(({ path, blob, ignored }) => {
+  return [UNSTAGED_LINE, ...capLines(unstaged.map(({ path, blob, ignored }) => {
     let line = escapePath(path);
     if (ignored === true) line += ' is no longer shown by `git status`';
     if (blob !== null && blob !== undefined) {
       line += `${ignored === true ? ';' : ':'} staged version discarded, recover with \`git cat-file -p ${blob}\``;
     }
     return line;
-  })];
+  }))];
 }
 
 // RUN-18 (C:check "Zero groups", story 97): one line per `notIncluded` entry, naming the path
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
 // use (C:reply-and-handback); RPL-06 owns the escaping of both renderings.
 function renderNotIncluded(notIncluded) {
-  return notIncluded.map(({ path, reason }) => `${escapePath(path)}: ${escapePath(reason)}`);
+  return capLines(notIncluded.map(({ path, reason }) => `${escapePath(path)}: ${escapePath(reason)}`));
+}
+
+// RPL-05 (C:reply-and-handback `text`): a `committed` or `failed` reply's "Not included:" block,
+// the same per-entry line as the confirmation block's (hunk IDs after the path), capped at 10.
+function renderNotIncludedBlock(notIncluded) {
+  if (!Array.isArray(notIncluded) || notIncluded.length === 0) return [];
+  return ['Not included:', ...capLines(notIncluded.map(renderNotIncludedEntry))];
+}
+
+function renderNotIncludedEntry({ path, hunks, reason }) {
+  const ids = Array.isArray(hunks) && hunks.length > 0 ? ` ${hunks.join(' ')}` : '';
+  return `- ${escapePath(path)}${ids}: ${escapePath(reason)}`;
+}
+
+// RPL-05: the `Notices:` block, one `- ` line per notice (control characters escaped like relayed
+// output, so a notice cannot forge a line), capped at 10; none when there are no notices.
+function renderNotices(notices) {
+  if (!Array.isArray(notices) || notices.length === 0) return [];
+  return ['Notices:', ...capLines(notices.map((notice) => `- ${notice.replace(RELAY_CONTROL_CHAR, escapePath)}`))];
+}
+
+// RPL-05 (story 55): the trailer line, only when the call made commits. `trailer` is the run's
+// resolved attribution (`{ trailer, source }`, M5): the trailer's lines, or "no trailer" with
+// the attribution source. Left off when the caller passed no attribution.
+function renderTrailerLine(commits, trailer) {
+  if (commits.length === 0 || trailer === undefined || trailer === null) return [];
+  if (trailer.trailer === null || trailer.trailer === undefined) return [`no trailer (attribution source: ${trailer.source})`];
+  const lines = trailer.trailer.split('\n').filter((line) => line !== '').map(escapePath);
+  return [`trailer: ${lines.join('; ')}`];
 }
 
 // RUN-18 (C:reply-and-handback handback table, fixed text): the `handedBack` handback's only
@@ -165,11 +204,7 @@ function renderConfirmBlock({ groups = [], notIncluded = [], reasons = [] }) {
     lines.push(`   ${files.join(', ')}`);
   }
   if (notIncluded.length > 0) {
-    lines.push('Not included:');
-    for (const { path, hunks, reason } of notIncluded) {
-      const ids = Array.isArray(hunks) && hunks.length > 0 ? ` ${hunks.join(' ')}` : '';
-      lines.push(`- ${escapePath(path)}${ids}: ${escapePath(reason)}`);
-    }
+    lines.push(...renderNotIncludedBlock(notIncluded));
   }
   lines.push(`Confirm: ${reasons.map(escapePath).join(', ')}`);
   return lines;
@@ -248,7 +283,7 @@ function renderErrors(errors) {
 // The `sha subject` lines of a `committed` reply (Q18, C:reply-and-handback): one per commit,
 // its full SHA and the header as committed. The 10-entry cap is RPL-05's.
 function renderCommits(commits) {
-  return commits.map(({ sha, header }) => `${sha} ${header}`);
+  return capLines(commits.map(({ sha, header }) => `${sha} ${header}`));
 }
 
 // INT-05 (Q22 "A lock refusal in an interactive run carries a lock handback"): the takeover
@@ -314,8 +349,12 @@ function modeChoiceQuestion({ staged, other }) {
  *   `gitOutput` (a `failed` commit, RPL-06): git's or a hook's raw output, relayed in `text` after
  *   the message, escaped and capped to its last 2000 characters (`relayOutput`).
  *   `failed`'s `message` is the refusal's own text (C:cli-and-exit-codes), the first line of
- *   `text` (RPL-04); its `commits` stays `[]` and its `handback` stays `null`, since no
- *   pre-folder refusal commits anything or offers one yet.
+ *   `text` (RPL-04); its `handback` stays `null`. Its `commits` is `[]` for a pre-folder refusal;
+ *   a `commit --all` failure after earlier groups committed passes them (RPL-05), listed after
+ *   the message. `notIncluded` (`committed`/`continue`, RPL-05): the "Not included:" lines after
+ *   the commit lines. `trailer` (`{ trailer, source }`, the run's resolved attribution): names the
+ *   appended trailer, or "no trailer" with the source, in the trailer line when `commits` is
+ *   non-empty; left off when absent.
  * @returns {object} the reply (C:reply-and-handback).
  * @throws {Error} for a status, reason or tree state not built yet.
  */
@@ -331,9 +370,12 @@ export function reply(facts) {
   } else if (facts.status === 'nothing' && Object.hasOwn(NOTHING_LINES, facts.reason)) {
     firstLines = [NOTHING_LINES[facts.reason]];
   } else if (facts.status === 'failed') {
-    firstLines = [facts.message];
+    // RPL-05: commits made before the failure (a `commit --all` exit 4 or 5 after earlier groups) are named.
+    firstLines = [facts.message, ...(commits.length > 0 ? [COMMITTED_BEFORE_LINE, ...renderCommits(commits)] : [])];
   } else if (facts.status === 'committed') {
-    firstLines = [...renderCommits(commits), ...renderUnstaged(facts.unstaged)];
+    firstLines = [
+      ...renderCommits(commits), ...renderNotIncludedBlock(facts.notIncluded), ...renderUnstaged(facts.unstaged),
+    ];
   } else if (facts.status === 'handback' && facts.kind === 'modeChoice') {
     firstLines = [modeChoiceQuestion(facts)];
     handback = {
@@ -382,8 +424,10 @@ export function reply(facts) {
   } else {
     throw new Error(`a ${JSON.stringify(facts.status)} reply (${JSON.stringify(facts.reason)}) is not built yet`);
   }
-  const lines = [...firstLines, ...renderErrors(facts.errors ?? [])];
+  const lines = [...firstLines, ...capLines(renderErrors(facts.errors ?? []))];
   if (typeof facts.gitOutput === 'string' && facts.gitOutput !== '') lines.push(relayOutput(facts.gitOutput));
+  // RPL-05: then the `Notices:` block, the trailer line (commits only) and the tree state.
+  lines.push(...renderNotices(facts.notices), ...renderTrailerLine(commits, facts.trailer));
   if (facts.treeState !== undefined) lines.push(renderTreeState(facts.treeState));
   const text = lines.join('\n');
   if (facts.status === 'handback' && handback === null) handback = { kind: facts.kind, question: firstLines[0] };

@@ -83,6 +83,6 @@ test('reply() builds a failed status with and without a tree state', async () =>
   assert.equal(withTree.text, 'boom\nworking tree clean');
 
   const noTree = reply({ status: 'failed', message: 'boom', treeState: undefined, notices: ['n1'] });
-  assert.equal(noTree.text, 'boom');
+  assert.equal(noTree.text, 'boom\nNotices:\n- n1');
   assert.deepEqual(noTree.notices, ['n1']);
 });

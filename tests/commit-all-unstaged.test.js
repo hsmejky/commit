@@ -230,11 +230,13 @@ test('check commits the plan → the committed reply says "your earlier staging 
   };
   assert.deepEqual(json.unstaged.map((entry) => entry.path).sort(), Object.keys(expected));
   // The lines after these are the tree state's.
-  assert.equal(json.reply.text.split('\n').slice(0, 5).join('\n'), [
-    `${sha} feat: change a`,
+  const textLines = json.reply.text.split('\n');
+  assert.equal(textLines[0], `${sha} feat: change a`);
+  const resetAt = textLines.indexOf('your earlier staging was reset:');
+  assert.deepEqual(textLines.slice(resetAt, resetAt + 4), [
     'your earlier staging was reset:',
     ...json.unstaged.map((entry) => expected[entry.path]),
-  ].join('\n'));
+  ]);
   assert.equal(c.git(['cat-file', '-p', blob]), 'b\nstaged\n');
 });
 

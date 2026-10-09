@@ -127,6 +127,7 @@ test('Seam 1 (AC2): a stale lock on a clean tree → nothing to commit with the 
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.reply.status, 'nothing', detail(result));
   assert.ok(result.json.reply.notices.includes(takeoverNotice(STALE_ID)), detail(result));
+  assert.ok(result.json.reply.text.split('\n').includes('- ' + takeoverNotice(STALE_ID)), detail(result));
   assert.deepEqual(entries(c), []);
 });
 
@@ -254,8 +255,8 @@ async function plannedAfterTakeover(c, planArgs) {
   return planId;
 }
 
-// The handback's `notices` carry it; its `text` gets them once RPL-05 builds the `Notices:`
-// block (KD-R102's RPL-05 half); the `committed` reply after a `confirm` answer is asserted below.
+// The handback's `notices` and its `text` (the `Notices:` block) carry it; the `committed` reply
+// after a `confirm` answer is asserted below.
 test('Seam 1 (AC7): on a tree needing confirmation the notice reaches the confirm handback', async (t) => {
   const c = createCase(t);
   const planId = await plannedAfterTakeover(c, ['plan']);
@@ -265,6 +266,7 @@ test('Seam 1 (AC7): on a tree needing confirmation the notice reaches the confir
   assert.equal(checked.exitCode, 0, detail(checked));
   assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
   assert.ok(checked.json.reply.notices.includes(takeoverNotice(STALE_ID)), detail(checked));
+  assert.ok(checked.json.reply.text.split('\n').includes('- ' + takeoverNotice(STALE_ID)), detail(checked));
 });
 
 // INT-09 (closes KD-R102's INT-09 half): the `yes` answer's `commit --confirmed` reply carries it.
@@ -279,6 +281,7 @@ test('Seam 1 (AC7): commit --confirmed after the confirm handback replies commit
   assert.equal(result.exitCode, 0, detail(result));
   assert.equal(result.json.reply.status, 'committed', detail(result));
   assert.ok(result.json.reply.notices.includes(takeoverNotice(STALE_ID)), detail(result));
+  assert.ok(result.json.reply.text.split('\n').includes('- ' + takeoverNotice(STALE_ID)), detail(result));
   assert.deepEqual(result.json.notices, [], 'the top-level notices keep C:commit-release meaning');
 });
 

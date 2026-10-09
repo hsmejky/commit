@@ -223,7 +223,7 @@ test('an internal throw past 580 s skips the tree-state read but the reply still
   assert.equal(lockExistedAtThrow, true, 'the lock was held when the plan.json rename threw');
   assert.equal(result.failure.kind, 'internal');
   assert.equal(result.failure.reply.status, 'failed');
-  assert.equal(result.failure.reply.text, result.failure.message);
+  assert.equal(result.failure.reply.text.split('\nNotices:')[0], result.failure.message);
   assert.equal(fs.existsSync(path.join(runDirOf(c), 'lock')), false, 'the lock is released');
 });
 

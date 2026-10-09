@@ -176,7 +176,7 @@ test('check --plan with a one-group plan commits it in the same process: the pla
     version: 1,
     status: 'committed',
     planId: null,
-    text: `${sha} ${HEADER}\nworking tree clean`,
+    text: `${sha} ${HEADER}\nNotices:\n- ${GUARD_NOTICE}\ntrailer: ${DEFAULT_TRAILER}\nworking tree clean`,
     commits: [{ n: 1, sha, header: HEADER }],
     notices: [GUARD_NOTICE],
     callerRule: BASE_CALLER_RULE,

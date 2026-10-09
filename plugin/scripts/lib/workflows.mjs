@@ -1111,7 +1111,13 @@ async function commitGroups(ctx) {
   // INT-09 (KD-R102): a direct `commit` has no `check` merging the notices `plan` stored (a
   // takeover, RUN-21) into its outcome, and the run is gone once `commitAll` releases it, so
   // read them first; they go into the reply's notices only (`committedOutput`).
-  if (ctx.checked === undefined) ctx.storedNotices = readState(run).notices ?? [];
+  const stored = readState(run);
+  if (ctx.checked === undefined) ctx.storedNotices = stored.notices ?? [];
+  // RPL-05: the reply's trailer line, read now for the same reason. No trailer when the run
+  // resolved none, or when no stored group carries the attribution flag (PLN-07).
+  const resolved = stored.attribution ?? { trailer: null, source: 'default' };
+  const appended = resolved.trailer !== null && (stored.groups ?? []).some((group) => group.attribution !== false);
+  ctx.replyTrailer = { trailer: appended ? resolved.trailer : null, source: resolved.source };
   const outcome = await commitAll(run, {
     now, osUser, env, deadline: ctx.deadline, cleanupDeadline: ctx.cleanupDeadline,
     scriptPath: ctx.injected.scriptPath,
@@ -1639,12 +1645,17 @@ function commitAllFailure(facts) {
 
 // RPL-06 (Q18, C:reply-and-handback `text`): a refusal that carries git's output (`git-failed`,
 // `stage-failed`) gets a `failed` reply whose `text` relays that output escaped and capped to its
-// last 2000 characters; the full output stays in the failure's `gitOutput`. Other `commitAll`
-// refusals still go out reply-less (KD-R73).
+// last 2000 characters; the full output stays in the failure's `gitOutput`. RPL-05: the reply
+// carries the commits earlier groups made (exit 4, and the `timed-out` exit 5, which has no git
+// output). Other `commitAll` refusals still go out reply-less (KD-R73).
 async function gitFailedReply(ending, facts, ctx, callStarted) {
-  if (typeof facts.gitOutput !== 'string') return ending;
+  const gitOutput = typeof facts.gitOutput === 'string' ? facts.gitOutput : undefined;
+  if (gitOutput === undefined && facts.refusal?.code !== 'timed-out') return ending;
   const { failure } = ending;
-  const replyFacts = { status: 'failed', message: failure.message, gitOutput: facts.gitOutput, notices: facts.notices ?? [] };
+  const replyFacts = {
+    status: 'failed', message: failure.message, gitOutput, commits: facts.commits ?? [],
+    trailer: ctx.replyTrailer, notices: facts.notices ?? [],
+  };
   // A tree-state read that throws too (the repository that broke git may break `git status`)
   // never replaces the refusal: the reply then omits the tree state.
   failure.reply = await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) })
@@ -1761,8 +1772,14 @@ async function committedOutput(facts, ctx, callStarted) {
   // only; the output's own `notices` keep C:commit-release's meaning.
   const notices = [...(ctx.storedNotices ?? []), ...output.notices];
   const replyFacts = handback === undefined
-    ? { status: 'committed', commits, unstaged, notices, planId: kept === true ? ctx.values.plan : null }
-    : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, unstaged, notices, handback };
+    ? {
+      status: 'committed', commits, unstaged, notices, planId: kept === true ? ctx.values.plan : null,
+      notIncluded: output.notIncluded, trailer: ctx.replyTrailer,
+    }
+    : {
+      status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, unstaged, notices, handback,
+      notIncluded: output.notIncluded, trailer: ctx.replyTrailer,
+    };
   return { ...output, reply: await finalReply(replyFacts, ctx, { deadline: cleanupDeadline(callStarted) }) };
 }
 
@@ -1882,6 +1899,7 @@ function refusalFailure(refusal) {
 // past 580 s is not spawned, and one that times out omits the tree state.
 async function planRefusalFailure(refusal, ctx) {
   const toplevel = usableToplevel(ctx);
+  const replyMessage = unreadableLockText(refusal, ctx);
   const replyDeadline = ctx.cleanupDeadline;
   const clock = refusal.code === 'held' ? lockHolderClock(refusal.holder, ctx.injected.now()) : null;
   if (clock !== null && ctx.values['no-user'] !== true) {
@@ -1892,13 +1910,27 @@ async function planRefusalFailure(refusal, ctx) {
       kind: kindForDomainCode(refusal.code),
       message: refusal.message,
       reply: await finalReply(
-        { status: 'failed', message: refusal.message, notices: ctx.notices },
+        { status: 'failed', message: replyMessage, notices: ctx.notices },
         ctx,
         { toplevel, deadline: replyDeadline },
       ),
       ...(refusal.code === 'held' ? { errorFields: holderFields(refusal.holder) } : {}),
     },
   };
+}
+
+// RPL-05 (C:reply-and-handback `handback` table note): the `text` of a `held` refusal whose lock is
+// unreadable (no minted `planId`, or a `created` that does not parse, in either mode) names the
+// time the lock is taken over automatically, its `touched` plus 15 minutes (Q22), local `HH:MM`.
+// The error's own `message` stays C:cli-and-exit-codes' fixed text.
+const LOCK_TAKEOVER_AFTER_MS = 15 * 60_000;
+
+function unreadableLockText(refusal, ctx) {
+  if (refusal.code !== 'held' || refusal.holder === null || refusal.holder === undefined) return refusal.message;
+  if (lockHolderClock(refusal.holder, ctx.injected.now()) !== null) return refusal.message;
+  const at = new Date(refusal.holder.touched + LOCK_TAKEOVER_AFTER_MS);
+  const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return `${refusal.message}; wait for it, it is taken over automatically at ${hhmm}`;
 }
 
 // INT-05 (C:reply-and-handback `lock` row, Q22, docs/roadmap/12-integration.md): a live lock

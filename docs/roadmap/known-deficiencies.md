@@ -48,9 +48,8 @@ fixed, delete it here; IDs are never reused.
   roadmap criterion currently names this gap. (INT-09 gave a direct `commit --all`'s success
   path its `committed`/`continue` reply; its failure path is still reply-less, except RPL-06's `failed` reply on a git-output refusal (`git-failed`,
   `stage-failed`), which carries only the message, the escaped and capped git output and the tree
-  state, not the group lists; `timed-out` (exit 5) is reply-less too, and `gitFailedReply`
-  builds its reply without `commits`, so `reply.commits` is `[]` after earlier groups
-  committed.) Owner: RPL-05 (`commits` AC). Fix: add it as an explicit INT-02-or-later
+  state, not the group lists; RPL-05 gave it, and `timed-out`'s, the committed `commits`.)
+  Fix: add it as an explicit INT-02-or-later
   criterion, or a dedicated slice, before 0.1.0 closes.
 - **KD-R106.** EXE-11 AC5's "the report says the index is untouched" is not reachable: a
   `commit --all` refusal before any group reached (c) has `unstaged: null` (asserted at
@@ -58,7 +57,7 @@ fixed, delete it here; IDs are never reused.
   `refusalFailure` with no `failed` reply and so no report text (KD-R73). Fix: when KD-R73's
   `failed` reply lands for `commit --all`, add a line saying the index is untouched (Q18,
   C:commit-release `unstaged: null`) after the failed group in `reply.mjs`'s `failed`
-  text, and assert it on the same refusal. Slice: RPL-05 (owns the `commits` gap; KD-R73).
+  text, and assert it on the same refusal. Slice: the `commit --all` failure reply (KD-R73).
 - **KD-R107.** EXE-12 AC2's reply-text half (story 160: the `failed` reply's `text` naming
   the committed group 1, the failed group 2 and the remaining group 3) is not reachable for a
   direct `commit --all`: its failure goes out through `commitAllFailure` with no `reply`
@@ -66,7 +65,7 @@ fixed, delete it here; IDs are never reused.
   folder gone). Fix: when KD-R73's `failed` reply lands for `commit --all`, assert the
   group lists in `reply.text` on the exit-4 case of that test file, including the Q18
   "committed as `<sha>`, but git did not exit cleanly" case, whose group is listed as
-  committed. Slice: RPL-05 (owns the `commits` gap; KD-R73).
+  committed. Slice: the `commit --all` failure reply (KD-R73).
 - **KD-R108.** C:commit-release has no "unknown" value for `unstaged`. When `git status`
   fails after the last commit and the release (EXE-11 review finding 3), `commitAll` keeps the
   commit list and lists every `preStaged` and `indexOnly` path (`ignored: false`, `blob` where
@@ -253,13 +252,14 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R102.** RUN-21's last criterion (the takeover notice reaching the `text` of a
-  `confirm` handback and of the `committed` reply) is covered only in part by
-  `tests/plan-takeover.test.js`: the `confirm` handback and `commit --confirmed`'s
-  `committed` reply (INT-09) carry the notice in `reply.notices`, but no reply `text` renders
-  notices yet (the `Notices:` block is RPL-05's). Fix: once RPL-05 lands, assert the notice in
-  the handback's and the `committed` reply's `text`, and drop this row. Slice: RUN-21 (with
-  RPL-05).
+- **KD-R112.** C:reply-and-handback's size rule (the `reply` without `text` <= 2 kB,
+  `callerRule` and `handback` included) is not reachable with the current rule texts: the
+  `committed` fixture at the caps is about 2.2 kB and the `lintFailed` fixture about 2.7 kB,
+  with `callerRule` 0.7-1.4 kB and `handback` up to 1 kB of fixed text (the contract lets the
+  prompt slice shorten them, not drop a clause). `tests/reply-text-layout.test.js` asserts
+  the 2 kB on everything but `callerRule` and `handback`, and `text` <= 4 kB in full. Fix:
+  once the prompt slice has shortened the rule texts, assert the full 2 kB there. Slice:
+  the prompt slice (RPL-05 left it open).
 
 ## Design sync
 
