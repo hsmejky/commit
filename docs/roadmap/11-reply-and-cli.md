@@ -109,34 +109,34 @@ cut; CI size fixtures at every cap.
 
 **Blocked by:** EXE-11, INT-02, INT-05, INT-09, INT-15, MSG-07, RUN-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M17, C:reply-and-handback (`text`, size), Testing modules (size fixtures), Q24,
 stories 55, 56, 57, 60, 228.
 
-- [ ] Seam 1 cap fixtures: a `committed` reply with 11 commits, 11 not-included entries, 11
+- [x] Seam 1 cap fixtures: a `committed` reply with 11 commits, 11 not-included entries, 11
       `unstaged` paths, 11 files left and 11 notices → each list shows 10 plus "+1 more"
-- [ ] A `lintFailed` with three groups with bodies and 11 errors
-- [ ] Size tests: reply without `text` ≤ 3 kB; `text` ≤ 4 kB not counting quoted messages
-- [ ] Every notice appears in `text` under `Notices:` on every status (story 57); on a reply
+- [x] A `lintFailed` with three groups with bodies and 11 errors
+- [x] Size tests: reply without `text` ≤ 3 kB; `text` ≤ 4 kB not counting quoted messages
+- [x] Every notice appears in `text` under `Notices:` on every status (story 57); on a reply
       with commits the trailer line names the appended trailer or "no trailer" with its
       source (story 55), and a reply with no commits (`nothing`, a refusal) has no trailer
       line
-- [ ] A `not-a-repo` refusal's reply carries no tree state at all (it has no tree to read),
+- [x] A `not-a-repo` refusal's reply carries no tree state at all (it has no tree to read),
       like a bare repository or an `env` refusal with no git to read at start-up (RPL-04); a
       `release` reply past its 45 s budget omits the tree state too, distinct from "working
       tree clean"
-- [ ] Seam 1: a live lock met by `plan --no-user` → `status: "failed"`, `text` with no
+- [x] Seam 1: a live lock met by `plan --no-user` → `status: "failed"`, `text` with no
       takeover question and no handback (RUN-07 covers the error's `planId`, `created` and
       `touched`)
-- [ ] An unparseable lock, or one with a malformed `planId`, met interactively or by
+- [x] An unparseable lock, or one with a malformed `planId`, met interactively or by
       `--no-user` → `status: "failed"`, `text` naming the automatic takeover time
       (`touched` plus 15 minutes) in both modes (RUN-07 covers the error's `planId: null`,
       `created: null` and `touched`)
-- [ ] Once the `Notices:` block exists, assert RUN-21's takeover notice in a `confirm`
+- [x] Once the `Notices:` block exists, assert RUN-21's takeover notice in a `confirm`
       handback's own `text` too (not just `reply.notices`); closes KD-R102's RPL-05 half
       (docs/roadmap/known-deficiencies.md)
-- [ ] `gitFailedReply` passes `commits: facts.commits` into `replyFacts` (one-line fix): on a
+- [x] `gitFailedReply` passes `commits: facts.commits` into `replyFacts` (one-line fix): on a
       `commit --all` exit 4 (`stage-failed`, `git-failed`) and exit 5 (`timed-out`) after earlier
       groups already committed, `reply.commits` lists those commits and `text` names them
       (today it is `[]`); closes the KD-R73 and KD-R107 `commits` gap
