@@ -153,6 +153,10 @@ function anotherCommitNotice(n) {
   return `another commit was made during group ${n}; later groups refused`;
 }
 
+// EXE-11 (KD-R108): `git status` failed after the run, so `unstaged` is the stored lists unfiltered.
+const UNSTAGED_UNREAD_NOTICE = 'git status failed after the run; unstaged lists every path that was '
+  + 'staged before it, some may not differ from HEAD';
+
 // EXE-10: phase (c)'s own refusals, mapped by M18 through the domain-code table:
 // `stage-failed` (CLI kind `git`, exit 4) and the verify's `mismatch` (`diff-changed`, exit 6).
 function stageFailedText(n) {
@@ -340,9 +344,24 @@ export async function commitAll(run, options) {
   // by `indexReset` (`[]` from the groups below once it is set); the list is read after
   // their last git call, from the state file's `preStaged` and `indexOnly` (KD-R69).
   if (Array.isArray(output.unstaged)) {
-    output.unstaged = await unstagedAfterReset(state.preStaged ?? [], state.indexOnly ?? [], {
-      toplevel: run.toplevel, env: options.env, now: options.now,
-    });
+    const preStaged = state.preStaged ?? [];
+    const indexOnly = state.indexOnly ?? [];
+    try {
+      output.unstaged = await unstagedAfterReset(preStaged, indexOnly, {
+        toplevel: run.toplevel, env: options.env, now: options.now,
+      });
+    } catch {
+      // The commits and the release are done by now; a failing `git status` must not turn
+      // them into `internal` and lose the commit list. The contract has no "unknown" value
+      // for `unstaged` (KD-R108), so it lists every earlier-staged path (the reset did
+      // unstage them all), `ignored: false`, and a notice says the list may be too long.
+      const blobs = new Map(indexOnly.map((entry) => [entry.path, entry.blob]));
+      const bytes = (text) => Buffer.from(text, 'utf8');
+      output.unstaged = [...new Set([...preStaged, ...blobs.keys()])]
+        .sort((a, b) => Buffer.compare(bytes(a), bytes(b)))
+        .map((path) => ({ path, ignored: false, blob: blobs.get(path) ?? null }));
+      output.notices = [...output.notices, UNSTAGED_UNREAD_NOTICE];
+    }
   }
   return output;
 }

@@ -58,6 +58,15 @@ fixed, delete it here; IDs are never reused.
   `failed` reply lands for `commit --all`, add a line saying the index is untouched (Q18,
   C:commit-release `unstaged: null`) after the failed group in `reply.mjs`'s `failed`
   text, and assert it on the same refusal. Slice: whichever lands KD-R73.
+- **KD-R108.** C:commit-release has no "unknown" value for `unstaged`. When `git status`
+  fails after the last commit and the release (EXE-11 review finding 3), `commitAll` keeps the
+  commit list and lists every `preStaged` and `indexOnly` path (`ignored: false`, `blob` where
+  stored) with a notice, instead of the old `internal`. Not tested at Seam 1: `finalReply`'s
+  own `treeState` runs `git status` right after, and the same failure ends the run `internal`
+  there. Also, EXE-11 AC6's (a)-refusal arm (a phase (a) refusal after group 1 with an index
+  that differs from HEAD) has no Seam 1 trigger; the (b) `diff-changed` arm is tested. Fix:
+  a contract value or text for an unread `unstaged`, and a tree-state read that degrades the
+  same way, then a Seam 1 case. Slice: none yet.
 - **KD-R91.** A hidden staged-new path that is also gitignored (Q11's own example,
   `git add -f .env.local` where `.env.local` is listed in `.gitignore`) never gets the
   "and .gitignore then hides it from `git status`" clause on its `notIncluded` entry:

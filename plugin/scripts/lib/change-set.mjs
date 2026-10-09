@@ -1448,10 +1448,19 @@ export async function unstage({ toplevel, env, now, timeoutMs }) {
  */
 export async function unstagedAfterReset(preStaged, indexOnly, { toplevel, env, now }) {
   if (preStaged.length === 0 && indexOnly.length === 0) return [];
+  // `--ignored=matching`: an ignored directory is one `dir/` entry, not every file inside it
+  // (`traditional` with `-uall` walks into `node_modules`), so a path is ignored when it is
+  // such an entry or lies under one.
   const status = await statusEntries({
-    toplevel, env, now, untracked: 'all', renames: false, ignored: true,
+    toplevel, env, now, untracked: 'all', renames: false, ignored: 'matching',
   });
+  const ignoredDirs = status
+    .filter((entry) => entry.xy === '!!' && entry.path.endsWith('/'))
+    .map((entry) => entry.path);
   const shown = new Map(status.map((entry) => [entry.path, entry.xy === '!!']));
+  for (const path of preStaged) {
+    if (!shown.has(path) && ignoredDirs.some((dir) => path.startsWith(dir))) shown.set(path, true);
+  }
   const blobs = new Map(indexOnly.map((entry) => [entry.path, entry.blob]));
   const paths = new Set([...preStaged.filter((path) => shown.has(path)), ...blobs.keys()]);
   return [...paths].sort(byteOrder).map((path) => ({
@@ -1611,7 +1620,7 @@ export async function commitGuarded({ args, input, toplevel, env, now, timeoutMs
 async function statusEntries({ toplevel, env, now, untracked, renames = true, ignoreSubmodules, notUtf8, ignored = false }) {
   const args = ['status', '--porcelain', '-z', `--untracked-files=${untracked}`];
   if (!renames) args.push('--no-renames');
-  if (ignored) args.push('--ignored=traditional');
+  if (ignored) args.push(`--ignored=${ignored === 'matching' ? 'matching' : 'traditional'}`);
   if (ignoreSubmodules !== undefined) args.push(`--ignore-submodules=${ignoreSubmodules}`);
   const result = await run('git', args, {
     cwd: toplevel,

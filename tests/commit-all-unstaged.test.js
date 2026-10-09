@@ -161,7 +161,7 @@ test('a budget stop after a group that set indexReset → the continue output ca
 
   assert.equal(result.exitCode, 0, detail(result));
   assert.deepEqual(result.json.remaining, [2], detail(result));
-  assert.equal(result.json.handback.kind, 'continue');
+  assert.equal((result.json.handback ?? result.json.reply?.handback)?.kind, 'continue');
   assert.deepEqual(result.json.unstaged, [{ path: 'new.txt', ignored: false, blob: null }]);
 });
 
@@ -236,4 +236,60 @@ test('check commits the plan → the committed reply says "your earlier staging 
     ...json.unstaged.map((entry) => expected[entry.path]),
   ].join('\n'));
   assert.equal(c.git(['cat-file', '-p', blob]), 'b\nstaged\n');
+});
+
+// review-EXE-11 finding 2: the index a stray reset would lose. Group 1's post-commit hook stages
+// `extra.txt`, so after group 1's commit the index differs from HEAD (the run re-reads its
+// fingerprint after its own `git commit`); group 2's (b) refusal must leave that alone.
+// AC6's "(a) refusal" arm needs a phase (a) refusal after group 1 that leaves the index
+// differing from HEAD at Seam 1; none is reachable (KD-R106's note), so (b) is the tested arm.
+test('group 2 refuses in (b) → an index that differs from HEAD stays exactly as it is', async (t) => {
+  const { c, planId } = await plannedRun(t, { groups: ['a.txt', 'b.txt'], prepare: () => {} });
+  const hook = path.join(c.repoDir, '.git', 'hooks', 'post-commit');
+  fs.writeFileSync(hook, '#!/bin/sh\necho extra > extra.txt\ngit add -- extra.txt\n');
+  fs.chmodSync(hook, 0o755);
+  c.writeFile('b.txt', 'b\nedited after plan\n');
+
+  const result = await commitAll(c, planId);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.unstaged, []);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'extra.txt\n', 'the hook-staged file survived');
+});
+
+// Whether `dir`'s filesystem keeps a name with a non-UTF-8 byte exactly as written.
+function holdsNonUtf8Names(dir) {
+  const name = Buffer.from('probe-\xff', 'latin1');
+  const full = Buffer.concat([Buffer.from(dir + path.sep), name]);
+  try {
+    fs.writeFileSync(full, '');
+  } catch {
+    return false;
+  }
+  const held = fs.readdirSync(dir, { encoding: 'buffer' }).some((entry) => entry.equals(name));
+  fs.rmSync(full);
+  return held;
+}
+
+// review-EXE-11 finding 4: `plan` stores a non-UTF-8 pre-staged path in its `\xNN` form
+// (C:plan), and `unstagedAfterReset` matches it against the `\xNN` form of what `git status` lists.
+test('a pre-staged path that is not valid UTF-8 is matched and listed in its backslash-x form', async (t) => {
+  const { c, planId } = await plannedRun(t, {
+    prepare: (repo) => {
+      if (!holdsNonUtf8Names(repo.repoDir)) return;
+      fs.mkdirSync(path.join(repo.repoDir, 'd'));
+      fs.writeFileSync(Buffer.concat([Buffer.from(`${repo.repoDir}${path.sep}d${path.sep}`), Buffer.from('s\xe9.txt', 'latin1')]), 'x\n');
+      repo.git(['add', '--', 'd']);
+    },
+  });
+  if (!holdsNonUtf8Names(c.repoDir)) {
+    t.skip('the filesystem cannot hold a file name that is not valid UTF-8');
+    return;
+  }
+
+  const result = await commitAll(c, planId);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.deepEqual(result.json.unstaged, [{ path: 'd/s\\xe9.txt', ignored: false, blob: null }]);
 });
