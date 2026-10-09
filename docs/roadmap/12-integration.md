@@ -245,16 +245,16 @@ hit or a hidden staged-new path are refused.
 
 **Blocked by:** INT-13, CHG-14, SCN-15, EXE-19, PLN-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q11, Q16, C:plan, C:cli-and-exit-codes (`staged-hit`, `usage`), stories 83, 84,
 85, 142, 225.
 
-- [ ] Seam 1: a staged subset → one commit of exactly the staged content, unstaged changes
+- [x] Seam 1: a staged subset → one commit of exactly the staged content, unstaged changes
       left and reported in the tree state (story 83)
-- [ ] A staged new directory of 60 files commits whole under `--staged` (story 84)
-- [ ] `--staged` with an empty index → exit 1 `usage` `staged-empty` (story 225)
-- [ ] A staged hit or a hidden staged-new path → exit 6 `staged-hit`, lock and folder gone
+- [x] A staged new directory of 60 files commits whole under `--staged` (story 84)
+- [x] `--staged` with an empty index → exit 1 `usage` `staged-empty` (story 225)
+- [x] A staged hit or a hidden staged-new path → exit 6 `staged-hit`, lock and folder gone
       (story 142)
 
 
