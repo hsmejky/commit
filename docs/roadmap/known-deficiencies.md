@@ -50,22 +50,26 @@ fixed, delete it here; IDs are never reused.
   `stage-failed`), which carries only the message, the escaped and capped git output and the tree
   state, not the group lists; RPL-05 gave it, and `timed-out`'s, the committed `commits`.)
   Fix: add it as an explicit INT-02-or-later
-  criterion, or a dedicated slice, before 0.1.0 closes.
+  criterion, or a dedicated slice, before 0.1.0 closes. Owner: Design sync (Suggested
+  order, item 6); KD-R106 and KD-R107 wait on it.
 - **KD-R106.** EXE-11 AC5's "the report says the index is untouched" is not reachable: a
   `commit --all` refusal before any group reached (c) has `unstaged: null` (asserted at
   Seam 1, `tests/commit-all-unstaged.test.js`), but goes out through the plain
   `refusalFailure` with no `failed` reply and so no report text (KD-R73). Fix: when KD-R73's
   `failed` reply lands for `commit --all`, add a line saying the index is untouched (Q18,
   C:commit-release `unstaged: null`) after the failed group in `reply.mjs`'s `failed`
-  text, and assert it on the same refusal. Slice: the `commit --all` failure reply (KD-R73).
+  text, and assert it on the same refusal. Owner: Design sync, with KD-R73.
 - **KD-R107.** EXE-12 AC2's reply-text half (story 160: the `failed` reply's `text` naming
-  the committed group 1, the failed group 2 and the remaining group 3) is not reachable for a
-  direct `commit --all`: its failure goes out through `commitAllFailure` with no `reply`
+  the committed group 1, the failed group 2 and the remaining group 3) is only partly reachable for a
+  direct `commit --all`: the exit 4 (`git-failed`, `stage-failed`) and exit 5 failures now
+  carry a `failed` reply whose `text` names the committed groups (RPL-05, asserted in
+  `tests/reply-text-layout.test.js`), but not the failed and remaining groups, and every
+  other `commit --all` refusal still goes out through `commitAllFailure` with no `reply`
   (KD-R73). `tests/commit-all-git-failed.test.js` asserts the rest of AC2 (lock and run
-  folder gone). Fix: when KD-R73's `failed` reply lands for `commit --all`, assert the
-  group lists in `reply.text` on the exit-4 case of that test file, including the Q18
-  "committed as `<sha>`, but git did not exit cleanly" case, whose group is listed as
-  committed. Slice: the `commit --all` failure reply (KD-R73).
+  folder gone). Fix: when KD-R73's group lists land for `commit --all`, assert the
+  failed and remaining groups in `reply.text` on the exit-4 case of that test file,
+  including the Q18 "committed as `<sha>`, but git did not exit cleanly" case, whose group
+  is listed as committed. Owner: Design sync, with KD-R73.
 - **KD-R108.** C:commit-release has no "unknown" value for `unstaged`. When `git status`
   fails after the last commit and the release (EXE-11 review finding 3), `commitAll` keeps the
   commit list and lists every `preStaged` and `indexOnly` path (`ignored: false`, `blob` where
@@ -410,7 +414,7 @@ Plan text that depends on a design fix; fix the design and the slice together.
 4. The CHG-03b area: KD-R60.
 5. KD-R5, KD-R6.
 6. Design sync: KD-R38, KD-R39; KD-R44; KD-R47;
-   KD-R49, KD-R50, KD-R45.
+   KD-R49, KD-R50, KD-R45; KD-R73 (with KD-R106, KD-R107).
 7. Edges: KD-R7, KD-R10.
 8. Test mechanisms: KD-R21, KD-R22, KD-R23, KD-R26.
 9. The rest of the text and bookkeeping items.

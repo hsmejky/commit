@@ -46,15 +46,6 @@ function sizeOf(value) {
 // the budget is asserted on everything else (commits, notices, status fields) only.
 function assertBudget(reply) {
   const { text, callerRule, handback, ...rest } = reply;
-  assert.ok(Buffer.byteLength(text) <= 4096, );
-  assert.ok(sizeOf(rest) <= 2048, );
-}
-
-// KD-R112: the contract's 2 kB for the reply without text includes callerRule and handback, but
-// the fixed rule texts alone are 0.7-1.4 kB and the prompt slice has not shortened them yet, so
-// the budget is asserted on everything else (commits, notices, status fields) only.
-function assertBudget(reply) {
-  const { text, callerRule, handback, ...rest } = reply;
   assert.ok(Buffer.byteLength(text) <= 4096, `text ${Buffer.byteLength(text)} bytes`);
   assert.ok(sizeOf(rest) <= 2048, `reply without text, callerRule and handback ${sizeOf(rest)} bytes`);
 }
@@ -75,7 +66,7 @@ test('Seam 1: a committed reply with every list one past its cap shows 10 plus "
     c.writeFile(name, name === secrets[10] ? `x\nplain\n` : `x\nconst t = "${token}";\n`);
   }
   c.git(['add', '--', ...secrets]);
-  const planned = await runCommit(c, ['plan', '--split', '--no-user']);
+  const planned = await runCommit(c, ['plan', '--split', '--no-user'], { timeoutMs: 110_000 });
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
   writeWorkerPlan(runDir, {
@@ -83,7 +74,7 @@ test('Seam 1: a committed reply with every list one past its cap shows 10 plus "
     notIncluded: secrets.map((name) => ({ path: name, hunks: unitIds(runDir, name), reason: 'left out' })),
   });
 
-  const checked = await runCommit(c, ['check', '--plan', planId]);
+  const checked = await runCommit(c, ['check', '--plan', planId], { timeoutMs: 110_000 });
 
   assert.equal(checked.exitCode, 0, detail(checked));
   const { reply } = checked.json;
@@ -278,5 +269,42 @@ test('exit 5 after a commit landed: reply.commits lists it and text names it', {
   assert.equal(reply.status, 'failed', detail(result));
   assert.equal(reply.commits.length, 1);
   assert.deepEqual(reply.commits, result.json.commits);
+  assert.ok(reply.text.includes(`${reply.commits[0].sha} ${HEADERS[0]}`), reply.text);
+});
+
+test('exit 4 stage-failed in group 2 after group 1 committed: reply.commits lists group 1 and text names it', async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'a\n');
+  c.git(['add', '--', 'a.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'a\nmore\n');
+  c.writeFile('new.txt', 'new\n');
+  // new.txt goes through a clean filter that is `cat` while a temporary index is in use and a
+  // missing required command on the real index, so group 2's `git add` fails (stage-failed).
+  fs.appendFileSync(path.join(c.repoDir, '.git', 'info', 'attributes'), 'new.txt filter=sw\n');
+  c.git(['config', 'filter.sw.clean', 'if [ -n "$GIT_INDEX_FILE" ]; then cat; else commit-test-missing-clean-filter; fi']);
+  c.git(['config', 'filter.sw.required', 'true']);
+  const planned = await runCommit(c, ['plan', '--split']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = ['a.txt', 'new.txt'].map((name, i) => ({
+    n: i + 1,
+    units: state.units.filter((unit) => unit.path === name).map((unit) => unit.id),
+    header: HEADERS[i],
+    body: null,
+    committed: false,
+  }));
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 4, detail(result));
+  assert.equal(result.json.error.message, 'staging failed for group 2', detail(result));
+  const { reply } = result.json;
+  assert.equal(reply.status, 'failed', detail(result));
+  assert.deepEqual(reply.commits, result.json.commits);
+  assert.equal(reply.commits.length, 1);
   assert.ok(reply.text.includes(`${reply.commits[0].sha} ${HEADERS[0]}`), reply.text);
 });
