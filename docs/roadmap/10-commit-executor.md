@@ -475,14 +475,14 @@ no git process is running, check it and remove it by hand".
 
 **Blocked by:** EXE-17, CHG-23.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, M10 `commitGuarded`, C:commit-release, story 215.
 
-- [ ] Seam 1: a sleeping `pre-commit` hook that creates `index.lock` before it sleeps,
+- [x] Seam 1: a sleeping `pre-commit` hook that creates `index.lock` before it sleeps,
       killed at the deadline → exit 5 (EXE-17); the lock's survival and the notice text
       follow CHG-23's `lockLeft` case.
-- [ ] Seam 1: no lock left after a killed commit → the reply carries no `index.lock`
+- [x] Seam 1: no lock left after a killed commit → the reply carries no `index.lock`
       notice.
 
 
