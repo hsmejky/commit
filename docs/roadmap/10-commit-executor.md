@@ -546,11 +546,11 @@ a lock another process created is kept.
 
 **Blocked by:** EXE-20, EXE-17, CHG-23.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, Q20, M10 `commitGuarded`, story 215.
 
-- [ ] Seam 1: reword, clock stepped to 535 s elapsed at start, a sleeping `pre-commit`
+- [x] Seam 1: reword, clock stepped to 535 s elapsed at start, a sleeping `pre-commit`
       hook that first records that `index.lock` exists, then is killed at the deadline →
       exit 5 (EXE-17), the record is present; the lock's removal and the foreign-lock case
       follow CHG-23's two-marker rule.
