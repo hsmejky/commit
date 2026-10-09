@@ -87,7 +87,6 @@ test('a humanOnly trigger under --no-user -> handedBack, question null, lock and
   assert.ok(reply.text.startsWith('nothing committed — run /commit to plan again'), reply.text);
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), headBefore);
   assert.equal(fs.existsSync(runDir), false, 'the run folder is deleted');
-  assert.equal(fs.existsSync(path.join(runDir, 'lock')), false);
 });
 
 test('a size-skipped file left out under --no-user -> the rest commits, the notice is in the text (story 103)', async (t) => {
@@ -96,6 +95,8 @@ test('a size-skipped file left out under --no-user -> the rest commits, the noti
   const planned = await runCommit(c, ['plan', '--split', '--no-user']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
+  const sizeSkipped = planned.json.hunks.summaryOnly.find((entry) => entry.path === 'big.txt');
+  assert.equal(sizeSkipped?.reason, 'size', 'the script itself size-skipped big.txt');
   write(runDir, {
     groups: [group('feat: grow a', [unitId(runDir, 'a.txt')])],
     notIncluded: [{ path: 'big.txt', hunks: [unitId(runDir, 'big.txt')], reason: 'too big' }],
