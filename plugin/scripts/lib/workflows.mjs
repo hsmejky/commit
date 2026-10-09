@@ -64,8 +64,8 @@ import {
   oldMessage, probe, recentSubjects, rewordFacts,
 } from './repo-probe.mjs';
 import {
-  assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, snapshotBlob, trackedDirectories,
-  treeState, unplannableCaseRenames, unstagedUnits,
+  assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, snapshotBlob, stagedPaths,
+  trackedDirectories, treeState, unplannableCaseRenames, unstage, unstagedAfterReset, unstagedUnits,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
 import {
@@ -275,10 +275,44 @@ async function createRunFolder(ctx) {
   ctx.run = acquired.run;
   if (acquired.takeover === null) return undefined;
   ctx.notices.push(acquired.takeover.notice);
-  // The taken-over run's index-repair check goes here, before the folder is deleted (RUN-23).
+  // RUN-23: the index repair, before inventory and before the folder is deleted.
+  await repairKilledIndex(ctx, acquired.takeover.killedRun);
   const finished = ctx.run.finishTakeover();
   if (finished !== null) ctx.notices.push(finished);
   return undefined;
+}
+
+// RUN-23 (Q18, Q22, C:run-folder takeover): the notice that the repair reset the killed group's
+// partial staging, and the heading of the `unstaged` report the killed run's own reset left.
+const REPAIR_RESET_NOTICE = 'reset the partial staging of the killed run\'s group';
+const KILLED_UNSTAGED_NOTICE = 'the killed run\'s reset had unstaged:';
+
+// RUN-23: M18's index repair of a takeover, from M12's `killedRun`, run before step 4 so inventory
+// never sees a killed group's partial staging. It applies when the killed run's `indexReset` is set
+// and its current group was not `committed`. Nothing staged: no reset, no reset notice. Every
+// staged path within the killed group's paths (the current group's unit paths, `preStaged`,
+// `indexOnly`): `git reset -q -- .` and the reset notice. Anything else is left untouched
+// (`killedLeftover` is RUN-24's). The `unstaged` report (M10 `unstagedAfterReset` over the stored
+// lists) follows in every case. A failing reset throws (`internal` for now) before
+// `finishTakeover`, so the chain stays; the "repair failed" refusal is RUN-25's.
+async function repairKilledIndex(ctx, killedRun) {
+  if (killedRun === null || !killedRun.indexReset || killedRun.groupStatus === 'committed') return;
+  const git = { toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now };
+  const staged = await stagedPaths(git);
+  const belongs = new Set([
+    ...killedRun.groupPaths, ...killedRun.preStaged, ...killedRun.indexOnly.map((entry) => entry.path),
+  ]);
+  if (staged.length > 0 && staged.every((entry) => belongs.has(entry))) {
+    const reset = await unstage(git);
+    if (!reset.ok) throw new Error(`git reset failed while repairing a killed run's staging: ${reset.gitOutput}`);
+    ctx.notices.push(REPAIR_RESET_NOTICE);
+  }
+  const unstaged = await unstagedAfterReset(killedRun.preStaged, killedRun.indexOnly, git);
+  if (unstaged.length === 0) return;
+  const named = unstaged.map(({ path: name, blob }) => (blob === null
+    ? escapePath(name)
+    : `${escapePath(name)} (staged version: git cat-file -p ${blob})`));
+  ctx.notices.push(`${KILLED_UNSTAGED_NOTICE} ${named.join(', ')}`);
 }
 
 /**
@@ -1742,7 +1776,7 @@ async function lintFailureOf(facts, ctx) {
     failure.reply = await finalReply(
       {
         status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint,
-        shapeOnly: facts.shapeOnly, notices: facts.notices,
+        shapeOnly: facts.shapeOnly, notices: facts.notices, scriptPath: ctx.injected.scriptPath,
       },
       ctx,
     );

@@ -99,6 +99,9 @@ failed call whose unstage did not happen keeps its run, below):
     This has no effect today: neither side of the comparison is ever used as a pathspec (it
     only decides which branch above runs and what a notice names), and the collision is the
     same one C:plan's `preStaged` already accepts for rendering.
+  - "Staged" below is the index's content differing from HEAD, with `--no-renames` and
+    `--ita-invisible-in-index`: an intent-to-add path stages no content, so it is not staged
+    (KD-R69; a reset drops its mark like any `split` run's).
   - Nothing staged (the index equals HEAD, e.g. a kill in phase (a) of a group after an
     earlier group committed) → no reset and no reset notice; the new run's reply still
     carries the `unstaged` notice (Q18).

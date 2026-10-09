@@ -122,11 +122,6 @@ fixed, delete it here; IDs are never reused.
   Fix: add the non-zero-`git reset` criterion once a seam for it exists (a user decision), and
   thread `unstaged` into `planInternalFailure` or narrow the contract row.
   Slice: none yet.
-- **KD-R110.** EXE-17 AC3's last clause ("the next `plan --take-over <planId>` resets the staging
-  and releases the run") is not tested: `tests/commit-all-timeout.test.js` AC3 proves the staging
-  stays and the run is kept (lock, folder, `indexReset`), but M12 `acquire`'s takeover repair is
-  RUN-23's and RUN-25's. Fix: add the takeover step to that case once RUN-23/RUN-25 land.
-  Slices: RUN-23, RUN-25.
 
 ## Test mechanisms
 
@@ -348,10 +343,10 @@ Plan text that depends on a design fix; fix the design and the slice together.
   not name it, because `unstagedAfterReset(preStaged, indexOnly)` is built only from those
   two — the i-t-a path is only in the stored `stagedNew` (review-CHG-05 r3 finding 1).
   Where: C:commit-release `unstaged`, EXE-11's `unstagedAfterReset` and report,
-  RUN-23's repair. RUN-23 also needs a decision: if its "staged" check for the repair uses
-  `--ita-visible-in-index`, a path that was intent-to-add before the run started reads as
-  unstaged after the kill, falls outside the killed group's paths, and turns the repair
-  into `killedLeftover` instead of a plain reset. Fix: read the stored `stagedNew` for
+  RUN-23's repair (decided: its "staged" check, M10 `stagedPaths`, uses
+  `--ita-invisible-in-index`, so a pre-run i-t-a path is not staged and never turns the repair
+  into `killedLeftover`; when the repair does reset, the i-t-a mark is dropped like any split
+  run's reset, an accepted loss). Fix: read the stored `stagedNew` for
   i-t-a paths still uncommitted when building `unstaged`, or accept and document the loss.
   Slices: EXE-11, CHG-20, RUN-23.
 

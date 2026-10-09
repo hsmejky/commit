@@ -117,6 +117,8 @@ export const STALE_AFTER_MS = 15 * 60 * 1000;
  * against, and the `planId` its notice names.
  *
  * @typedef {{ planId: string | null, touched: number, size: number, bytes: Buffer | null }} StaleLock
+ * @typedef {{ groupPaths: string[], preStaged: string[], indexOnly: Array<{ path: string, blob: string }>,
+ *   indexReset: boolean, groupStatus: 'committed' | 'uncommitted' }} KilledRun
  */
 
 // Windows reports a file another process holds open as one of these on a rename, read or
@@ -607,7 +609,7 @@ function runFolderRefusal(trackedAs) {
  *     | { ok: false, code: 'held', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
  *   acquire: (options?: { now?: () => number, takeOver?: StaleLock | string }) => { ok: true, run: object,
- *       takeover: { planId: string | null, notice: string, killedRun: null } | null }
+ *       takeover: { planId: string | null, notice: string, killedRun: KilledRun | null } | null }
  *     | { ok: false, code: 'held' | 'busy' | 'ended' | 'run-folder', message: string,
  *         holder: { planId: string | null, created: string | null, touched: number } | null },
  *   discard: () => string | null } }
@@ -838,7 +840,7 @@ export function takeoverNotice(planId) {
 // the own lock is linked exactly as `acquireLock` links it; a link `EEXIST` refuses `held`
 // and deletes nothing of the takeover (the renamed lock and the old folder stay for the next
 // `plan`; M18's `finally` discards only this call's provisional folder). `killedRun` is
-// always `null` here: reading the killed run's state is RUN-23's.
+// the stale run's facts for M18's index repair (`readKilledRun`, RUN-23), nothing deleted.
 function takeOverLock(runDir, planId, folder, now, sleep, stale) {
   const lock = insideRunDir(runDir, 'lock');
   const renamed = insideRunDir(runDir, `lock.${planId}`);
@@ -867,7 +869,13 @@ function takeOverLock(runDir, planId, folder, now, sleep, stale) {
   if (!linked.ok) return linked;
   const run = ownRun(runDir, planId, folder, sleep);
   run.finishTakeover = () => finishTakeover(runDir, stale.planId, renamed);
-  return { ok: true, run, takeover: { planId: stale.planId, notice: takeoverNotice(stale.planId), killedRun: null } };
+  return {
+    ok: true,
+    run,
+    takeover: {
+      planId: stale.planId, notice: takeoverNotice(stale.planId), killedRun: readKilledRun(runDir, stale.planId),
+    },
+  };
 }
 
 /**
@@ -897,7 +905,7 @@ function namedRunEnded() {
 // the own lock is linked (`takeCallLock`): a live one → `busy`, the lock put back so the old
 // run goes on; a folder that is gone → `ended`, after deleting the renamed lock (its chain
 // ends at a missing folder). The own lock is then linked exactly as `acquireLock` links it.
-// `killedRun` is `null` here: reading the killed run's state is RUN-23's.
+// `killedRun` is the taken-over run's facts for M18's index repair (`readKilledRun`, RUN-23).
 function takeOverNamed(runDir, planId, folder, now, sleep, target) {
   const lock = insideRunDir(runDir, 'lock');
   const renamed = insideRunDir(runDir, `lock.${planId}`);
@@ -933,7 +941,11 @@ function takeOverNamed(runDir, planId, folder, now, sleep, target) {
   if (!linked.ok) return linked;
   const run = ownRun(runDir, planId, folder, sleep);
   run.finishTakeover = () => finishTakeover(runDir, target, renamed);
-  return { ok: true, run, takeover: { planId: target, notice: namedTakeoverNotice(target), killedRun: null } };
+  return {
+    ok: true,
+    run,
+    takeover: { planId: target, notice: namedTakeoverNotice(target), killedRun: readKilledRun(runDir, target) },
+  };
 }
 
 // Links the renamed lock back as `lock` and drops the private name. A link that fails (a new
@@ -946,6 +958,40 @@ function putBack(renamed, lock) {
   } catch {
     // Kept as the orphan.
   }
+}
+
+// RUN-23 (C:run-folder takeover, M12 `acquire`): the facts M18's index repair needs, read from the
+// taken-over run's `state.json` and deleting nothing. `groupPaths`: the current group's (the
+// first not `committed`) unit paths, both halves of a rename; `groupStatus`: `'committed'`
+// when no group is left, else `'uncommitted'`. `null` when the run has no minted `planId` or no
+// readable regular `state.json` (a link, a missing or unparseable file, a read error): no facts.
+function readKilledRun(runDir, stalePlanId) {
+  if (stalePlanId === null) return null;
+  let state;
+  try {
+    const file = insideRunDir(runDir, `${stalePlanId}/state.json`);
+    if (!fs.lstatSync(file).isFile()) return null;
+    state = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (state === null || typeof state !== 'object') return null;
+  const list = (value) => (Array.isArray(value) ? value : []);
+  const current = list(state.groups).find((group) => group && group.committed !== true);
+  const ids = new Set(list(current?.units));
+  const groupPaths = new Set();
+  for (const unit of list(state.units)) {
+    if (!ids.has(unit.id)) continue;
+    groupPaths.add(unit.path);
+    if (typeof unit.oldPath === 'string') groupPaths.add(unit.oldPath);
+  }
+  return {
+    groupPaths: [...groupPaths],
+    preStaged: list(state.preStaged),
+    indexOnly: list(state.indexOnly),
+    indexReset: state.indexReset === true,
+    groupStatus: current === undefined ? 'committed' : 'uncommitted',
+  };
 }
 
 // `run.finishTakeover()` (RUN-21, RUN-20b item 2): deletes the taken-over run's folder first

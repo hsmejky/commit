@@ -1203,7 +1203,12 @@ test('acquire takeOver: links its own lock, keeps the renamed lock until finishT
   const acquired = provisional.acquire({ now, takeOver: stale });
 
   assert.equal(acquired.ok, true);
-  assert.deepEqual(acquired.takeover, { planId: staleId, notice: run.takeoverNotice(staleId), killedRun: null });
+  // RUN-23: `state.json` is `{}`, so the facts are empty and the group counts as committed.
+  assert.deepEqual(acquired.takeover, {
+    planId: staleId,
+    notice: run.takeoverNotice(staleId),
+    killedRun: { groupPaths: [], preStaged: [], indexOnly: [], indexReset: false, groupStatus: 'committed' },
+  });
   assert.equal(JSON.parse(fs.readFileSync(lock, 'utf8')).planId, provisional.planId);
   assert.equal(fs.readFileSync(renamed, 'utf8'), bytes, 'the renamed lock keeps the stale bytes');
   assert.ok(fs.existsSync(path.join(runDir, staleId)), 'the old folder waits for finishTakeover');

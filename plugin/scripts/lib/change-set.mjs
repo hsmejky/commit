@@ -1447,6 +1447,25 @@ export async function unstage({ toplevel, env, now, timeoutMs }) {
 }
 
 /**
+ * M10 `stagedPaths` (RUN-23, C:run-folder takeover repair): every path whose index content
+ * differs from HEAD, both halves of a rename listed (`--no-renames`), a non-UTF-8 path in its
+ * `\xNN` form, in byte order. KD-R69: an intent-to-add path stages no content, so
+ * `--ita-invisible-in-index` leaves it out; a pre-run mark is then never "staged beyond the
+ * killed group's paths".
+ *
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<string[]>}
+ * @throws {Error} when `git diff` fails.
+ */
+export async function stagedPaths({ toplevel, env, now }) {
+  const out = await gitOk(
+    ['diff', '--cached', '--ita-invisible-in-index', '--no-renames', '--name-only', '-z'],
+    { cwd: toplevel, env, now, readOnly: true },
+  );
+  return nulFields(out).map((bytes) => utf8Path(bytes) ?? escapeNonUtf8(bytes)).sort(byteOrder);
+}
+
+/**
  * M10 `unstagedAfterReset(preStaged, indexOnly)` (EXE-11, Q18, C:commit-release `unstaged`):
  * what the run's `git reset -q -- .` unstaged, read after it. Every `preStaged` path that
  * still differs from HEAD (one `git status` entry: a tracked change, an untracked file, or an
