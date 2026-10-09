@@ -772,7 +772,12 @@ const ROWS = [
           nodeArgs: ['--import', FAULT_PRELOAD],
           env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
         });
-        assert.equal(result.json.sha, c.git(['rev-parse', 'HEAD']).trim(), detail(result));
+        // Run by the harness after its exit-code check, so a missing JSON reports detail().
+        result.afterExit = () => {
+          assert.equal(result.json.sha, c.git(['rev-parse', 'HEAD']).trim(), detail(result));
+          assert.equal(fs.existsSync(path.join(path.dirname(planned.json.runDir), 'lock')), false, 'the run lock is released');
+          assert.equal(fs.existsSync(planned.json.runDir), false, 'the run folder is released');
+        };
         return result;
       },
     }],
@@ -797,6 +802,7 @@ for (const entry of ROWS) {
     test(`row "${entry.row}" via ${pair.producer}: Seam 1 reaches exit ${entry.exitCode} ${outcome}`, { skip: pair.skip ?? false }, async (t) => {
       const result = await pair.seam1Case(t);
       assert.equal(result.exitCode, entry.exitCode, detail(result));
+      result.afterExit?.();
       if (entry.kind === null) {
         assert.equal(result.json.ok, true, detail(result));
         assert.equal(result.json.reply.status, 'nothing', detail(result));
