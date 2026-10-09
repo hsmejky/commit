@@ -48,6 +48,16 @@ function write(runDir, plan) {
 test('Seam 1: a hit unit is committed around, named by pattern ID and path:line, the value never appears', async (t) => {
   const { c, planned, planId, runDir } = await hitRun(t, ['--no-user']);
   assert.equal(planned.stdout.includes(token), false);
+  assert.equal(planned.stderr.includes(token), false);
+  const hit = planned.json.hunks.hunks.find((h) => h.path === 'secret.js');
+  assert.equal(hit.body, 'none');
+  assert.deepEqual(hit.scan, ['github-token']);
+  const planJson = JSON.parse(fs.readFileSync(path.join(runDir, 'plan.json'), 'utf8'));
+  assert.deepEqual(planJson.scan.hits.map((h) => [h.path, h.pattern]), [['secret.js', 'github-token']]);
+  assert.equal(fs.existsSync(runDir), true);
+  for (const name of fs.readdirSync(runDir)) {
+    assert.equal(fs.readFileSync(path.join(runDir, name)).includes(token), false, name);
+  }
   write(runDir, {
     groups: [group('feat: add two', [unitId(runDir, 'ok.txt')])],
     notIncluded: [{ path: 'secret.js', hunks: [unitId(runDir, 'secret.js')], reason: 'scan hit' }],
@@ -61,9 +71,6 @@ test('Seam 1: a hit unit is committed around, named by pattern ID and path:line,
   assert.equal(checked.stdout.includes(token), false);
   assert.equal(c.git(['show', '--format=', '--name-only', 'HEAD']).trim(), 'ok.txt');
   assert.equal(c.git(['status', '--porcelain']).trim(), 'M secret.js');
-  for (const name of fs.existsSync(runDir) ? fs.readdirSync(runDir) : []) {
-    assert.equal(fs.readFileSync(path.join(runDir, name)).includes(token), false, name);
-  }
 });
 
 test('story 96: a hit alone is not a confirmation trigger', async (t) => {
@@ -90,6 +97,7 @@ test('a commit message containing a token → exit 2 lint naming the pattern ID,
   const checked = await runCommit(c, ['check', '--plan', planId]);
 
   assert.equal(checked.exitCode, 2, detail(checked));
+  assert.equal(checked.json.error.kind, 'lint', detail(checked));
   assert.match(checked.stdout, /github-token/);
   assert.equal(checked.stdout.includes(token), false);
   assert.equal(checked.stderr.includes(token), false);
