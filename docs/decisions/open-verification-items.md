@@ -251,3 +251,12 @@
   - Cost, for scale (tiny test diff, small context): a pure commit prompt was about $0.08–0.11
     in total, the main thread about 340 output tokens; the worker made 7 calls (one of them
     the spike's probe) on Sonnet, about 1.4–2.2k output tokens.
+- Q11's reason for staging a filtered file whole (INT-20 review): Q11 says `git apply --cached`
+  writes the pointer without running the filter, so "the object never reaches
+  `.git/lfs/objects`". Checked by hand on git-lfs 3.7.1: a plain `git diff` already runs the
+  clean filter and stores the object, and `plan` and `check` run that diff before any staging.
+  So the object is present under `.git/lfs/objects` whichever staging method is used, and
+  `tests/int-filtered-files.test.js` cannot tell them apart by that assertion. The decision
+  (whole-file staging, so the staged diff equals the hashed and scanned cleaned diff) stands;
+  the stated reason needs re-checking, for example whether a hunk patch applied with
+  `git apply --cached` can skew the pointer or the hash, before Q11 keeps the object claim.

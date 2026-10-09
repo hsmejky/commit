@@ -37,7 +37,7 @@ function blob(c, spec) {
   return result.stdout.toString('utf8');
 }
 
-test('a sed clean filter: the committed blob is the cleaned content and the scan saw the cleaned lines', async (t) => {
+test('a sed clean filter: the committed blob is the cleaned content, a secret the filter removes is not a hit', async (t) => {
   const c = createCase(t);
   c.git(['config', 'filter.redact.clean', `sed s/${githubToken('a')}/REDACTED/`]);
   c.writeFile('.gitattributes', 'x.dat filter=redact\n');
@@ -52,12 +52,13 @@ test('a sed clean filter: the committed blob is the cleaned content and the scan
   assert.equal(planned.exitCode, 0, detail(planned));
   const unit = planned.json.hunks.hunks.find((h) => h.path === 'x.dat');
   assert.equal(unit.body, 'file');
+  assert.equal(unit.kind, 'filtered');
   const { planId, runDir } = planned.json;
   const planJson = JSON.parse(fs.readFileSync(path.join(runDir, 'plan.json'), 'utf8'));
   assert.deepEqual(planJson.scan.hits, []);
   const hunksTxt = fs.readFileSync(path.join(runDir, 'hunks.txt'), 'utf8');
   assert.match(hunksTxt, /\+REDACTED/, 'the listing shows the cleaned line');
-  assert.doesNotMatch(hunksTxt, /\+TOKEN/);
+  assert.ok(!hunksTxt.includes(githubToken('a')), 'the listing never shows the uncleaned token');
 
   writeWorkerPlan(runDir, [{ header: 'feat: update x', files: ['x.dat'] }]);
   const checked = await runCommit(c, ['check', '--plan', planId]);
@@ -67,7 +68,7 @@ test('a sed clean filter: the committed blob is the cleaned content and the scan
   assert.equal(blob(c, `${sha}:x.dat`), 'one\ntwo\nREDACTED\n');
 });
 
-test('story 144: a secret that only the cleaned form carries is a scan hit; one the filter removes is not', async (t) => {
+test('story 144: a secret that only the cleaned form carries is a scan hit', async (t) => {
   const c = createCase(t);
   c.git(['config', 'filter.expand.clean', `sed s/MARK/${githubToken('b')}/`]);
   c.writeFile('.gitattributes', 'y.dat filter=expand\n');
@@ -82,12 +83,13 @@ test('story 144: a secret that only the cleaned form carries is a scan hit; one 
   assert.deepEqual(planJson.scan.hits.map((h) => [h.path, h.pattern]), [['y.dat', 'github-token']]);
 });
 
-function lfsAvailable() {
-  const r = spawnSync('git', ['lfs', 'version'], { encoding: 'utf8' });
-  return r.status === 0;
-}
+const lfsAvailable = spawnSync('git', ['lfs', 'version'], { encoding: 'utf8' }).status === 0;
+const requireLfs = process.env.COMMIT_REQUIRE_LFS === '1';
 
-test('git-lfs: the staged diff matches the planned hash and the object lands under .git/lfs/objects', { skip: !lfsAvailable() && 'git-lfs not on the runner' }, async (t) => {
+test('git-lfs: the staged diff matches the planned hash and the object lands under .git/lfs/objects', { skip: lfsAvailable || requireLfs ? false : 'git-lfs not on the runner' }, async (t) => {
+  if (!lfsAvailable) {
+    assert.fail('COMMIT_REQUIRE_LFS=1 is set but git-lfs is not installed (FND-03)');
+  }
   const c = createCase(t);
   c.git(['lfs', 'install', '--local']);
   c.writeFile('.gitattributes', '*.bin filter=lfs diff=lfs merge=lfs -text\n');
