@@ -927,6 +927,8 @@ function takeOverNamed(runDir, planId, folder, now, sleep, target) {
     fs.rmSync(renamed, { force: true });
     return namedRunEnded();
   }
+  // If this link fails, the old run's `call.lock` just taken stays behind; it is stale as soon
+  // as this call exits (a dead pid), so the next taker proceeds.
   const linked = linkOwnLock(runDir, planId, folder, now, sleep);
   if (!linked.ok) return linked;
   const run = ownRun(runDir, planId, folder, sleep);

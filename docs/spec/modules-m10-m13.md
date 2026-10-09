@@ -232,11 +232,14 @@ an orphan, and refuses `held` naming the lock now in place; the moved run meets
 place → `held` naming it, no lock → the automatic takeover adopts the orphan while
 `--take-over` refuses `ended`; a rename that succeeded followed by a link that fails with
 `EEXIST` deletes nothing of the takeover, discards the provisional folder and refuses
-`held`), then linking its own lock and reading the taken-over run's facts for the index
+`held`), then (`--take-over` only) taking the old run's `call.lock` before linking anything of
+its own (a live call → `busy` after the put-back, so nothing of its own needs undoing), then
+linking its own lock and reading the taken-over run's facts for the index
 repair from its `state.json` (following the renamed lock files of a takeover killed
 mid-repair back to the first folder with a `state.json`, C:run-folder), without deleting
 anything; an `ENOENT` on the `--take-over` run's `call.lock` (its folder is gone) →
-`ended`, after deleting the renamed lock and releasing its own; every `acquire`, after its
+`ended`, after deleting the renamed lock (its own lock is not linked yet); a `--take-over`
+takeover adds a notice ("replaced the /commit run `<planId>` at your request", C:plan); every `acquire`, after its
 link succeeds, adopts each orphan renamed lock (`lock.<planId>` not on its own chain) by
 walking its chain the same way (a chain ending at a missing folder has no facts); the
 repair itself is M18's (the killed-process paragraph under the error table above), and

@@ -91,6 +91,18 @@ test('Seam 1: a fresh lock held by X, then plan --take-over X: the new run holds
   assert.deepEqual(entries(c), ['lock', planId].sort(), 'X folder and lock.<planId> are gone');
 });
 
+test('Seam 1: a clean tree after --take-over X: the reply carries the --take-over notice', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'a.txt': 'one\n' });
+  heldRun(c, OLD_ID);
+
+  const result = await runCommit(c, ['plan', '--take-over', OLD_ID]);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.deepEqual(result.json.reply.notices, [`replaced the /commit run \`${OLD_ID}\` at your request`], detail(result));
+  assert.deepEqual(entries(c), [], 'X and the new run are gone');
+});
+
 test('Seam 1: the lock holds Y, plan --take-over X: lock naming Y, Y put back byte for byte with its mtime', async (t) => {
   const c = createCase(t);
   seed(c, { 'a.txt': 'one\n' });
@@ -151,6 +163,7 @@ test('Seam 1: a fresh unparseable lock and --take-over: lock, the lock untouched
 
   assert.equal(result.exitCode, 6, detail(result));
   assert.equal(result.json.error.kind, 'lock', detail(result));
+  assert.equal(result.json.reply?.handback ?? null, null, 'an unparseable lock gets no handback (story 191)');
   assertLockUnchanged(before);
   assert.deepEqual(entries(c), [OLD_ID, 'lock'].sort());
 });

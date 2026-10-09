@@ -261,8 +261,8 @@
     `ended` ("that run has already ended; run /commit again"): the handback was answered
     after the named run ended on its own. The same `ended` replaces `taken-over` for an
     `ENOENT` on the named run's `call.lock` (its folder is gone): the renamed lock is
-    deleted (its chain ends at a missing folder) and the run releases its own lock and
-    folder. `taken-over` was false there, since nobody took that run over. Q9's rationale is
+    deleted (its chain ends at a missing folder); the named run's `call.lock` is taken
+    before the run links its own lock, so nothing of its own exists yet to release. `taken-over` was false there, since nobody took that run over. Q9's rationale is
     corrected to match.
   - The run-integrity case of pass 10, "a reset plus a mixed index → `modeChoice` with the
     takeover, reset and `unstaged` notices" (KD-S1), cannot be built: the repair is
