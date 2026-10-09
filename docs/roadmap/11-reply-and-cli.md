@@ -187,33 +187,33 @@ backtick, `"`, `\`, a typographic double quote (U+201C-U+201E), `!` or a control
 
 **Blocked by:** EXE-16, GRD-13, INT-09, RUN-01, RUN-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M17, C:reply-and-handback (`run`, base rule), Testing seams "Caller trust
 fixtures", Q16, Q25, Testing seams "ScriptCall round trip", stories 51, 53, 54, 61, 62, 204,
 208, 229.
 
-- [ ] Seam 1: every `run` this slice's blockers reach (`confirm`'s `yes` and `no`, `continue`,
+- [x] Seam 1: every `run` this slice's blockers reach (`confirm`'s `yes` and `no`, `continue`,
       `lintFailed`'s `no`) passes the base rule's shape predicate (one segment, an absolute
       path under the plugin cache in the fixture layout, a UUID `planId`)
-- [ ] A `lintFailed` handback offers `retry` (`respawn` `resume`, `edit: fix these lint
+- [x] A `lintFailed` handback offers `retry` (`respawn` `resume`, `edit: fix these lint
       errors: <errors>`, at most 500 characters), `edit` (`needsText`, `respawn` `resume`) and
       `no` (`run release`) only, none when every error is a shape error; `ifNoUser` is
       `answer: "no"`, `returnToParent: true`; the question text is exactly "Lint failed. Let a
       new worker fix it, or stop? To dictate the message, type it under Other." (RUN-16 builds
       the lint-failure counter this handback answers, including its `--no-user` release)
-- [ ] A `source: user` plan whose first failure is shape-only (RUN-16's `shapeOnly` fact) →
+- [x] A `source: user` plan whose first failure is shape-only (RUN-16's `shapeOnly` fact) →
       the handback offers only `retry` and `no`, same as the every-error-is-shape-error case
       above, even though it ends on the first failure rather than the second
-- [ ] `--confirmed` appears only in a `confirm`'s `yes`; `continue` never carries it
-- [ ] A fixture worker message with two objects that both hold `version` and `callerRule`:
+- [x] `--confirmed` appears only in a `confirm`'s `yes`; `continue` never carries it
+- [x] A fixture worker message with two objects that both hold `version` and `callerRule`:
       the base rule text tells the caller to run nothing (story 62)
-- [ ] Every answer has a `run`, a `respawn` or neither (story 54)
-- [ ] Seam 1: the scripts copied under a path with each forbidden character → exit 1 `env`
+- [x] Every answer has a `run`, a `respawn` or neither (story 54)
+- [x] Seam 1: the scripts copied under a path with each forbidden character → exit 1 `env`
       (`"` and `\` POSIX only; control characters other than those Windows also forbids in a
       name are POSIX only too; the typographic-quote and `!` cases run on both platforms);
       a native Windows path → no refusal (story 204)
-- [ ] The handback rule text tells the caller to show a `run`'s output that holds no reply
+- [x] The handback rule text tells the caller to show a `run`'s output that holds no reply
       and to run nothing more (story 229)
 
 
