@@ -1140,15 +1140,47 @@ test('the first group of the call starts even at 539 s elapsed, but group 2 then
   assert.deepEqual(result.json.commits, [{ n: 1, sha: shas[0], header: THREE_HEADERS[0] }]);
 });
 
+// KD-R104 (INT-10): the same three files and groups as `threeGroupRun`, but the stored groups
+// and `awaitingConfirm` come from a real `check --plan` over a worker plan (RUN-18's route):
+// three groups in an interactive run, so `check` keeps the run and hands back `confirm`.
+// Nothing in the state is forged.
+async function threeGroupConfirmRun(t) {
+  const c = createCase(t);
+  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}
+`);
+  c.git(['add', '--', 'a.txt', 'b.txt', 'c.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}
+more
+`);
+  const planned = await runCommit(c, ['plan']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1,
+    source: 'worker',
+    groups: ['a', 'b', 'c'].map((name, i) => ({
+      header: THREE_HEADERS[i], body: null, files: [`${name}.txt`], hunks: [],
+    })),
+    notIncluded: [],
+  }));
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  assert.equal(state.awaitingConfirm, true, 'check stored awaitingConfirm');
+  assert.equal(state.groups.length, 3);
+  return { c, planId, runDir, seed, checked };
+}
+
 // EXE-22 AC2/AC3 (docs/roadmap/10-commit-executor.md): a run left in `confirm`
 // (`state.awaitingConfirm`) with `--confirmed` on the first group's call commits normally
 // and clears `awaitingConfirm` right away; a budget stop after that confirmed group 1 hands
 // back a `continue` whose `run` carries no `--confirmed` (C:commit-release), and that bare
 // `commit --all` still succeeds because `awaitingConfirm` is already gone.
 test('--confirmed on a run left in confirm commits group 1 and clears awaitingConfirm; after a budget stop the continue run (no --confirmed) commits the rest', async (t) => {
-  const { c, planId, runDir, seed } = await threeGroupRun(t, {
-    edit: (state) => { state.awaitingConfirm = true; },
-  });
+  const { c, planId, runDir, seed } = await threeGroupConfirmRun(t);
 
   const stopped = await runConfirmedCommitAtElapsed(c, planId, 61_000);
 
@@ -1175,4 +1207,31 @@ test('--confirmed on a run left in confirm commits group 1 and clears awaitingCo
   const shas = c.git(['rev-list', '--reverse', `${seed}..HEAD`]).trim().split('\n');
   assert.equal(shas.length, 3, 'groups 2 and 3 committed on top of group 1');
   assert.equal(fs.existsSync(runDir), false, 'released after the last group');
+});
+
+// KD-R104 (INT-10), C:commit-release phase (a): `unconfirmed` is checked ahead of `no-groups`.
+// `check` never stores `awaitingConfirm` with zero groups, so the state is tampered with
+// (Q16's `Edit(**/.commit-plan/**)` gap) after a real confirm handback.
+test('awaitingConfirm with zero stored groups: commit --all refuses unconfirmed; with --confirmed, no-groups', async (t) => {
+  const { c, planId, runDir } = await threeGroupConfirmRun(t);
+  const statePath = path.join(runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups = [];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}
+`);
+  const head = c.git(['rev-parse', 'HEAD']).trim();
+
+  const bare = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(bare.exitCode, 1, detail(bare));
+  assert.equal(bare.json.error.kind, 'usage', detail(bare));
+  assert.match(bare.json.error.message, /confirm/i, 'unconfirmed, not no-groups');
+  assert.equal(fs.existsSync(runDir), true, 'the run is kept');
+
+  const confirmed = await runCommit(c, ['commit', '--plan', planId, '--all', '--confirmed']);
+
+  assert.equal(confirmed.exitCode, 1, detail(confirmed));
+  assert.equal(confirmed.json.error.kind, 'usage', detail(confirmed));
+  assert.doesNotMatch(confirmed.json.error.message, /confirm/i, 'no-groups, not unconfirmed');
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), head, 'nothing committed');
 });

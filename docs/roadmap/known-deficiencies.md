@@ -281,20 +281,6 @@ fixed, delete it here; IDs are never reused.
   notices yet (the `Notices:` block is RPL-05's). Fix: once RPL-05 lands, assert the notice in
   the handback's and the `committed` reply's `text`, and drop this row. Slice: RUN-21 (with
   RPL-05).
-- **KD-R104.** EXE-22's AC2/AC3 case (`tests/commit-all.test.js`, the `--confirmed` test)
-  still forges `state.awaitingConfirm = true` through `threeGroupRun`'s `edit` hook instead
-  of reaching `confirm` through a real `check` (RUN-18's route), unlike AC1
-  (`tests/commit-open.test.js`, rebuilt over a real `check --plan` confirm handback:
-  review-EXE-22 Low-2). `threeGroupRun` backs most of this file's multi-group budget-stop
-  cases, so rebuilding it over three real new-file confirm handbacks is out of EXE-22's own
-  scope. The same gap leaves the `unconfirmed`-before-`no-groups` order (C:commit-release
-  phase (a)) untested: no case stores `awaitingConfirm` with zero stored groups, so only a
-  tampered state (Q16's `Edit(**/.commit-plan/**)` gap) could show the order, and none exists
-  (review-EXE-22 Low-3). Where: `tests/commit-all.test.js` `threeGroupRun`. Fix: once INT-09
-  rebuilds the forged-state confirm-route cases over real `check` handbacks, add a
-  three-group case the same way and, separately, a case with `awaitingConfirm` and zero
-  stored groups (`unconfirmed`) next to a `--confirmed` case with zero stored groups
-  (`no-groups`), and drop this row. Slice: INT-10 (confirm-route tests).
 
 ## Design sync
 
