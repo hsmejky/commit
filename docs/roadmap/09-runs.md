@@ -826,16 +826,16 @@ CHG-03b built, so every subcommand's `internal` ending goes through it.
 
 **Blocked by:** RUN-16, RUN-18, EXE-10, EXE-12, EXE-16.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M15 `runEnd`, C:cli-and-exit-codes (error table), C:run-folder (deleted with the lock), Q18, Q22, stories 45, 194.
 
-- [ ] Seam 1: one assertion of lock and folder presence after each ending outcome the
+- [x] Seam 1: one assertion of lock and folder presence after each ending outcome the
       error table lists and that an earlier slice can reach (the table row names the
       fixture).
-- [ ] Seam 1: an interactive `lintFailed` and a budget stop keep the run. A `confirm`
+- [x] Seam 1: an interactive `lintFailed` and a budget stop keep the run. A `confirm`
       handback keeps it. `busy` keeps it.
-- [ ] Seam 1: `commit --all`'s `releaseOpen(run)` result (`{ notice, kept }`) after the last
+- [x] Seam 1: `commit --all`'s `releaseOpen(run)` result (`{ notice, kept }`) after the last
       group reaches the reply, not just the lock/folder outcome: a busy lock rename
       (`kept: true`) and a folder-removal error each surface their notice text (review-EXE-02
       finding 3; no slice currently asserts this — INT-02 asserts only the `committed` reply,
