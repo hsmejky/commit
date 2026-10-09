@@ -40,8 +40,6 @@ fixed, delete it here; IDs are never reused.
   behaviour left to WRK-06.
 - **KD-R16.** CHG-03b's fault criteria say "no lock file"; a lock temp file may legitimately
   remain. Say "no `.commit-plan/lock`".
-- **KD-R17.** CHG-23's `index.lock` grep trips on M16's expected notice and on
-  `index-lock`. Have M10 return the notice text; grep fs calls only, fixed-string.
 - **KD-R19.** MSG-01's header-mismatch criterion lacks its seam ("Seam 3 table").
 - **KD-R73.** C:cli-and-exit-codes says every output that ends the worker's part of a run,
   failures included, carries `reply`. RPL-04 built the `failed` reply for every `plan`

@@ -201,3 +201,42 @@ test(
     assert.equal(await stopped(grandchild), true, 'the grandchild survived: only the direct child was killed');
   },
 );
+
+// CHG-23: `beforeKill` (M10 `commitGuarded` only) runs once, synchronously, before a timeout's
+// tree kill; a throw is swallowed; an `onStdout` failure is not a timeout and never calls it.
+test('run: beforeKill is called once before a timeout kill and a throw does not stop the kill', async (t) => {
+  const c = createCase(t, { repo: false });
+  let calls = 0;
+
+  const result = await processAdapter.run(process.execPath, ['-e', HANG], {
+    cwd: os.tmpdir(),
+    env: c.env,
+    timeoutMs: 200,
+    beforeKill: () => {
+      calls += 1;
+      throw new Error('marker write failed');
+    },
+  });
+
+  assert.equal(result.timedOut, true);
+  assert.equal(result.code, null);
+  assert.equal(calls, 1);
+});
+
+test('run: beforeKill is not called when an onStdout failure ends the run', async (t) => {
+  const c = createCase(t, { repo: false });
+  let calls = 0;
+
+  await assert.rejects(processAdapter.run(
+    process.execPath, ['-e', "console.log('x'); setTimeout(() => {}, 60000)"],
+    {
+      cwd: os.tmpdir(),
+      env: c.env,
+      timeoutMs: 30_000,
+      onStdout: () => { throw new Error('consumer failed'); },
+      beforeKill: () => { calls += 1; },
+    },
+  ), /consumer failed/);
+
+  assert.equal(calls, 0);
+});

@@ -87,7 +87,10 @@ const deadline = Date.now() + 30000;
     if (Date.now() < deadline) setTimeout(poll, 20);
     return;
   }
-  setTimeout(() => {
+  const giveUp = Date.now() + 2500;
+  setTimeout(function create() {
+    // git may still be cleaning up its own lock (POSIX removes it on SIGTERM): wait, bounded.
+    if (fs.existsSync(lock) && Date.now() < giveUp) return setTimeout(create, 20);
     const start = fs.statSync(dir + '/commit-guard-start').mtimeMs;
     const kill = fs.statSync(dir + '/commit-guard-kill').mtimeMs;
     const at = ${target};
@@ -106,6 +109,8 @@ const deadline = Date.now() + 30000;
   ]);
 }
 
+// On POSIX git removes its own index.lock on SIGTERM, so this test alone does not prove M10's
+// removal there; the cross-OS proof is the AC2 1.5 s case (the survivor re-creates the lock).
 test('AC1: reword, sleeping hook at 535 s -> index.lock existed during the hook and is gone after the kill', TEST_TIMEOUT, async (t) => {
   const { c, argv } = await rewordRun(t);
   installHook(c, 'pre-commit', [
