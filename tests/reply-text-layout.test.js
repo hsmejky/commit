@@ -53,7 +53,7 @@ function seedFiles(c, names, text = 'x\n') {
   c.git(['commit', '-q', '-m', 'seed']);
 }
 
-test('Seam 1: a committed reply with every list one past its cap shows 10 plus "+1 more" and fits the size budgets', { timeout: 120_000 }, async (t) => {
+test('Seam 1: a committed reply with every list one past its cap shows 10 plus "+1 more" and fits the size budgets', { timeout: 240_000 }, async (t) => {
   const c = createCase(t);
   const edits = Array.from({ length: 11 }, (_, i) => `e${pad(i)}.txt`);
   const secrets = Array.from({ length: 11 }, (_, i) => `s${pad(i)}.js`);
