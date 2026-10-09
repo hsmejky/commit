@@ -77,6 +77,11 @@
 - **Entry points survive an old Node.** Both entry points are written in syntax every Node
   since 12 parses, check `process.versions.node` first (commit entry point: the `env` JSON
   refusal; guard: silent exit), and only then load the library with a dynamic `import()`.
+  On POSIX the commit entry point next refuses (`env`, no `reply`) a `\` in its own real
+  directory, the one install path character under which Node's ES module loader cannot load
+  the library at all (an encoded `\` in a file URL is `ERR_INVALID_MODULE_SPECIFIER`); M1's
+  install path check covers every other character, and a `\` that only the invoked path
+  holds (through a link).
 - **Module type fixed by extension** (Q1, Q15 as amended). The entry points are CommonJS
   (`plugin/scripts/commit.cjs`, `plugin/scripts/guard.cjs`); every library module is an ES
   module (`plugin/scripts/lib/*.mjs`). The entry points reach the library only through the

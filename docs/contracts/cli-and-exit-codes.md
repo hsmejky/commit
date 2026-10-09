@@ -71,7 +71,12 @@ and `touched` are all `null`.
 
 Every output that ends the worker's part of a run, failures included, also carries `reply`
 ([Reply and handback](reply-and-handback.md)); the worker returns it verbatim. A failure the
-worker handles itself (a first lint failure) carries none.
+worker handles itself (a first lint failure) carries none. Neither do the commit entry
+point's own outputs from before or without the library: `env` for a Node older than 22 or,
+on POSIX, a `\` in the entry point's own (real) directory (Node's ES module loader refuses
+every library URL under it, `ERR_INVALID_MODULE_SPECIFIER`, so the library's own install
+path check could never run), and `internal` for a library that fails to load; the worker
+answers those with its fallback reply ([worker input](worker-input.md)).
 
 | Kind | Raised by | When |
 | --- | --- | --- |

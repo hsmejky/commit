@@ -29,11 +29,24 @@ function detail(result) {
   return `stdout ${result.stdout}\nstderr ${result.stderr}`;
 }
 
+// The plugin scripts copied to `dest`, one `mkdirSync`/`copyFileSync` at a time. Not
+// `fs.cpSync`: on Windows, Node 22.23 writes a destination holding a non-ASCII character
+// (a typographic double quote) under a mojibake name (its UTF-8 bytes read in the ANSI code
+// page), so the entry point the test then runs does not exist ("Cannot find module").
+function copyScripts(dest, from = PLUGIN_SCRIPTS) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const source = path.join(from, entry.name);
+    if (entry.isDirectory()) copyScripts(path.join(dest, entry.name), source);
+    else fs.copyFileSync(source, path.join(dest, entry.name));
+  }
+}
+
 // The scripts copied to `<claude home>/plugins/cache/commit/commit/0.1.0/scripts` (the fixture
 // layout of the plugin cache); returns the copied entry point.
 function installInCache(c) {
   const dest = path.join(c.claudeHome, 'plugins', 'cache', 'commit', 'commit', '0.1.0', 'scripts');
-  fs.cpSync(PLUGIN_SCRIPTS, dest, { recursive: true });
+  copyScripts(dest);
   return path.join(dest, 'commit.cjs');
 }
 
@@ -238,7 +251,7 @@ async function runFromCopy(t, ch, args = ['plan']) {
   const c = createCase(t);
   const headBefore = c.git(['log', '--all', '--format=%H']);
   const dest = path.join(c.root, `in${ch}stall`, 'scripts');
-  fs.cpSync(PLUGIN_SCRIPTS, dest, { recursive: true });
+  copyScripts(dest);
   const result = await runCommit(c, args, { script: path.join(dest, 'commit.cjs') });
   return { c, result, headBefore };
 }
@@ -257,13 +270,43 @@ function assertEnvRefusal(c, result) {
   assert.equal(refusal.handback, null);
 }
 
+// A `\` in the entry point's own (real) directory on POSIX: Node's ES module loader refuses
+// every library URL under it (an encoded `\`, `ERR_INVALID_MODULE_SPECIFIER`), so the entry
+// point refuses it itself before the import, like a Node older than 22: `env`, no `reply`
+// (the worker's fallback reply covers it, C:worker-input).
+function assertEntryEnvRefusal(c, result) {
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.error.kind, 'env', detail(result));
+  assert.match(result.json.error.message, /install path of commit\.cjs holds a \\/);
+  assert.equal(result.json.reply, undefined, 'the library never loaded');
+  assert.equal(result.stderr, '', 'a refusal, not a crash');
+  assert.equal(fs.existsSync(path.join(c.repoDir, '.commit-plan')), false, 'no run folder');
+}
+
 for (const [ch, name] of [...BOTH_PLATFORMS, ...POSIX_ONLY]) {
   const skip = process.platform === 'win32' && POSIX_ONLY.some(([posix]) => posix === ch) ? 'POSIX only' : false;
   test(`Seam 1: an install path holding a ${name} -> exit 1 env before any work`, { skip }, async (t) => {
-    const { c, result } = await runFromCopy(t, ch);
-    assertEnvRefusal(c, result);
+    const { c, result, headBefore } = await runFromCopy(t, ch);
+    if (ch === '\\') assertEntryEnvRefusal(c, result);
+    else assertEnvRefusal(c, result);
+    assert.equal(c.git(['log', '--all', '--format=%H']), headBefore, 'no commit was made');
   });
 }
+
+test('Seam 1: an install path holding a backslash only through a link -> exit 1 env from the library, with a reply', {
+  skip: process.platform === 'win32' ? 'POSIX only' : false,
+}, async (t) => {
+  // The real directory has no `\`, so the library loads (Node resolves the main script's
+  // links); the path the process was invoked with, which every `run` repeats, still has one.
+  const c = createCase(t);
+  const real = path.join(c.root, 'install', 'scripts');
+  copyScripts(real);
+  const linked = path.join(c.root, 'in\\stall');
+  fs.symlinkSync(path.dirname(real), linked);
+  const result = await runCommit(c, ['plan'], { script: path.join(linked, 'scripts', 'commit.cjs') });
+  assertEnvRefusal(c, result);
+});
 
 test('Seam 1: a commit --plan --all call from a refused install path is refused env, committing nothing (KD-R76)', async (t) => {
   const { c, result, headBefore } = await runFromCopy(t, '$', ['commit', '--plan', '3f9a1c00-0000-4000-8000-000000000000', '--all']);

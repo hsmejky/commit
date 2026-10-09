@@ -3,7 +3,8 @@
 // Commit entry point (Q1, Q15; docs/spec/architectural-decisions.md "Entry points survive
 // an old Node", "Injected environment", "Module type fixed by extension").
 //
-// A thin CommonJS shell with no domain logic: it checks the Node version first, resolves
+// A thin CommonJS shell with no domain logic: it checks the Node version first, then (POSIX)
+// that its own directory holds no `\` Node's ES module loader cannot load from, resolves
 // the injected environment once, loads M1 (`lib/cli.mjs`) with a dynamic `import()`, and
 // writes the one JSON object M1 returns to stdout with M1's exit code. Written in syntax
 // every Node since 12 parses, so an old Node gets the `env` refusal, not a SyntaxError.
@@ -17,8 +18,9 @@ function writeResult(stdoutJson, exitCode) {
   process.exitCode = exitCode;
 }
 
-// The failure shape of C:cli-and-exit-codes, for the two outcomes that happen before or
-// without M1: an old Node (`env`) and a library that fails to load or throws (`internal`).
+// The failure shape of C:cli-and-exit-codes, for the outcomes that happen before or without
+// M1: an old Node or an unloadable install path (`env`), and a library that fails to load or
+// throws (`internal`).
 function failure(kind, message) {
   return { version: 1, ok: false, error: { kind: kind, message: message } };
 }
@@ -29,6 +31,12 @@ var nodeMajor = parseInt(nodeVersion.split('.')[0], 10);
 if (!(nodeMajor >= MIN_NODE_MAJOR)) {
   writeResult(failure('env', 'Node ' + nodeVersion + ' is older than ' + MIN_NODE_MAJOR
     + '; /commit needs Node ' + MIN_NODE_MAJOR + ' or newer'), 1);
+} else if (process.platform !== 'win32' && __dirname.indexOf('\\') !== -1) {
+  // A `\` in this file's own (real) directory on POSIX: Node's ES module loader refuses
+  // every library URL under it (an encoded `\`, ERR_INVALID_MODULE_SPECIFIER), so M1's own
+  // install path refusal could never run. Refused here like an old Node: `env`, no `reply`.
+  writeResult(failure('env', 'the install path of commit.cjs holds a \\, under which Node cannot '
+    + 'load the script library; install the plugin under a path without one'), 1);
 } else {
   var path = require('path');
   var os = require('os');
