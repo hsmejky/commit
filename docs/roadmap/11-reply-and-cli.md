@@ -147,13 +147,13 @@ stories 55, 56, 57, 60, 228.
 
 **Blocked by:** EXE-12, INT-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M17, C:reply-and-handback (`text`), Q18, stories 163, 218.
 
-- [ ] Seam 1 (POSIX for newline and ESC): a file named with a newline, an ESC and a C1
+- [x] Seam 1 (POSIX for newline and ESC): a file named with a newline, an ESC and a C1
       character → each written as `\xNN`, no forged "working tree clean" line
-- [ ] A hook printing ANSI sequences and 5000 characters → ESC escaped, last 2000 kept with
+- [x] A hook printing ANSI sequences and 5000 characters → ESC escaped, last 2000 kept with
       the marker, full text in `gitOutput`
 
 
