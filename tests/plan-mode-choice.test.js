@@ -74,3 +74,37 @@ test('every change staged (git add -A) plans split with no question (story 82)',
   assert.equal(result.json.mode, 'split');
   assert.equal(result.json.reply, null);
 });
+
+// RPL-09 (docs/roadmap/11-reply-and-cli.md, C:reply-and-handback `respawn`, Q9, Q22): a
+// `plan --take-over <planId>` on a mixed index takes the lock over at step 3 and ends with a
+// `modeChoice` that released it, so the `staged` answer holds `mode` alone, with no `takeOver`.
+test('plan --take-over on a mixed index answers staged with mode alone; the respawn finds no lock', async (t) => {
+  const c = createCase(t);
+  mixed(c);
+  const otherId = '11111111-1111-4111-8111-111111111111';
+  const runDir = path.join(c.repoDir, '.commit-plan');
+  fs.mkdirSync(path.join(runDir, otherId), { recursive: true });
+  fs.writeFileSync(path.join(runDir, otherId, 'state.json'), '{}\n');
+  fs.writeFileSync(
+    path.join(runDir, 'lock'),
+    JSON.stringify({ planId: otherId, created: '2026-09-26T13:58:02.000Z' }),
+  );
+
+  const result = await runCommit(c, ['plan', '--take-over', otherId]);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  const { handback } = result.json.reply;
+  assert.equal(handback.kind, 'modeChoice');
+  for (const answer of handback.answers) {
+    assert.doesNotMatch(answer.respawn, /takeOver|intent|reword/);
+  }
+  assert.deepEqual(handback.answers, [
+    { label: 'staged', respawn: 'mode: staged' },
+    { label: 'split', respawn: 'mode: split' },
+  ]);
+  assert.deepEqual(fs.readdirSync(runDir), [], 'the modeChoice released the lock');
+
+  const again = await runCommit(c, ['plan', '--staged']);
+  assert.equal(again.exitCode, 0, detail(again));
+  assert.equal(again.json.mode, 'staged');
+});
