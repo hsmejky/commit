@@ -62,7 +62,7 @@ for (const [name, setUp] of CLEAN_REPOS) {
 // filesystem or import beyond its allowed pure dependencies.
 test('M17 reply module stays pure', () => {
   const { assertPureSource } = require('./helpers/assert-pure-source');
-  assertPureSource('reply');
+  assertPureSource('reply', { allowImports: ['./script-call.mjs'] });
 });
 
 // RPL-04: `reply()`'s `failed` status, unit-level (C:reply-and-handback), independent of

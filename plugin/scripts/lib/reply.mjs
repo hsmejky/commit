@@ -114,7 +114,7 @@ function renderUnstaged(unstaged) {
 
 // RUN-18 (C:check "Zero groups", story 97): one line per `notIncluded` entry, naming the path
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
-// use (C:reply-and-handback); INT-09 may still fold this into that shared rendering.
+// use (C:reply-and-handback); RPL-06 owns the escaping of both renderings.
 function renderNotIncluded(notIncluded) {
   return notIncluded.map(({ path, reason }) => `${path}: ${reason}`);
 }
@@ -292,15 +292,12 @@ export function reply(facts) {
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
     firstLines = [LINT_FAILED_QUESTION];
   } else if (facts.status === 'handback' && facts.kind === 'confirm') {
-    // INT-09: the confirmation block (Q16) and the answers. Without `scriptPath` (a caller
-    // that has none) only RUN-18's question and `humanOnly` are built.
+    // INT-09: the confirmation block (Q16) and the answers; every caller injects `scriptPath`.
     if (facts.scriptPath === undefined) {
-      firstLines = [CONFIRM_QUESTION];
-      handback = { kind: 'confirm', humanOnly: facts.humanOnly === true, question: CONFIRM_QUESTION };
-    } else {
-      firstLines = renderConfirmBlock(facts);
-      handback = confirmHandback(facts);
+      throw new Error('reply: a confirm handback needs scriptPath');
     }
+    firstLines = renderConfirmBlock(facts);
+    handback = confirmHandback(facts);
   } else if (facts.status === 'handback' && facts.kind === 'handedBack') {
     // RUN-18 (C:reply-and-handback handback table): information only — nothing to ask, the
     // run already released. Still missing: the handback table's own
@@ -338,7 +335,7 @@ export function reply(facts) {
     notices: facts.notices === undefined ? [] : [...facts.notices],
     // INT-05, INT-09: the `lock` and `confirm` handbacks add the handback rule so far.
     callerRule: facts.status === 'handback' && (facts.kind === 'lock'
-      || (facts.kind === 'confirm' && facts.scriptPath !== undefined))
+      || facts.kind === 'confirm')
       ? `${BASE_CALLER_RULE} ${HANDBACK_RULE}`
       : BASE_CALLER_RULE,
     handback,

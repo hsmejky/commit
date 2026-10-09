@@ -1490,8 +1490,8 @@ export async function release(values, injected, { cwd }) {
  * `no-groups`.
  *
  * The output holds C:commit-release's fields (`commits`, `failed`, `remaining`, `error`,
- * `gitOutput`, `unstaged`) but no `reply` yet (KD-R73): INT-02 builds the `committed` reply
- * on `check`'s in-process `commit --all` only (`committedOutput`).
+ * `gitOutput`, `unstaged`) but no `reply` of its own yet (KD-R73): the `committed` reply is
+ * built only on `check`'s in-process `commit --all` (`committedOutput`).
  *
  * @param {{ plan: string }} values the parsed and validated `commit` flags (M1 `parseArgv`).
  * @param {object} injected the injected environment.

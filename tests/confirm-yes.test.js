@@ -163,3 +163,19 @@ test('Seam 1 (AC6): running the no release command verbatim -> nothing, lock and
   assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), false, 'the lock is gone');
   assert.equal(c.git(['ls-files', '-s']), indexBefore);
 });
+
+// A skipped (over-size) file is a humanOnly reason (C:confirmation-triggers); interactively it
+// is a `confirm` handback whose `ifNoUser` is `no` handed to the parent (C:reply-and-handback).
+test('Seam 1 (AC1): a humanOnly confirm -> ifNoUser is no, returnToParent true, humanOnly true', async (t) => {
+  const c = createCase(t);
+  seed(c, { 'big.txt': 'keep\n' });
+  const lines = [];
+  for (let i = 0; i < 1100; i += 1) lines.push(`${'x'.repeat(1023)}\n`);
+  c.writeFile('big.txt', `keep\n${lines.join('')}`);
+  const { checked } = await confirmed(c, [group('feat: big', ['big.txt'])]);
+
+  const { handback } = checked.json.reply;
+  assert.equal(handback.kind, 'confirm');
+  assert.equal(handback.humanOnly, true);
+  assert.deepEqual(handback.ifNoUser, { answer: 'no', returnToParent: true });
+});

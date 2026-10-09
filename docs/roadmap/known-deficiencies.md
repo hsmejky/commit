@@ -317,7 +317,7 @@ fixed, delete it here; IDs are never reused.
   rebuilds the forged-state confirm-route cases over real `check` handbacks, add a
   three-group case the same way and, separately, a case with `awaitingConfirm` and zero
   stored groups (`unconfirmed`) next to a `--confirmed` case with zero stored groups
-  (`no-groups`), and drop this row. Slice: INT-09 (confirm-route tests).
+  (`no-groups`), and drop this row. Slice: INT-10 (confirm-route tests).
 
 ## Design sync
 
