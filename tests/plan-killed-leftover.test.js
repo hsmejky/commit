@@ -9,12 +9,12 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn, spawnSync } = require('node:child_process');
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { loadLib } = require('./helpers/load-lib.js');
-const { COMMIT_ENTRY, createCase, runCommit } = require('./helpers/process-seam.js');
+const { createCase, runCommit } = require('./helpers/process-seam.js');
+const { killCommitInHook } = require('./helpers/kill-run.js');
 
 let runPolicy;
 
@@ -23,7 +23,6 @@ beforeEach(async () => {
 });
 
 const TEST_TIMEOUT = { timeout: 90_000 };
-const slash = (p) => p.replace(/\\/g, '/');
 const HEADERS = ['feat: change a', 'feat: change b'];
 const NO_FLAGS = { split: false, staged: false };
 
@@ -60,17 +59,24 @@ test('M15 resolveMode: killedLeftover with reword stays reword plus a notice, wi
   }
 });
 
+test('M15 resolveMode: killed-leftover message stays within the 900-byte refusal budget with long escaped paths', () => {
+  // Six paths of escaped bytes (the reply's backslash-x form, doubled again by JSON), five shown.
+  const long = (n) => `dir${n}/${'\\xE2\\x82\\xAC'.repeat(60)}/file${n}.txt`;
+  const paths = [1, 2, 3, 4, 5, 6].map(long);
+  const { message } = runPolicy.resolveMode({ ...NO_FLAGS, staged: true, noUser: true }, { staged: 2, other: 1 }, true, paths).refusal;
+  assert.ok(Buffer.byteLength(JSON.stringify(message), 'utf8') - 2 <= 900, `${message.length} chars`);
+  assert.match(message, /^a killed \/commit run left staging behind, and more was staged since: `…/);
+  assert.match(message, /file1\.txt`, `…[^`]*file2\.txt`/);
+  assert.match(message, / and 1 more; unstage them or commit by hand, then run \/commit again$/);
+  const short = runPolicy.resolveMode({ ...NO_FLAGS, staged: true, noUser: true }, { staged: 2, other: 1 }, true, ['a.txt']).refusal.message;
+  assert.doesNotMatch(short, /…/);
+});
+
 test('M15 resolveMode: killedLeftover false leaves the ordinary decision alone', () => {
   assert.deepEqual(runPolicy.resolveMode({ ...NO_FLAGS, staged: true, noUser: true }, { staged: 1, other: 1 }, false), { mode: 'staged' });
 });
 
 // --- Seam 1 -------------------------------------------------------------------------------
-
-function installHook(c, name, lines) {
-  const hook = path.join(c.repoDir, '.git', 'hooks', name);
-  fs.writeFileSync(hook, `#!/bin/sh\n${lines.join('\n')}\n`);
-  fs.chmodSync(hook, 0o755);
-}
 
 // Two committed files, both modified, a.txt staged (so `preStaged` is `[a.txt]`), a `plan
 // --split` run and two stored groups, one file each, as in plan-takeover-repair.test.js.
@@ -97,32 +103,10 @@ async function killableRun(t) {
   return { c, planId, runDir, lockPath: path.join(path.dirname(runDir), 'lock') };
 }
 
-function killTree(child) {
-  if (process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)]);
-  else process.kill(-child.pid, 'SIGKILL');
-}
-
-async function untilExists(file, ms = 30_000) {
-  const end = Date.now() + ms;
-  while (!fs.existsSync(file)) {
-    if (Date.now() > end) throw new Error(`${file} never appeared`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-// A `commit --plan --all` call SIGKILLed (its whole process tree) while the pre-commit hook
+// A `commit --plan --all` call SIGKILLed (node alone, then the hook) while the pre-commit hook
 // sleeps: group 1 (a.txt) is staged, `indexReset` is set (phase (c)). Then the user stages b.txt.
 async function killInPhaseCThenStageMore(c, planId) {
-  const started = path.join(c.root, 'hook.started');
-  installHook(c, 'pre-commit', [`: > '${slash(started)}'`, 'exec sleep 120']);
-  const child = spawn(process.execPath, [COMMIT_ENTRY, 'commit', '--plan', planId, '--all'], {
-    cwd: c.repoDir, env: c.env, stdio: 'ignore', windowsHide: true, detached: process.platform !== 'win32',
-  });
-  const closed = new Promise((resolve) => child.on('close', resolve));
-  await untilExists(started);
-  killTree(child);
-  await closed;
-  fs.rmSync(path.join(c.repoDir, '.git', 'hooks', 'pre-commit'));
+  await killCommitInHook(c, ['--plan', planId, '--all']);
   c.git(['add', '--', 'b.txt']);
   assert.equal(c.git(['diff', '--cached', '--name-only']), 'a.txt\nb.txt\n');
 }
@@ -212,6 +196,22 @@ test('Seam 1: an automatic takeover under --split --no-user -> exit 6 state kill
   assert.equal(c.git(['diff', '--cached', '--name-only']), 'a.txt\nb.txt\n', 'the index is unchanged');
   assertReleased(lockPath, runDir);
   assert.match(result.json.reply.notices.join('\n'), new RegExp(`took over the stale /commit run \`${planId}\``));
+});
+
+test('Seam 1: the same under plain --reword (interactive) -> the run goes on with a notice, no modeChoice', TEST_TIMEOUT, async (t) => {
+  const { c, planId, lockPath } = await killableRun(t);
+  await killInPhaseCThenStageMore(c, planId);
+  ageLock(lockPath);
+
+  const result = await runCommit(c, ['plan', '--reword']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.mode, 'reword', detail(result));
+  assert.notEqual(result.json.planId, null);
+  assert.equal(result.json.reply?.handback, undefined, detail(result));
+  const state = JSON.parse(fs.readFileSync(path.join(result.json.runDir, 'state.json'), 'utf8'));
+  assert.match(state.notices.join('\n'), /left its group's paths staged: `a\.txt`/);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'a.txt\nb.txt\n', 'reword never touches the index');
 });
 
 test('Seam 1: the same under --reword -> the run goes on with a notice naming the paths', TEST_TIMEOUT, async (t) => {

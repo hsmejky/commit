@@ -21,6 +21,7 @@ const { pathToFileURL } = require('node:url');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCase, runCommit, pathOverride } = require('./helpers/process-seam.js');
+const { killCommitInHook } = require('./helpers/kill-run.js');
 const { parseDomainCodeDocTable, firstColumnKey } = require('./helpers/domain-code-doc.js');
 
 const ROADMAP = path.join(__dirname, '..', 'docs', 'roadmap');
@@ -354,8 +355,10 @@ const ROWS = [
           n: 1, units: state.units.filter((unit) => unit.path === 'a.txt').map((unit) => unit.id),
           header: 'feat: change a', body: null, committed: false,
         }];
-        state.indexReset = true;
         fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+        // The real kill (tests/helpers/kill-run.js) leaves the run's state as the shipped
+        // entry point wrote it, `indexReset` included; the test never sets it.
+        await killCommitInHook(c, ['--plan', planned.json.planId, '--all']);
         c.git(['add', '--', 'b.txt']);
         const lockPath = path.join(path.dirname(planned.json.runDir), 'lock');
         const then = new Date(Date.now() - 20 * 60_000);

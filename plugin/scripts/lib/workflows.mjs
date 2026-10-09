@@ -79,7 +79,7 @@ import { gitPath, withDeadline } from './process-adapter.mjs';
 import { escapePath, reply } from './reply.mjs';
 import {
   afterCheck, checkGate, cleanupDeadline, computeConfirm, deadline, onLintFailure, planRefusal,
-  releaseDeadline, resolveMode, runEnd,
+  REFUSAL_MESSAGE_BUDGET, jsonBytes, releaseDeadline, resolveMode, runEnd, tailWithin,
 } from './run-policy.mjs';
 import { kindForDomainCode } from './domain-codes.mjs';
 import { loadConfig, readLayers, scanIgnoreChanged, isRepoConfigPath, REPO_CONFIG_PATH } from './config.mjs';
@@ -440,26 +440,6 @@ async function refuseCaseRenames(ctx) {
   return { refusal: { code: 'case-rename', message: caseRenameMessage(renames) } };
 }
 
-// `plan`'s own stdout fields, a refusal's `error` object included, stay within 1 kB (C:plan,
-// Q24): the message gets at most 900 bytes once JSON-encoded, the rest is the envelope.
-const CASE_RENAME_MESSAGE_BUDGET = 900;
-
-// The size of `text` inside a JSON string: UTF-8 bytes after JSON escaping.
-function jsonBytes(text) {
-  return Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
-}
-
-// The longest tail of `text` (whole code points) that fits in `max` JSON bytes behind `…`.
-function tailWithin(text, max) {
-  if (jsonBytes(text) <= max) return text;
-  const chars = [...text];
-  let tail = '';
-  for (let i = chars.length - 1; i >= 0 && jsonBytes(`…${chars[i]}${tail}`) <= max; i -= 1) {
-    tail = `${chars[i]}${tail}`;
-  }
-  return `…${tail}`;
-}
-
 // C:cli-and-exit-codes recorded text: the first five renames, then a count of the rest, each
 // path escaped as in the reply (RPL-06 `\xNN`, M17 `escapePath`); when the message would pass
 // its budget, every named path is cut to an equal share of it, keeping its tail behind `…`.
@@ -471,8 +451,8 @@ function caseRenameMessage(renames) {
     + `core.ignorecase=true: ${shown.map(({ oldPath, path }) => `${cut(oldPath)} → ${cut(path)}`).join(', ')}`
     + `${more}; commit the rename by hand, then run /commit again`;
   const whole = build((p) => p);
-  if (jsonBytes(whole) <= CASE_RENAME_MESSAGE_BUDGET) return whole;
-  const share = Math.floor((CASE_RENAME_MESSAGE_BUDGET - jsonBytes(build(() => ''))) / (2 * shown.length));
+  if (jsonBytes(whole) <= REFUSAL_MESSAGE_BUDGET) return whole;
+  const share = Math.floor((REFUSAL_MESSAGE_BUDGET - jsonBytes(build(() => ''))) / (2 * shown.length));
   return build((p) => tailWithin(p, share));
 }
 

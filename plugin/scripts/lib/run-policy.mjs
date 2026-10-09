@@ -253,16 +253,45 @@ export const STAGED_EMPTY_MESSAGE = 'nothing is staged any more: stage the chang
 // RUN-24 (Q17, Q22, C:run-folder takeover): the `killedLeftover` texts. The paths are the
 // killed group's paths still staged, already escaped (M17 `escapePath`), five at most.
 const LEFTOVER_SHOWN = 5;
-function leftoverList(paths) {
-  const shown = paths.slice(0, LEFTOVER_SHOWN).map((p) => `\`${p}\``).join(', ');
+function leftoverList(paths, cut = (p) => p) {
+  const shown = paths.slice(0, LEFTOVER_SHOWN).map((p) => `\`${cut(p)}\``).join(', ');
   const more = paths.length > LEFTOVER_SHOWN ? ` and ${paths.length - LEFTOVER_SHOWN} more` : '';
   return `${shown}${more}`;
 }
 
-/** `killed-leftover`'s text (C:run-folder): the refusal of a `--no-user` run without `--reword`. */
+// `plan`'s own stdout fields, a refusal's `error` object included, stay within 1 kB (C:plan,
+// Q24): a refusal message gets at most 900 bytes once JSON-encoded, the rest is the envelope.
+export const REFUSAL_MESSAGE_BUDGET = 900;
+
+/** The size of `text` inside a JSON string: UTF-8 bytes after JSON escaping. */
+export function jsonBytes(text) {
+  return Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
+}
+
+/** The longest tail of `text` (whole code points) that fits in `max` JSON bytes behind `…`. */
+export function tailWithin(text, max) {
+  if (jsonBytes(text) <= max) return text;
+  const chars = [...text];
+  let tail = '';
+  for (let i = chars.length - 1; i >= 0 && jsonBytes(`…${chars[i]}${tail}`) <= max; i -= 1) {
+    tail = `${chars[i]}${tail}`;
+  }
+  return `…${tail}`;
+}
+
+/**
+ * `killed-leftover`'s text (C:run-folder): the refusal of a `--no-user` run without `--reword`.
+ * Within the refusal budget like `case-rename`'s: when it would pass, every named path is cut
+ * to an equal share of it, keeping its tail behind `…`.
+ */
 export function killedLeftoverMessage(paths) {
-  return 'a killed /commit run left staging behind, and more was staged since: '
-    + `${leftoverList(paths)}; unstage them or commit by hand, then run /commit again`;
+  const build = (cut) => 'a killed /commit run left staging behind, and more was staged since: '
+    + `${leftoverList(paths, cut)}; unstage them or commit by hand, then run /commit again`;
+  const whole = build((p) => p);
+  if (jsonBytes(whole) <= REFUSAL_MESSAGE_BUDGET) return whole;
+  const shown = Math.min(paths.length, LEFTOVER_SHOWN);
+  const share = Math.floor((REFUSAL_MESSAGE_BUDGET - jsonBytes(build(() => ''))) / shown);
+  return build((p) => tailWithin(p, share));
 }
 
 /** The notice naming the killed group's paths still staged (a forced `modeChoice`, a `reword`). */

@@ -121,7 +121,12 @@ failed call whose unstage did not happen keeps its run, below):
       domain code `killed-leftover`: "a killed /commit run left staging behind, and more
       was staged since: <the killed group's paths still staged>; unstage them or commit by
       hand, then run /commit again"; the index stays untouched, and the lock is released
-      and the folder deleted;
+      and the folder deleted. The list names at most five paths, each in backticks (literal,
+      part of the printed text), escaped as in the reply, then " and N more"; the message
+      stays within the 900 bytes (JSON-encoded) that [`plan`](plan.md)'s 1 kB cap on a
+      refusal's `error` object leaves it, cutting every named path to an equal share, tail
+      kept behind `…`, as `case-rename`'s text does. The same paths in the `modeChoice` and
+      `reword` notices are listed the same way, uncut;
     - `--reword` (with or without `--no-user`) → no forced `modeChoice`: `--amend --only`
       never touches the index, so the leftover cannot be committed; the run goes on, and a
       notice names the killed group's paths still staged.
