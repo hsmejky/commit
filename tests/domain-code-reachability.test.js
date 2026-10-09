@@ -446,7 +446,23 @@ const ROWS = [
           return commitAll(c, planId);
         },
       },
-      { producer: 'M10 via M18', gap: { kd: 'KD-R98' } },
+      {
+        producer: 'M10 via M18',
+        // RUN-25: a foreign `index.lock` blocks a takeover's repair (tests/plan-takeover-chain.test.js).
+        async seam1Case(t) {
+          const { c, planId } = await groupedRun(t);
+          const runDir = path.join(c.repoDir, '.commit-plan');
+          const statePath = path.join(runDir, planId, 'state.json');
+          const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+          state.indexReset = true;
+          fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+          c.git(['add', '--', 'a.txt', 'b.txt']);
+          const then = new Date(Date.now() - 20 * 60_000);
+          fs.utimesSync(path.join(runDir, 'lock'), then, then);
+          fs.writeFileSync(path.join(c.repoDir, '.git', 'index.lock'), 'foreign lock\n');
+          return runCommit(c, ['plan', '--split']);
+        },
+      },
     ],
   },
   {

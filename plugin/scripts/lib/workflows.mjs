@@ -64,7 +64,7 @@ import {
   oldMessage, probe, recentSubjects, rewordFacts,
 } from './repo-probe.mjs';
 import {
-  assignIds, indexFingerprint, inventory as takeInventory, matchIds, snapshot, snapshotBlob, stagedPaths,
+  assignIds, indexFingerprint, indexLockExists, inventory as takeInventory, matchIds, snapshot, snapshotBlob, stagedPaths,
   trackedDirectories, treeState, unplannableCaseRenames, unstage, unstagedAfterReset, unstagedUnits,
 } from './change-set.mjs';
 import { applyCaps, bucketOf } from './path-classifier.mjs';
@@ -72,7 +72,7 @@ import {
   releaseById, releaseOpen, open, close, create, readState, readWorkerPlan, writeState, writeRunFile,
   sweep, insideRunDir, runDirOf, RUN_DIR_NAME, STATE_VERSION, lockHolderClock,
 } from './run.mjs';
-import { INDEX_CHANGED_TEXT, UNMATCHED_TEXT, commitAll } from './commit-executor.mjs';
+import { INDEX_CHANGED_TEXT, INDEX_LOCK_TEXT, UNMATCHED_TEXT, commitAll } from './commit-executor.mjs';
 import { validatePlan } from './plan-validator.mjs';
 import { renderHunks } from './hunk-index.mjs';
 import { gitPath, withDeadline } from './process-adapter.mjs';
@@ -276,7 +276,10 @@ async function createRunFolder(ctx) {
   if (acquired.takeover === null) return undefined;
   ctx.notices.push(acquired.takeover.notice);
   // RUN-23: the index repair, before inventory and before the folder is deleted.
-  await repairKilledIndex(ctx, acquired.takeover.killedRun);
+  const failed = await repairKilledIndex(ctx, acquired.takeover.killedRun);
+  // RUN-25: a failed repair keeps the chain (no `finishTakeover`); `plan`'s cleanup releases the
+  // run's own lock and deletes its own folder.
+  if (failed !== undefined) return failed;
   const finished = ctx.run.finishTakeover();
   if (finished !== null) ctx.notices.push(finished);
   return undefined;
@@ -285,6 +288,7 @@ async function createRunFolder(ctx) {
 // RUN-23 (Q18, Q22, C:run-folder takeover): the notice that the repair reset the killed group's
 // partial staging, and the heading of the `unstaged` report the killed run's own reset left.
 const REPAIR_RESET_NOTICE = 'reset the partial staging of the killed run\'s group';
+const REPAIR_FIRST_NOTICE = "a killed run's staging must be repaired first; the next /commit repairs it";
 const KILLED_UNSTAGED_NOTICE = 'the killed run\'s reset had unstaged:';
 
 // RUN-23: M18's index repair of a takeover, from M12's `killedRun`, run before step 4 so inventory
@@ -294,25 +298,53 @@ const KILLED_UNSTAGED_NOTICE = 'the killed run\'s reset had unstaged:';
 // `indexOnly`): `git reset -q -- .` and the reset notice. Anything else is left untouched
 // (`killedLeftover` is RUN-24's). The `unstaged` report (M10 `unstagedAfterReset` over the stored
 // lists) follows in every case. A failing reset throws (`internal` for now) before
-// `finishTakeover`, so the chain stays; the "repair failed" refusal is RUN-25's.
+// `finishTakeover`, so the chain stays (RUN-25): a refusal (`index-locked` for a foreign
+// `index.lock`, `timed-out`, else `git-failed`) after the "repair failed" notice.
 async function repairKilledIndex(ctx, killedRun) {
-  if (killedRun === null || !killedRun.indexReset || killedRun.groupStatus === 'committed') return;
+  if (!needsRepair(killedRun)) return undefined;
   const git = { toplevel: ctx.toplevel, env: ctx.injected.env, now: ctx.injected.now };
   const staged = await stagedPaths(git);
   const belongs = new Set([
     ...killedRun.groupPaths, ...killedRun.preStaged, ...killedRun.indexOnly.map((entry) => entry.path),
   ]);
   if (staged.length > 0 && staged.every((entry) => belongs.has(entry))) {
-    const reset = await unstage(git);
-    if (!reset.ok) throw new Error(`git reset failed while repairing a killed run's staging: ${reset.gitOutput}`);
+    let reset;
+    try {
+      reset = await unstage(git);
+    } catch (err) {
+      reset = { ok: false, gitOutput: String(err?.message ?? err) };
+    }
+    if (!reset.ok) return repairFailure(ctx, git, reset.gitOutput);
     ctx.notices.push(REPAIR_RESET_NOTICE);
   }
   const unstaged = await unstagedAfterReset(killedRun.preStaged, killedRun.indexOnly, git);
-  if (unstaged.length === 0) return;
+  if (unstaged.length === 0) return undefined;
   const named = unstaged.map(({ path: name, blob }) => (blob === null
     ? escapePath(name)
     : `${escapePath(name)} (staged version: git cat-file -p ${blob})`));
   ctx.notices.push(`${KILLED_UNSTAGED_NOTICE} ${named.join(', ')}`);
+  return undefined;
+}
+
+// RUN-25: whether a takeover's facts call for the index repair (C:run-folder: `indexReset` and a
+// group not `committed`).
+function needsRepair(killedRun) {
+  return killedRun !== null && killedRun.indexReset && killedRun.groupStatus !== 'committed';
+}
+
+// RUN-25 (C:run-folder "A failed repair"): the notice, then the refusal by cause. A deadline
+// that ended the reset overrides the refusal to `timed-out` in `plan` itself.
+async function repairFailure(ctx, git, gitOutput) {
+  let locked = false;
+  try {
+    locked = await indexLockExists(git);
+  } catch {
+    // The cause stays `git-failed`.
+  }
+  const cause = locked ? INDEX_LOCK_TEXT : 'git reset failed';
+  ctx.notices.push(`the takeover's index repair failed (${cause}); the next /commit retries it`);
+  if (locked) return { refusal: { code: 'index-locked', message: INDEX_LOCK_TEXT } };
+  return { refusal: { code: 'git-failed', message: `git reset failed while repairing a killed run's staging: ${gitOutput}`.trim() } };
 }
 
 /**
@@ -780,6 +812,18 @@ async function storeAndLock(ctx) {
     const acquired = ctx.provisional.acquire({ now: ctx.injected.now });
     if (!acquired.ok) return { refusal: { code: acquired.code, message: acquired.message, holder: acquired.holder } };
     ctx.run = acquired.run;
+    // RUN-25: an orphan renamed lock that appeared after `peek`. The inventory is taken, so a
+    // chain that calls for the repair is left for the next `plan` (the run's cleanup releases
+    // its own lock); an orphan with nothing to repair is finished here.
+    if (acquired.takeover !== null) {
+      ctx.notices.push(acquired.takeover.notice);
+      if (needsRepair(acquired.takeover.killedRun)) {
+        ctx.notices.push(REPAIR_FIRST_NOTICE);
+        return { refusal: { code: 'index-changed', message: INDEX_CHANGED_TEXT } };
+      }
+      const finished = ctx.run.finishTakeover();
+      if (finished !== null) ctx.notices.push(finished);
+    }
   }
   // RUN-12: the re-reads below are git calls under `plan`'s deadline; past it `plan`'s
   // `finally` releases the run just taken.
