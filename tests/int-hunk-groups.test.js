@@ -113,5 +113,38 @@ test('story 67: identical hunks of one file split across groups → lint error',
   });
 
   assert.equal(checked.exitCode, 2, detail(checked));
-  assert.ok(checked.json.errors.length >= 1, detail(checked));
+  assert.deepEqual(
+    checked.json.errors,
+    [{ group: null, reason: 'h1 and h2 are identical; place them together' }],
+    detail(checked),
+  );
+});
+
+test('story 67: identical hunks placed together in one group commit', async (t) => {
+  const c = createCase(t);
+  const block = ['a\n', 'b\n', 'c\n', 'old\n', 'd\n', 'e\n', 'f\n'];
+  const filler = numbered(10);
+  c.writeFile('f.txt', [...block, ...filler, ...block, ...filler].join(''));
+  c.git(['add', '--', 'f.txt']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const edit = (lines) => lines.map((line) => (line === 'old\n' ? 'new\n' : line));
+  const tail = [...filler];
+  tail[9] = 'ten\n';
+  c.writeFile('f.txt', [...edit(block), ...filler, ...edit(block), ...tail].join(''));
+  const planned = await runCommit(c, ['plan', '--split', '--no-user']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  const [h1, h2, h3] = state.units.map((unit) => unit.id);
+
+  const checked = await check(c, planId, runDir, {
+    groups: [group('feat: new', [h1, h2])],
+    notIncluded: [{ path: 'f.txt', hunks: [h3], reason: 'later' }],
+  });
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.commits.length, 1, detail(checked));
+  const changed = c.git(['show', '--format=', '-U0', 'HEAD']).split('\n').filter((l) => /^[+-][^+-]/.test(l));
+  assert.deepEqual(changed, ['-old', '+new', '-old', '+new']);
+  assert.equal(c.git(['diff', '--name-only']), 'f.txt\n');
 });

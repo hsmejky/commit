@@ -40,11 +40,10 @@ function readState(runDir) {
 // --- AC1: a resolved-null attribution stores `false` on every group -----------------------
 //
 // Real Seam 1: `attribution.commit: ""` in the user settings layer resolves the run's
-// trailer to `null` (plan-attribution.test.js covers that resolution itself); a hunk-level
-// worker plan (one hunk ID per group, rather than a whole `files` path) makes two groups, so
-// `check` stops at the `confirm` handback ("2 groups") without committing, so the run folder is kept and `state.json`'s stored groups can be
-// read back without ever committing for real (same technique as PLN-03's
-// tests/plan-hunk-level.test.js).
+// trailer to `null` (plan-attribution.test.js covers that resolution itself). A hunk-level
+// worker plan (one hunk ID per group) makes two groups, so `check` stops at the `confirm`
+// handback ("2 groups") without committing: the run folder is kept and `state.json`'s
+// stored groups can be read back.
 
 function writeUserSettings(c, value) {
   fs.writeFileSync(path.join(c.claudeHome, 'settings.json'), JSON.stringify(value));
@@ -73,7 +72,8 @@ test('Seam 1: attribution resolved to null stores attribution: false on every gr
   const checked = await runCommit(c, ['check', '--plan', planId]);
 
   assert.equal(checked.exitCode, 0, detail(checked));
-  // Nothing committed (INT-02: a hunk-level plan stops at its validated groups).
+  // Two groups stop at the confirm handback: nothing committed, the run kept.
+  assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
   assert.equal(checked.json.commits, undefined);
   const state = readState(runDir);
   assert.deepEqual(state.groups.map((g) => g.attribution), [false, false]);

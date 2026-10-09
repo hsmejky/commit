@@ -106,6 +106,25 @@ test('a group holding two of a file\'s three hunks → files[].hunks: 2', async 
   // INT-18: the hunk-level group commits in-process; only the left-out hunk stays modified.
   assert.equal(checked.json.commits.length, 1);
   assert.equal(c.git(['diff', '--name-only']), 'f.txt\n');
+  const changed = c.git(['show', '--format=', '-U0', 'HEAD']).split('\n').filter((l) => /^[+-][^+-]/.test(l));
+  assert.deepEqual(changed, ['-1', '+first', '-30', '+last', '+more']);
+});
+
+test('a stored hunk-level group keeps the plan ID order', async (t) => {
+  const { c, planId, runDir } = await threeHunkRun(t);
+
+  const checked = await check(c, planId, runDir, {
+    groups: [group('feat: top and g', ['h1', 'h4', 'h3']), group('feat: middle', ['h2'])],
+    notIncluded: [],
+  });
+
+  // Two groups stop at the confirm handback, so the run folder (and its stored groups) is kept.
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.reply.handback.kind, 'confirm', detail(checked));
+  assert.deepEqual(storedState(runDir).groups.map(({ n, units: ids }) => ({ n, ids })), [
+    { n: 1, ids: ['h1', 'h4', 'h3'] },
+    { n: 2, ids: ['h2'] },
+  ]);
 });
 
 test('an unknown ID and an ID used twice → one error each with the group number', async (t) => {
