@@ -1975,14 +1975,22 @@ async function planInternalFailure(err, ctx) {
   // them. `ctx.injected.stderr` is `?.`-guarded like `loadConfigLayers`' warnings above, so a
   // direct `workflows.plan` call with no `stderr` injected is unaffected.
   ctx.injected.stderr?.write(`commit: unexpected error\n${err instanceof Error ? err.stack : String(err)}\n`);
-  const facts = { status: 'failed', message, notices: ctx.notices };
+  // EXE-17 (C:commit-release, as after exit 4 or 5): a throw inside `commitAll`'s group loop
+  // reports this call's `commits` (the landed group among them), `failed` and `remaining`, and
+  // the reply lists the same commits.
+  const report = err?.commitReport;
+  const facts = { status: 'failed', message, notices: ctx.notices, ...(report ? { commits: report.commits } : {}) };
   // A tree-state read that throws too (the repository that broke the step may break it)
   // never replaces the original error: the reply then omits the tree state.
   const failedReply = await finalReply(facts, ctx, { toplevel: usableToplevel(ctx), deadline: ctx.cleanupDeadline })
     .catch(() => reply({ ...facts, treeState: undefined }));
   return {
     failure: {
-      kind: 'internal', message, reply: failedReply, ...(committedSha !== undefined ? { sha: committedSha } : {}),
+      kind: 'internal',
+      message,
+      reply: failedReply,
+      ...(report ? { commits: report.commits, failed: report.failed, remaining: report.remaining } : {}),
+      ...(committedSha !== undefined ? { sha: committedSha } : {}),
     },
   };
 }

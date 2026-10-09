@@ -266,19 +266,53 @@ test('an internal throw after git commit landed -> exit 1, sha, "committed as <s
   assert.notEqual(headNow, seed, 'git committed');
   assert.equal(result.json.sha, headNow);
   assert.equal(result.json.error.message, `committed as \`${headNow}\`, but the script failed`);
+  // C:commit-release: the group counts as committed in the report, while `failed` names it.
+  const committed = [{ n: 1, sha: headNow, header: HEADERS[0] }];
+  assert.deepEqual(result.json.commits, committed);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [2]);
+  assert.deepEqual(result.json.reply.commits, committed);
   assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+// A throw in group 2 before its own `git commit` (a corrupt stored group): group 1, committed by
+// this call, is listed; HEAD is still group 1's commit, so no `sha` and no "committed as" text.
+test('an internal throw in group 2 before its git commit -> exit 1, group 1 in commits, no sha', TEST_TIMEOUT, async (t) => {
+  const { c, planId, seed, statePath, lockPath } = await twoGroupRun(t);
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.groups[1].units = 5;
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+
+  const result = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(result.exitCode, 1, detail(result));
+  assert.equal(result.json.error.kind, 'internal', detail(result));
+  const headNow = c.git(['rev-parse', 'HEAD']).trim();
+  assert.equal(c.git(['rev-parse', 'HEAD~1']).trim(), seed, 'only group 1 committed');
+  assert.equal(result.json.sha, undefined);
+  assert.match(result.json.error.message, /^unexpected error: /);
+  const committed = [{ n: 1, sha: headNow, header: HEADERS[0] }];
+  assert.deepEqual(result.json.commits, committed);
+  assert.equal(result.json.failed, 2);
+  assert.deepEqual(result.json.remaining, [2]);
+  assert.deepEqual(result.json.reply.commits, committed);
+  assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
 });
 
 // EXE-17 / INT-31 AC2 (EXE-01 item 3): a `staged` run's stored group writes no state.json before
 // `git commit`, so the FND-10 preload failing the `state.json` rename with EIO first hits the
 // write after the commit landed.
-async function stagedRun(t) {
+// `unborn`: no seed commit, so the stored HEAD is `null` and the group makes the root commit.
+async function stagedRun(t, { unborn = false } = {}) {
   const c = createCase(t);
-  c.writeFile('a.txt', 'a\n');
-  c.git(['add', '--', 'a.txt']);
-  c.git(['commit', '-q', '-m', 'seed']);
-  const seed = c.git(['rev-parse', 'HEAD']).trim();
+  let seed = null;
+  if (!unborn) {
+    c.writeFile('a.txt', 'a\n');
+    c.git(['add', '--', 'a.txt']);
+    c.git(['commit', '-q', '-m', 'seed']);
+    seed = c.git(['rev-parse', 'HEAD']).trim();
+  }
   c.writeFile('a.txt', 'a\nmore\n');
   c.git(['add', '--', 'a.txt']);
   const planned = await runCommit(c, ['plan', '--staged']);
@@ -293,23 +327,31 @@ async function stagedRun(t) {
   return { c, planId, runDir, seed, lockPath: path.join(path.dirname(runDir), 'lock') };
 }
 
-test('the state.json write failing after git commit landed -> exit 1, sha, "committed as <sha>, but the script failed"', TEST_TIMEOUT, async (t) => {
-  const { c, planId, runDir, seed, lockPath } = await stagedRun(t);
+for (const unborn of [false, true]) {
+  const branch = unborn ? ' on an unborn branch' : '';
+  test(`the state.json write failing after git commit landed${branch} -> exit 1, sha, "committed as <sha>, but the script failed"`, TEST_TIMEOUT, async (t) => {
+    const { c, planId, runDir, seed, lockPath } = await stagedRun(t, { unborn });
 
-  const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
-    nodeArgs: ['--import', FAULT_PRELOAD],
-    env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+    const result = await runCommit(c, ['commit', '--plan', planId, '--all'], {
+      nodeArgs: ['--import', FAULT_PRELOAD],
+      env: { COMMIT_TEST_FAULT_RENAME_BASENAME: 'state.json' },
+    });
+
+    assert.equal(result.exitCode, 1, detail(result));
+    assert.equal(result.json.error.kind, 'internal', detail(result));
+    const headNow = c.git(['rev-parse', 'HEAD']).trim();
+    assert.notEqual(headNow, seed, 'git committed');
+    assert.equal(result.json.sha, headNow);
+    assert.equal(result.json.error.message, `committed as \`${headNow}\`, but the script failed`);
+    const committed = [{ n: 1, sha: headNow, header: 'feat: staged change' }];
+    assert.deepEqual(result.json.commits, committed);
+    assert.equal(result.json.failed, 1);
+    assert.deepEqual(result.json.remaining, []);
+    assert.deepEqual(result.json.reply.commits, committed);
+    assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
+    assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
   });
-
-  assert.equal(result.exitCode, 1, detail(result));
-  assert.equal(result.json.error.kind, 'internal', detail(result));
-  const headNow = c.git(['rev-parse', 'HEAD']).trim();
-  assert.notEqual(headNow, seed, 'git committed');
-  assert.equal(result.json.sha, headNow);
-  assert.equal(result.json.error.message, `committed as \`${headNow}\`, but the script failed`);
-  assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
-  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
-});
+}
 
 // The same internal throw, but the clock has passed `cleanupDeadline` (a post-commit hook's marker
 // steps it to 590 s): the HEAD re-read is not spawned, so no `sha`; the notice says it.
@@ -329,4 +371,8 @@ test('the state.json write failing after git commit with the cleanup budget spen
   assert.notEqual(c.git(['rev-parse', 'HEAD']).trim(), seed, 'git committed');
   assert.equal(result.json.sha, undefined, 'the unread HEAD cannot be named');
   assert.ok(result.json.reply.notices.includes(HEAD_UNREAD_NOTICE), JSON.stringify(result.json.reply.notices));
+  // The unread HEAD is read as unmoved: the group stays out of `commits`, still `remaining`.
+  assert.deepEqual(result.json.commits, []);
+  assert.equal(result.json.failed, 1);
+  assert.deepEqual(result.json.remaining, [1]);
 });

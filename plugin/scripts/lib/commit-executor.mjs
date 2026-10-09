@@ -430,15 +430,19 @@ function budgetStop(state, commits, notices, scriptPath, planId) {
  *   releases it on `head-moved`, `index-changed` (`diff-changed`) and `index-locked`
  *   (`index-lock`), `unmatched` (`diff-changed`) and `git-failed` (`git`) instead
  *   (C:cli-and-exit-codes, C:commit-release).
- * @throws {Error} on a path not built yet, or an unexpected git or filesystem error.
+ * @throws {Error} on a path not built yet, or an unexpected git or filesystem error. EXE-17:
+ *   the error carries `committedSha` when HEAD moved from what the group in progress expected,
+ *   `headNotice` when HEAD could not be re-read, and `commitReport` (`commits`, `failed`,
+ *   `remaining`) when the throw came inside the group loop.
  */
 export async function commitAll(run, options) {
   const state = readState(run);
+  const progress = { commits: [], group: null, expectedHead: null };
   let output;
   try {
-    output = await commitGroups(run, state, options);
+    output = await commitGroups(run, state, options, progress);
   } catch (err) {
-    await noteCommitBeforeThrow(err, run, state, options);
+    await noteCommitBeforeThrow(err, run, state, options, progress);
     throw err;
   }
   // EXE-11 (C:commit-release `unstaged`): on every output, run-ending or mid-run, gated only
@@ -474,28 +478,45 @@ export async function commitAll(run, options) {
 
 // EXE-17 (EXE-01 item 3): an unexpected throw may come after `git commit` landed (a state write
 // that fails, a hook that moved HEAD). HEAD is re-read against `cleanupDeadline`: one that is not
-// the HEAD the run expects rides on the error as `committedSha` (M18 reports "committed as
-// `<sha>`, but the script failed" with `sha`); one that cannot be read adds `headNotice`
-// instead. Never throws, so the original error stays the cause.
-async function noteCommitBeforeThrow(err, run, state, options) {
+// the HEAD the group in progress expected rides on the error as `committedSha` (M18 reports
+// "committed as `<sha>`, but the script failed" with `sha`); one that cannot be read adds
+// `headNotice` instead and is read as unmoved. A throw inside the group loop also carries
+// `commitReport` (C:commit-release, as after exit 4 or 5): this call's `commits` (the group in
+// progress among them when HEAD moved), `failed` that group, and `remaining`. Never throws,
+// so the original error stays the cause.
+async function noteCommitBeforeThrow(err, run, state, options, progress) {
   if (err === null || typeof err !== 'object') return;
   const cx = { toplevel: run.toplevel, env: options.env, now: options.now, cleanupDeadline: options.cleanupDeadline };
   const read = await inCleanup(cx, () => head({ cwd: cx.toplevel, env: cx.env, now: cx.now }));
+  // Before the first group nothing of this call's own can have committed: `state.head` still
+  // holds what the run expects. Inside the loop it is the group's own expected HEAD, `null` on
+  // an unborn branch (never a fallback to `state.head`, which the loop moves to the new SHA).
+  const expected = progress.group === null ? state.head : progress.expectedHead;
   if (!read.ok) {
     err.headNotice = HEAD_UNREAD_NOTICE;
-  } else if (typeof read.value === 'string' && read.value !== (expectedBeforeCommit.get(state) ?? state.head)) {
+  } else if (typeof read.value === 'string' && read.value !== expected) {
     err.committedSha = read.value;
   }
+  const { group } = progress;
+  if (group === null) return;
+  const landed = typeof err.committedSha === 'string';
+  const commits = [...progress.commits];
+  if (landed && !commits.some((entry) => entry.n === group.n)) {
+    commits.push({ n: group.n, sha: err.committedSha, header: group.header });
+  }
+  err.commitReport = {
+    commits,
+    failed: group.n,
+    remaining: state.groups
+      .filter((stored) => (stored.n === group.n ? !landed : !stored.committed))
+      .map((stored) => stored.n),
+  };
 }
 
-// The HEAD each group expected just before its own `git commit`, per state object. A throw
-// after the commit (the state write, `headTree`) comes after `state.head` was already moved
-// to the new SHA, so `noteCommitBeforeThrow` compares against this, not `state.head`.
-const expectedBeforeCommit = new WeakMap();
-
 // `commitAll`'s per-group loop over the state it read; `unstaged` here is only `[]` or
-// `null` (`indexReset`), filled in by `commitAll`.
-async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDeadline, scriptPath, confirmed }) {
+// `null` (`indexReset`), filled in by `commitAll`. `progress` (EXE-17) tracks this call's
+// `commits`, the group in progress and the HEAD it expected, for a throw's report.
+async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDeadline, scriptPath, confirmed }, progress) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
   const cx = { toplevel, env, now, cleanupDeadline };
@@ -533,10 +554,16 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
       refusal: { code: 'no-groups', message: NO_GROUPS_TEXT },
     };
   }
-  const commits = [];
+  const { commits } = progress;
   const notices = [];
   const pending = state.groups.filter((stored) => !stored.committed);
   for (const [groupIndex, group] of pending.entries()) {
+    // EXE-17: set before any of the group's own work, so a throw anywhere in it compares HEAD
+    // with what this group expected: the previous group's commit (its SHA HEAD held, also when
+    // an extra commit left `state.head` stale), else `state.head` (`null` when unborn).
+    progress.group = group;
+    progress.expectedHead = commits.length > 0 ? commits[commits.length - 1].sha : state.head;
+
     // (a) Again before each group (EXE-04): the lock must still hold this run's `planId`
     // and its mtime is refreshed, so a takeover between groups stops the call here with the
     // earlier groups kept (C:commit-release (a), Q22).
@@ -552,7 +579,6 @@ async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDea
     if (headNow !== state.head) {
       return refused(state, group, commits, { code: 'head-moved', message: HEAD_MOVED_TEXT }, notices);
     }
-    expectedBeforeCommit.set(state, headNow);
 
     // (a) EXE-07: the index must still be the one this run left (`plan`'s, then the one read
     // after each of this run's own commits) — any outside `git add`/`reset` shows up here,

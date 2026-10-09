@@ -291,13 +291,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   before `plan --hunks`. Pick one.
 - **KD-R39.** MSG-03 and INF-04 use an M6 case-check export the spec does not list. Add it.
 - **KD-R111.** Q4's body was rewritten in place (as Q9's was, restored by RUN-20b): restore it.
-- **KD-R112.** An `internal` failure after `git commit` landed (EXE-17) sets `sha` and the
-  "committed as `<sha>`, but the script failed" message, but the group is not in `commits`/
-  `failed`/`remaining` and `reply.commits` is `[]`, while C:commit-release says it counts as
-  committed in the report for exits 4, 5 and 1. EXE-17's slice text only asks for `sha` and the
-  message, and the throw carries no group identity today. Fix: `noteCommitBeforeThrow` also
-  rides the group's `n`/`header` on the error, `planInternalFailure` fills `commits`/`failed`/
-  `remaining` and the reply's `commits`. Slice: a follow-up to EXE-17.
 - **KD-R44.** The mismatch notice says "later groups refused" in single-group modes. Drop
   the clause there (contract, Q18, criteria).
 - **KD-R45.** A hook-made commit is reported with the hook's SHA (EXE-06); no disposition is
