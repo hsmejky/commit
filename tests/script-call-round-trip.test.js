@@ -94,7 +94,8 @@ for (const scriptPath of SCRIPT_PATHS) {
     const runs = factRuns(scriptPath);
     assert.deepEqual(runs.map((r) => `${r.kind}/${r.label}`), ['confirm/yes', 'confirm/no', 'lintFailed/no']);
     for (const entry of runs) assertRoundTrip(entry);
-    assert.deepEqual(expected(runs[0].run).args, ['--plan', PLAN_ID, '--all', '--confirmed']);
+    assert.deepEqual(expected(runs[0].run), { subcommand: 'commit', args: ['--plan', PLAN_ID, '--all', '--confirmed'] });
+    for (const release of runs.slice(1)) assert.deepEqual(expected(release.run), { subcommand: 'release', args: ['--plan', PLAN_ID] });
   });
 }
 
@@ -143,22 +144,37 @@ test('Seam 3 via runHook: a real continue handback run under a path with a space
   const { run } = handback.answers[0];
   assert.ok(run.includes('my plugins'), run);
   assertRoundTrip({ kind: 'continue', label: 'continue', run });
+  for (const tool of Object.values(TOOL)) {
+    const denied = await runGuard(c, { command: run, toolName: tool, agentType: WORKER });
+    assert.equal(denied.exitCode, 0);
+    const output = JSON.parse(denied.stdout).hookSpecificOutput;
+    assert.equal(output.permissionDecision, 'deny', tool);
+    assert.equal(output.permissionDecisionReason, HANDBACK, tool);
+    const passed = await runGuard(c, { command: run, toolName: tool });
+    assert.equal(passed.stdout, '', tool);
+    assert.equal(passed.stderr, '', tool);
+  }
   assert.deepEqual(expected(run), { subcommand: 'commit', args: ['--plan', planId, '--all'] });
 });
 
-// Seam 2 through the guard process: the same calls, with and without the worker's agent_type.
+// Seam 2 through the guard process: the same calls, with and without the worker's agent_type,
+// under a Windows path with a space and a POSIX path, plus the real `continue` run.
 for (const tool of Object.values(TOOL)) {
-  for (const [kind, label] of [['confirm', 'yes'], ['confirm', 'no'], ['lintFailed', 'no']]) {
-    test(`Seam 2 ${tool}: ${kind}/${label} run is denied for ${WORKER}, silent otherwise`, async (t) => {
-      const c = createCase(t);
-      const entry = factRuns(SCRIPT_PATHS[1]).find((r) => r.kind === kind && r.label === label);
-      const denied = await runGuard(c, { command: entry.run, toolName: tool, agentType: WORKER });
-      assert.equal(denied.exitCode, 0);
-      assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecisionReason, HANDBACK);
-      const passed = await runGuard(c, { command: entry.run, toolName: tool });
-      assert.equal(passed.exitCode, 0);
-      assert.equal(passed.stdout, '');
-      assert.equal(passed.stderr, '');
-    });
+  for (const scriptPath of [SCRIPT_PATHS[0], SCRIPT_PATHS[1]]) {
+    for (const [kind, label] of [['confirm', 'yes'], ['confirm', 'no'], ['lintFailed', 'no']]) {
+      test(`Seam 2 ${tool}: ${kind}/${label} run under ${scriptPath} is denied for ${WORKER}, silent otherwise`, async (t) => {
+        const c = createCase(t);
+        const entry = factRuns(scriptPath).find((r) => r.kind === kind && r.label === label);
+        const denied = await runGuard(c, { command: entry.run, toolName: tool, agentType: WORKER });
+        assert.equal(denied.exitCode, 0);
+        const output = JSON.parse(denied.stdout).hookSpecificOutput;
+        assert.equal(output.permissionDecision, 'deny');
+        assert.equal(output.permissionDecisionReason, HANDBACK);
+        const passed = await runGuard(c, { command: entry.run, toolName: tool });
+        assert.equal(passed.exitCode, 0);
+        assert.equal(passed.stdout, '');
+        assert.equal(passed.stderr, '');
+      });
+    }
   }
 }
