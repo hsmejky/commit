@@ -19,8 +19,13 @@
 // M15 `planRefusal`'s own text for a clean tree that still has something to name. RUN-18 adds
 // the `nothing`/`zero-groups` reason (`check`'s own "zero groups" ending, C:check, story 97,
 // `text`: "nothing committed" then one line per `notIncluded` reason) and the first cut of the
-// `confirm` and `handedBack` handbacks (question and, for `confirm`, `humanOnly`; the
-// confirmation block itself and the `confirm` handback's answers are INT-09's).
+// `confirm` and `handedBack` handbacks (question and, for `confirm`, `humanOnly`). INT-09
+// adds the `confirm` handback's confirmation block in `text` (Q16: per group the header, body
+// and files, capped at 20 per group; the not-included lines; the "Confirm:" reasons), its
+// `yes`/`edit`/`one`/`no` answers and `ifNoUser`, and the handback rule (the `run` strings
+// come from S2 `build` over the injected `scriptPath`).
+
+import { build } from './script-call.mjs';
 
 /**
  * The base rule of `callerRule`, in every reply (C:reply-and-handback, `callerRule`). Fixed
@@ -51,6 +56,7 @@ export const HANDBACK_RULE = 'If question is null, run the only answer. Otherwis
   + 'Edit no files until the final reply.';
 
 const MAX_TREE_PATHS = 10;
+const MAX_CONFIRM_FILES = 20;
 
 // Every C0 control character, DEL and C1 control character (C:reply-and-handback, RPL-06),
 // written as `\xNN`, one escape per UTF-8 byte, so a path can neither forge a reply line
@@ -118,8 +124,71 @@ function renderNotIncluded(notIncluded) {
 const HANDED_BACK_TEXT = 'nothing committed — run /commit to plan again';
 
 // RUN-18 (C:reply-and-handback handback table, fixed text): the `confirm` handback's question.
-// Its answers (`yes`/`one`/`no`/`edit`) and `ifNoUser` are INT-09's.
 const CONFIRM_QUESTION = 'Commit as proposed? To change it, type your changes under Other.';
+
+// INT-09 (Q16, C:reply-and-handback): one file of the confirmation block, `(new)` for an added
+// unit, else its hunk count when the unit is told apart by hunk (`null` otherwise).
+function renderConfirmFile({ path, new: isNew, hunks }) {
+  const name = escapePath(path);
+  if (isNew === true) return `${name} (new)`;
+  if (typeof hunks === 'number') return `${name} (${hunks} ${hunks === 1 ? 'hunk' : 'hunks'})`;
+  return name;
+}
+
+// The confirmation block (Q16): per group the header, body and files (20, then "+N more"),
+// then the not-included lines and the "Confirm:" reasons.
+function renderConfirmBlock({ groups = [], notIncluded = [], reasons = [] }) {
+  const lines = ['Proposed commits:'];
+  for (const group of groups) {
+    lines.push(`${group.n}. ${group.header}`);
+    if (typeof group.body === 'string' && group.body !== '') {
+      for (const bodyLine of group.body.split('\n')) lines.push(`   ${bodyLine}`);
+    }
+    const files = group.files.slice(0, MAX_CONFIRM_FILES).map(renderConfirmFile);
+    const more = group.files.length - files.length;
+    if (more > 0) files.push(`+${more} more`);
+    lines.push(`   ${files.join(', ')}`);
+  }
+  if (notIncluded.length > 0) {
+    lines.push('Not included:');
+    for (const { path, hunks, reason } of notIncluded) {
+      const ids = Array.isArray(hunks) && hunks.length > 0 ? ` ${hunks.join(' ')}` : '';
+      lines.push(`- ${escapePath(path)}${ids}: ${reason}`);
+    }
+  }
+  lines.push(`Confirm: ${reasons.map(escapePath).join(', ')}`);
+  return lines;
+}
+
+// The `confirm` handback's answers (C:reply-and-handback): `yes` is the only `--confirmed`
+// run; `one` only in `split` with more than one group; `edit` takes the user's words.
+function confirmHandback(facts) {
+  const { planId, scriptPath } = facts;
+  const answers = [
+    {
+      label: 'yes',
+      run: build({ scriptPath, subcommand: 'commit', args: ['--plan', planId, '--all', '--confirmed'] }),
+      timeoutMs: 600_000,
+    },
+    { label: 'edit', respawn: `resume: ${planId}\nedit: {text}`, needsText: true },
+  ];
+  if (facts.mode === 'split' && (facts.groups ?? []).length > 1) {
+    answers.push({ label: 'one', respawn: `resume: ${planId}\nedit: one` });
+  }
+  answers.push({
+    label: 'no',
+    run: build({ scriptPath, subcommand: 'release', args: ['--plan', planId] }),
+    timeoutMs: 60_000,
+  });
+  const humanOnly = facts.humanOnly === true;
+  return {
+    kind: 'confirm',
+    humanOnly,
+    question: CONFIRM_QUESTION,
+    answers,
+    ifNoUser: humanOnly ? { answer: 'no', returnToParent: true } : { answer: 'yes', returnToParent: false },
+  };
+}
 
 // The `modeChoice` counts question (C:plan `mode`, Q9): counts only, never file names.
 // The `lintFailed` question (C:reply-and-handback handback table), fixed text.
@@ -172,7 +241,8 @@ function modeChoiceQuestion({ staged, other }) {
  *   notices?: string[] } | { status: 'handback', kind: 'modeChoice', staged: number,
  *   other: number, treeState, notices?: string[] } | { status: 'handback', kind: 'lintFailed',
  *   planId: string, errors: object[], shapeOnly?: boolean, treeState, notices?: string[] }
- *   | { status: 'handback', kind: 'confirm', planId: string, humanOnly: boolean, treeState,
+ *   | { status: 'handback', kind: 'confirm', planId: string, humanOnly: boolean, groups?: object[],
+ *   notIncluded?: object[], reasons?: string[], mode?: string, scriptPath?: string, treeState,
  *   notices?: string[] } | { status: 'handback', kind: 'handedBack', treeState,
  *   notices?: string[] }
  *   | { status: 'committed', commits: object[], unstaged?: object[] | null, treeState,
@@ -222,10 +292,15 @@ export function reply(facts) {
   } else if (facts.status === 'handback' && facts.kind === 'lintFailed') {
     firstLines = [LINT_FAILED_QUESTION];
   } else if (facts.status === 'handback' && facts.kind === 'confirm') {
-    // RUN-18: the question only; the confirmation block (Q16, per group the header, body and
-    // files) replacing it in `text`, and the `yes`/`one`/`no`/`edit` answers, are INT-09's.
-    firstLines = [CONFIRM_QUESTION];
-    handback = { kind: 'confirm', humanOnly: facts.humanOnly === true, question: CONFIRM_QUESTION };
+    // INT-09: the confirmation block (Q16) and the answers. Without `scriptPath` (a caller
+    // that has none) only RUN-18's question and `humanOnly` are built.
+    if (facts.scriptPath === undefined) {
+      firstLines = [CONFIRM_QUESTION];
+      handback = { kind: 'confirm', humanOnly: facts.humanOnly === true, question: CONFIRM_QUESTION };
+    } else {
+      firstLines = renderConfirmBlock(facts);
+      handback = confirmHandback(facts);
+    }
   } else if (facts.status === 'handback' && facts.kind === 'handedBack') {
     // RUN-18 (C:reply-and-handback handback table): information only — nothing to ask, the
     // run already released. Still missing: the handback table's own
@@ -261,8 +336,9 @@ export function reply(facts) {
     text,
     commits: commits.map((commit) => ({ ...commit })),
     notices: facts.notices === undefined ? [] : [...facts.notices],
-    // INT-05: only the `lock` handback adds the handback rule so far (above).
-    callerRule: facts.status === 'handback' && facts.kind === 'lock'
+    // INT-05, INT-09: the `lock` and `confirm` handbacks add the handback rule so far.
+    callerRule: facts.status === 'handback' && (facts.kind === 'lock'
+      || (facts.kind === 'confirm' && facts.scriptPath !== undefined))
       ? `${BASE_CALLER_RULE} ${HANDBACK_RULE}`
       : BASE_CALLER_RULE,
     handback,

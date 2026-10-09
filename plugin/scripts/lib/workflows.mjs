@@ -1035,6 +1035,10 @@ async function openRun(ctx) {
 async function commitGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const { env, now, osUser } = ctx.injected;
+  // INT-09 (KD-R102): a direct `commit` has no `check` merging the notices `plan` stored (a
+  // takeover, RUN-21) into its outcome, and the run is gone once `commitAll` releases it, so
+  // read them first; they go into the reply's notices only (`committedOutput`).
+  if (ctx.checked === undefined) ctx.storedNotices = readState(run).notices ?? [];
   const outcome = await commitAll(run, {
     now, osUser, env, deadline: ctx.deadline, scriptPath: ctx.injected.scriptPath,
     // EXE-22: `check`'s own `SUBCOMMAND_OPTIONS` declares no `confirmed` flag (M1), so
@@ -1514,8 +1518,9 @@ export async function commit(values, injected, { cwd }) {
     // `check`'s `committedOutput`, not reported here — C:commit-release's output shape has
     // no `kept` field, so a direct `commit --all` strips it the same way `committedOutput`
     // already does.
-    const { kept, ...output } = facts;
-    return { output };
+    // INT-09: the success path now carries the `committed`/`continue` reply, as `check`'s
+    // in-process `commit --all` does; the failure path above stays reply-less (KD-R73).
+    return { output: await committedOutput(facts, ctx, callStarted) };
   } finally {
     // `close` only after a successful `open` (`ctx.opened`): a failed `open` (`taken-over`,
     // `ended`, `busy`) leaves no `call.lock` of this call's own to close.
@@ -1640,7 +1645,10 @@ async function committedOutput(facts, ctx, callStarted) {
   // and `kept`); C:check's output never has a `route` field, so it is stripped here too.
   const { handback, kept, route, ...output } = facts;
   // EXE-11: `unstaged` (what the run's index reset unstaged) goes to the reply's text too.
-  const { commits, notices, unstaged } = output;
+  const { commits, unstaged } = output;
+  // INT-09: a direct `commit`'s stored `plan` notices (`commitGroups`) lead the reply's notices
+  // only; the output's own `notices` keep C:commit-release's meaning.
+  const notices = [...(ctx.storedNotices ?? []), ...output.notices];
   const replyFacts = handback === undefined
     ? { status: 'committed', commits, unstaged, notices, planId: kept === true ? ctx.values.plan : null }
     : { status: 'handback', kind: 'continue', planId: ctx.values.plan, commits, unstaged, notices, handback };
@@ -1667,9 +1675,13 @@ async function routedCheckOutput(facts, ctx, callStarted) {
   } else if (route === 'handedBack') {
     replyFacts = { status: 'handback', kind: 'handedBack', notices, planId: null };
   } else {
+    // INT-09: the confirmation block's facts and the answers' inputs (the stored mode decides
+    // whether `one` is offered, the injected `scriptPath` builds the `run` strings).
+    const { mode } = readState({ toplevel: ctx.toplevel, planId: ctx.values.plan });
     replyFacts = {
       status: 'handback', kind: 'confirm', humanOnly: confirm?.humanOnly === true, notices,
-      planId: ctx.values.plan,
+      planId: ctx.values.plan, groups: facts.groups, notIncluded: facts.notIncluded,
+      reasons: confirm?.reasons ?? [], mode, scriptPath: ctx.injected.scriptPath,
     };
   }
   return { ...output, confirm: outputConfirm, notices, reply: await finalReply(replyFacts, ctx, { deadline: replyDeadline }) };

@@ -83,8 +83,11 @@ test('one stored group of two modified files → exit 0 with one commit and the 
   // review-INT-02 N1: `commitGroups`' own `kept` field must not leak into direct
   // `commit --all` output (C:commit-release's output shape has no `kept`).
   assert.deepEqual(Object.keys(result.json).sort(), [
-    'commits', 'error', 'failed', 'gitOutput', 'notices', 'ok', 'remaining', 'unstaged', 'version',
+    'commits', 'error', 'failed', 'gitOutput', 'notices', 'ok', 'remaining', 'reply', 'unstaged', 'version',
   ].sort());
+  // INT-09: the success path carries the `committed` reply (the failure path stays KD-R73's).
+  assert.equal(result.json.reply.status, 'committed');
+  assert.equal(result.json.reply.commits.length, 1);
 });
 
 test("the commit's tree holds both files' working-tree content, its message is the stored one byte for byte, and HEAD is sha", async (t) => {
@@ -1043,7 +1046,7 @@ test('61 s elapsed after group 1 stops the call: exit 0, commits [1], remaining 
   assert.equal(fs.existsSync(path.join(path.dirname(runDir), 'lock')), true, 'the lock is kept');
 
   // AC6: the `continue` handback (C:reply-and-handback), built with S2 `build()`.
-  const { handback } = result.json;
+  const { handback } = result.json.reply;
   assert.equal(handback.kind, 'continue');
   assert.equal(handback.question, null);
   assert.equal(handback.answers.length, 1);
@@ -1159,7 +1162,7 @@ test('--confirmed on a run left in confirm commits group 1 and clears awaitingCo
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   assert.equal(state.awaitingConfirm, undefined, 'awaitingConfirm was cleared on the first group');
   // AC6 continue handback: same as EXE-16's, no --confirmed appended to its run.
-  assert.equal(stopped.json.handback.answers[0].run, scriptCall.build({
+  assert.equal(stopped.json.reply.handback.answers[0].run, scriptCall.build({
     scriptPath: COMMIT_ENTRY, subcommand: 'commit', args: ['--plan', planId, '--all'],
   }), 'the continue run carries no --confirmed');
 
