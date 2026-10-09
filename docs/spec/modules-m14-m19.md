@@ -280,12 +280,12 @@ entry point's install-path refusal (no run folder, `planId: null`).
   overlap (`busy`).
 - **`check`.** Takes its own M15 `deadline` (540 s from its start) for every M2 call of its
   work, the same as `plan`; past it after `open`, `check` ends `timed-out` (exit 5 `timeout`)
-  and releases the run the same way `plan` does (C:cli-and-exit-codes). M12 `open`; M15 `checkGate`; clear stored groups and `awaitingConfirm`; M14 `validatePlan(planBytes,
+  and releases the run the same way `plan` does (C:cli-and-exit-codes). M12 `open`; M15 `checkGate`; clear stored groups, `awaitingConfirm`, `notIncluded` and `scanLeftOut`; M14 `validatePlan(planBytes,
   runState, { osUser })`; on lint errors M15
   `onLintFailure` and `runEnd` (an interactive `lintFailed` keeps the run for its `resume`;
   with `--no-user` the failure that ends the retries releases the lock and deletes the
   folder, so nothing waits for an answer and the next `/commit` starts fresh); M15 `computeConfirm` and `afterCheck`; store groups
-  (and `awaitingConfirm` for a `confirm`); M16 or a handback; M10 `treeState` for the reply.
+  (and `awaitingConfirm` for a `confirm`; `notIncluded` and `scanLeftOut` on a `confirm` and on a direct commit); M16 or a handback; M10 `treeState` for the reply.
   When `confirm` is null, the output is `commit --all`'s with `groups`, `notIncluded` and
   `notices` merged in, the merged notices landing in `reply.notices` (C:check).
 - **`commit`.** M16 `commitAll(run, { now, osUser })` (`check` calls it the same way); M10

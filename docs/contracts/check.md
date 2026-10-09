@@ -67,7 +67,7 @@ Lint failure (exit 2), the first failure, which carries no `reply` (below):
   `no`, `edit` through Other, [Reply and handback](reply-and-handback.md), Q18); with
   `interactive: false`, `check` releases the lock and the reply is
   `status: "failed"` with the errors.
-- Clears the stored groups and `awaitingConfirm` before it validates, so a failed `check`
+- Clears the stored groups, `awaitingConfirm`, `notIncluded` and `scanLeftOut` before it validates, so a failed `check`
   (after `edit` or `one`) leaves no group that `commit` would accept.
 - A missing `plan.groups.json`, or one that is not valid JSON of the shape above, is a lint
   error (`group: null`).
