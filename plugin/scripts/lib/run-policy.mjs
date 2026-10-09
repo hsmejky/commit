@@ -284,8 +284,11 @@ export function tailWithin(text, max) {
  * Within the refusal budget like `case-rename`'s: when it would pass, every named path is cut
  * to an equal share of it, keeping its tail behind `…`.
  */
-export function killedLeftoverMessage(paths) {
-  const build = (cut) => 'a killed /commit run left staging behind, and more was staged since: '
+export function killedLeftoverMessage(paths, othersOnly = false) {
+  const lead = othersOnly
+    ? 'files were staged after a killed /commit run: '
+    : 'a killed /commit run left staging behind, and more was staged since: ';
+  const build = (cut) => lead
     + `${leftoverList(paths, cut)}; unstage them or commit by hand, then run /commit again`;
   const whole = build((p) => p);
   if (jsonBytes(whole) <= REFUSAL_MESSAGE_BUDGET) return whole;
@@ -295,7 +298,8 @@ export function killedLeftoverMessage(paths) {
 }
 
 /** The notice naming the killed group's paths still staged (a forced `modeChoice`, a `reword`). */
-export function killedLeftoverNotice(paths) {
+export function killedLeftoverNotice(paths, othersOnly = false) {
+  if (othersOnly) return `files staged after the killed run: ${leftoverList(paths)}`;
   return `a killed /commit run left its group's paths staged: ${leftoverList(paths)}`;
 }
 
@@ -319,20 +323,23 @@ export function killedLeftoverNotice(paths) {
  * @param {{ staged: number, other: number }} indexState `staged`: the staged files;
  *   `other`: the unstaged tracked changes and candidates.
  * @param {boolean} killedLeftover whether a takeover left staging beyond the killed group's paths.
- * @param {string[]} [leftoverPaths] the killed group's paths still staged, escaped.
+ * @param {string[]} [leftoverPaths] the killed group's paths still staged, escaped; when none
+ *   of them is, all the staged paths with `othersOnly` true (worded as staged after the kill,
+ *   not as the killed run's leftovers).
+ * @param {boolean} [othersOnly] none of the killed group's paths is staged, others are.
  * @returns {{ mode: 'split' | 'staged' } | { mode: 'reword', notice: string }
  *   | { modeChoice: { staged: number, other: number }, notice?: string }
  *   | { refusal: { code: 'staged-empty' | 'killed-leftover', message: string } }}
  */
-export function resolveMode(flags, indexState, killedLeftover, leftoverPaths = []) {
+export function resolveMode(flags, indexState, killedLeftover, leftoverPaths = [], othersOnly = false) {
   if (killedLeftover) {
-    if (flags.reword === true) return { mode: 'reword', notice: killedLeftoverNotice(leftoverPaths) };
+    if (flags.reword === true) return { mode: 'reword', notice: killedLeftoverNotice(leftoverPaths, othersOnly) };
     if (flags.noUser === true) {
-      return { refusal: { code: 'killed-leftover', message: killedLeftoverMessage(leftoverPaths) } };
+      return { refusal: { code: 'killed-leftover', message: killedLeftoverMessage(leftoverPaths, othersOnly) } };
     }
     return {
       modeChoice: { staged: indexState.staged, other: indexState.other },
-      notice: killedLeftoverNotice(leftoverPaths),
+      notice: killedLeftoverNotice(leftoverPaths, othersOnly),
     };
   }
   if (flags.staged) {

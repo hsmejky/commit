@@ -313,6 +313,7 @@ async function repairKilledIndex(ctx, killedRun) {
     // none of the group's remain).
     const named = staged.filter((entry) => belongs.has(entry));
     ctx.killedLeftover = (named.length > 0 ? named : staged).map(escapePath);
+    ctx.killedLeftoverOthersOnly = named.length === 0;
   } else if (staged.length > 0) {
     let reset;
     try {
@@ -388,7 +389,8 @@ async function resolveRunMode(ctx) {
     split: ctx.values.split === true, staged: ctx.values.staged === true,
     reword: ctx.values.reword === true, noUser: ctx.values['no-user'] === true,
   };
-  const decision = resolveMode(flags, indexState(ctx.inventory), leftover !== null, leftover ?? []);
+  const decision = resolveMode(flags, indexState(ctx.inventory), leftover !== null, leftover ?? [],
+    ctx.killedLeftoverOthersOnly === true);
   if (decision.refusal !== undefined) return { refusal: decision.refusal };
   if (decision.notice !== undefined) ctx.notices.push(decision.notice);
   if (decision.modeChoice !== undefined) return { status: 'handback', kind: 'modeChoice', ...decision.modeChoice };

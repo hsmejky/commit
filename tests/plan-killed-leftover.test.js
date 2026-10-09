@@ -72,6 +72,22 @@ test('M15 resolveMode: killed-leftover message stays within the 900-byte refusal
   assert.doesNotMatch(short, /…/);
 });
 
+test('M15 resolveMode: killedLeftover with othersOnly words the files as staged after the kill, same mode handling and caps', () => {
+  const paths = ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt', 'f.txt'];
+  const choice = runPolicy.resolveMode(NO_FLAGS, { staged: 6, other: 0 }, true, paths, true);
+  assert.deepEqual(choice.modeChoice, { staged: 6, other: 0 });
+  assert.equal(choice.notice, 'files staged after the killed run: `a.txt`, `b.txt`, `c.txt`, `d.txt`, `e.txt` and 1 more');
+  const reword = runPolicy.resolveMode({ ...NO_FLAGS, reword: true }, { staged: 1, other: 0 }, true, ['a.txt'], true);
+  assert.equal(reword.mode, 'reword');
+  assert.equal(reword.notice, 'files staged after the killed run: `a.txt`');
+  const { message } = runPolicy.resolveMode({ ...NO_FLAGS, noUser: true }, { staged: 1, other: 0 }, true, ['a.txt'], true).refusal;
+  assert.equal(message, 'files were staged after a killed /commit run: `a.txt`; unstage them or commit by hand, then run /commit again');
+  const long = (n) => `dir${n}/${'\xE2\x82\xAC'.repeat(60)}/file${n}.txt`;
+  const trimmed = runPolicy.resolveMode({ ...NO_FLAGS, noUser: true }, { staged: 6, other: 0 }, true, [1, 2, 3, 4, 5, 6].map(long), true).refusal.message;
+  assert.ok(Buffer.byteLength(JSON.stringify(trimmed), 'utf8') - 2 <= 900);
+  assert.match(trimmed, /^files were staged after a killed \/commit run: `…/);
+});
+
 test('M15 resolveMode: killedLeftover false leaves the ordinary decision alone', () => {
   assert.deepEqual(runPolicy.resolveMode({ ...NO_FLAGS, staged: true, noUser: true }, { staged: 1, other: 1 }, false), { mode: 'staged' });
 });
@@ -227,4 +243,43 @@ test('Seam 1: the same under --reword -> the run goes on with a notice naming th
   const state = JSON.parse(fs.readFileSync(path.join(result.json.runDir, 'state.json'), 'utf8'));
   assert.match(state.notices.join('\n'), /left its group's paths staged: `a\.txt`/);
   assert.equal(c.git(['diff', '--cached', '--name-only']), 'a.txt\nb.txt\n', 'reword never touches the index');
+});
+
+// None of the killed group's paths is staged any more, another file is: killedLeftover still,
+// worded as files staged after the kill, not as the killed run's leftovers.
+async function killThenSwapStaging(c, planId) {
+  await killCommitInHook(c, ['--plan', planId, '--all']);
+  c.git(['reset', '-q', '--', 'a.txt']);
+  c.git(['add', '--', 'b.txt']);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'b.txt\n');
+}
+
+test('Seam 1: none of the killed group staged, another file is, interactive -> modeChoice with the "staged after the killed run" notice', TEST_TIMEOUT, async (t) => {
+  const { c, planId, runDir, lockPath } = await killableRun(t);
+  await killThenSwapStaging(c, planId);
+  ageLock(lockPath);
+
+  const result = await runCommit(c, ['plan', '--split']);
+
+  assert.equal(result.exitCode, 0, detail(result));
+  assert.equal(result.json.reply.handback.kind, 'modeChoice', detail(result));
+  const notices = result.json.reply.notices.join('\n');
+  assert.match(notices, /files staged after the killed run: `b\.txt`/, notices);
+  assert.doesNotMatch(notices, /left its group's paths staged/, notices);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'b.txt\n', 'the index is untouched');
+  assertReleased(lockPath, runDir);
+});
+
+test('Seam 1: none of the killed group staged, another file is, --no-user -> killed-leftover refusal with the separate wording', TEST_TIMEOUT, async (t) => {
+  const { c, planId, runDir, lockPath } = await killableRun(t);
+  await killThenSwapStaging(c, planId);
+  ageLock(lockPath);
+
+  const result = await runCommit(c, ['plan', '--split', '--no-user']);
+
+  assert.equal(result.exitCode, 6, detail(result));
+  assert.equal(result.json.error.kind, 'state', detail(result));
+  assert.match(result.json.error.message, /^files were staged after a killed \/commit run: `b\.txt`; unstage them or commit by hand, then run \/commit again$/);
+  assert.equal(c.git(['diff', '--cached', '--name-only']), 'b.txt\n', 'the index is unchanged');
+  assertReleased(lockPath, runDir);
 });

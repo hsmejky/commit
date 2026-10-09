@@ -127,6 +127,11 @@ failed call whose unstage did not happen keeps its run, below):
       refusal's `error` object leaves it, cutting every named path to an equal share, tail
       kept behind `…`, as `case-rename`'s text does. The same paths in the `modeChoice` and
       `reword` notices are listed the same way, uncut;
+    - Wording: when none of the killed group's paths is still staged but other files are,
+      the text does not call them the killed run's leftovers: the `--no-user` message reads
+      "files were staged after a killed /commit run: <paths>; unstage them or commit by hand,
+      then run /commit again", the notices "files staged after the killed run: <paths>"
+      (same five-path cap, backticks and byte trimming); the mode handling is the same;
     - `--reword` (with or without `--no-user`) → no forced `modeChoice`: `--amend --only`
       never touches the index, so the leftover cannot be committed; the run goes on, and a
       notice names the killed group's paths still staged.
