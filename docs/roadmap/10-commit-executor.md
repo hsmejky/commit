@@ -279,7 +279,7 @@ output that ends a `split` run from it, present only when the run state has `ind
 
 **Blocked by:** EXE-10, CHG-20.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release (`unstaged`), C:run-folder, story 161.
 
@@ -287,19 +287,21 @@ KD-R69: `unstaged` is built only from `preStaged` and `indexOnly`; a reset path'
 intent-to-add mark, dropped by `git reset -q -- .`, is not named here if its group never
 commits (it is only in the stored `stagedNew`).
 
-- [ ] Seam 1: a pre-staged file outside the planned groups → after a successful run it is
+- [x] Seam 1: a pre-staged file outside the planned groups → after a successful run it is
       listed with `blob: null` and the report text "your earlier staging was reset".
-- [ ] Seam 1: an index-only version (staged, then the working file changed back) → listed
+- [x] Seam 1: an index-only version (staged, then the working file changed back) → listed
       with its `blob`, and `git cat-file -p <blob>` returns the discarded content.
-- [ ] Seam 1: a pre-staged ignored path that `git status` no longer shows → `ignored: true`.
-- [ ] Seam 1: a force-added gitignored file committed in group 2 (moved from CHG-21,
+- [x] Seam 1: a pre-staged ignored path that `git status` no longer shows → `ignored: true`.
+- [x] Seam 1: a force-added gitignored file committed in group 2 (moved from CHG-21,
       KD-R97).
-- [ ] Seam 1: a refusal before any group reached (c) → `unstaged: null` and the report
-      says the index is untouched.
-- [ ] Seam 1: group 1 sets `indexReset`, then group 2 hits a refusal in (a) or a
+- [x] Seam 1: a refusal before any group reached (c) → `unstaged: null` and the report
+      says the index is untouched. (`unstaged: null` and the untouched index are asserted; the
+      report text is deferred to KD-R106.)
+- [x] Seam 1: group 1 sets `indexReset`, then group 2 hits a refusal in (a) or a
       `diff-changed` in (b) → the real index is left exactly as it is, and `unstaged` (from
-      group 1's reset) is still listed in the output that ends the run.
-- [ ] Seam 1: a budget stop (EXE-16) after a group that set `indexReset` → the `continue`
+      group 1's reset) is still listed in the output that ends the run. (The (b) arm is
+      tested; the (a) arm has no Seam 1 trigger, KD-R108.)
+- [x] Seam 1: a budget stop (EXE-16) after a group that set `indexReset` → the `continue`
       output still carries `unstaged` as an array (the reset paths, `[]` when none), never
       `null`: `indexReset` alone gates it, never whether the output ends the run
       (C:commit-release).
