@@ -1415,6 +1415,22 @@ export async function stage({ units, ignoredPaths = [], toplevel, env, now }) {
 }
 
 /**
+ * M10 `verifyIndex` (EXE-19, C:commit-release `staged`): no reset and no staging. The index's
+ * diff against HEAD is recomputed (`snapshot` in `staged` mode, the very pass `plan` ran) and
+ * its hash set must equal the stored units' exactly; anything staged or unstaged from outside
+ * the run shows up as `mismatch`, and the index is never touched.
+ *
+ * @param {Array<{ hash: string }>} units the stored units the run commits.
+ * @param {{ toplevel: string, env: object, now?: () => number }} options
+ * @returns {Promise<{ ok: true } | { ok: false, code: 'mismatch' }>}
+ * @throws {Error} when a git call fails.
+ */
+export async function verifyIndex(units, { toplevel, env, now }) {
+  const current = await snapshot({ mode: 'staged', toplevel, env, now });
+  return sameHashes(current, units.map((unit) => unit.hash)) ? { ok: true } : { ok: false, code: 'mismatch' };
+}
+
+/**
  * M10 `unstage()` (EXE-10, C:commit-release "On failure"): the failing group's staging taken
  * back out of the real index with `git reset -q -- .`, the pathspec form (a bare `git reset
  * -q` would move `ORIG_HEAD`, append a HEAD reflog entry, fail on `HEAD.lock` and delete

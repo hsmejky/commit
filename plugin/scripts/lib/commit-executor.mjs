@@ -64,13 +64,14 @@
 // re-read in case the hook had already committed anyway (`sha` then set, the "committed
 // as `<sha>`, but git did not exit cleanly" text), no retry, never `--no-verify`. A
 // non-zero `--amend --only` in `reword` (no index to unstage there), the backstop
-// (EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. `staged`
-// (EXE-19) is not built yet either.
+// (EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. EXE-19 adds
+// `staged`: M10 `verifyIndex` replaces (b) and (c), the backstop and the commit run on the index
+// as it is, and no failure unstages (`indexReset` is never set, `unstaged` stays `null`).
 
 import { HEAD_MOVED_TEXT, firstParent, head } from './repo-probe.mjs';
 import {
   commitGuarded, indexFingerprint, indexLockExists, matchIds, snapshot, stage, treeDiffUnits,
-  unstage, unstagedAfterReset, writeTree,
+  unstage, unstagedAfterReset, verifyIndex, writeTree,
 } from './change-set.mjs';
 import { appendTrailers, carryOver, normaliseText } from './message-grammar.mjs';
 import { scanUnits } from './scanner.mjs';
@@ -78,10 +79,6 @@ import { compileGlob } from './glob-matcher.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
 import { nextStep } from './run-policy.mjs';
 import { build } from './script-call.mjs';
-
-function notBuilt(what, slice) {
-  return new Error(`${what} is not built yet (${slice})`);
-}
 
 // EXE-05: C:cli-and-exit-codes records no text for `no-groups`, so tests assert the domain
 // code's kind and that the text names the state. Correct whichever of the two states caused
@@ -178,6 +175,10 @@ function commitFailedText(n) {
 function committedAnywayText(sha) {
   return `committed as \`${sha}\`, but git did not exit cleanly`;
 }
+
+// EXE-19: `staged`'s verify found the index differs from what `plan` stored (`unmatched`, CLI kind
+// `diff-changed`, exit 6); the index is left as it is.
+const STAGED_CHANGED_TEXT = 'the staged changes differ from the plan, run /commit again';
 
 // EXE-13: the backstop's refusal (`backstop-hit`, CLI kind `scan`, exit 3).
 function backstopText(n) {
@@ -433,10 +434,6 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
       refusal: { code: 'no-groups', message: NO_GROUPS_TEXT },
     };
   }
-  // (b)/(c) mode dispatch: `split` and `reword` (EXE-20) are built; `staged` (EXE-19) is not.
-  if (state.mode !== 'split' && state.mode !== 'reword') {
-    throw notBuilt(`commit --all in ${state.mode} mode`, 'EXE-19');
-  }
   const commits = [];
   const notices = [];
   const pending = state.groups.filter((stored) => !stored.committed);
@@ -498,61 +495,80 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
       }
       sha = await head({ cwd: toplevel, env, now });
     } else {
+      // EXE-19 (Q18, C:commit-release `staged`): M10 `verifyIndex` replaces (b) and (c) — no
+      // reset, no staging, `indexReset` never set. The index diff's hash set must equal the
+      // stored units' (the one group holds every unit); a difference is `unmatched` (`diff-changed`,
+      // exit 6) with the index left as it is, so `unstaged` stays `null`. Then the backstop and
+      // the commit run on the index as it stands; a failure never unstages (nothing was staged).
+      const staged = state.mode === 'staged';
+      const units = groupUnits(state, group);
+      if (staged) {
+        const verified = await verifyIndex(units, git);
+        if (!verified.ok) {
+          return refused(state, group, commits, { code: 'unmatched', message: STAGED_CHANGED_TEXT }, notices);
+        }
+      }
+      const cleanup = async () => { if (!staged) await unstage(git); };
       // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`
       // that fails while rebuilding it (a stored not-ignored candidate now ignored, for
       // example) is a `git-failed` refusal carrying git's output, not a throw: the real index
       // was never touched (the rebuild runs entirely on the temporary one), so this group's
       // failure still reports the groups committed so far, like any other mid-run failure.
-      const units = groupUnits(state, group);
       let current;
-      try {
-        current = await snapshot({
-          mode: 'split',
-          storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
-          // CHG-10: the stored units' paths, so a filtered file is classified as `plan` did.
-          tracked: state.units.map((unit) => unit.path),
-          indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
-          unborn: state.head === null,
-          ...git,
-        });
-      } catch (err) {
-        if (err.domainCode !== 'git-failed') throw err;
-        // Short, like the contract's other exit-4 example ("git commit failed for group 2"):
-        // `err.message` carries git's full raw output too, which would duplicate `gitOutput`
-        // uncut in the reply's capped, escaped `text` (C:reply-and-handback).
-        const message = `git add -N failed rebuilding the temporary index for group ${group.n}`;
-        return refused(state, group, commits, { code: 'git-failed', message }, notices, err.gitOutput);
-      }
-      // EXE-09: a stored unit's hash missing from this fresh snapshot — the file changed since
-      // `plan` (or during an earlier group's own `git commit`, EXE-15's hook-rewrite variant) —
-      // is `unmatched`, CLI kind `diff-changed`; the real index was never touched by (b).
-      const matched = matchIds(Object.fromEntries(units.map((unit) => [unit.id, unit.hash])), current);
-      if (!matched.ok) {
-        // EXE-15: the previous group's own commit may have left this behind (the hook-rewrite
-        // notice), which explains an otherwise-generic "files changed since plan".
-        const message = typeof state.treeChangedDuringCommit === 'number'
-          ? hookRewriteText(state.treeChangedDuringCommit)
-          : UNMATCHED_TEXT;
-        return refused(state, group, commits, { code: 'unmatched', message }, notices);
+      let matchedUnits = null;
+      if (!staged) {
+        try {
+          current = await snapshot({
+            mode: 'split',
+            storedLists: { candidates: state.candidates, stagedNew: state.stagedNew },
+            // CHG-10: the stored units' paths, so a filtered file is classified as `plan` did.
+            tracked: state.units.map((unit) => unit.path),
+            indexPath: insideRunDir(runDirOf(toplevel), `${run.planId}/git-index`),
+            unborn: state.head === null,
+            ...git,
+          });
+        } catch (err) {
+          if (err.domainCode !== 'git-failed') throw err;
+          // Short, like the contract's other exit-4 example ("git commit failed for group 2"):
+          // `err.message` carries git's full raw output too, which would duplicate `gitOutput`
+          // uncut in the reply's capped, escaped `text` (C:reply-and-handback).
+          const message = `git add -N failed rebuilding the temporary index for group ${group.n}`;
+          return refused(state, group, commits, { code: 'git-failed', message }, notices, err.gitOutput);
+        }
+        // EXE-09: a stored unit's hash missing from this fresh snapshot — the file changed since
+        // `plan` (or during an earlier group's own `git commit`, EXE-15's hook-rewrite variant) —
+        // is `unmatched`, CLI kind `diff-changed`; the real index was never touched by (b).
+        const matched = matchIds(Object.fromEntries(units.map((unit) => [unit.id, unit.hash])), current);
+        if (!matched.ok) {
+          // EXE-15: the previous group's own commit may have left this behind (the hook-rewrite
+          // notice), which explains an otherwise-generic "files changed since plan".
+          const message = typeof state.treeChangedDuringCommit === 'number'
+            ? hookRewriteText(state.treeChangedDuringCommit)
+            : UNMATCHED_TEXT;
+          return refused(state, group, commits, { code: 'unmatched', message }, notices);
+        }
+        matchedUnits = matched.units;
       }
 
-      // (c) Apply on the real index.
-      state.indexReset = true;
-      writeState(run, state);
+      // (c) Apply on the real index (`split` only; `staged` committed the index as it is).
+      if (!staged) {
+        state.indexReset = true;
+        writeState(run, state);
+      }
       const ignoredPaths = state.stagedNew.filter((entry) => entry.ignored).map((entry) => entry.path);
       try {
         // CHG-20: the group's units as matched in the current snapshot, so `stage` knows which
         // are hunks (staged from the current ranges) and which whole files.
-        const staged = await stage({ units: matched.units, ignoredPaths, ...git });
-        if (!staged.ok) {
+        const applied = staged ? { ok: true } : await stage({ units: matchedUnits, ignoredPaths, ...git });
+        if (!applied.ok) {
           // EXE-10 (C:commit-release (c)): this group reached (c), so its staging is taken
           // back out (M10 `unstage`) before the refusal, and `unstaged` is present (`indexReset`
           // is set). A failing or skipped unstage (keep the run, notice) is EXE-17's.
           await unstage(git);
-          const refusal = staged.code === 'stage-failed'
+          const refusal = applied.code === 'stage-failed'
             ? { code: 'stage-failed', message: stageFailedText(group.n) }
             : { code: 'mismatch', message: mismatchText(group.n) };
-          return refused(state, group, commits, refusal, notices, staged.gitOutput ?? null);
+          return refused(state, group, commits, refusal, notices, applied.gitOutput ?? null);
         }
 
         // EXE-13 (C:commit-release): the backstop over the recorded tree, fail-closed. The
@@ -565,7 +581,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           scanIgnore: storedScanIgnore(state), osUser,
         });
         if (hits.length > 0) {
-          await unstage(git);
+          await cleanup();
           return {
             ...refused(state, group, commits, { code: 'backstop-hit', message: backstopText(group.n) }, notices),
             hits,
@@ -580,8 +596,9 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         if (committed.code !== 0) {
           // EXE-12 (Q18: never retry, never `--no-verify` — neither happens here, one plain
           // `commitGuarded` call above): this group reached (c), so its staging is taken back
-          // out (M10 `unstage`), same as EXE-10's `stage-failed`.
-          await unstage(git);
+          // out (M10 `unstage`), same as EXE-10's `stage-failed`. EXE-19: `staged` staged
+          // nothing, so its index stays as it is.
+          await cleanup();
           return gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now });
         }
 
@@ -589,7 +606,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         // ever read the diagnosis. `current` (phase (b), moments earlier) already is the
         // worktree diff's hash set right before this `git commit` call; a fresh snapshot right
         // after is compared against it, this group's own hashes taken out first.
-        if (groupIndex < pending.length - 1) {
+        if (!staged && groupIndex < pending.length - 1) {
           let afterUnits;
           try {
             afterUnits = await snapshot({
@@ -633,7 +650,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         // C:commit-release "On failure": a throw after this group reached (c) (`internal`; a
         // non-zero `git commit` is mapped above, EXE-12) never leaves the real index
         // staged for the run to repair later.
-        await unstage(git);
+        await cleanup();
         throw err;
       }
       sha = await head({ cwd: toplevel, env, now });

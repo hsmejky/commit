@@ -270,16 +270,6 @@ fixed, delete it here; IDs are never reused.
   is in place for this path, add a case combining it with the FND-10 `osUser` fault over a
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
-- **KD-R97.** A Seam-1 criterion for CHG-21's staging edge cases, moved into EXE-19 (the
-  slice that unblocks it), cannot run end to end until it lands: EXE-19's staged 60-file new
-  directory under `--staged` hits `notBuilt('commit --all in staged mode', 'EXE-19')`.
-  EXE-11's force-added gitignored file in group 2 and EXE-10's `core.safecrlf=true` and
-  missing-required-filter cases are covered (`tests/stage-whole-file.test.js`,
-  `tests/commit-all-stage-failed.test.js`).
-  Where: `plugin/scripts/lib/commit-executor.mjs` `commitAll`,
-  `tests/stage-whole-file.test.js`. Fix: once EXE-19 lands, it adds its case and this row
-  is dropped.
-  Slice: EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
   lists four pairs as gaps because the code producing them is not built: `env` via the entry
   point for an install path with a shell-special character (RPL-08), `killed-leftover`

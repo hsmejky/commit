@@ -6,7 +6,7 @@
 // C:commit-release (c)). Seam 1: `plan --split`, the groups written into `state.json` as
 // `check` stores them, then `commit --plan <id> --all`; each commit's tree is read back with
 // git. The force-added ignored file is EXE-11's; the staged 60-file directory under
-// `--staged` waits for EXE-19 (KD-R97); the `stage-failed` cases are EXE-10's
+// `--staged` is EXE-19's (tests/commit-all-staged.test.js); the `stage-failed` cases are EXE-10's
 // (tests/commit-all-stage-failed.test.js).
 
 const fs = require('node:fs');
