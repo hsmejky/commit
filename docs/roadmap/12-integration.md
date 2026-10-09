@@ -175,15 +175,15 @@ adds a new file confirms even with one group.
 
 **Blocked by:** INT-09, CHG-05, CHG-13.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Further Notes "First slice" (new file needs confirmation), Q16, C:untracked-files,
 stories 88, 152, 153.
 
-- [ ] Seam 1: one modified file plus one new file in one group → `confirm` handback naming
+- [x] Seam 1: one modified file plus one new file in one group → `confirm` handback naming
       the new file; `yes` commits both
-- [ ] Gitignored and hidden files are not units and are not in `notIncluded`
-- [ ] KD-R104: rebuild the forged-`awaitingConfirm` three-group case in `tests/commit-all.test.js`
+- [x] Gitignored and hidden files are not units and are not in `notIncluded`
+- [x] KD-R104: rebuild the forged-`awaitingConfirm` three-group case in `tests/commit-all.test.js`
       over a real `check` confirm handback, and add the zero-stored-groups `unconfirmed` vs
       `no-groups` pair
 
