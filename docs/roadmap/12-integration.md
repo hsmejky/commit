@@ -348,14 +348,14 @@ exactly its planned hunks, identical hunks stay together.
 
 **Blocked by:** INT-18, CHG-17, CHG-18.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q19, C:plan-hunks, C:summary-only-files, stories 65, 157, 158, 159.
 
-- [ ] Seam 1 size fixture at each hunk-index cap: `plan --hunks` stdout ≤ 20 000 characters,
+- [x] Seam 1 size fixture at each hunk-index cap: `plan --hunks` stdout ≤ 20 000 characters,
       the index spilled to `hunks.json` past it
-- [ ] A lockfile and a file over 1000 changed lines appear as stats-only whole-file units
-- [ ] A file past the cap keeps each hunk's ID; every unit placed commits
+- [x] A lockfile and a file over 1000 changed lines appear as stats-only whole-file units
+- [x] A file past the cap keeps each hunk's ID; every unit placed commits
 
 
 ## INT-20: Filtered files stage through their filter
