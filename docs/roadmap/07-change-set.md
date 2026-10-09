@@ -564,11 +564,11 @@ markers; without it never removes the lock and reports `lockLeft`; reuses `index
 
 **Blocked by:** CHG-20, GIT-07, GIT-06, EXE-08, EXE-17, EXE-20, FND-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release, story 166, 215, M10, testing-modules Q11 case list.
 
-- [ ] Seam 1 (reword): a sleeping hook that records that `index.lock` exists, clock stepped to 535 s → after the kill the lock is removed; a lock another process created after the kill is kept.
-- [ ] Seam 1: a lock whose mtime lies at or after the first marker's mtime minus 2 seconds and strictly below the second marker's is removed as stale; one just before that lower bound is kept (Q18).
-- [ ] Seam 1 (split): a sleeping hook that creates `index.lock` → after the kill the lock is still there and the notices carry "index.lock was left in place — …".
-- [ ] Static: a grep over the source tree finds no reference to a marker file or to `index.lock` outside M10's own source file.
+- [x] Seam 1 (reword): a sleeping hook that records that `index.lock` exists, clock stepped to 535 s → after the kill the lock is removed; a lock another process created after the kill is kept.
+- [x] Seam 1: a lock whose mtime lies at or after the first marker's mtime minus 2 seconds and strictly below the second marker's is removed as stale; one just before that lower bound is kept (Q18).
+- [x] Seam 1 (split): a sleeping hook that creates `index.lock` → after the kill the lock is still there and the notices carry "index.lock was left in place — …".
+- [x] Static: a grep over the source tree finds no reference to a marker file or to `index.lock` outside M10's own source file.
