@@ -102,17 +102,6 @@ fixed, delete it here; IDs are never reused.
   `notIncludedResult`, or decide in docs that the gap is permanent and narrow C:check's
   wording instead. Slice: a later one touching `stagedExcludedOf`/C:check (none assigned
   yet).
-- **KD-R92.** `lintFailureOf` (`plugin/scripts/lib/workflows.mjs`) drops `plan`'s stored
-  notices on a lint failure: the interactive `lintFailed` handback's `finalReply` call
-  carries no `notices` at all, and the `--no-user` `failed` reply's `notices` holds only the
-  release notice (`released.notice`), never `ctx.notices`. Per [plan](plan.md) step 8 /
-  [reply-and-handback](reply-and-handback.md), every output that ends the worker's part of a
-  run should carry the notices `plan` stored (the guard notice included), so a
-  heartbeat-less run whose user answers `no` to a lint failure never sees the guard notice.
-  Pre-existing, outside INT-27's ACs (review-INT-27-r2 Low-2). Fix: pass `ctx.notices` (or
-  `[...ctx.notices, released.notice]` for the `--no-user` branch) into both `finalReply`
-  calls. Slice: RUN-27 (`lintFailureOf`'s own comment: "M15 `runEnd` replaces this branch
-  when RUN-27 builds it"), or an earlier RPL slice if one touches this function first.
 - **KD-R103.** (EXE-17 built the behavior: `cleanUnstage` in `commit-executor.mjs` treats a failed
   or skipped `git reset` as `unstageKept` with the notice and `unstaged: null`, and its
   `catch` cleanup cannot replace the original error; only the *failed* (not skipped) case
@@ -132,6 +121,11 @@ fixed, delete it here; IDs are never reused.
   `run` inside it would replace `err`, masking the original cause the `catch` was reporting.
   Fix: add a non-zero-`git reset` criterion to EXE-17 once a seam for it exists (a user
   decision), and guard the 515 call so a throw from `unstage` itself cannot replace `err`.
+  RUN-27 review: the same gap covers the `internal` ending. A throw after phase (c) whose unstage
+  failed or was skipped now carries `unstageKept` on the error (`commitGroups`' `catch`) and
+  `runInternalFailure` keeps the run with the staging notice, but no Seam 1 fixture reaches it:
+  the fault preload fails every `state.json` rename from the first one, so the throw lands at
+  the `indexReset` write before anything is staged, never at the post-commit write.
   Slice: none yet.
 
 ## Test mechanisms

@@ -48,6 +48,7 @@ test('runEnd: lint failures, check results, commit outcomes, release, internal a
   assert.equal(runEnd({ kind: 'lintFailure', ending: 'lintFailed' }, {}), 'keep');
   assert.equal(runEnd({ kind: 'lintFailure', ending: 'lintFailed' }, { interactive: false }), 'release');
   assert.equal(runEnd({ kind: 'checkResult', route: 'confirm' }), 'keep');
+  assert.equal(runEnd({ kind: 'checkResult', route: 'commit' }), 'keep', 'commitOutcome decides after the commit');
   assert.equal(runEnd({ kind: 'checkResult', route: 'handedBack' }), 'release');
   assert.equal(runEnd({ kind: 'checkResult', route: 'releaseNothing' }), 'release');
   assert.equal(runEnd({ kind: 'commitOutcome', remaining: 0 }), 'release');
@@ -163,14 +164,17 @@ test('Seam 1: check --no-user, second lint failure, a busy lock rename → the f
 
   assert.equal(second.exitCode, 2, detail(second));
   assert.equal(second.json.reply.status, 'failed');
-  assert.deepEqual(second.json.reply.notices, [LOCK_KEPT(run.planId)]);
+  // `plan`'s stored guard notice now rides along (KD-R92); the release notice comes last.
+  const { notices } = second.json.reply;
+  assert.ok(notices[0].startsWith('Guard hook did not run'), detail(second));
+  assert.deepEqual(notices.slice(1), [LOCK_KEPT(run.planId)]);
   assert.equal(fs.existsSync(run.lockPath), true, 'the run is kept');
 });
 
 // Unverified on the Windows development host (the case is skipped there); it mirrors the
 // sweep's read-only-folder cases (tests/run-sweep.test.js).
 test('Seam 1: commit --all, last group, a folder-removal error → the committed reply carries its notice', {
-  skip: process.platform === 'win32' ? 'a read-only folder does not block removal on Windows' : false,
+  skip: (process.platform === 'win32' || process.getuid?.() === 0) && 'needs POSIX permissions as non-root',
 }, async (t) => {
   const run = await plannedRun(t, ['--no-user']);
   writePlan(run.runDir, [group('feat: change both files', ['a.txt', 'b.txt'])]);
@@ -204,4 +208,43 @@ test('Seam 1: check timed-out after open, a busy lock rename → the failure car
   assert.equal(checked.json.error.kind, 'timeout');
   assert.deepEqual(checked.json.notices, [LOCK_KEPT(run.planId)]);
   assert.equal(fs.existsSync(run.lockPath), true, 'the run is kept');
+});
+
+// KD-R92 (RUN-27): a lint failure that ends the worker's part of the run carries the notices
+// `plan` stored, like every other ending. The stored `state.json` notices are seeded here (the
+// guard notice depends on the heartbeat), so the case does not rely on how `plan` produced them.
+const STORED_NOTICE = 'a notice plan stored in state.json';
+
+function seedStoredNotice(run) {
+  const statePath = path.join(run.runDir, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.notices = [STORED_NOTICE];
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+}
+
+test('Seam 1: check, interactive second lint failure → the lintFailed handback reply carries the stored notices', async (t) => {
+  const run = await plannedRun(t);
+  seedStoredNotice(run);
+  writePlan(run.runDir, [group('wip: change both files', ['a.txt', 'b.txt'])]);
+  const first = await runCommit(run.c, ['check', '--plan', run.planId]);
+  assert.equal(first.exitCode, 2, detail(first));
+  const second = await runCommit(run.c, ['check', '--plan', run.planId]);
+
+  assert.equal(second.exitCode, 2, detail(second));
+  assert.equal(second.json.reply.status, 'handback', detail(second));
+  assert.deepEqual(second.json.reply.notices, [STORED_NOTICE], detail(second));
+});
+
+test('Seam 1: check --no-user, second lint failure → the failed reply carries the stored notices ahead of the release notice', async (t) => {
+  const run = await plannedRun(t, ['--no-user']);
+  seedStoredNotice(run);
+  writePlan(run.runDir, [group('wip: change both files', ['a.txt', 'b.txt'])]);
+  const first = await runCommit(run.c, ['check', '--plan', run.planId]);
+  assert.equal(first.exitCode, 2, detail(first));
+
+  const second = await runCommit(run.c, ['check', '--plan', run.planId],
+    faultOptions({ COMMIT_TEST_FAULT_RENAME_BASENAME: 'lock=EPERM' }));
+
+  assert.equal(second.json.reply.status, 'failed', detail(second));
+  assert.deepEqual(second.json.reply.notices, [STORED_NOTICE, LOCK_KEPT(run.planId)], detail(second));
 });

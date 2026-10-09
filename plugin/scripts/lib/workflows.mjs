@@ -1116,7 +1116,12 @@ async function validateWorkerPlan(ctx) {
   if (!validated.ok) {
     const lintEnding = onLintFailure(state, validated.source, validated.kind);
     writeState(run, { ...state, lintFailures: (state.lintFailures ?? 0) + 1 });
-    return { lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape' };
+    // KD-R92: the notices `plan` stored ride with the lint facts, so `lintFailureOf`'s replies carry
+    // them (`ctx.notices` holds none of them in `check`).
+    return {
+      lint: validated.errors, lintEnding, interactive: state.interactive, shapeOnly: validated.kind === 'shape',
+      notices: Array.isArray(state.notices) ? state.notices : [],
+    };
   }
   writeState(run, { ...state, groups: validated.stored.map((group) => ({ ...group, committed: false })) });
   // INT-27 (Q23, C:plan `notices`, C:reply-and-handback): every notice `plan` stored in
@@ -1200,7 +1205,7 @@ async function commitCheckedGroups(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const state = readState(run);
   const route = afterCheck(confirm, groups, state);
-  if (runEnd({ kind: 'checkResult', route }) === 'release' && route !== 'commit') {
+  if (runEnd({ kind: 'checkResult', route }) === 'release') {
     const released = releaseOpen(run);
     return {
       groups, notIncluded, confirm, route,
@@ -1735,7 +1740,10 @@ async function lintFailureOf(facts, ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   if (runEnd({ kind: 'lintFailure', ending: facts.lintEnding }, { interactive: facts.interactive }) === 'keep') {
     failure.reply = await finalReply(
-      { status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint, shapeOnly: facts.shapeOnly },
+      {
+        status: 'handback', kind: 'lintFailed', planId: run.planId, errors: facts.lint,
+        shapeOnly: facts.shapeOnly, notices: facts.notices,
+      },
       ctx,
     );
     return { failure };
@@ -1745,7 +1753,7 @@ async function lintFailureOf(facts, ctx) {
     status: 'failed',
     message: `Lint failed: ${message}`,
     errors: facts.lint,
-    notices: released.notice === null ? [] : [released.notice],
+    notices: released.notice === null ? facts.notices : [...facts.notices, released.notice],
   }, ctx);
   return { failure };
 }
@@ -1859,7 +1867,12 @@ async function lockHandbackFailure(refusal, ctx, toplevel, replyDeadline, clock)
 // (lock and folder, the release's notice in the reply's `notices`), then `planInternalFailure`
 // builds the `failed` reply. `close` in the caller's `finally` finds nothing left to close.
 async function runInternalFailure(err, ctx, values) {
-  if (ctx.opened && runEnd({ kind: 'internal' }) === 'release') {
+  // A throw after a group reached phase (c) whose unstage failed or was skipped (`err.unstageKept`,
+  // set by M16 `commitAll`) keeps the run, with the "staging may remain" notice: the next
+  // `plan`'s takeover repairs the index (C:cli-and-exit-codes `internal`).
+  const unstageKept = err?.unstageKept === true;
+  if (unstageKept && typeof err.stagingNotice === 'string') ctx.notices.push(err.stagingNotice);
+  if (ctx.opened && runEnd({ kind: 'internal', unstageKept }) === 'release') {
     const released = releaseOpen({ toplevel: ctx.toplevel, planId: values.plan });
     if (released.notice !== null) ctx.notices.push(released.notice);
   }
