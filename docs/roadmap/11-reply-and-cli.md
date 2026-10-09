@@ -229,13 +229,13 @@ plus the `mode` flag of the `plan` call that built it (read from `argv`); `takeO
 
 **Blocked by:** INT-05, INT-13, RUN-20, RUN-22.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** M17, C:reply-and-handback (`respawn`), C:worker-input, Q9, Q22, stories 52, 190.
 
-- [ ] Seam 1: a live lock plus `plan --staged` → `take over` respawn holds `mode: staged` and
+- [x] Seam 1: a live lock plus `plan --staged` → `take over` respawn holds `mode: staged` and
       `takeOver: <planId>`
-- [ ] `plan --take-over <planId>` on a mixed index answered `staged` → respawn holds
+- [x] `plan --take-over <planId>` on a mixed index answered `staged` → respawn holds
       `mode: staged` and no `takeOver`; running that `plan --staged` finds no lock and plans
       `staged`
-- [ ] No respawn holds `intent` or `reword`; `edit` respawns mark the user's text as `{text}`
+- [x] No respawn holds `intent` or `reword`; `edit` respawns mark the user's text as `{text}`
