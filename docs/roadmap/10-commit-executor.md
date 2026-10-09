@@ -493,17 +493,17 @@ builds M10 `verifyIndex`.
 
 **Blocked by:** EXE-07, EXE-13, RUN-13, PLN-05, CHG-14.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q18, C:commit-release (`staged`), M16, story 162.
 
-- [ ] Seam 1: `plan --staged` with a partly staged file → the commit holds the staged
+- [x] Seam 1: `plan --staged` with a partly staged file → the commit holds the staged
       version only, the unstaged edit stays in the working tree.
-- [ ] Seam 1: a hunk staged by `git add -p` after `plan` → exit 6 (`index-changed` or
+- [x] Seam 1: a hunk staged by `git add -p` after `plan` → exit 6 (`index-changed` or
       `diff-changed`), the index unchanged, `unstaged: null`.
-- [ ] Seam 1: a staged 60-file new directory, committed as the index holds it (moved from
+- [x] Seam 1: a staged 60-file new directory, committed as the index holds it (moved from
       CHG-21, KD-R97).
-- [ ] Seam 1: the backstop runs in `staged` too.
+- [x] Seam 1: the backstop runs in `staged` too.
 
 
 ## EXE-20: reword through `--amend --only`
