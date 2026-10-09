@@ -69,15 +69,17 @@ test('Seam 1 (AC2): gitignored and hidden untracked files are not units and not 
   c.writeFile('c.txt', 'three\n');
   c.writeFile('ignored.log', 'noise\n');
   c.writeFile('.hidden-note', 'secret\n');
-  const { planned, checked, runDir } = await planAndCheck(c, ['a.txt', 'c.txt']);
+  const { checked, runDir } = await planAndCheck(c, ['a.txt', 'c.txt']);
 
   const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
   const unitPaths = new Set(state.units.map((unit) => unit.path));
   assert.deepEqual([...unitPaths].sort(), ['a.txt', 'c.txt']);
-  assert.ok(!JSON.stringify(planned.json.untracked ?? []).includes('ignored.log'), detail(planned));
+  const plan = JSON.parse(fs.readFileSync(path.join(runDir, 'plan.json'), 'utf8'));
+  assert.equal(plan.untracked.hidden.count, 1, JSON.stringify(plan.untracked));
+  assert.deepEqual(plan.untracked.hidden.sample, ['.hidden-note']);
+  assert.ok(!JSON.stringify(plan.untracked).includes('ignored.log'), 'gitignored file is not in the inventory');
   const wire = JSON.stringify(checked.json);
   assert.ok(!wire.includes('ignored.log'), 'gitignored file appears nowhere in check');
   assert.ok(!unitPaths.has('.hidden-note'), 'hidden file is not a unit');
-  assert.ok(!(checked.json.reply.text.split('Not included')[1] ?? '').includes('.hidden-note'), 'hidden file is not listed as not included');
   assert.deepEqual(checked.json.notIncluded ?? [], [], 'nothing in notIncluded');
 });

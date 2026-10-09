@@ -1146,14 +1146,11 @@ test('the first group of the call starts even at 539 s elapsed, but group 2 then
 // Nothing in the state is forged.
 async function threeGroupConfirmRun(t) {
   const c = createCase(t);
-  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}
-`);
+  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}\n`);
   c.git(['add', '--', 'a.txt', 'b.txt', 'c.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
   const seed = c.git(['rev-parse', 'HEAD']).trim();
-  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}
-more
-`);
+  for (const name of ['a', 'b', 'c']) c.writeFile(`${name}.txt`, `${name}\nmore\n`);
   const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
@@ -1217,8 +1214,7 @@ test('awaitingConfirm with zero stored groups: commit --all refuses unconfirmed;
   const statePath = path.join(runDir, 'state.json');
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   state.groups = [];
-  fs.writeFileSync(statePath, `${JSON.stringify(state)}
-`);
+  fs.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
   const head = c.git(['rev-parse', 'HEAD']).trim();
 
   const bare = await runCommit(c, ['commit', '--plan', planId, '--all']);
@@ -1232,6 +1228,6 @@ test('awaitingConfirm with zero stored groups: commit --all refuses unconfirmed;
 
   assert.equal(confirmed.exitCode, 1, detail(confirmed));
   assert.equal(confirmed.json.error.kind, 'usage', detail(confirmed));
-  assert.doesNotMatch(confirmed.json.error.message, /confirm/i, 'no-groups, not unconfirmed');
+  assert.match(confirmed.json.error.message, /no groups/, 'no-groups, not unconfirmed');
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), head, 'nothing committed');
 });
