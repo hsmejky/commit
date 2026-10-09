@@ -10,7 +10,7 @@
 // left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers
 // and `ifNoUser` are INT-13's (KD-R93). RUN-16 adds the `lintFailed` handback's question
 // and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
-// run's `planId`; RPL-08 adds its answers and `ifNoUser`, the quoted rejected messages are RPL's. INT-02
+// run's `planId`; RPL-08 adds its answers and `ifNoUser`; the quoted rejected messages are RPL-07's. INT-02
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
 // state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
 // with the commits made before the budget stop; the not-included lines, the trailer line and

@@ -202,7 +202,8 @@ Sources: Q9, Q16, Q22, Q24, Q25, C:reply-and-handback.
 
 **M18 Subcommand workflows.** Sequences over the modules, each a numbered step table that is
 the contract for Seam 1 tests; each maps typed results through the error table and builds
-the reply with M17.
+the reply with M17. `installRefusalFailure(message)` builds the `env` failure reply for the
+entry point's install-path refusal (no run folder, `planId: null`).
 - **`plan`.** M15 `deadline` from the call's start bounds every M2 call of every step
   (exceeded → `timeout`, discard).
   1. M3 probe (plus reword facts, `unmerged`); M4 config; M5 attribution.

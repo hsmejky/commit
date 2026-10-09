@@ -236,10 +236,11 @@ const POSIX_ONLY = [['"', 'double quote'], ['\\', 'backslash'], ['\u0001', 'cont
 
 async function runFromCopy(t, ch, args = ['plan']) {
   const c = createCase(t);
+  const headBefore = c.git(['log', '--all', '--format=%H']);
   const dest = path.join(c.root, `in${ch}stall`, 'scripts');
   fs.cpSync(PLUGIN_SCRIPTS, dest, { recursive: true });
   const result = await runCommit(c, args, { script: path.join(dest, 'commit.cjs') });
-  return { c, result };
+  return { c, result, headBefore };
 }
 
 function assertEnvRefusal(c, result) {
@@ -265,8 +266,9 @@ for (const [ch, name] of [...BOTH_PLATFORMS, ...POSIX_ONLY]) {
 }
 
 test('Seam 1: a commit --plan --all call from a refused install path is refused env, committing nothing (KD-R76)', async (t) => {
-  const { c, result } = await runFromCopy(t, '$', ['commit', '--plan', '3f9a1c00-0000-4000-8000-000000000000', '--all']);
+  const { c, result, headBefore } = await runFromCopy(t, '$', ['commit', '--plan', '3f9a1c00-0000-4000-8000-000000000000', '--all']);
   assertEnvRefusal(c, result);
+  assert.equal(c.git(['log', '--all', '--format=%H']), headBefore, 'no commit was made');
 });
 
 test('Seam 1: a native install path (Windows separators or plain POSIX) is not refused', async (t) => {
