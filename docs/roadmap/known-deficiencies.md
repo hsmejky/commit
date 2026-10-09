@@ -58,6 +58,14 @@ fixed, delete it here; IDs are never reused.
   `failed` reply lands for `commit --all`, add a line saying the index is untouched (Q18,
   C:commit-release `unstaged: null`) after the failed group in `reply.mjs`'s `failed`
   text, and assert it on the same refusal. Slice: whichever lands KD-R73.
+- **KD-R107.** EXE-12 AC2's reply-text half (story 160: the `failed` reply's `text` naming
+  the committed group 1, the failed group 2 and the remaining group 3) is not reachable for a
+  direct `commit --all`: its failure goes out through `commitAllFailure` with no `reply`
+  (KD-R73). `tests/commit-all-git-failed.test.js` asserts the rest of AC2 (lock and run
+  folder gone). Fix: when KD-R73's `failed` reply lands for `commit --all`, assert the
+  group lists in `reply.text` on the exit-4 case of that test file, including the Q18
+  "committed as `<sha>`, but git did not exit cleanly" case, whose group is listed as
+  committed. Slice: whichever lands KD-R73.
 - **KD-R108.** C:commit-release has no "unknown" value for `unstaged`. When `git status`
   fails after the last commit and the release (EXE-11 review finding 3), `commitAll` keeps the
   commit list and lists every `preStaged` and `indexOnly` path (`ignored: false`, `blob` where
@@ -272,13 +280,13 @@ fixed, delete it here; IDs are never reused.
   is dropped.
   Slice: EXE-19.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists five pairs as gaps because the code producing them is not built: `env` via the entry
+  lists four pairs as gaps because the code producing them is not built: `env` via the entry
   point for an install path with a shell-special character (RPL-08), `killed-leftover`
-  (RUN-24), `index-locked` via M18's takeover repair (RUN-23, RUN-25), `git-failed` from a
-  failing `git commit` (EXE-12) and `timed-out` via M16's `git
-  commit` deadline (EXE-17). Fix: each
+  (RUN-24), `index-locked` via M18's takeover repair (RUN-23, RUN-25) and `timed-out` via
+  M16's `git commit` deadline (EXE-17); EXE-12 already replaced its `git-failed` entry
+  (`tests/commit-all-git-failed.test.js`). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
-  EXE-12, EXE-17, RPL-08, RUN-23, RUN-24, RUN-25.
+  EXE-17, RPL-08, RUN-23, RUN-24, RUN-25.
 - **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws

@@ -139,8 +139,48 @@ test('a pre-commit hook that itself commits then exits 1 -> exit 4, sha set to t
   assert.notEqual(headNow, seed, 'the hook\'s own commit landed');
   assert.equal(result.json.sha, headNow);
   assert.equal(result.json.error.message, `committed as \`${headNow}\`, but git did not exit cleanly`);
+  // Q18: "the group counts as committed in the report" — group 2 is in `commits` with the
+  // new HEAD, out of `remaining`; `failed` still names it as the step whose exit ended the run.
   assert.equal(result.json.failed, 2);
-  assert.deepEqual(result.json.commits, [{ n: 1, sha: c.git(['rev-parse', `${headNow}^`]).trim(), header: THREE_HEADERS[0] }]);
+  assert.deepEqual(result.json.commits, [
+    { n: 1, sha: c.git(['rev-parse', `${headNow}^`]).trim(), header: THREE_HEADERS[0] },
+    { n: 2, sha: headNow, header: THREE_HEADERS[1] },
+  ]);
+  assert.deepEqual(result.json.remaining, [3]);
   assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
+  assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
+});
+
+// EXE-12 in `reword`: a rejecting hook on `git commit --amend --only` is the same exit 4,
+// not `internal`; nothing to unstage (the index is never touched), the old HEAD is kept.
+test('a pre-commit hook rejecting a reword -> exit 4 git-failed, gitOutput verbatim, HEAD and staging untouched, run released', async (t) => {
+  const c = createCase(t);
+  const dir = path.join(c.claudeHome, 'commit-guard');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'heartbeat.json'), JSON.stringify({
+    ts: Date.now(), cwd: c.repoDir, command: 'commit.cjs plan',
+  }));
+  c.writeFile('file.txt', 'one\n');
+  c.git(['add', 'file.txt']);
+  c.git(['commit', '-q', '-m', 'fix: old']);
+  const oldSha = c.git(['rev-parse', 'HEAD']).trim();
+  const planned = await runCommit(c, ['plan', '--reword']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  c.writeFile('extra.txt', 'staged\n');
+  c.git(['add', '--', 'extra.txt']);
+  fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
+    version: 1, source: 'worker', groups: [{ header: 'fix: new', body: null, files: [], hunks: [] }], notIncluded: [],
+  }));
+  installCountingHook(c, path.join(c.root, 'hook-runs.log'), 1);
+
+  const result = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(result.exitCode, 4, detail(result));
+  assert.equal(result.json.error.kind, 'git', detail(result));
+  assert.equal(result.json.error.message, 'git commit failed for group 1');
+  assert.equal(result.json.gitOutput, 'pre-commit: \x1b[31meslint found 2 problems\x1b[0m\n');
+  assert.equal(c.git(['rev-parse', 'HEAD']).trim(), oldSha, 'the old commit is kept');
+  assert.equal(c.git(['status', '--porcelain']), 'A  extra.txt\n', 'staging untouched');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });

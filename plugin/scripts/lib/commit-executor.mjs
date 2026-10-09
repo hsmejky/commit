@@ -268,6 +268,29 @@ function refused(state, group, commits, refusal, notices, gitOutput = null, sha 
   };
 }
 
+// EXE-12 (Q18, C:commit-release "After exit 4 or 5"): a non-zero `git commit` ends the run
+// as exit 4 `git-failed` with git's output verbatim. HEAD is re-read in case the rejecting
+// hook had itself already made a commit (a hanging `post-commit`, a partial pre-commit): an
+// unmoved HEAD gives the plain "git commit failed for group <n>" text and the group stays
+// uncommitted; a moved HEAD reports that SHA and "committed as `<sha>`, but git did not exit
+// cleanly", and per Q18 the group counts as committed in the report (in `commits`, out of
+// `remaining`) while `failed` still names it as the step whose exit ended the run.
+// (The HEAD re-read here and the `unstage` before it take no `cleanupDeadline` yet: EXE-17's
+// "cleanup and reporting take `cleanupDeadline - now()`" owns both.)
+async function gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now }) {
+  const gitOutput = `${committed.stdout}${committed.stderr}`;
+  const headAfter = await head({ cwd: toplevel, env, now });
+  if (headAfter === state.head) {
+    return refused(state, group, commits, { code: 'git-failed', message: commitFailedText(group.n) }, notices, gitOutput);
+  }
+  group.committed = true;
+  writeState(run, state);
+  commits.push({ n: group.n, sha: headAfter, header: group.header });
+  return refused(
+    state, group, commits, { code: 'git-failed', message: committedAnywayText(headAfter) }, notices, gitOutput, headAfter,
+  );
+}
+
 // EXE-16: M15 `nextStep`'s budget stop, the last check of phase (a). Not a failure (no
 // `refusal`, `failed: null`): the call ends cleanly with the groups committed so far kept,
 // and `remaining` (never empty, since this group itself was not reached) for a later
@@ -461,7 +484,11 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         input: rewordMessageOf(group, state),
         ...git,
       });
-      if (committed.code !== 0) throw notBuilt('a failing git commit', 'EXE-12');
+      // EXE-12: a failing `--amend --only` (a rejecting pre-commit hook) is the same exit 4 as
+      // `split`'s; `reword` never touches the index, so there is nothing to unstage.
+      if (committed.code !== 0) {
+        return gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now });
+      }
       sha = await head({ cwd: toplevel, env, now });
     } else {
       // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`
@@ -546,20 +573,9 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         if (committed.code !== 0) {
           // EXE-12 (Q18: never retry, never `--no-verify` — neither happens here, one plain
           // `commitGuarded` call above): this group reached (c), so its staging is taken back
-          // out (M10 `unstage`), same as EXE-10's `stage-failed`. HEAD is re-read in case the
-          // rejecting hook had itself already made a commit (a hanging `post-commit`, a
-          // partial pre-commit): a moved HEAD reports that SHA and the "committed as `<sha>`,
-          // but git did not exit cleanly" text instead of the plain one; either way the group
-          // itself is `failed`, never added to `commits`.
+          // out (M10 `unstage`), same as EXE-10's `stage-failed`.
           await unstage(git);
-          const gitOutput = `${committed.stdout}${committed.stderr}`;
-          const headAfter = await head({ cwd: toplevel, env, now });
-          const moved = headAfter !== state.head;
-          const message = moved ? committedAnywayText(headAfter) : commitFailedText(group.n);
-          return refused(
-            state, group, commits, { code: 'git-failed', message }, notices, gitOutput,
-            moved ? headAfter : undefined,
-          );
+          return gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now });
         }
 
         // EXE-15: only while a later group is still pending — nothing after this one would
@@ -607,8 +623,8 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           }
         }
       } catch (err) {
-        // C:commit-release "On failure": a throw after this group reached (c) (a non-zero
-        // `git commit`, `internal`, until EXE-12 maps them) never leaves the real index
+        // C:commit-release "On failure": a throw after this group reached (c) (`internal`; a
+        // non-zero `git commit` is mapped above, EXE-12) never leaves the real index
         // staged for the run to repair later.
         await unstage(git);
         throw err;

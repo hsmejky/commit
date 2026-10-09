@@ -596,7 +596,19 @@ const ROWS = [
     kind: 'git',
     exitCode: 4,
     pairs: [
-      { producer: 'M16', gap: { kd: 'KD-R98' } },
+      {
+        producer: 'M16',
+        message: /^git commit failed for group 1$/,
+        // EXE-12: group 1's own `git commit` rejected by a `pre-commit` hook
+        // (tests/commit-all-git-failed.test.js).
+        async seam1Case(t) {
+          const { c, planId } = await groupedRun(t);
+          const hook = path.join(c.repoDir, '.git', 'hooks', 'pre-commit');
+          fs.writeFileSync(hook, '#!/bin/sh\nexit 1\n');
+          fs.chmodSync(hook, 0o755);
+          return commitAll(c, planId);
+        },
+      },
       {
         producer: 'M10 via M18',
         message: /git add failed/,

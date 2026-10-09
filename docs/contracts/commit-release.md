@@ -137,7 +137,9 @@ created between groups are both caught:
   hanging `post-commit` hook, a signing prompt answered late, a throw after `git commit`
   returned): the output sets `sha` to the new HEAD and `error.message` to "committed as
   `<sha>`, but git did not exit cleanly" / "… did not exit in time" / "…, but the script
-  failed". The exit code stays 4, 5 or 1 and the run ends. When HEAD did not move, a
+  failed". The exit code stays 4, 5 or 1 and the run ends. The group counts as committed in the report
+  (Q18): it is in `commits` with the new `sha` and out of `remaining`, while `failed` still
+  names it as the step whose exit ended the run. When HEAD did not move, a
   `git commit` killed at the deadline (exit 5) has `error.message` "git commit did not
   finish in 9 min — a pre-commit hook or a signing prompt may be waiting" (Q18).
 - On failure: `split` runs `git reset -q -- .` only when the failing group itself reached (c)
