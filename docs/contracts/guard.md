@@ -57,6 +57,9 @@ path in Bash (e.g. `node "C:\Program Files\...\commit.cjs" plan`, matching by ba
   is not a crash: the decision already computed stands (Heartbeat, below).
 - Node older than 22: no output (fail open), no heartbeat; the guard entry point checks
   `process.versions.node` before it loads the shared library (Q1).
+- `guard.cjs` run from an install path with a `\` on POSIX: fails open (no output, exit 0,
+  no heartbeat; under debug the stderr line is `{}`), as Node's ES module loader refuses the library URLs; harmless, since
+  `/commit` refuses `env` there (see [CLI and exit codes](cli-and-exit-codes.md)).
 - Debug log: with `COMMIT_GUARD_DEBUG=1`, one JSON object on one stderr line, with keys
   `agent_id`, `decision`, `reason` and `command`, each key left out when unknown (so an
   early fail-open logs `{}` or `{"agent_id":"…"}` only). `decision` is `deny` or `none`.

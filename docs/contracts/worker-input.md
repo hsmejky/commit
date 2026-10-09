@@ -68,7 +68,9 @@ The worker's steps:
 The worker's final report is the `reply` JSON, verbatim and nothing else: its last message
 in the notification delivery shape, the `message` of its `SubagentHandback` call in the
 other (Q25). When a script
-call fails without output it can parse, or a `Write` or `Read` the worker needs fails (the
+call fails without output it can parse, or prints an `ok: false` output with no `reply` that
+the worker does not handle itself (anything but a first lint failure, step 4: `env` and
+`internal` from the entry point are the cases), or a `Write` or `Read` the worker needs fails (the
 worker plan or a message file cannot be written, `hunks.txt` or `hunks.json` cannot be
 read), it returns the fallback reply (story 46) without a retry
 `{ "version": 1, "status": "failed", "planId": <the planId if known, else null>, "text":
