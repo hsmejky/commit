@@ -132,7 +132,7 @@ test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden
   c.git(['add', '--', 'b.txt']);
 
   // Zero groups covers the base (no-group) wording; the next case covers "with a group" via a
-  // hunk-level group (KD-R83), which never reaches `commitAll` at all.
+  // hunk-level group, which commits in-process.
   const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
@@ -150,11 +150,8 @@ test('AC2 Seam 1: a hidden staged-new `.env.local` → "was staged but is hidden
 });
 
 // "With a group" gets the "committing this plan unstages it" suffix (hasGroups, C:check).
-// The group here is hunk-level (one of a two-hunk file's two hunks), so `commitCheckedGroups`
-// (workflows.mjs) returns `check`'s own validated output without ever calling `commitAll`
-// (KD-R83: a hunk-level file entry skips the whole-file commit path). Retire this reliance on
-// KD-R83 once INT-18 lifts it (EXE-11's `unstaged` report already covers the preStaged paths
-// a whole-file commit would reset).
+// The group here is hunk-level (one of a two-hunk file's two hunks); INT-18 routes it through
+// `commitAll` like a whole-file group, which commits it in-process.
 test('AC2 Seam 1: a hidden staged-new `.env.local`, with a group → "…; committing this plan unstages it"', async (t) => {
   const c = createCase(t);
   const lines = numbered(30);
@@ -180,7 +177,7 @@ test('AC2 Seam 1: a hidden staged-new `.env.local`, with a group → "…; commi
   });
 
   assert.equal(checked.exitCode, 0, detail(checked));
-  assert.equal(checked.json.commits, undefined, detail(checked));
+  assert.equal(checked.json.commits.length, 1, detail(checked));
   assert.deepEqual(checked.json.notIncluded, [
     { path: 'f.txt', hunks: [h2], reason: 'leaving out for now' },
     { path: '.env.local', hunks: null, reason: '.env.local was staged but is hidden — commit by hand; committing this plan unstages it' },
@@ -213,7 +210,7 @@ async function gitignoredStagedNewCase(t) {
 }
 
 // Zero groups below covers the base wording; the next case covers "with a group" via a
-// hunk-level group over `a.txt` itself (KD-R83), which never reaches `commitAll` at all.
+// hunk-level group over `a.txt` itself, which commits in-process.
 test('AC3 Seam 1: ...with a group, gets the .gitignore clause', async (t) => {
   const c = createCase(t);
   const lines = numbered(30);
@@ -242,7 +239,7 @@ test('AC3 Seam 1: ...with a group, gets the .gitignore clause', async (t) => {
   });
 
   assert.equal(checked.exitCode, 0, detail(checked));
-  assert.equal(checked.json.commits, undefined, detail(checked));
+  assert.equal(checked.json.commits.length, 1, detail(checked));
   assert.deepEqual(checked.json.notIncluded, [
     { path: 'new.txt', hunks: null, reason: 'leaving out for now; committing this plan unstages it and .gitignore then hides it from `git status`' },
     { path: 'a.txt', hunks: [h2], reason: 'leaving out for now' },
@@ -317,7 +314,7 @@ test('AC4 Seam 1: a dirty submodule becomes a notIncluded entry "… has uncommi
 
 // The `indexOnly` notice only ever fires with hasGroups (C:check "notices", "at least one
 // group"), so this case needs a group. A hunk-level group over an unrelated two-hunk file
-// (KD-R83) gets hasGroups without ever calling `commitAll`; the `indexOnly` path's discarded
+// gets hasGroups and commits in-process; the `indexOnly` path's discarded
 // blob in a real commit's `unstaged` report is EXE-11's (tests/commit-all-unstaged.test.js).
 test('AC4 Seam 1: an indexOnly path (staged, then edited again) is a notice naming its staged blob', async (t) => {
   const c = createCase(t);
@@ -350,7 +347,7 @@ test('AC4 Seam 1: an indexOnly path (staged, then edited again) is a notice nami
   });
 
   assert.equal(checked.exitCode, 0, detail(checked));
-  assert.equal(checked.json.commits, undefined, detail(checked));
+  assert.equal(checked.json.commits.length, 1, detail(checked));
   assert.deepEqual(checked.json.notIncluded, [{ path: 'a.txt', hunks: [h2], reason: 'leaving out for now' }]);
   assert.deepEqual(checked.json.notices, [
     GUARD_NOTICE,

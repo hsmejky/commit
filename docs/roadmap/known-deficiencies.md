@@ -348,18 +348,6 @@ Plan text that depends on a design fix; fix the design and the slice together.
   i-t-a paths still uncommitted when building `unstaged`, or accept and document the loss.
   Slices: EXE-11, CHG-20, RUN-23.
 
-- **KD-R83.** `commitCheckedGroups` (INT-02) skips `check`'s in-process commit and RUN-18's
-  `afterCheck` routing (no `confirm` handback, no `handedBack` release), keeping the run with
-  the pre-INT-02 output, whenever any group has a hunk-level file entry
-  (`hunks !== null`): M16's (c) apply stages whole paths today, so routing a hunk-level group
-  through it would also commit the file's other hunks, `notIncluded` ones included
-  (review-INT-02 Medium-2). Removal is owned by INT-18's criterion, after CHG-20's hunk
-  `stage` lands. Where: `plugin/scripts/lib/workflows.mjs` `commitCheckedGroups`. Fix: once
-  CHG-20's `stage` commits only a group's own hunks, lift the gate as part of INT-18 (its
-  criterion names this), routing it through `afterCheck` like a whole-file plan. Slices:
-  CHG-20, INT-18.
-
-
 - **KD-R71.** A worker-plan parse failure echoes V8's raw `JSON.parse` message, which can
   quote a snippet of the invalid JSON text verbatim (e.g. a secret-shaped fragment next to the
   syntax error). PLN-06's redaction (C:check) only covers scanned message text; this

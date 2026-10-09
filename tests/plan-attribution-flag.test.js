@@ -41,9 +41,8 @@ function readState(runDir) {
 //
 // Real Seam 1: `attribution.commit: ""` in the user settings layer resolves the run's
 // trailer to `null` (plan-attribution.test.js covers that resolution itself); a hunk-level
-// worker plan (one hunk ID per group, rather than a whole `files` path) makes `check`'s own
-// `commitCheckedGroups` (INT-02) skip `commit --all` — it only ever routes a whole-file plan
-// into a real commit — so the run folder is kept and `state.json`'s stored groups can be
+// worker plan (one hunk ID per group, rather than a whole `files` path) makes two groups, so
+// `check` stops at the `confirm` handback ("2 groups") without committing, so the run folder is kept and `state.json`'s stored groups can be
 // read back without ever committing for real (same technique as PLN-03's
 // tests/plan-hunk-level.test.js).
 

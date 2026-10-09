@@ -511,7 +511,7 @@ own case around; RUN-17 asserts it too.
 
 **What to build:** M15 `afterCheck` → `commit` | `confirm` | `handedBack` |
 `releaseNothing`. `confirm: null` commits in the same process (the route INT-02's `check` always takes until
-this slice, for whole-file groups; a hunk-level group keeps the run instead, KD-R83). `confirm` stores
+this slice, for whole-file groups; INT-18 lifted the hunk-level gate). `confirm` stores
 `awaitingConfirm` and returns a `confirm` handback without committing. A `humanOnly`
 confirmation under `--no-user` hands back and releases the run. Zero groups releases. It
 builds the first `confirm` and `handedBack` handbacks; INT-09 adds the confirm block and the

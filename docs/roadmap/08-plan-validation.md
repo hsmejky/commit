@@ -86,10 +86,8 @@ per `indexOnly` path.
 - [x] Seam 1: a dirty submodule → "libs/x has uncommitted changes inside — …"; an `indexOnly` path → notice with `git cat-file -p <blob>`.
 - [x] Seam 1 (POSIX): a non-UTF-8 path → "path is not UTF-8 — commit by hand" with `\xNN`.
 
-**Note (review-PLN-04 r2):** the "with a group" variants of AC2-AC4 use a hunk-level group
-(KD-R83: `commitCheckedGroups` skips `commitAll` whenever a group has a hunk-level file
-entry), so they never exercise EXE-11's own pre-staged-paths report. Retire that reliance
-once INT-18 lifts KD-R83.
+**Note (review-PLN-04 r2):** the "with a group" variants of AC2-AC4 use a hunk-level group;
+INT-18 routes it through `commitAll` like a whole-file one, so those cases now commit in-process.
 
 
 ## PLN-05: `staged` and `reword`: exactly one group holding every unit

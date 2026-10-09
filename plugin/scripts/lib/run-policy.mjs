@@ -399,9 +399,8 @@ export function checkGate(runState) {
 
 /**
  * M15 `afterCheck(confirm, groups, runState)` (RUN-18, C:check, Q16, Q17): `check`'s routing
- * once M15 `computeConfirm` has decided `confirm`. Scoped to whole-file groups only: a
- * hunk-level group (KD-R83) never reaches this function, since M16's apply stages whole paths
- * today and `check` keeps the run instead, without routing at all.
+ * once M15 `computeConfirm` has decided `confirm`. Hunk-level groups route like whole-file ones
+ * (INT-18).
  *
  * @param {{ reasons: string[], humanOnly: boolean } | null} confirm `computeConfirm`'s result.
  * @param {Array<unknown>} groups the stored groups (only `.length` matters here): `[]` is

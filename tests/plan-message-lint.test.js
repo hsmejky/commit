@@ -323,18 +323,23 @@ test('MSG-06: a CRLF body\'s secret span indexes the normalised (LF) message, no
 // above) always indexes the stored message too.
 //
 // Real Seam 1 (KD-R95's split route): a hunk-level group (`hunks: ['h1']` rather than
-// `files: ['a.txt']`) makes `check`'s `commitCheckedGroups` (INT-02) skip `commit --all`, so
-// the run folder is kept and `state.json`'s stored group can be read back uncommitted. A
+// `files: ['a.txt']`) over a two-hunk file, split across two groups, makes `check` stop at
+// the `confirm` handback ("2 groups"), so the run folder is kept and `state.json`'s stored
+// group can be read back uncommitted. A
 // user `commit.json` layer sets `body: "optional"` (the Q6 default is `forbidden`), and a
 // user `settings.json` layer resolves the trailer to `null` (so `attribution: false` below).
 test('PLN-07: a CRLF body\'s stored header/body is the normalised (LF) text, not the raw one', async (t) => {
   const c = createCase(t);
-  c.writeFile('a.txt', 'one\n');
+  const seedLines = Array.from({ length: 30 }, (_, i) => `${i + 1}\n`);
+  c.writeFile('a.txt', seedLines.join(''));
   c.git(['add', '--', 'a.txt']);
   c.git(['commit', '-q', '-m', 'seed']);
   fs.writeFileSync(path.join(c.claudeHome, 'commit.json'), JSON.stringify({ body: 'optional' }));
   fs.writeFileSync(path.join(c.claudeHome, 'settings.json'), JSON.stringify({ attribution: { commit: '' } }));
-  c.writeFile('a.txt', 'one\nmore\n');
+  const edited = [...seedLines];
+  edited[0] = 'first\n';
+  edited[29] = 'last\n';
+  c.writeFile('a.txt', edited.join(''));
 
   const planned = await runCommit(c, ['plan']);
   assert.equal(planned.exitCode, 0, detail(planned));
@@ -344,7 +349,7 @@ test('PLN-07: a CRLF body\'s stored header/body is the normalised (LF) text, not
   fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
     version: 1,
     source: 'worker',
-    groups: [{ header, body, files: [], hunks: ['h1'] }],
+    groups: [{ header, body, files: [], hunks: ['h1'] }, { header: 'feat: y', body: null, files: [], hunks: ['h2'] }],
     notIncluded: [],
   }));
 

@@ -1259,11 +1259,9 @@ async function validateWorkerPlan(ctx) {
  * `runStepsWithin(CHECK_STEPS, ctx)` returns, through a second, plain
  * `runSteps([commitCheckedGroups], ctx)` — the same way `commit()` runs `commitGroups`
  * (`COMMIT_STEPS`'s own step 4), unscoped by any `withDeadline` (review-INT-02 Medium-1; see
- * that call site's comment). A plan with any hunk-level file entry (`hunks` not `null`) keeps
- * the run without routing at all (KD-R83): INT-02 is the whole-file path only, and M16's (c)
- * apply stages whole paths today, so a hunk-level group would also commit the file's other
- * hunks, `notIncluded` ones included (removal owned by INT-18's criterion, after CHG-20's hunk
- * `stage`). Otherwise `afterCheck(confirm, groups, state)` decides: `releaseNothing` (zero
+ * that call site's comment). A hunk-level group routes like a whole-file one
+ * (INT-18 lifted KD-R83: CHG-20's `stage` applies only the group's own hunks).
+ * `afterCheck(confirm, groups, state)` decides: `releaseNothing` (zero
  * groups, checked first by `afterCheck` itself) and `handedBack` both release the run
  * (`releaseOpen`) without committing; `confirm` stores `awaitingConfirm` and keeps the run;
  * `commit` runs `commitGroups` under this call's lock and `deadline`, but outside the GIT-07
@@ -1278,8 +1276,6 @@ async function validateWorkerPlan(ctx) {
  */
 async function commitCheckedGroups(ctx) {
   const { groups, notIncluded, notices, confirm } = ctx.checked;
-  const wholeFiles = groups.every((group) => group.files.every((file) => file.hunks === null));
-  if (groups.length > 0 && !wholeFiles) return { groups, notIncluded, notices, confirm };
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const state = readState(run);
   const route = afterCheck(confirm, groups, state);
