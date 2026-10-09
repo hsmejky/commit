@@ -11,7 +11,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { test } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createCase, runCommit } = require('./helpers/process-seam.js');
@@ -21,8 +21,10 @@ const { makeReadOnlyFolder, removalErrorCode } = require('./helpers/read-only-fo
 const FAULT_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'fault-preload.mjs')).href;
 const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
 
+// `beforeEach`, not `before`: Node 22.0-22.1 does not await an async root-level `before`
+// (tests/helpers/load-lib.js).
 let runEnd;
-test.before(async () => {
+beforeEach(async () => {
   ({ runEnd } = await loadLib('run-policy'));
 });
 
@@ -178,10 +180,15 @@ test('Seam 1: commit --all, last group, a folder-removal error → the committed
 }, async (t) => {
   const run = await plannedRun(t, ['--no-user']);
   writePlan(run.runDir, [group('feat: change both files', ['a.txt', 'b.txt'])]);
-  makeReadOnlyFolder(path.join(run.runDir, 'stuck'));
-  t.after(() => fs.chmodSync(path.join(run.runDir, 'stuck'), 0o755));
-
-  const checked = await runCommit(run.c, ['check', '--plan', run.planId]);
+  const stuck = makeReadOnlyFolder(path.join(run.runDir, 'stuck'));
+  // The mode is restored in `finally`, not a `t.after`: `node:test` runs `after` hooks in
+  // registration order, so `createCase`'s own hook would remove the root first and fail.
+  let checked;
+  try {
+    checked = await runCommit(run.c, ['check', '--plan', run.planId]);
+  } finally {
+    fs.chmodSync(stuck, 0o755);
+  }
 
   assert.equal(checked.exitCode, 0, detail(checked));
   assert.equal(checked.json.reply.status, 'committed');
