@@ -145,3 +145,125 @@ test('Seam 1: paths with U+201A and U+201B get only "commit by hand"', { timeout
     assert.match(lines[entry + 1], /commit by hand/);
   }
 });
+
+const { pathToFileURL } = require('node:url');
+const CLOCK_PRELOAD = pathToFileURL(path.join(__dirname, 'helpers', 'clock-preload.mjs')).href;
+
+function reflogCount(c) {
+  const out = c.git(['reflog', 'show', '--no-color', '--format=%H', 'HEAD']).trim();
+  return out === '' ? 0 : out.split('\n').length;
+}
+
+// A direct `check` (no confirm: `--no-user`) that commits group 1 and stops on the clock, with
+// `hit.js` left out on a scan hit; returns the case, the plan ID and the stopped check.
+async function stoppedDirectCheck(t) {
+  const c = createCase(t);
+  const files = { 'a.txt': 'one\n', 'b.txt': 'two\n', 'hit.js': 'x\n', '.claude/commit.json': '{ "body": "optional" }\n' };
+  for (const [name, text] of Object.entries(files)) c.writeFile(name, text);
+  c.git(['add', '--', ...Object.keys(files)]);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.txt', 'two\nmore\n');
+  c.writeFile('hit.js', `x\nconst t = "${token}";\n`);
+  const planned = await runCommit(c, ['plan', '--split', '--no-user']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  writeWorkerPlan(runDir, {
+    groups: [
+      { header: 'feat: change a', body: null, files: [], hunks: unitIds(runDir, 'a.txt') },
+      { header: 'fix: change b', body: null, files: [], hunks: unitIds(runDir, 'b.txt') },
+    ],
+    notIncluded: [{ path: 'hit.js', hunks: unitIds(runDir, 'hit.js'), reason: 'left out' }],
+  });
+  const schedule = path.join(c.root, 'schedule.json');
+  fs.writeFileSync(schedule, JSON.stringify([
+    { event: { type: 'reflogCount', repo: c.repoDir, atLeast: reflogCount(c) + 1 }, elapsedMs: 61_000 },
+  ]));
+  const checked = await runCommit(c, ['check', '--plan', planId], {
+    nodeArgs: ['--import', CLOCK_PRELOAD], env: { COMMIT_TEST_CLOCK_SCHEDULE: schedule },
+  });
+  return { c, planId, runDir, checked };
+}
+
+// Review-RPL-07 re-review item 3: every reply of a run that left a unit out names it, whether
+// `check` committed directly or a confirmed `commit` did.
+test('Seam 1: a direct check that stops on the budget and its continue call both keep the Not included entry', { timeout: 180_000 }, async (t) => {
+  const { c, planId, checked } = await stoppedDirectCheck(t);
+  assert.equal(checked.exitCode, 0, detail(checked));
+  assert.equal(checked.json.reply.handback.kind, 'continue', detail(checked));
+  assert.match(checked.json.reply.text, /Not included:\n- hit\.js/, checked.json.reply.text);
+
+  const next = await runCommit(c, ['commit', '--plan', planId, '--all']);
+
+  assert.equal(next.exitCode, 0, detail(next));
+  const { text } = next.json.reply;
+  assert.match(text, /Not included:\n- hit\.js/, text);
+  assert.ok(text.split('\n').includes('!git --literal-pathspecs add -- hit.js'), text);
+  assert.equal(next.stdout.includes(token), false);
+});
+
+// Review-RPL-07 re-review item 1: a later `check` clears what an earlier one stored.
+test('Seam 1: a second check clears the stored Not included entries of the first', { timeout: 180_000 }, async (t) => {
+  const c = createCase(t);
+  c.writeFile('a.txt', 'one\n');
+  c.writeFile('b.txt', 'two\n');
+  c.writeFile('hit.js', 'x\n');
+  c.git(['add', '--', 'a.txt', 'b.txt', 'hit.js']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  c.writeFile('a.txt', 'one\nmore\n');
+  c.writeFile('b.txt', 'two\nmore\n');
+  c.writeFile('hit.js', `x\nconst t = "${token}";\n`);
+  const planned = await runCommit(c, ['plan']);
+  const { planId, runDir } = planned.json;
+  writeWorkerPlan(runDir, {
+    groups: [
+      { header: 'feat: change a', body: null, files: [], hunks: unitIds(runDir, 'a.txt') },
+      { header: 'fix: change b', body: null, files: [], hunks: unitIds(runDir, 'b.txt') },
+    ],
+    notIncluded: [{ path: 'hit.js', hunks: unitIds(runDir, 'hit.js'), reason: 'left out' }],
+  });
+  const first = await runCommit(c, ['check', '--plan', planId]);
+  assert.equal(first.json.reply.handback.kind, 'confirm', detail(first));
+  const statePath = path.join(runDir, 'state.json');
+  assert.ok(JSON.parse(fs.readFileSync(statePath, 'utf8')).notIncluded.length > 0);
+
+  writeWorkerPlan(runDir, { groups: [], notIncluded: [] });
+  const second = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(second.exitCode, 2, detail(second));
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  for (const field of ['groups', 'awaitingConfirm', 'notIncluded', 'scanLeftOut']) {
+    assert.equal(field in state, false, field);
+  }
+});
+
+// Review-RPL-07 re-review item 2: one path named twice in `notIncluded` (once per hunk ID)
+// still gets one entry and one pair of manual lines.
+test('Seam 1: a path left out hunk by hunk gets its manual lines once', { timeout: 120_000 }, async (t) => {
+  const c = createCase(t);
+  const body = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n');
+  c.writeFile('hit.js', `${body}\n`);
+  c.git(['add', '--', 'hit.js']);
+  c.git(['commit', '-q', '-m', 'seed']);
+  const lines = body.split('\n');
+  lines[2] = `const t = "${token}";`;
+  lines[35] = `const u = "${token}";`;
+  c.writeFile('hit.js', `${lines.join('\n')}\n`);
+  const planned = await runCommit(c, ['plan', '--split', '--no-user']);
+  assert.equal(planned.exitCode, 0, detail(planned));
+  const { planId, runDir } = planned.json;
+  const sliced = await runCommit(c, ['plan', '--hunks', '--plan', planId]);
+  assert.equal(sliced.exitCode, 0, detail(sliced));
+  const ids = unitIds(runDir, 'hit.js');
+  assert.equal(ids.length, 2, ids.join());
+  writeWorkerPlan(runDir, {
+    groups: [],
+    notIncluded: ids.map((id) => ({ path: 'hit.js', hunks: [id], reason: 'left out' })),
+  });
+
+  const checked = await runCommit(c, ['check', '--plan', planId]);
+
+  assert.equal(checked.exitCode, 0, detail(checked));
+  const out = checked.json.reply.text.split('\n');
+  assert.equal(out.filter((line) => line === '!git --literal-pathspecs add -- hit.js').length, 1, checked.json.reply.text);
+});

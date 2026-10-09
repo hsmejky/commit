@@ -1178,7 +1178,7 @@ async function checkAlreadyCommitted(ctx) {
 }
 
 /**
- * `check` step 5 (PLN-01): clears the stored groups and `awaitingConfirm` before anything is
+ * `check` step 5 (PLN-01): clears the stored groups, `awaitingConfirm`, `notIncluded` and `scanLeftOut` before anything is
  * validated (C:check), so a failed `check` leaves no group that `commit` would accept, then
  * M14 `validatePlan` over `plan.groups.json` and the run state. A lint failure ends the call
  * with exit 2 and the `errors`; RUN-16 counts it in `lintFailures` and asks M15
@@ -1194,9 +1194,12 @@ async function checkAlreadyCommitted(ctx) {
 async function validateWorkerPlan(ctx) {
   const run = { toplevel: ctx.toplevel, planId: ctx.values.plan };
   const state = readState(run);
-  if (state.groups !== undefined || state.awaitingConfirm !== undefined) {
+  if (state.groups !== undefined || state.awaitingConfirm !== undefined
+    || state.notIncluded !== undefined || state.scanLeftOut !== undefined) {
     delete state.groups;
     delete state.awaitingConfirm;
+    delete state.notIncluded;
+    delete state.scanLeftOut;
     writeState(run, state);
   }
   const validated = validatePlan(readWorkerPlan(run), state, { osUser: ctx.injected.osUser });
@@ -1300,6 +1303,9 @@ async function commitCheckedGroups(ctx) {
     writeState(run, { ...state, awaitingConfirm: true, notIncluded, scanLeftOut: ctx.checked.scanLeftOut });
     return { groups, notIncluded, confirm, notices, route };
   }
+  // Every later reply of the run (a budget-stop `continue`, the final `committed`) names what was
+  // left out too, as after a confirm (C:run-folder `notIncluded`).
+  writeState(run, { ...state, notIncluded, scanLeftOut: ctx.checked.scanLeftOut });
   const outcome = await commitGroups(ctx);
   return { ...outcome, groups, notIncluded, confirm, route, notices: [...notices, ...outcome.notices] };
 }

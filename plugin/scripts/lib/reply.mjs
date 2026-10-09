@@ -141,8 +141,12 @@ function renderUnstaged(unstaged) {
 // its reason applies to, the same pairing the confirmation block's own "Not included:" lines
 // use (C:reply-and-handback); RPL-06 owns the escaping of both renderings.
 function renderNotIncluded(notIncluded, hits) {
+  const given = new Set();
   return capLines(notIncluded.map(({ path, reason }) => {
-    return `${escapePath(path)}: ${escapePath(reason)}${manualLines(path, hits)}`;
+    // A path named once per hunk gets its manual lines once.
+    const shown = given.has(path) ? [] : hits;
+    given.add(path);
+    return `${escapePath(path)}: ${escapePath(reason)}${manualLines(path, shown)}`;
   }));
 }
 
