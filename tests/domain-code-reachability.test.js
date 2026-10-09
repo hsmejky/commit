@@ -656,7 +656,26 @@ const ROWS = [
     kind: 'timeout',
     exitCode: 5,
     pairs: [
-      { producer: 'M2 via M16', gap: { kd: 'KD-R98' } },
+      {
+        producer: 'M2 via M16',
+        message: /^git commit did not finish in 9 min/,
+        // EXE-17: the clock reads 535 s from the first group, so a sleeping `pre-commit` hook
+        // outlives `git commit`'s 5 s budget (tests/commit-all-timeout.test.js).
+        async seam1Case(t) {
+          const { c, planId } = await groupedRun(t);
+          const hook = path.join(c.repoDir, '.git', 'hooks', 'pre-commit');
+          fs.writeFileSync(hook, '#!/bin/sh\nexec sleep 120\n');
+          fs.chmodSync(hook, 0o755);
+          const marker = path.join(c.root, 'clock-marker');
+          fs.writeFileSync(marker, '');
+          const schedulePath = path.join(c.root, 'schedule.json');
+          fs.writeFileSync(schedulePath, JSON.stringify([{ event: { type: 'path', path: marker }, elapsedMs: 535_000 }]));
+          return runCommit(c, ['commit', '--plan', planId, '--all'], {
+            nodeArgs: ['--import', CLOCK_PRELOAD],
+            env: { COMMIT_TEST_CLOCK_SCHEDULE: schedulePath },
+          });
+        },
+      },
       {
         producer: 'M2 via M18',
         // CHG-19 AC5: a separate plan --hunks call whose own clock crosses 540 s once its

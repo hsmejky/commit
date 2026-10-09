@@ -113,7 +113,10 @@ fixed, delete it here; IDs are never reused.
   `[...ctx.notices, released.notice]` for the `--no-user` branch) into both `finalReply`
   calls. Slice: RUN-27 (`lintFailureOf`'s own comment: "M15 `runEnd` replaces this branch
   when RUN-27 builds it"), or an earlier RPL slice if one touches this function first.
-- **KD-R103.** review-EXE-10 Low-1/Low-3: `plugin/scripts/lib/commit-executor.mjs:448` (the
+- **KD-R103.** (EXE-17 built the behavior: `cleanUnstage` in `commit-executor.mjs` treats a failed
+  or skipped `git reset` as `unstageKept` with the notice and `unstaged: null`, and its
+  `catch` cleanup cannot replace the original error; only the *failed* (not skipped) case
+  remains untested, for the reason below.) review-EXE-10 Low-1/Low-3: `plugin/scripts/lib/commit-executor.mjs:448` (the
   `stage-failed`/`mismatch` refusal) and `~515` (the backstop/commit-throw `catch`) both
   `await unstage(git)` and ignore a non-zero `git reset` from it — `{ ok: false, gitOutput }`
   at 448, a straight call with no return value read at 515. C:commit-release "On failure"
@@ -265,17 +268,6 @@ fixed, delete it here; IDs are never reused.
   commit --amend` and `git --unknown commit --amend`, are in `tests/guard-global-options.test.js`).
 - **KD-R32.** EXE-20 has only the negative reword case; add a `post-commit` hook commit that
   fires the mismatch notice.
-- **KD-R86.** `checkRefusalEnding`'s review-INT-02 N2 fix (`workflows.mjs`: release the run on
-  a `timed-out` refusal only when `facts.commits === undefined`) has no Seam 1 or in-process
-  case: today `commitAll` never returns a `timed-out` refusal, so the branch it guards
-  (`commits` present alongside `timed-out`) is unreachable, and the fix is verified by code
-  reading only (the two reachable `timed-out` sources — the pre-step check and `CHECK_STEPS`'
-  own `runStepsWithin` — never set `commits`, so the fixed condition is equivalent to the old
-  one for every case Seam 1 can build today). EXE-17 (a hung `git commit` killed at the
-  deadline) is expected to be the first slice giving `commitAll` a timeout-shaped outcome
-  with earlier groups already committed; its Seam 1 cases should add one through `check
-  --plan` asserting the run stays open (lock and folder kept) rather than being released out
-  from under `commitAll`'s own kept staging. Slice: EXE-17.
 - **KD-R85.** INT-02's first end-to-end commit has no Seam 1 case exercising FND-10's
   `osUser` fault preload (`os.userInfo()` throwing, `USER=jdoe1`) over a passing `check`'s
   own state writes, so that coverage of `osUser` never being stored is lost for this path
@@ -284,13 +276,13 @@ fixed, delete it here; IDs are never reused.
   `check --plan --all` that commits, asserting the commit's author/committer carry no
   `osUser` artifact. Slice: INT-02 follow-up or FND-10.
 - **KD-R98.** INT-31's (row, producer) manifest (`tests/domain-code-reachability.test.js`)
-  lists four pairs as gaps because the code producing them is not built: `env` via the entry
+  lists three pairs as gaps because the code producing them is not built: `env` via the entry
   point for an install path with a shell-special character (RPL-08), `killed-leftover`
-  (RUN-24), `index-locked` via M18's takeover repair (RUN-23, RUN-25) and `timed-out` via
-  M16's `git commit` deadline (EXE-17); EXE-12 already replaced its `git-failed` entry
-  (`tests/commit-all-git-failed.test.js`). Fix: each
+  (RUN-24) and `index-locked` via M18's takeover repair (RUN-23, RUN-25); EXE-12 already
+  replaced its `git-failed` entry (`tests/commit-all-git-failed.test.js`) and EXE-17 its
+  `timed-out` one (`tests/commit-all-timeout.test.js`). Fix: each
   slice replaces its gap entry with a Seam 1 case and drops its pair from this row. Slices:
-  EXE-17, RPL-08, RUN-23, RUN-24, RUN-25.
+  RPL-08, RUN-23, RUN-24, RUN-25.
 - **KD-R99.** INT-31 AC2's own case (EXE-01 item 3: the FND-10 preload failing
   `fs.renameSync` on `state.json` with `EIO` on a `staged` run's `commit --all`, exit 1 with
   `sha` and "committed as `<sha>`, but the script failed") cannot be built: `commitAll` throws

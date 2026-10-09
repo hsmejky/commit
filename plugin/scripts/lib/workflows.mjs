@@ -1607,7 +1607,10 @@ async function gitFailedReply(ending, facts, ctx, callStarted) {
  */
 export async function check(values, injected, { cwd }) {
   const callStarted = injected.callStarted ?? injected.now();
-  const ctx = { injected, cwd, values, opened: false, deadline: deadline(callStarted) };
+  const ctx = {
+    injected, cwd, values, opened: false, notices: [],
+    deadline: deadline(callStarted), cleanupDeadline: cleanupDeadline(callStarted),
+  };
   try {
     const facts = await runStepsWithin(CHECK_STEPS, ctx);
     const validationEnding = checkRefusalEnding(facts, ctx, values);

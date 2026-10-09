@@ -64,7 +64,13 @@
 // re-read in case the hook had already committed anyway (`sha` then set, the "committed
 // as `<sha>`, but git did not exit cleanly" text), no retry, never `--no-verify`. A
 // non-zero `--amend --only` in `reword` (no index to unstage there), the backstop
-// (EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. EXE-19 adds
+// (EXE-13) and the tree check (EXE-14) are not built yet: reaching one throws. EXE-17 adds the
+// deadline: `git commit` takes `deadline - now()` and a timeout is `timed-out` (exit 5, the
+// hook tree killed by M2); cleanup and reporting calls (`unstage`, the HEAD re-read,
+// `unstagedAfterReset`) run in a `withDeadline` scope on `cleanupDeadline`, so one at or past
+// it is not spawned. A skipped or failed `unstage` keeps the original cause, adds the "staging
+// may remain" notice, nulls `unstaged` and flags the outcome `unstageKept` (the caller keeps the run
+// for the next takeover repair). EXE-19 adds
 // `staged`: M10 `verifyIndex` replaces (b) and (c), the backstop and the commit run on the index
 // as it is, and no failure unstages (`indexReset` is never set, `unstaged` stays `null`).
 
@@ -77,6 +83,7 @@ import { appendTrailers, carryOver, normaliseText } from './message-grammar.mjs'
 import { scanUnits } from './scanner.mjs';
 import { compileGlob } from './glob-matcher.mjs';
 import { insideRunDir, readState, runDirOf, touch, writeState } from './run.mjs';
+import { withDeadline } from './process-adapter.mjs';
 import { nextStep } from './run-policy.mjs';
 import { build } from './script-call.mjs';
 
@@ -176,6 +183,20 @@ function committedAnywayText(sha) {
   return `committed as \`${sha}\`, but git did not exit cleanly`;
 }
 
+// EXE-17 (Q18, C:commit-release): `git commit` killed at the deadline, HEAD unmoved.
+const COMMIT_TIMED_OUT_TEXT = 'git commit did not finish in 9 min — a pre-commit hook or a signing '
+  + 'prompt may be waiting';
+
+// EXE-17: the commit landed (HEAD moved) although `git commit` had to be killed.
+function committedInTimeText(sha) {
+  return `committed as \`${sha}\`, but git did not exit in time`;
+}
+
+// EXE-17 (Q18 as amended by EXE-01): the group's `git reset -q -- .` was skipped or failed.
+function stagingMayRemainNotice(n) {
+  return `group ${n} staging may remain, the next /commit repairs it`;
+}
+
 // EXE-19: `staged`'s verify found the index differs from what `plan` stored (`unmatched`, CLI kind
 // `diff-changed`, exit 6); the index is left as it is.
 const STAGED_CHANGED_TEXT = 'the staged changes differ from the plan, run /commit again';
@@ -269,6 +290,33 @@ function refused(state, group, commits, refusal, notices, gitOutput = null, sha 
   };
 }
 
+// EXE-17: runs `fn` in a `withDeadline` scope on `cleanupDeadline` (M2 skips a call whose
+// budget is at or below 0 and marks the scope expired). Never throws: a cleanup or reporting
+// call must not replace the original cause. Without a `cleanupDeadline` the call is unscoped.
+async function inCleanup(cx, fn) {
+  const scope = { deadline: cx.cleanupDeadline, now: cx.now };
+  try {
+    const value = typeof cx.cleanupDeadline === 'number' ? await withDeadline(scope, fn) : await fn();
+    return { ok: true, value, expired: scope.expired === true };
+  } catch (error) {
+    return { ok: false, error, expired: scope.expired === true };
+  }
+}
+
+// EXE-17: M10 `unstage` against `cleanupDeadline`; true only when `git reset -q -- .` ran and
+// succeeded. A skipped (past `cleanupDeadline`) or failed one is false (KD-R103).
+async function cleanUnstage(cx) {
+  const result = await inCleanup(cx, () => unstage({ toplevel: cx.toplevel, env: cx.env, now: cx.now }));
+  return result.ok && result.value.ok === true && !result.expired;
+}
+
+// EXE-17: an outcome whose group's unstage did not happen keeps its exit code and kind, adds
+// the notice, reports `unstaged: null` and asks the caller to keep the run (`unstageKept`, M15 `runEnd`).
+function withUnstageResult(outcome, n, unstaged) {
+  if (unstaged) return outcome;
+  return { ...outcome, unstaged: null, unstageKept: true, notices: [...outcome.notices, stagingMayRemainNotice(n)] };
+}
+
 // EXE-12 (Q18, C:commit-release "After exit 4 or 5"): a non-zero `git commit` ends the run
 // as exit 4 `git-failed` with git's output verbatim. HEAD is re-read in case the rejecting
 // hook had itself already made a commit (a hanging `post-commit`, a partial pre-commit): an
@@ -276,13 +324,18 @@ function refused(state, group, commits, refusal, notices, gitOutput = null, sha 
 // uncommitted; a moved HEAD reports that SHA and "committed as `<sha>`, but git did not exit
 // cleanly", and per Q18 the group counts as committed in the report (in `commits`, out of
 // `remaining`) while `failed` still names it as the step whose exit ended the run.
-// (The HEAD re-read here and the `unstage` before it take no `cleanupDeadline` yet: EXE-17's
-// "cleanup and reporting take `cleanupDeadline - now()`" owns both.)
-async function gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now }) {
+// EXE-17: a `git commit` the deadline killed (`committed.timedOut`) takes the same road with
+// code `timed-out` (exit 5) and the other texts; the HEAD re-read runs against
+// `cleanupDeadline`, and one that cannot be read in time is read as unmoved.
+async function gitCommitFailed({ state, run, group, commits, notices, committed, cx }) {
   const gitOutput = `${committed.stdout}${committed.stderr}`;
-  const headAfter = await head({ cwd: toplevel, env, now });
+  const timedOut = committed.timedOut === true;
+  const code = timedOut ? 'timed-out' : 'git-failed';
+  const read = await inCleanup(cx, () => head({ cwd: cx.toplevel, env: cx.env, now: cx.now }));
+  const headAfter = read.ok ? read.value : state.head;
   if (headAfter === state.head) {
-    return refused(state, group, commits, { code: 'git-failed', message: commitFailedText(group.n) }, notices, gitOutput);
+    const message = timedOut ? COMMIT_TIMED_OUT_TEXT : commitFailedText(group.n);
+    return refused(state, group, commits, { code, message }, notices, gitOutput);
   }
   group.committed = true;
   // Best effort: the run is released right after this refusal, so the stored flag only matters
@@ -295,7 +348,9 @@ async function gitCommitFailed({ state, run, group, commits, notices, committed,
   }
   commits.push({ n: group.n, sha: headAfter, header: group.header });
   return refused(
-    state, group, commits, { code: 'git-failed', message: committedAnywayText(headAfter) }, notices, gitOutput, headAfter,
+    state, group, commits,
+    { code, message: timedOut ? committedInTimeText(headAfter) : committedAnywayText(headAfter) },
+    notices, gitOutput, headAfter,
   );
 }
 
@@ -377,11 +432,16 @@ export async function commitAll(run, options) {
   if (Array.isArray(output.unstaged)) {
     const preStaged = state.preStaged ?? [];
     const indexOnly = state.indexOnly ?? [];
-    try {
-      output.unstaged = await unstagedAfterReset(preStaged, indexOnly, {
+    // EXE-17: a reporting call, so it runs against `cleanupDeadline`.
+    const read = await inCleanup(
+      { toplevel: run.toplevel, env: options.env, now: options.now, cleanupDeadline: options.cleanupDeadline },
+      () => unstagedAfterReset(preStaged, indexOnly, {
         toplevel: run.toplevel, env: options.env, now: options.now,
-      });
-    } catch {
+      }),
+    );
+    if (read.ok) {
+      output.unstaged = read.value;
+    } else {
       // The commits and the release are done by now; a failing `git status` must not turn
       // them into `internal` and lose the commit list. The contract has no "unknown" value
       // for `unstaged` (KD-R108), so it lists every earlier-staged path (the reset did
@@ -399,9 +459,12 @@ export async function commitAll(run, options) {
 
 // `commitAll`'s per-group loop over the state it read; `unstaged` here is only `[]` or
 // `null` (`indexReset`), filled in by `commitAll`.
-async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath, confirmed }) {
+async function commitGroups(run, state, { now, osUser, env, deadline, cleanupDeadline, scriptPath, confirmed }) {
   const { toplevel } = run;
   const git = { toplevel, env, now };
+  const cx = { toplevel, env, now, cleanupDeadline };
+  // EXE-17: `git commit` takes the time left before `deadline`, computed at its own start.
+  const commitBudget = () => (typeof deadline === 'number' ? deadline - now() : undefined);
   // (a) Phase (a) refusals, in C:commit-release order. The lock (M12 `open`, with its
   // `call.lock`) already ran once in the caller before this function is ever invoked, and
   // `touch()` refreshes it again before each group below.
@@ -487,11 +550,12 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         args: ['commit', '--amend', '--only', '--cleanup=verbatim', '-F', '-'],
         input: rewordMessageOf(group, state),
         ...git,
+        timeoutMs: commitBudget(),
       });
       // EXE-12: a failing `--amend --only` (a rejecting pre-commit hook) is the same exit 4 as
       // `split`'s; `reword` never touches the index, so there is nothing to unstage.
       if (committed.code !== 0) {
-        return gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now });
+        return gitCommitFailed({ state, run, group, commits, notices, committed, cx });
       }
       sha = await head({ cwd: toplevel, env, now });
     } else {
@@ -508,7 +572,8 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           return refused(state, group, commits, { code: 'unmatched', message: STAGED_CHANGED_TEXT }, notices);
         }
       }
-      const cleanup = async () => { if (!staged) await unstage(git); };
+      // EXE-17: true when the group's staging is back out (or never happened, `staged`).
+      const cleanup = async () => (staged ? true : cleanUnstage(cx));
       // (b) Match on the temporary index, the real index untouched. EXE-09: a `git add -N`
       // that fails while rebuilding it (a stored not-ignored candidate now ignored, for
       // example) is a `git-failed` refusal carrying git's output, not a throw: the real index
@@ -564,11 +629,13 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           // EXE-10 (C:commit-release (c)): this group reached (c), so its staging is taken
           // back out (M10 `unstage`) before the refusal, and `unstaged` is present (`indexReset`
           // is set). A failing or skipped unstage (keep the run, notice) is EXE-17's.
-          await unstage(git);
+          const unstaged = await cleanup();
           const refusal = applied.code === 'stage-failed'
             ? { code: 'stage-failed', message: stageFailedText(group.n) }
             : { code: 'mismatch', message: mismatchText(group.n) };
-          return refused(state, group, commits, refusal, notices, applied.gitOutput ?? null);
+          return withUnstageResult(
+            refused(state, group, commits, refusal, notices, applied.gitOutput ?? null), group.n, unstaged,
+          );
         }
 
         // EXE-13 (C:commit-release): the backstop over the recorded tree, fail-closed. The
@@ -581,25 +648,31 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
           scanIgnore: storedScanIgnore(state), osUser,
         });
         if (hits.length > 0) {
-          await cleanup();
-          return {
+          const unstaged = await cleanup();
+          return withUnstageResult({
             ...refused(state, group, commits, { code: 'backstop-hit', message: backstopText(group.n) }, notices),
             hits,
-          };
+          }, group.n, unstaged);
         }
 
         // EXE-23 (Q18): the repo's signing config stays untouched — never `--no-gpg-sign` or
         // `-c commit.gpgsign=false`; M2's scrub keeps an exported `GIT_CONFIG_SYSTEM`.
         const committed = await commitGuarded({
-          args: ['commit', '--cleanup=verbatim', '-F', '-'], input: messageOf(group, state), ...git,
+          args: ['commit', '--cleanup=verbatim', '-F', '-'],
+          input: messageOf(group, state),
+          ...git,
+          timeoutMs: commitBudget(),
         });
         if (committed.code !== 0) {
           // EXE-12 (Q18: never retry, never `--no-verify` — neither happens here, one plain
           // `commitGuarded` call above): this group reached (c), so its staging is taken back
           // out (M10 `unstage`), same as EXE-10's `stage-failed`. EXE-19: `staged` staged
           // nothing, so its index stays as it is.
-          await cleanup();
-          return gitCommitFailed({ state, run, group, commits, notices, committed, toplevel, env, now });
+          // EXE-17: a `git commit` the deadline killed (`timedOut`) is the same road, `timed-out`.
+          const unstaged = await cleanup();
+          return withUnstageResult(
+            await gitCommitFailed({ state, run, group, commits, notices, committed, cx }), group.n, unstaged,
+          );
         }
 
         // EXE-15: only while a later group is still pending — nothing after this one would
@@ -650,6 +723,7 @@ async function commitGroups(run, state, { now, osUser, env, deadline, scriptPath
         // C:commit-release "On failure": a throw after this group reached (c) (`internal`; a
         // non-zero `git commit` is mapped above, EXE-12) never leaves the real index
         // staged for the run to repair later.
+        // EXE-17 (KD-R103): `cleanup` never throws, so it cannot replace `err`.
         await cleanup();
         throw err;
       }
