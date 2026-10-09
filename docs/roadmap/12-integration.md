@@ -306,16 +306,16 @@ released, and commit the rest when a size-skipped file is left out.
 
 **Blocked by:** INT-16, RPL-02, PRE-15.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Sources:** Q17, C:reply-and-handback (`handedBack` row), stories 100, 102, 103, 104.
 
-- [ ] Seam 1: two groups under `--no-user` → both committed, no handback (story 100)
-- [ ] A `humanOnly` trigger under `--no-user` → `handedBack` with `question: null`, text
+- [x] Seam 1: two groups under `--no-user` → both committed, no handback (story 100)
+- [x] A `humanOnly` trigger under `--no-user` → `handedBack` with `question: null`, text
       "nothing committed — run /commit to plan again", lock and folder released, `ifNoUser`
       `returnToParent: true` (story 102 as settled by PRE-15: an honest worker never
       answers it; the forged-answer gap is Q25's and not asserted here)
-- [ ] A size-skipped file in `notIncluded` with its reason → the rest commits, the notice is in
+- [x] A size-skipped file in `notIncluded` with its reason → the rest commits, the notice is in
       the text (story 103)
 
 
