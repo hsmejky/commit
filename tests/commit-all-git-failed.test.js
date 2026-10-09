@@ -167,6 +167,7 @@ test('a pre-commit hook rejecting a reword -> exit 4 git-failed, gitOutput verba
   const planned = await runCommit(c, ['plan', '--reword']);
   assert.equal(planned.exitCode, 0, detail(planned));
   const { planId, runDir } = planned.json;
+  const lockPath = path.join(path.dirname(runDir), 'lock');
   c.writeFile('extra.txt', 'staged\n');
   c.git(['add', '--', 'extra.txt']);
   fs.writeFileSync(path.join(runDir, 'plan.groups.json'), JSON.stringify({
@@ -182,5 +183,6 @@ test('a pre-commit hook rejecting a reword -> exit 4 git-failed, gitOutput verba
   assert.equal(result.json.gitOutput, 'pre-commit: \x1b[31meslint found 2 problems\x1b[0m\n');
   assert.equal(c.git(['rev-parse', 'HEAD']).trim(), oldSha, 'the old commit is kept');
   assert.equal(c.git(['status', '--porcelain']), 'A  extra.txt\n', 'staging untouched');
+  assert.equal(fs.existsSync(lockPath), false, 'the run lock is released');
   assert.equal(fs.existsSync(runDir), false, 'the run folder is released');
 });

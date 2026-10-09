@@ -284,7 +284,14 @@ async function gitCommitFailed({ state, run, group, commits, notices, committed,
     return refused(state, group, commits, { code: 'git-failed', message: commitFailedText(group.n) }, notices, gitOutput);
   }
   group.committed = true;
-  writeState(run, state);
+  // Best effort: the run is released right after this refusal, so the stored flag only matters
+  // when the release keeps the run (a busy lock), and a write failure must not turn the exit-4
+  // `git-failed` into `internal`.
+  try {
+    writeState(run, state);
+  } catch {
+    // ignored on purpose
+  }
   commits.push({ n: group.n, sha: headAfter, header: group.header });
   return refused(
     state, group, commits, { code: 'git-failed', message: committedAnywayText(headAfter) }, notices, gitOutput, headAfter,
