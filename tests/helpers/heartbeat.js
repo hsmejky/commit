@@ -27,9 +27,15 @@ function sleep(ms) {
 // `<base>.beat` every TICK_MS. It never exits on its own within a case; it does exit after
 // LIFETIME_MS, a last line of defence against an immortal process if even the cleanup below
 // never runs (e.g. the test process itself is killed).
+//
+// The first process to start also ticks `<base>.first.beat` (it claims `<base>.first.pid` by
+// an exclusive create), so a test can tell it from a clean filter that git re-runs later
+// (KD-R109): `stopped(`${base}.first`)`.
 function heartbeat(base) {
   return `{ const fs = require('fs'); fs.writeFileSync(${JSON.stringify(`${base}.pid`)}, String(process.pid));`
-    + ` let n = 0; setInterval(() => { fs.writeFileSync(${JSON.stringify(`${base}.beat`)}, String(++n)); }, ${TICK_MS});`
+    + ` let isFirst = false; try { fs.writeFileSync(${JSON.stringify(`${base}.first.pid`)}, String(process.pid), { flag: 'wx' }); isFirst = true; } catch {}`
+    + ` let n = 0; setInterval(() => { fs.writeFileSync(${JSON.stringify(`${base}.beat`)}, String(++n));`
+    + ` if (isFirst) fs.writeFileSync(${JSON.stringify(`${base}.first.beat`)}, String(n)); }, ${TICK_MS});`
     + ` setTimeout(() => process.exit(0), ${LIFETIME_MS}); }`;
 }
 

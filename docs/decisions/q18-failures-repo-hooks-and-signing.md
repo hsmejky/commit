@@ -129,7 +129,7 @@
     guard denies the worker's own `commit` call, Q25). Each
     `git commit` is timed out at what is left of the budget. On timeout it kills the process
     tree (on POSIX `SIGTERM` to the process group, then `SIGKILL` after a 5-second grace; on
-    Windows `taskkill /T`, then `taskkill /T /F` after the same grace), and reports "git
+    Windows `taskkill /T`, then `taskkill /T /F` after the same grace; a filter git re-runs mid-kill may survive on Windows, KD-R109), and reports "git
     commit did not finish in 9 min — a pre-commit hook or a signing prompt may be waiting".
     On a partial commit (reword's `--amend --only`), where git holds `index.lock` across its
     hooks until the kill, it removes `index.lock` only when it is stale by the two-marker

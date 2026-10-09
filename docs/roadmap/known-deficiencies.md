@@ -76,6 +76,17 @@ fixed, delete it here; IDs are never reused.
   that differs from HEAD) has no Seam 1 trigger; the (b) `diff-changed` arm is tested. Fix:
   a contract value or text for an unread `unstaged`, and a tree-state read that degrades the
   same way, then a Seam 1 case. Slice: none yet.
+- **KD-R109.** M2's Windows tree kill (`taskkill /T`, then `/T /F`) is not atomic: it
+  snapshots the tree and kills leaf-first, so a clean filter that git re-runs between two of
+  those kills (git is alive until the last) starts outside the snapshot and survives as an
+  orphan. User decision: accepted. Real filters exit when git's pipe closes, so only a filter
+  that never reads its input survives, and only on Windows; POSIX is covered by the group
+  signal. A fix needs a process listing or Job Objects, which the spawn allowlist (git,
+  ssh-add, taskkill; `docs/spec/constraints.md`) rules out. Where: `killTree` in
+  `plugin/scripts/lib/process-adapter.mjs`. `tests/plan-timeout-kill.test.js` (the first
+  case) therefore asserts only that the filter it started first is gone (`<base>.first` of
+  `tests/helpers/heartbeat.js`), not a respawn. Fix: none planned; drop this row if an
+  enumeration mechanism is ever allowed. Slice: GIT-07.
 - **KD-R91.** A hidden staged-new path that is also gitignored (Q11's own example,
   `git add -f .env.local` where `.env.local` is listed in `.gitignore`) never gets the
   "and .gitignore then hides it from `git status`" clause on its `notIncluded` entry:

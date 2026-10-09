@@ -90,7 +90,10 @@ test('a clean filter that never ends, 535 s into plan: exit 5 timeout, no run, t
   const runDir = runDirOf(c);
   const left = fs.existsSync(runDir) ? fs.readdirSync(runDir) : [];
   assert.deepEqual(left, [], `left in .commit-plan: ${left.join(', ')}`);
-  assert.equal(await stopped(beat), true, 'the filter process is gone after the call');
+  // KD-R109: on Windows `taskkill /T` can miss a clean filter that git re-spawns while the tree
+  // is being killed, so only the filter running at the deadline (the first one) is asserted
+  // gone, not a later respawn.
+  assert.equal(await stopped(`${beat}.first`), true, 'the first filter process is gone after the call');
 });
 
 // `release`'s own steps never read the worktree, so the reply's tree-state read is the
