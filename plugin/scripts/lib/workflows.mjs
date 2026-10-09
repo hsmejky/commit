@@ -2000,3 +2000,15 @@ async function finalReply(facts, ctx, { deadline: readDeadline, toplevel = ctx.t
   }
   return reply({ ...facts, treeState: scope.expired ? undefined : finalTree });
 }
+
+/**
+ * RPL-08: the failure for the entry point's install-path refusal (`env`, C:cli-and-exit-codes), raised
+ * by M1 before any work, so before a repository is known: a `failed` reply with the refusal as
+ * its `text` (no tree state), the base rule and no handback. Pure.
+ *
+ * @param {string} message the refusal text.
+ * @returns {{ kind: string, message: string, reply: object }}
+ */
+export function installRefusalFailure(message) {
+  return { kind: 'env', message, reply: reply({ status: 'failed', message, treeState: undefined }) };
+}

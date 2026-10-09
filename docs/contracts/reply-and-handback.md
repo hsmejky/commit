@@ -146,7 +146,7 @@ handles it the same way.
   no other `run` does,
   `continue` included. The script builds `run` without escaping anything: the
   commit entry point refuses with exit 1 `env` an install path that contains `$`, a
-  backtick, `"`, `\`, or U+201C–U+201E ([CLI](cli-and-exit-codes.md)), so the double-quoted
+  backtick, `"`, `\`, `!`, a control character (U+0000-U+001F, U+007F) or U+201C–U+201E ([CLI](cli-and-exit-codes.md)), so the double-quoted
   path is literal in
   Bash and PowerShell. Every `run` is a [script call](guard.md) to `commit` or `release` with
   `--plan <planId>` of the same reply; a caller runs nothing else, and refuses and shows any

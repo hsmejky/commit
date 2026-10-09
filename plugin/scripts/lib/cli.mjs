@@ -237,7 +237,10 @@ export async function main(argv, env) {
   // RPL-08 (C:cli-and-exit-codes `env`): before any work, so every `run` the replies build is literal.
   const { scriptPath } = env;
   const installRefusal = typeof scriptPath === 'string' ? installPathRefusal(scriptPath) : null;
-  if (installRefusal !== null) return failure('env', installRefusal);
+  if (installRefusal !== null) {
+    const refused = workflows.installRefusalFailure(installRefusal);
+    return failure(refused.kind, refused.message, undefined, refused.reply);
+  }
   const subcommand = argv[0];
   const expected = `expected one of ${SUBCOMMANDS.join(', ')}`;
   if (subcommand === undefined) {

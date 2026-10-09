@@ -5,12 +5,12 @@
 // clean working tree, with the base `callerRule`; RUN-01 adds `release`'s two `nothing`
 // texts. RUN-03 adds the omitted tree state (past `release`'s 45 s `releaseDeadline`,
 // C:reply-and-handback). RPL-04 adds the `failed` status for a pre-folder refusal (`text`:
-// the refusal's own message, then the tree state); `committed` and `handback` replies, the
-// handback rule, notices and the trailer line are later slices'. CHG-04 adds the "N files
-// left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers,
-// `ifNoUser` and handback rule are INT-13's. RUN-16 adds the `lintFailed` handback's question
+// the refusal's own message, then the tree state); the trailer line and the notices block in
+// `text` are later slices'. CHG-04 adds the "N files
+// left" tree state. RUN-13 adds the `modeChoice` handback's counts question; its answers
+// and `ifNoUser` are INT-13's (KD-R93). RUN-16 adds the `lintFailed` handback's question
 // and a lint failure's errors in `text` (also in a `--no-user` `failed` reply), and the kept
-// run's `planId`; its answers, `ifNoUser` and the quoted rejected messages are RPL's. INT-02
+// run's `planId`; RPL-08 adds its answers and `ifNoUser`, the quoted rejected messages are RPL's. INT-02
 // adds the `committed` status (`text`: one `sha subject` line per commit, then the tree
 // state) and the `continue` handback M16 `commitAll` builds itself, passed through verbatim
 // with the commits made before the budget stop; the not-included lines, the trailer line and
